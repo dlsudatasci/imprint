@@ -1,4 +1,4 @@
-import P from "ui/heading/p";
+import { P } from "@/ui/Typography";
 import HelpItem from "./helpItem";
 
 export default function HelpDirectory() {

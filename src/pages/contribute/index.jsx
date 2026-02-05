@@ -3,8 +3,8 @@ import { getSession } from "next-auth/react";
 import { useSession } from "next-auth/react";
 
 import Page from "@/ui/page";
-import H1 from "@/ui/heading/h1";
-import H2 from "@/ui/heading/h2";
+import { H1 } from "@/ui/Typography";
+import { H2 } from "@/ui/Typography";
 import Button from "ui/buttons/Button";
 import DashboardInfo from "../../features/contribute/dashboard/infoSection";
 

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 
 import Page from "@/ui/page";
-import H1 from "@/ui/heading/h1";
+import { H1 } from "@/ui/Typography";
 
 export default function login({ providers, csrfToken }) {
   const [loadingForm, setLoading] = useState(false);

@@ -23,6 +23,8 @@ export default function Tooltip({ children }) {
     }, [ref]);
   };
 
+
+
   const wrapperRef = useRef(null);
   useOutsideAlerter(wrapperRef);
 

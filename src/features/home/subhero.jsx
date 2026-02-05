@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 
 // UI Components
-import H2 from "@/ui/heading/h2";
-import P from "@/ui/heading/p";
+import { H2 } from "@/ui/Typography";
+import { P } from "@/ui/Typography";
 
 // Dynamically import the map with SSR disabled
 const CityMap = dynamic(() => import('./CityMap'), {

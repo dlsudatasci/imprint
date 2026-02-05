@@ -1,9 +1,9 @@
 import Page from '@/ui/page';
-import H1 from 'ui/heading/h1';
+import { H1 } from '@/ui/Typography';
 import Link from 'next/link';
-// import H2 from 'ui/heading/h2';
-import H3 from 'ui/heading/h3';
-import P from 'ui/heading/p';
+// import { H2 } from '@/ui/Typography';
+import { H3 } from '@/ui/Typography';
+import { P } from '@/ui/Typography';
 
 export default function Index() {
     return (

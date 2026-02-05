@@ -1,9 +1,9 @@
 /* eslint-disable no-use-before-define */
 import React, { useEffect, useState, useRef } from "react";
 
-import H2 from "@/ui/heading/h2";
-import H3 from "@/ui/heading/h3";
-import P from "@/ui/heading/p";
+import { H2 } from "@/ui/Typography";
+import { H3 } from "@/ui/Typography";
+import { P } from "@/ui/Typography";
 import styles from "./styles.module.scss";
 
 export default function Help() {

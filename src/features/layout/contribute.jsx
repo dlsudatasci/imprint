@@ -4,7 +4,7 @@ import { useRouter } from "next/router";
 
 import Navbar from "@/features/navbarContribute";
 import Footer from "@/features/footerMain";
-import H1 from "ui/heading/h1";
+import { H1 } from "@/ui/Typography";
 
 export default function Layout({ children }) {
   const { data: session, status } = useSession();

@@ -6,8 +6,8 @@ import CreatableSelect from "react-select/creatable";
 import cities from "./cities.json";
 
 import Page from "@/ui/page";
-import H1 from "@/ui/heading/h1";
-import H2 from "@/ui/heading/h2";
+import { H1 } from "@/ui/Typography";
+import { H2 } from "@/ui/Typography";
 
 export default function register({ providers, csrfToken }) {
   const [loadingForm, setLoading] = useState(false);

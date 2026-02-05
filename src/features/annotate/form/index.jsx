@@ -1,5 +1,5 @@
 import { ReactPictureAnnotation } from "@/ui/annotation-tool/index";
-import H1 from "ui/heading/h1";
+import { H1 } from "@/ui/Typography";
 import Button from "@/ui/buttons/Button";
 import Link from "next/link";
 import { getSession, useSession } from "next-auth/react";

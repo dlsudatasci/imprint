@@ -1,6 +1,6 @@
 import { useRouter } from "next/router";
 
-import H2 from "ui/heading/h2";
+import { H2 } from "@/ui/Typography";
 import Button from "@/ui/buttons/Button";
 
 export default function AnnotationSessionSelection({ username }) {

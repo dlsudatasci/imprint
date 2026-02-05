@@ -1,5 +1,5 @@
-import H2 from "ui/heading/h2";
-import P from "ui/heading/p";
+import { H2 } from "@/ui/Typography";
+import { P } from "@/ui/Typography";
 
 export default function MobileWarning() {
   return (

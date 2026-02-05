@@ -1,7 +1,7 @@
 // eslint-disable-next-line no-use-before-define
 import React from "react";
-import H3 from "@/ui/heading/h3";
-import P from "ui/heading/p";
+import { H3 } from "@/ui/Typography";
+import { P } from "@/ui/Typography";
 import Tooltip from "ui/tooltip";
 import ActivityItem from "./activityItem";
 

@@ -14,9 +14,9 @@ import {
   RectShape,
 } from "./Shape";
 import Transformer, { ITransformer } from "./Transformer";
-import P from "ui/heading/p";
-import H2 from "ui/heading/h2";
-import H3 from "ui/heading/h3";
+import { P } from "@/ui/Typography";
+import { H2 } from "@/ui/Typography";
+import { H3 } from "@/ui/Typography";
 
 interface IReactPictureAnnotationProps {
   annotationData?: IAnnotation[];

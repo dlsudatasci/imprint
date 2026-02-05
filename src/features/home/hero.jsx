@@ -3,8 +3,8 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
-import H1 from '@/ui/heading/h1';
-import P from '@/ui/heading/p';
+import { H1 } from '@/ui/Typography';
+import { P } from '@/ui/Typography';
 import Button from '@/ui/buttons/Button';
 
 export default function Hero() {

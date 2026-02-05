@@ -1,8 +1,8 @@
 import Image from 'next/image';
 
-import H2 from 'ui/heading/h2';
-import H3 from 'ui/heading/h3';
-import P from 'ui/heading/p';
+import { H2 } from '@/ui/Typography';
+import { H3 } from '@/ui/Typography';
+import { P } from '@/ui/Typography';
 
 export default function aboutSlide({
   title, head, img, desc, active,

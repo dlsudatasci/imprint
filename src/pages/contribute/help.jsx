@@ -1,5 +1,5 @@
 import Page from '@/ui/page';
-import H1 from '@/ui/heading/h1';
+import { H1 } from '@/ui/Typography';
 import HelpDirectory from 'features/contribute/help';
 
 export default function ContributePage() {

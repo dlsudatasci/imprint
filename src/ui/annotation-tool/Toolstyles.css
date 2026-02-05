@@ -124,6 +124,11 @@
   /* Green */
 }
 
+.rp-default-input-section_select.no:hover {
+  background-color: #dc3545 !important;
+  /* Red */
+}
+
 .rp-default-input-section_delete:hover {
   background-color: #dc3545 !important;
   /* Red */

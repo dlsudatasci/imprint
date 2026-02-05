@@ -38,10 +38,11 @@ interface IReactPictureAnnotationProps {
     value: string,
     onChange: (value: string) => void,
     onDelete: () => void,
-    onSelectObstruction: (value: string) => void,
-    onUnselectObstruction: (value: string) => void,
+    onSelectObstruction: () => void,
+    onUnselectObstruction: () => void,
     editable: boolean,
-    selected: boolean
+    selected: boolean,
+    isRejected: boolean
   ) => React.ReactElement;
 }
 
@@ -69,7 +70,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       onSelectObstruction: () => void,
       onUnselectObstruction: () => void,
       editable: boolean,
-      selected: boolean
+      selected: boolean,
+      isRejected: boolean
     ) => (
       <DefaultInputSection
         value={value}
@@ -79,6 +81,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         onUnselectObstruction={onUnselectObstruction}
         editable={editable}
         selected={selected}
+        isRejected={isRejected}
       />
     ),
   };
@@ -94,6 +97,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     selected: false,
     sliderValue: 5,
     pavementType: "",
+    error: null as string | null,
+    isRejected: false,
   };
 
   set selectedId(value: string | null) {
@@ -192,6 +197,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       editable,
       selected,
       sliderValue,
+      isRejected,
     } = this.state;
 
     return (
@@ -249,9 +255,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   this.onInputCommentChange,
                   this.onDelete,
                   this.onSelectObstruction,
-                  this.onUnSelectObstruction,
+                  this.onUnselectObstruction,
                   editable,
-                  selected
+                  selected,
+                  isRejected
                 )}
               </div>
             )}
@@ -279,7 +286,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                               className="cursor-pointer transition ease-in-out duration-300 hover:bg-red-700 px-2 py-1 "
                               onClick={() => {
                                 this.selectedId = data.id;
-                                this.onUnSelectObstruction();
+                                this.onUnselectObstruction();
                               }}
                             >
                               x
@@ -519,6 +526,27 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             </p>
           </div>
 
+          {/* Error Message Display */}
+          {this.state.error && (
+            <div className="flex justify-center mt-6">
+              <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-3 rounded-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <span className="font-medium">{this.state.error}</span>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-center my-12 gap-4"> {/* Added gap-4 for spacing */}
 
             {/* --- NEW PREVIOUS BUTTON --- */}
@@ -576,15 +604,22 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       (element) => element.editable
     );
 
+    this.setState({ error: null });
+
     for (const object of newObjects) {
       if (!object.comment || object.comment === "---") {
-        alert("You have an unlabeled obstruction. Please select a label for all the boxes you drew.");
+        this.setState({
+          error:
+            "You have an unlabeled obstruction. Please select a label for all the boxes you drew.",
+        });
         return; // Stop the submission here
       }
     }
 
     if (this.state.pavementType === "") {
-      alert("Please select the surface type of the sidewalk.");
+      this.setState({
+        error: "Please select the surface type of the sidewalk.",
+      });
       return;
     }
 
@@ -652,8 +687,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             top: y + height + this.props.marginWithInput,
           },
           inputComment: item.getAnnotationData().comment || "",
-          editable: false,
-          selected: item.getAnnotationData().selected,
+          editable: item.getAnnotationData().editable || false,
+          selected: item.getAnnotationData().selected || false,
+          isRejected: item.getAnnotationData().isRejected || false,
         });
       }
     }
@@ -708,6 +744,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             inputComment: item.getAnnotationData().comment || "",
             editable: item.getAnnotationData().editable || false,
             selected: item.getAnnotationData().selected || false,
+            isRejected: item.getAnnotationData().isRejected || false,
           });
         }
       }
@@ -718,6 +755,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           inputComment: "",
           editable: false,
           selected: false,
+          isRejected: false,
         });
       }
     }
@@ -785,6 +823,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (selectTarget >= 0) {
       if (!this.shapes[selectTarget].getAnnotationData().editable) {
         this.shapes[selectTarget].getAnnotationData().selected = true;
+        this.shapes[selectTarget].getAnnotationData().isRejected = false;
+        this.setState({ selected: true, isRejected: false });
         this.onShapeChange();
       }
     }
@@ -792,14 +832,25 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.currentAnnotationState.onMouseUp();
   };
 
-  private onUnSelectObstruction = () => {
+  private onUnselectObstruction = () => {
     const selectTarget = this.shapes.findIndex(
       (shape) => shape.getAnnotationData().id === this.selectedId
     );
 
     if (selectTarget >= 0) {
       if (!this.shapes[selectTarget].getAnnotationData().editable) {
-        this.shapes[selectTarget].getAnnotationData().selected = false;
+        const data = this.shapes[selectTarget].getAnnotationData();
+        if (data.selected || data.isRejected) {
+          // If was selected (Yes) or rejected (No), "Remove/Undo" takes it back to Neutral (Yellow Dashed)
+          data.selected = false;
+          data.isRejected = false;
+          this.setState({ selected: false, isRejected: false });
+        } else {
+          // If was Neutral, "No" takes it to Rejected (Red Solid)
+          data.selected = false;
+          data.isRejected = true;
+          this.setState({ selected: false, isRejected: true });
+        }
         this.onShapeChange();
       }
     }

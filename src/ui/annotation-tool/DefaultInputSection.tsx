@@ -26,6 +26,7 @@ export interface IDefaultInputSection {
   onUnselectObstruction: () => void;
   editable: boolean;
   selected: boolean;
+  isRejected: boolean;
 }
 
 const DefaultInputSection = ({
@@ -36,6 +37,7 @@ const DefaultInputSection = ({
   onUnselectObstruction,
   editable,
   selected,
+  isRejected,
 }: IDefaultInputSection) => {
   const [isCustom, setIsCustom] = useState(false);
 
@@ -59,16 +61,13 @@ const DefaultInputSection = ({
     }
   };
 
-  const handleCancelCustom = () => {
-    setIsCustom(false);
-    onChange("---"); // Reset to default
-  };
+
 
   return (
     <>
       {editable ? (
         <div className="rp-default-input-section">
-          
+
           {/* --- TERNARY OPERATOR: SWAP SELECT FOR INPUT --- */}
           {isCustom ? (
             // 1. CUSTOM INPUT MODE
@@ -79,29 +78,8 @@ const DefaultInputSection = ({
                 placeholder="Type label name..."
                 value={value === "---" ? "" : value}
                 onChange={(e) => onChange(e.target.value)}
-                style={{ 
-                  flexGrow: 1, 
-                  color: "black",        // <--- FIXED: Black Text
-                  backgroundColor: "white", // <--- FIXED: White Background for contrast
-                  border: "1px solid #ccc",
-                  borderRadius: "4px",
-                  padding: "0 8px"
-                }} 
+                style={{}}
               />
-              {/* "Back" Button to return to Dropdown */}
-              <a 
-                onClick={handleCancelCustom}
-                title="Cancel custom label"
-                style={{ 
-                  fontWeight: "bold", 
-                  fontSize: "14px", 
-                  padding: "0 10px",
-                  cursor: "pointer",
-                  color: "white" 
-                }}
-              >
-                ✕
-              </a>
             </>
           ) : (
             // 2. DROPDOWN MODE
@@ -109,7 +87,7 @@ const DefaultInputSection = ({
               className="rp-default-input-section_input"
               value={value || "---"}
               onChange={handleSelectChange}
-              style={{ flexGrow: 1 }}
+              style={{}}
             >
               <option value="---" disabled>
                 Select your option
@@ -154,6 +132,18 @@ const DefaultInputSection = ({
                 </a>
               </div>
             </>
+          ) : isRejected ? (
+            <>
+              <p>You selected {translateValue(value)} as not an obstruction.</p>
+              <div>
+                <a
+                  className="rp-default-input-section_select no"
+                  onClick={() => onUnselectObstruction()}
+                >
+                  Undo
+                </a>
+              </div>
+            </>
           ) : (
             <>
               <p>Is {translateValue(value)} an obstruction?</p>
@@ -182,7 +172,7 @@ const DefaultInputSection = ({
 const translateValue = (value: string) => {
   const standard = OBSTRUCTION_OPTIONS.find((opt) => opt.value === value);
   if (standard) return standard.label;
-  if (value && value !== "---") return value; 
+  if (value && value !== "---") return value;
   return value;
 };
 

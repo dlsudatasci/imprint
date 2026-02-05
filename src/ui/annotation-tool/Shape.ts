@@ -1,24 +1,25 @@
 import { IAnnotation } from "./Annotation";
 
- 
+
 export const defaultShapeStyle: IShapeStyle = {
-  padding: 5,
+  paddingX: 12,
+  paddingY: 4,
   lineWidth: 2,
   shadowBlur: 10,
   fontSize: 12,
   fontColor: "#212529",
   fontBackground: "#f8f9fa",
-  fontFamily:
-    "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', Helvetica, Arial, sans-serif",
+  fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', Helvetica, Arial, sans-serif",
   shapeBackground: "hsla(210, 16%, 93%, 0.2)",
-  shapeStrokeStyle: "#f8f9fa",
+  shapeStrokeStyle: "yellow",
   shapeShadowStyle: "hsla(210, 9%, 31%, 0.35)",
   transformerBackground: "black",
   transformerSize: 10,
 };
 
 export interface IShapeStyle {
-  padding: number;
+  paddingX: number;
+  paddingY: number;
   lineWidth: number;
   shadowBlur: number;
   fontSize: number;
@@ -130,59 +131,100 @@ export class RectShape implements IShape {
     );
     canvas2D.save();
     const {
-      padding,
+      paddingX,
+      paddingY,
       lineWidth,
       shadowBlur,
       fontSize,
       fontFamily,
       shapeBackground,
-      shapeStrokeStyle,
       shapeShadowStyle,
     } = this.shapeStyle;
 
     canvas2D.shadowBlur = shadowBlur;
     canvas2D.shadowColor = shapeShadowStyle;
-    canvas2D.strokeStyle = shapeStrokeStyle;
-    canvas2D.lineWidth = lineWidth;
+
+    const { selected, isRejected, editable, comment } = this.annotationData;
+
+    let strokeColor: string;
+    let isSolid = false;
+
+    if (editable) {
+      strokeColor = "orange";
+      if (comment) {
+        isSolid = true;
+      }
+    } else if (selected) {
+      strokeColor = "#28a745"; // Success green
+      isSolid = true;
+    } else if (isRejected) {
+      strokeColor = "#dc3545"; // Danger red
+      isSolid = true;
+    } else {
+      strokeColor = "yellow";
+      isSolid = false;
+    }
+
+    canvas2D.strokeStyle = strokeColor;
+    let currentLineWidth = lineWidth;
+    if (isSolid) {
+      currentLineWidth = 3;
+      canvas2D.setLineDash([]);
+    } else {
+      canvas2D.setLineDash([5, 5]);
+    }
+
+    canvas2D.strokeStyle = strokeColor;
+    canvas2D.lineWidth = currentLineWidth;
     canvas2D.strokeRect(x, y, width, height);
+    canvas2D.setLineDash([]); // Reset dash for subsequent drawing (like shadows/labels)
     canvas2D.restore();
     if (selectedAnnotation) {
       canvas2D.fillStyle = shapeBackground;
       canvas2D.fillRect(x, y, width, height);
     } else {
-      const { comment, selected, editable } = this.annotationData;
       if (comment) {
-        canvas2D.font = `14px ${fontFamily}`;
+        canvas2D.font = `bold ${fontSize}px ${fontFamily}`;
         const metrics = canvas2D.measureText(comment);
         canvas2D.save();
+
+        let labelBgColor = "yellow";
+        const labelTextColor = "black";
+
         if (editable) {
-          canvas2D.fillStyle = "black";
-        } else {
-          if (selected) {
-            canvas2D.fillStyle = "green";
-          } else {
-            canvas2D.fillStyle = "white";
-          }
-        }
-        // canvas2D.fillStyle = fontBackground;
-        canvas2D.fillRect(
-          x,
-          y,
-          metrics.width + padding * 2,
-          fontSize + padding * 2
-        );
-        canvas2D.textBaseline = "top";
-        if (editable) {
-          canvas2D.fillStyle = "white";
-        } else {
-          if (selected) {
-            canvas2D.fillStyle = "white";
-          } else {
-            canvas2D.fillStyle = "black";
-          }
+          labelBgColor = "orange";
+        } else if (selected) {
+          labelBgColor = "#28a745"; // Success green
+        } else if (isRejected) {
+          labelBgColor = "#dc3545"; // Danger red
         }
 
-        canvas2D.fillText(comment, x + padding, y + padding);
+        canvas2D.fillStyle = labelBgColor;
+
+        // Draw rounded rectangle background
+        const rectX = x;
+        const rectY = y;
+        const rectW = metrics.width + paddingX * 2;
+        const rectH = fontSize + paddingY * 2;
+        const radius = 5;
+
+        canvas2D.beginPath();
+        canvas2D.moveTo(rectX + radius, rectY);
+        canvas2D.lineTo(rectX + rectW - radius, rectY);
+        canvas2D.quadraticCurveTo(rectX + rectW, rectY, rectX + rectW, rectY + radius);
+        canvas2D.lineTo(rectX + rectW, rectY + rectH - radius);
+        canvas2D.quadraticCurveTo(rectX + rectW, rectY + rectH, rectX + rectW - radius, rectY + rectH);
+        canvas2D.lineTo(rectX + radius, rectY + rectH);
+        canvas2D.quadraticCurveTo(rectX, rectY + rectH, rectX, rectY + rectH - radius);
+        canvas2D.lineTo(rectX, rectY + radius);
+        canvas2D.quadraticCurveTo(rectX, rectY, rectX + radius, rectY);
+        canvas2D.closePath();
+        canvas2D.fill();
+
+        canvas2D.textBaseline = "middle";
+        canvas2D.fillStyle = labelTextColor;
+
+        canvas2D.fillText(comment, x + paddingX, y + rectH / 2);
       }
     }
     canvas2D.restore();

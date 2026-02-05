@@ -66,18 +66,18 @@ export class DefaultAnnotationState implements IAnnotationState {
         },
         onShapeChange,
         {
-          padding: 5,
+          paddingX: 12,
+          paddingY: 4,
           lineWidth: 2,
           shadowBlur: 10,
           fontSize: 12,
           fontColor: "#212529",
           fontBackground: "#f8f9fa",
-          fontFamily:
-            "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', Helvetica, Arial, sans-serif",
+          fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', Helvetica, Arial, sans-serif",
           shapeBackground: "hsla(210, 16%, 93%, 0.2)",
-          shapeStrokeStyle: "yellow",
+          shapeStrokeStyle: "orange",
           shapeShadowStyle: "hsla(210, 9%, 31%, 0.35)",
-          transformerBackground: "#5c7cfa",
+          transformerBackground: "black",
           transformerSize: 10,
         }
       )

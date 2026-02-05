@@ -6,4 +6,5 @@ export interface IAnnotation<T = IShapeData> {
   mark: T;
   editable: boolean;
   selected: boolean;
+  isRejected?: boolean;
 }

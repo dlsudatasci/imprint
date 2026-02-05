@@ -9,7 +9,7 @@ const handler = async (req, res) => {
     console.log("Insert user activity");
     await db
       .collection("users")
-      .update(
+      .updateOne(
         { username: username },
         { $push: { activities: { activity, date, tag } } }
       );

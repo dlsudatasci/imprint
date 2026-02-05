@@ -1,4 +1,4 @@
-import { ReactPictureAnnotation } from "./react-picture-annotation/index";
+import { ReactPictureAnnotation } from "@/ui/annotation-tool/index";
 import H1 from "ui/heading/h1";
 import Button from "@/ui/buttons/Button";
 import Link from "next/link";

@@ -1,4 +1,4 @@
-import { ReactPictureAnnotation } from "./react-picture-annotation/index";
+import { ReactPictureAnnotation } from "@/ui/annotation-tool/index";
 
 export default function AnnotateForm({
   selectedObjects,
@@ -7,8 +7,8 @@ export default function AnnotateForm({
   url,
   id,
 }) {
-  const onSelect = (selectedId) => {};
-  const onChange = (data) => {};
+  const onSelect = (selectedId) => { };
+  const onChange = (data) => { };
 
   const annotObjects = newObjects;
   for (let i = 0; i < detectedObjects.length; i++) {

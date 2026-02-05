@@ -37,7 +37,7 @@ export default function AnnotationSessionSelection({ username }) {
       <section className="pb-12 mt-12">
         <div className="flex flex-col border px-12 py-12 my-5 rounded-md shadow-xl mb-64">
           <H2>How many annotations do you want to do for this session?</H2>
-          <p className="mt-4 text-[#1d1d1d] pr-20">
+          <p className="mt-4 text-accent pr-20">
             Each image takes, on average, around 1 minute to accomplish. In each
             image you want to annotate, you will be required to identify
             obstructions, rate sidewalk accessibility, and identify the surface

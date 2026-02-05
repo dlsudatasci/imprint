@@ -9,6 +9,6 @@
 }
 
 .solid {
-    @apply bg-[#1d1d1d] text-white border-black;
-    @apply hover:bg-white hover:text-[#1d1d1d];
+    @apply bg-accent text-white border-black;
+    @apply hover:bg-white hover:text-accent;
 }

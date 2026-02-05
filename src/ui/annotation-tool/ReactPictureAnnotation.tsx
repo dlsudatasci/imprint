@@ -191,11 +191,36 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       inputComment,
       editable,
       selected,
+      sliderValue,
     } = this.state;
 
     return (
       <section className="annotation-container">
-        
+        <H2 className="my-4 annotation-step-text">
+          {" "}
+          <span>Step 1: Identify Obstruction</span>
+        </H2>
+        <P className="my-4 mx-5">
+          In this step, we want to identify objects{" "}
+          <span className="font-bold">only on the sidewalk surface. </span>
+          Please{" "}
+          <span className="font-bold">
+            click on the white boxes and select &quot;Yes&quot;{" "}
+          </span>
+          if the object {" "}
+          <span className="font-bold">
+            blocks the pathway {" "}
+          </span>
+          for a pedestrian to easily walk along the sidewalk. If there are other objects
+          in the sidewalk that you think are an obstruction,{" "}
+          <span className="font-bold">draw a box and label the object </span>by
+          clicking and dragging your mouse from the top left to the bottom
+          right.{" "}
+          <span className="font-bold">
+            If there are no obstructions on the sidewalk, or if there are no sidewalks found on the image, feel free to move
+            forward to the next step.
+          </span>
+        </P>
         {/* Annotation Tool */}
         <div className="rp-container">
           <div className="rp-stage">
@@ -280,12 +305,257 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   })}
               </ul>
             </div>
-           
+            <div className="rp-annotations-list">
+              <H3 className>
+                {" "}
+                <span className="text-2xl">New Obstructions</span>
+              </H3>
+              <div className="annotation-instruction">
+                <p>These are the objects that you have drawn yourself.</p>
+              </div>
+              <ul>
+                {this.currentAnnotationData
+                  .sort((a, b) => a.id.localeCompare(b.id))
+                  .map((data) => {
+                    if (data.editable) {
+                      return (
+                        <li
+                          className="flex flex-row ml-5"
+                          onClick={(e) => {
+                            this.currentAnnotationState.onMouseUp();
+                            this.currentAnnotationState.onMouseDown(
+                              data.mark.x + 1,
+                              data.mark.y + 1
+                            );
+                            this.currentAnnotationState.onMouseUp();
+                          }}
+                          key={data.id}
+                        >
+                          <p>
+                            <a
+                              className="cursor-pointer transition ease-in-out duration-300 hover:bg-red-700 px-2 py-1 "
+                              onClick={() => {
+                                this.selectedId = data.id;
+                                this.onDelete();
+                              }}
+                            >
+                              x
+                            </a>
+                            <span
+                              className="uppercase"
+                              onClick={(e) => {
+                                this.currentAnnotationState.onMouseDown(
+                                  data.mark.x + 1,
+                                  data.mark.y + 1
+                                );
+                                this.currentAnnotationState.onMouseUp();
+                              }}
+                            >
+                              {data.comment !== undefined
+                                ? data.comment.replaceAll("_", " ")
+                                : "Select Option"}
+                            </span>
+                          </p>
+                        </li>
+                      );
+                    } else {
+                      return <div />;
+                    }
+                  })}
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* RP Form */}
+        <div className="rp-form my-10">
+          {/* Slider Form */}
+          <H2 className="annotation-step-text">
+            <span>Step 2: Rate Sidewalk Accessibility</span>
+          </H2>
+          <P className="my-4 mx-5">
+            In this step, please rate the sidewalk accessibility based on your
+            understanding of sidewalk accessibility. A score of 1 means that {" "}
+            <span className="font-bold">
+              there is no sidewalk,
+            </span>
+            {" "}or {" "}
+            <span className="font-bold">
+              the sidewalk on the image is completely
+              unsafe and inaccessible for abled pedestrians.{" "}
+            </span>
+            On the other hand, a score of 10
+            means that {" "}
+            <span className="font-bold">
+              the sidewalk is safe and accessible for abled pedestrians.{" "}
+            </span>
+
+          </P>
+          <div className="slider-forms">
+            <div className="slider-div">
+              <fieldset>
+                <div className="rp-slider">
+                  <span className="range-slider-value" id="slider-value">
+                    Your accessibility rating: {sliderValue}
+                  </span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    step="1"
+                    defaultValue={sliderValue}
+                    list="sliderValueList"
+                    id="accessibilityScore"
+                    onChange={(e) => {
+                      this.setState({
+                        ...this.state,
+                        sliderValue: e.target.valueAsNumber,
+                      });
+                    }}
+                  />
+
+                  <datalist id="sliderValueList">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                    <option value="8">8</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                  </datalist>
+                </div>
+              </fieldset>
+            </div>
+            <div className="slider-description">
+              <p className="text-xl">Dangerous and inaccessible</p>
+              <p className="text-xl">Safe and accessible for abled pedestrians</p>
+            </div>
+          </div>
+          {/* Radio Form */}
+
+          <div className="radio-forms">
+            <H2 className="annotation-step-text">
+              <span>Step 3: Choose the Surface Type</span>
+            </H2>
+            <P className="my-4 mx-5">
+              Lastly, please choose the surface type that <b>best describes the
+                sidewalk </b> found in the image.
+            </P>
+            <fieldset className="grouped_radio">
+              <label className="radio-control" htmlFor="smooth_paving">
+                <p className="radio-label">Smooth Surface</p>
+                <input
+                  type="radio"
+                  name="radio1"
+                  id="smooth_paving"
+                  value="smooth_paving"
+                  onChange={(e) => {
+                    this.setState({
+                      ...this.state,
+                      pavementType: e.target.value,
+                    });
+                  }}
+                />
+                <img src="/images/annotationTool/smooth_paving.png"></img>
+              </label>
+              <label className="radio-control" htmlFor="rough_paving">
+                <p className="radio-label">Rough Surface</p>
+                <input
+                  type="radio"
+                  name="radio1"
+                  id="rough_paving"
+                  value="rough_paving"
+                  onChange={(e) => {
+                    this.setState({
+                      ...this.state,
+                      pavementType: e.target.value,
+                    });
+                  }}
+                />
+                <img src="/images/annotationTool/rough_paving.jpg"></img>
+              </label>
+              <label className="radio-control" htmlFor="slippery_paving">
+                <p className="radio-label">Tile/Slippery Surface</p>
+                <input
+                  type="radio"
+                  name="radio1"
+                  id="slippery_paving"
+                  value="slippery_paving"
+                  onChange={(e) => {
+                    this.setState({
+                      ...this.state,
+                      pavementType: e.target.value,
+                    });
+                  }}
+                />
+                <img src="/images/annotationTool/tile_slippery_sidewalk.jpg"></img>
+              </label>
+              <label className="radio-control" htmlFor="no_sidewalk">
+                <p className="radio-label">No Sidewalk</p>
+                <input
+                  type="radio"
+                  name="radio1"
+                  id="no_sidewalk"
+                  value="no_sidewalk"
+                  onChange={(e) => {
+                    this.setState({
+                      ...this.state,
+                      pavementType: e.target.value,
+                    });
+                  }}
+                />
+                <img src="/images/annotationTool/no_sidewalk.png"></img>
+              </label>
+            </fieldset>
+            <p className="text-center mt-10">
+              {this.surfaceTypeText(this.state.pavementType)}
+            </p>
+          </div>
+
+          <div className="flex justify-center my-12 gap-4"> {/* Added gap-4 for spacing */}
+
+            {/* --- NEW PREVIOUS BUTTON --- */}
+            {this.props.currentAnnotationCount > 1 && (
+              <button
+                className="transition-all duration-500 ease-in-out font-semibold py-2 px-6 rounded border hover:-translate-y-0.5 hover:shadow-md text-accent hover:border-accent"
+                type="button"
+                onClick={this.onPrevious}
+              >
+                Previous
+              </button>
+            )}
+
+            {/* Existing Submit Button */}
+            <button
+              className="transition-all duration-500 ease-in-out font-semibold py-2 px-6 rounded border bg-primary border-primary text-white hover:bg-opacity-90 hover:-translate-y-0.5 hover:shadow-md"
+              type="submit"
+              onClick={this.submit}
+            >
+              Submit
+            </button>
           </div>
         </div>
       </section>
     );
   }
+
+  private onPrevious = () => {
+    // 1. Check if we are at the start
+    if (this.props.currentAnnotationCount <= 1) return;
+
+    // 2. Decrement the counter in Local Storage
+    const currentCount = parseInt(localStorage.getItem("annotationCurrentCount") || "1");
+    window.localStorage.setItem(
+      "annotationCurrentCount",
+      JSON.stringify(currentCount - 1)
+    );
+
+    // 3. Reload to fetch the previous image
+    Router.reload();
+  };
 
   private submit = async () => {
     // isLoading(true);
@@ -302,13 +572,25 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       (element) => element.editable
     );
 
+    for (const object of newObjects) {
+      if (!object.comment || object.comment === "---") {
+        alert("You have an unlabeled obstruction. Please select a label for all the boxes you drew.");
+        return; // Stop the submission here
+      }
+    }
+
+    if (this.state.pavementType === "") {
+      alert("Please select the surface type of the sidewalk.");
+      return;
+    }
+
     const body = {
       username: username,
       imageID: this.props.imageID,
       city: this.props.city,
       accessibilityRating: this.state.sliderValue,
       pavementType: this.state.pavementType,
-      selectedObjectsID: selectedObjectsID,
+      selectedObjectsID: selectedObjects,
       newObjects: newObjects,
     };
     const res = await fetch("/api/annotationSubmit", {

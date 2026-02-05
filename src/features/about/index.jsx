@@ -44,10 +44,10 @@ export default function AboutSection() {
         head="Human-X Interactions Lab Research Center"
         img="theWho.jpg"
         desc={
-              <>
-            Imprint is currently being developed by Francis Bawa, a BSMS Computer Science student from De La Salle University with 
-            interests in human-computer interaction and human centered mobility. The platform invites volunteers, students, and everyday 
-            users to participate in meaningful data annotation. By contributing to Imprint, users help improve AI models while supporting 
+          <>
+            Imprint is currently being developed by Francis Bawa, a BSMS Computer Science student from De La Salle University with
+            interests in human-computer interaction and human centered mobility. The platform invites volunteers, students, and everyday
+            users to participate in meaningful data annotation. By contributing to Imprint, users help improve AI models while supporting
             research that addresses real social and urban challenges. If you are interested in learning more about the research, please read our{' '}
             <Link href="/terms-of-use" className="text-primary hover:underline">
               Terms of Use
@@ -59,24 +59,24 @@ export default function AboutSection() {
       <div className="z-10 flex justify-end max-w-5xl mx-auto mt-10 relative mb-12">
         <div className="z-10 flex justify-end max-w-5xl mx-auto mt-10 relative mb-12 gap-4 px-5 md:px-0">
           {/* LEFT ARROW BUTTON */}
-          <button 
-            type="button" 
-            className="outline-none focus:outline-none border-black border-2 p-2 text-[#1d1d1d] transition-colors duration-300 ease-in-out hover:text-white hover:bg-[#1d1d1d]" 
+          <button
+            type="button"
+            className="outline-none focus:outline-none border-black border-2 p-2 text-accent transition-colors duration-300 ease-in-out hover:text-white hover:bg-accent"
             onClick={() => { setSlide((slideState - 1 + max) % max); scrollTop(); }}
             aria-label="Previous Slide"
-          > 
+          >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10">
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
             </svg>
           </button>
 
           {/* RIGHT ARROW BUTTON */}
-          <button 
-            type="button" 
-            className="outline-none focus:outline-none border-black border-2 p-2 text-[#1d1d1d] transition-colors duration-300 ease-in-out hover:text-white hover:bg-[#1d1d1d]" 
+          <button
+            type="button"
+            className="outline-none focus:outline-none border-black border-2 p-2 text-accent transition-colors duration-300 ease-in-out hover:text-white hover:bg-accent"
             onClick={() => { setSlide((slideState + 1) % max); scrollTop(); }}
             aria-label="Next Slide"
-          > 
+          >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10">
               <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
             </svg>

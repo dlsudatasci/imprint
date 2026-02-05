@@ -1,4 +1,4 @@
 .h1 {
-  @apply text-[#1d1d1d];
+  @apply text-accent;
   @apply text-4xl lg:text-6xl xl:text-7xl;
 }

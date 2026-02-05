@@ -2,7 +2,7 @@
   @apply py-3;
 }
 
-.ul > li,
-.ul > button {
-  @apply transition-colors ease-in duration-75 hover:text-white hover:bg-[#1d1d1d] px-5 cursor-pointer;
+.ul>li,
+.ul>button {
+  @apply transition-colors ease-in duration-75 hover:text-white hover:bg-accent px-5 cursor-pointer;
 }

@@ -42,10 +42,11 @@ export default function AnnotationDone({ data, total }) {
       <div className="flex flex-col border px-5 py-5 my-5 rounded-md">
         <H2>Annotation session done!</H2>
         <div className="py-4">
-          <Button className="mr-2">
+          <Button className="mr-2" variant="solid">
             <Link href="/contribute">Dashboard</Link>
           </Button>
           <Button
+            variant="solid"
             onClick={() => {
               router.reload(window.location.pathname);
             }}

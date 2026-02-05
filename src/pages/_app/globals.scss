@@ -5,10 +5,11 @@
 :root {
   --c-primary: #004aad;
   --c-accent: #1d1d1d;
+  --offwhite: #F8F7F9;
 }
 
 body {
-  background-color: #F8F7F9;
+  background-color: var(--offwhite);
   color: #333;
 }
 

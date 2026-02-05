@@ -34,7 +34,7 @@ export default function ContributePage({ session }) {
             <div className="mt-4 md:mt-2 flex space-x-4">
               <Link href="/contribute/help">
                 <button
-                  className={`${baseButton} text-[#1d1d1d] hover:border-[#1d1d1d] `}
+                  className={`${baseButton} text-accent hover:border-accent `}
                 >
                   Annotation Guide
                 </button>

@@ -38,7 +38,7 @@ export default function login({ providers, csrfToken }) {
       description="Login to Imprint! Login to Imprint in order to contribute to our platform."
       contribute={false}
     >
-      <section className="container mx-auto p-4 my-12 mb-32 bg-[#F8F7F9] flex flex-col items-center justify-center">
+      <section className="container mx-auto p-4 my-12 mb-32 bg-offwhite flex flex-col items-center justify-center">
         <div className="w-10/12 sm:w-8/12 md:w-6/12 lg:w-5/12 xl:w-4/12 mb-4">
           <H1>Login to Imprint!</H1>
           <p className="mt-5">
@@ -72,7 +72,7 @@ export default function login({ providers, csrfToken }) {
             <div className="flex items-center">
               <div className="w-2/3 flex items-center"></div>
               <button
-                className="ml-auto w-1/3 bg-[#1d1d1d] text-white p-2 rounded font-semibold hover:bg-gray-900"
+                className="ml-auto w-1/3 bg-accent text-white p-2 rounded font-semibold hover:bg-gray-900"
                 type="submit"
               >
                 {loadingForm ? "Loading..." : "Login"}

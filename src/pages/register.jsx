@@ -142,7 +142,7 @@ export default function register({ providers, csrfToken }) {
       description="Register to Imprint! Register to Imprint in order to contribute to our platform."
       contribute={false}
     >
-      <section className="container mx-auto p-4 my-12 mb-32 bg-[#F8F7F9] flex flex-col items-center justify-center">
+      <section className="container mx-auto p-4 my-12 mb-32 bg-offwhite flex flex-col items-center justify-center">
         <div className="w-10/12 sm:w-8/12 md:w-6/12 lg:w-5/12 xl:w-5/12 mb-4">
           <H1>Register to Imprint!</H1>
           <p className="mt-5">
@@ -235,15 +235,15 @@ export default function register({ providers, csrfToken }) {
           />
           <label className="font-bold mb-2 block" htmlFor="frequentlyWalkedCities">
             Frequently Walked Cities
-            </label>
-            <CreatableSelect
-              isMulti
-              options={cityOptions}
-              onChange={(selectedOptions) => setFrequentlyWalkedCities(selectedOptions)}
-              className="mb-4"
-              placeholder="Type and select cities (e.g., Makati, Cebu)"
-              styles={customSelectStyles}
-            />
+          </label>
+          <CreatableSelect
+            isMulti
+            options={cityOptions}
+            onChange={(selectedOptions) => setFrequentlyWalkedCities(selectedOptions)}
+            className="mb-4"
+            placeholder="Type and select cities (e.g., Makati, Cebu)"
+            styles={customSelectStyles}
+          />
           <label className="font-bold" htmlFor="age">
             Age
           </label>
@@ -344,7 +344,7 @@ export default function register({ providers, csrfToken }) {
               </label>
             </div>
             <button
-              className="ml-auto w-1/3 bg-[#1d1d1d] text-white p-2 rounded font-semibold hover:bg-gray-900"
+              className="ml-auto w-1/3 bg-accent text-white p-2 rounded font-semibold hover:bg-gray-900"
               type="submit"
               disabled={loadingForm}
             >

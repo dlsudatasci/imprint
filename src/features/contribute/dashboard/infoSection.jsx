@@ -55,7 +55,7 @@ export default class DashboardInfo extends React.Component {
 
         <div className="flex flex-col mx-auto md:flex-row container lg:max-w-7xl lg:w-4/5 ">
           <div className="mx-auto sm:mx-0 md:w-2/5">
-            <div className="bg-white w-80 p-5 shadow-2xl border rounded-md -mt-16">
+            <div className="bg-white w-96 p-5 shadow-2xl border rounded-md -mt-16">
               <H3 className="mb-4">Your profile</H3>
               <P>
                 <Tooltip>Total number of annotations you made</Tooltip>
@@ -76,11 +76,11 @@ export default class DashboardInfo extends React.Component {
               </P>
             </div>
           </div>
-          
+
           {/* CHANGED: Added 'flex flex-col' so we can control the list height */}
           <div className="mt-10 md:-mt-12 px-5 h-96 flex flex-col">
             <H3>Recent Activity</H3>
-            
+
             {/* CHANGED: Added 'flex-1' (fills space) and 'overflow-y-auto' (scrolls) */}
             <ul className="mt-5 flex-1 overflow-y-auto pr-2">
               {this.state.userActivity.length > 0 ? (

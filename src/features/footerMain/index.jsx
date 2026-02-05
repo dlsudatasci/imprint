@@ -72,7 +72,7 @@ export default function Footer() {
                 </Link>
               </p>
             </div>
-            <div>
+            <div className="md:flex-1 md:px-4 text-center md:text-center">
               <p className="text-white">
                 © 2026 IMPRINT
               </p>

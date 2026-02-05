@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
+import { useOutsideClick } from "@/hooks/useOutsideClick";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 
@@ -20,22 +21,13 @@ export default function Nav() {
     setMenuState(!menuState);
   };
 
-  const useOutsideAlerter = (ref) => {
-    useEffect(() => {
-      function handleClickOutside(event) {
-        if (ref.current && !ref.current.contains(event.target)) {
-          setMenuState(false);
-        }
-      }
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside);
-      };
-    }, [ref]);
-  };
-
+  /* 
+   * Replaced inline hook with shared implementation 
+   */
   const wrapperRef = useRef(null);
-  useOutsideAlerter(wrapperRef);
+  useOutsideClick(wrapperRef, () => {
+    setMenuState(false);
+  });
 
   return (
     <nav className="flex container mx-auto px-1 md:px-5 py-5 md:py-10 z-10 relative">
@@ -49,16 +41,16 @@ export default function Nav() {
           variant="solid"
           onClick={menuToggle}
           className={`mr-2 md:mr-5 pt-4 z-10 hover:bg-red-500 hover:text-white border-red-500 ${menuState
-              ? "bg-red-500 text-white"
-              : "text-red-500 bg-transparent focus:outline-none"
+            ? "bg-red-500 text-white"
+            : "text-red-500 bg-transparent focus:outline-none"
             }`}
         >
           Menu
         </Button>
         <div
           className={`absolute mt-16 mr-5 w-32 z-20 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 transition-all duration-300 ease-in-out origin-top-right ${menuState
-              ? "opacity-100 scale-100 pointer-events-auto"
-              : "opacity-0 scale-95 pointer-events-none"
+            ? "opacity-100 scale-100 pointer-events-auto"
+            : "opacity-0 scale-95 pointer-events-none"
             }`}
         >
           <ul className={styles.ul}>

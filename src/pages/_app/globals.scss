@@ -1,0 +1,399 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --c-primary: #004aad;
+  --c-accent: #1d1d1d;
+}
+
+body {
+  background-color: #F8F7F9;
+  color: #333;
+}
+
+/* =========================================
+   ANNOTATION TOOL STYLES (ORIGINAL RESTORED)
+   ========================================= */
+
+// Package Wrapper
+.rp-container {
+  --tw-border-opacity: 1;
+  border-color: rgba(0, 0, 0, var(--tw-border-opacity));
+  border-width: 1px;
+  display: flex;
+
+  @media screen and (max-width: 1260px) {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+}
+
+.rp-stage {
+  position: relative;
+  min-width: 960px;
+  min-height: 600px;
+  width: 960px !important;
+  height: 600px !important;
+}
+
+.rp-image {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  border: 5px solid black;
+}
+
+.rp-uneditable-lbl {
+  background-color: white !important;
+}
+
+.rp-shapes {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  cursor: crosshair;
+}
+
+.rp-selected-input {
+  position: absolute;
+}
+
+.rp-delete {
+  width: 20px;
+  height: 20px;
+  fill: white;
+}
+
+.rp-delete-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Input Bar --- */
+.rp-default-input-section {
+  display: flex;
+  align-items: stretch;
+  background-color: white;
+  border: none;
+}
+
+.rp-default-input-section input {
+  padding: 20px;
+  color: white;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.rp-default-input-section input::placeholder {
+  color: #94bfff;
+}
+
+.rp-default-input-section a {
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 35px;
+  color: white;
+  font-size: 12px;
+  background-color: black;
+  cursor: pointer;
+  transition: background-color 0.5s, color 0.5s;
+}
+
+.rp-default-input-section a:hover,
+.rp-default-input-section a:active {
+  background-color: red;
+}
+
+.rp-default-input-section_select.yes:hover {
+  background-color: green;
+}
+
+.rp-default-input-section_select.no:hover {
+  background-color: red;
+}
+
+/* --- Read Only Popup --- */
+.rp-default-select-section {
+  display: flex;
+  flex-direction: column;
+  background-color: black;
+  padding: 10px 10px;
+  z-index: 100 !important;
+
+  p {
+    text-align: center;
+    font-size: 16px;
+    color: white;
+    margin: 0;
+  }
+
+  div {
+    display: flex;
+    justify-content: center;
+
+    a {
+      font-size: 12px;
+      width: 40%;
+      text-align: center;
+      border: 1px solid white;
+      color: white;
+      margin: 5px 10px 5px 0px;
+      cursor: pointer;
+    }
+  }
+}
+
+/* --- Right Side List (Annotations) --- */
+.rp-annotations {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-left: 1rem;
+
+  @media screen and (max-width: 1260px) {
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: center;
+    margin-left: 0;
+
+    .rp-annotations-list {
+      width: 50%;
+      --tw-border-opacity: 1;
+      border-color: rgba(0, 0, 0, var(--tw-border-opacity));
+      border-width: 1px;
+      min-height: 260px;
+      padding-left: 10px;
+      padding-right: 10px;
+    }
+  }
+
+  ul {
+    list-style: none;
+    height: 150px;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    overflow-y: auto;
+
+    li {
+      span {
+        cursor: pointer;
+
+        &:hover {
+          text-decoration: underline;
+        }
+      }
+    }
+  }
+}
+
+/* --- Form (Radios & Sliders) --- */
+.rp-form {
+  display: flex;
+  flex-direction: column;
+
+  fieldset {
+    border: none;
+  }
+
+  button.annotationModalBtn {
+    border: 1px solid #232323;
+    align-content: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    color: white;
+    cursor: pointer;
+    outline: none;
+    vertical-align: middle;
+    text-decoration: none;
+    background: transparent;
+    margin: 0;
+    padding: 0.3rem 1rem;
+    position: relative;
+    width: 110px;
+    margin-right: 1rem;
+    background-color: rgb(1, 100, 1);
+
+    &:hover {
+      background-color: green;
+    }
+  }
+
+  .radio-forms {
+    .grouped_radio {
+      display: flex;
+      flex-direction: row;
+      justify-content: space-around;
+      width: 100%;
+    }
+
+    label.radio-control {
+      user-select: none;
+      cursor: pointer;
+
+      p {
+        margin: 0;
+        margin-bottom: -1.6rem;
+        text-align: center;
+        font-size: 1.2rem;
+      }
+
+      img {
+        display: block;
+        pointer-events: none;
+        width: 200px;
+        height: 200px;
+        opacity: 0.8;
+        margin-top: 0.4rem;
+        border: 5px solid black;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+        transition: opacity 500ms ease-out, border 500ms ease-out;
+
+        &:hover {
+          opacity: 1;
+        }
+      }
+
+      input[type="radio"]:checked~img {
+        opacity: 1 !important;
+        border-color: #094 !important;
+        box-shadow: 0 1px 8px rgba(0, 0, 0, 0.4) !important;
+      }
+    }
+  }
+
+  .slider-forms {
+    display: flex;
+    flex-direction: column;
+    margin: auto;
+
+    .slider-div {
+      display: block;
+      margin: auto;
+
+      fieldset {
+        .rp-slider {
+          margin: 1rem 0% 1rem 0%;
+
+          datalist {
+            display: flex;
+            width: 708px;
+            justify-content: space-between;
+            height: 1rem;
+          }
+
+          input {
+            width: 700px;
+            height: 3px;
+            border-radius: 5px;
+            outline: none;
+            padding: 0;
+            margin: 0;
+          }
+        }
+      }
+    }
+
+    .slider-description {
+      display: flex;
+      justify-content: space-between;
+      width: 940px;
+      margin-bottom: 3rem;
+
+      p {
+        max-width: 30vw;
+        font-size: 1.3rem;
+        font-weight: bold;
+      }
+    }
+
+    .range-slider-value {
+      display: block;
+      position: relative;
+      width: 300px;
+      color: white;
+      line-height: 20px;
+      text-align: center;
+      border-radius: 3px;
+      background: black;
+      padding: 10px 10px;
+      font-size: 1.2rem;
+    }
+  }
+}
+
+/* --- Custom Steps --- */
+.annotation-container {
+  .annotation-step-text {
+    display: flex;
+
+    span {
+      border: 1px solid black;
+      padding: 0.5rem 0.8rem;
+      width: 100% !important;
+      background: white;
+      font-size: 1.8rem;
+    }
+
+    &:after {
+      content: " ";
+      z-index: 1;
+      position: relative;
+      background-color: black;
+      margin-top: 1.8rem;
+      width: 100% !important;
+      height: 1px;
+    }
+  }
+
+  p {
+    font-size: 1rem;
+  }
+}
+
+/* --- Global Buttons --- */
+.annotation-submit-btn {
+  background-color: var(--c-primary);
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 1.2rem;
+  transition: all 0.3s;
+  color: #fff;
+  border-color: var(--c-primary);
+
+  &:hover {
+    color: white;
+    background-color: var(--c-primary);
+  }
+}
+
+.annotation-prev-btn {
+  background-color: var(--c-accent);
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 1.2rem;
+  transition: all 0.3s;
+  color: #fff;
+  border-color: var(--c-accent);
+
+  &:hover {
+    color: white;
+    background-color: var(--c-accent);
+  }
+}
+
+.gifContainer {
+  width: 80vw;
+  max-width: 60rem;
+}

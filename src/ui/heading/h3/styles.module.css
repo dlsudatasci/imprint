@@ -1,0 +1,4 @@
+.h3 {
+  @apply text-[#1d1d1d];
+  @apply text-2xl lg:text-3xl xl:text-4xl;
+}

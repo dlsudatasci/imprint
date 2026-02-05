@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { getSession, useSession } from "next-auth/react";
@@ -15,7 +15,12 @@ export default function AnnotationDone({ data, total }) {
 
   if (typeof window !== "undefined" && loading) return null;
 
+  const initialized = useRef(false);
+
   useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
+
     window.localStorage.setItem("annotationTotalCount", null);
     window.localStorage.setItem("annotationCurrentCount", null);
     window.localStorage.setItem("annotationSetData", null);

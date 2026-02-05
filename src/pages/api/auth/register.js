@@ -36,6 +36,14 @@ const handler = async (req, res) => {
     if (username.length > 50) {
       return res.status(422).json({ message: "Username is too long." });
     }
+
+    if (age < 0) {
+      return res.status(422).json({ message: "Age cannot be negative." });
+    }
+
+    if (age < 16) {
+      return res.status(422).json({ message: "You must be at least 16 years old to register." });
+    }
     // ---------------------------
 
     // Check for duplicates

@@ -21,10 +21,7 @@ export default function register() {
     }
   }, [session, loading, router]);
 
-  const [passwordError, setPasswordError] = useState(false);
-  const [usernameError, setUsernameError] = useState(false);
-  const [emailError, setEmailError] = useState(false);
-  const [serverError, setServerError] = useState(false);
+  const [serverError, setServerError] = useState("");
 
   const cityOptions = cities.map((city) => ({
     value: city,
@@ -78,9 +75,7 @@ export default function register() {
 
   async function onSubmit(e) {
     e.preventDefault();
-    setEmailError(false);
-    setServerError(false);
-    setUsernameError(false);
+    setServerError("");
     setLoading(true);
 
     const username = e.currentTarget.username.value;
@@ -106,14 +101,25 @@ export default function register() {
       referred,
     };
 
+    const confirmInput = e.currentTarget.confirmPassword;
+    const emailInput = e.currentTarget.email;
+    const usernameInput = e.currentTarget.username;
+    const passwordInput = e.currentTarget.password;
+    const ageInput = e.currentTarget.age;
+
     if (password !== confirmPassword) {
-      setPasswordError(true);
+      confirmInput.setCustomValidity("Passwords do not match");
+      confirmInput.reportValidity();
+      setLoading(false);
+      return;
     } else {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+
+      const data = await res.json();
 
       if (res.status === 201) {
         signIn("credentials", {
@@ -122,14 +128,26 @@ export default function register() {
           callbackUrl: `${window.location.origin}/contribute/help`,
         });
         console.log("success");
-      } else if (res.status === 400) {
-        setEmailError(true);
-      } else if (res.status === 403) {
-        setUsernameError(true);
+      } else if (res.status === 409 || res.status === 422) {
+        if (data.message.toLowerCase().includes("email")) {
+          emailInput.setCustomValidity(data.message);
+          emailInput.reportValidity();
+        } else if (data.message.toLowerCase().includes("username")) {
+          usernameInput.setCustomValidity(data.message);
+          usernameInput.reportValidity();
+        } else if (data.message.toLowerCase().includes("password")) {
+          passwordInput.setCustomValidity(data.message);
+          passwordInput.reportValidity();
+        } else if (data.message.toLowerCase().includes("age") || data.message.toLowerCase().includes("years old")) {
+          ageInput.setCustomValidity(data.message);
+          ageInput.reportValidity();
+        } else {
+          setServerError(data.message);
+        }
       } else if (res.status === 500) {
-        setServerError(true);
+        setServerError("There seems to be something wrong with our servers");
       } else {
-        console.log("Error");
+        setServerError("An unexpected error occurred");
       }
     }
 
@@ -168,14 +186,8 @@ export default function register() {
             placeholder="Username"
             name="username"
             required
+            onInput={(e) => e.target.setCustomValidity("")}
           />
-          {usernameError ? (
-            <div className="text-xs -mb-2 pb-4 text-red-600">
-              Username is already used
-            </div>
-          ) : (
-            <div />
-          )}
           <label className="font-bold" htmlFor="email">
             Email
           </label>
@@ -185,14 +197,8 @@ export default function register() {
             placeholder="hello@website.com"
             name="email"
             required
+            onInput={(e) => e.target.setCustomValidity("")}
           />
-          {emailError ? (
-            <div className="text-xs -mb-2 pb-4 text-red-600">
-              Email is already used
-            </div>
-          ) : (
-            <div />
-          )}
           <label className="font-bold" htmlFor="password">
             Password
           </label>
@@ -202,6 +208,7 @@ export default function register() {
             placeholder="Password"
             name="password"
             required
+            onInput={(e) => e.target.setCustomValidity("")}
           />
           <label className="font-bold" htmlFor="confirm-password">
             Confirm Password
@@ -213,14 +220,8 @@ export default function register() {
             placeholder="Confirm Password"
             name="confirmPassword"
             required
+            onInput={(e) => e.target.setCustomValidity("")}
           />
-          {passwordError ? (
-            <div className="text-xs -mb-2 pb-4 text-red-600">
-              Passwords do not match
-            </div>
-          ) : (
-            <div></div>
-          )}
           <hr className="my-1 mb-5" />
           <H2 className="mb-4">User Demographic</H2>
           <label className="font-bold" htmlFor="city">
@@ -253,6 +254,7 @@ export default function register() {
             placeholder="Age"
             name="age"
             required
+            onInput={(e) => e.target.setCustomValidity("")}
           />
           <fieldset className="border-0 mb-4">
             <legend className="block text-gray-700 mb-2 font-bold">
@@ -351,30 +353,10 @@ export default function register() {
               {loadingForm ? "Loading..." : "Submit"}
             </button>
           </div>
-          {passwordError ? (
-            <div className="text-xs -mb-2 pb-4 text-red-600">
-              Passwords do not match
-            </div>
-          ) : (
-            <div />
-          )}
-          {usernameError ? (
-            <div className="text-xs -mb-2 pb-4 text-red-600">
-              Username is already used
-            </div>
-          ) : (
-            <div />
-          )}
-          {emailError ? (
-            <div className="text-xs -mb-2 pb-4 text-red-600">
-              Email is already used
-            </div>
-          ) : (
-            <div />
-          )}
+
           {serverError ? (
             <div className="text-xs -mb-2 pb-4 text-red-600">
-              There seems to be something wrong with our servers
+              {serverError}
             </div>
           ) : (
             <div />

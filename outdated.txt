@@ -1,0 +1,29 @@
+yarn outdated v1.22.22
+info Color legend : 
+ "<red>"    : Major Update backward-incompatible updates 
+ "<yellow>" : Minor Update backward-compatible features 
+ "<green>"  : Patch Update backward-compatible bug fixes
+Package                          Current  Wanted   Latest  Package Type    URL                                                                           
+@types/node                      22.15.30 22.15.30 25.2.1  devDependencies https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node     
+@types/react                     18.2.0   18.2.0   19.2.13 devDependencies https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react    
+@types/react-dom                 18.2.0   18.2.0   19.2.3  devDependencies https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom
+@typescript-eslint/eslint-plugin 8.53.1   8.54.0   8.54.0  devDependencies https://typescript-eslint.io/packages/eslint-plugin                           
+@typescript-eslint/parser        8.53.1   8.54.0   8.54.0  devDependencies https://typescript-eslint.io/packages/parser                                  
+autoprefixer                     10.4.23  10.4.24  10.4.24 devDependencies https://github.com/postcss/autoprefixer#readme                                
+bcryptjs                         2.4.3    2.4.3    3.0.3   dependencies    https://github.com/dcodeIO/bcrypt.js#readme                                   
+eslint                           8.57.1   8.57.1   9.39.2  devDependencies https://eslint.org                                                            
+eslint-config-next               15.0.3   15.0.3   16.1.6  devDependencies https://nextjs.org/docs/app/api-reference/config/eslint                       
+eslint-config-prettier           8.10.2   8.10.2   10.1.8  devDependencies https://github.com/prettier/eslint-config-prettier#readme                     
+eslint-config-standard           16.0.3   16.0.3   17.1.0  devDependencies https://github.com/standard/eslint-config-standard                            
+eslint-plugin-promise            5.2.0    5.2.0    7.2.1   devDependencies https://github.com/eslint-community/eslint-plugin-promise                     
+mongodb                          7.0.0    7.1.0    7.1.0   dependencies    https://github.com/mongodb/node-mongodb-native                                
+next                             15.5.9   15.5.12  16.1.6  dependencies    https://nextjs.org                                                            
+next-connect                     0.10.2   0.10.2   1.0.0   dependencies    https://github.com/hoangvvo/next-connect#readme                               
+prettier                         2.3.2    2.3.2    3.8.1   devDependencies https://prettier.io                                                           
+react                            18.2.0   18.2.0   19.2.4  dependencies    https://react.dev/                                                            
+react-dom                        18.2.0   18.2.0   19.2.4  dependencies    https://react.dev/                                                            
+react-leaflet                    4.2.1    4.2.1    5.0.0   dependencies    https://react-leaflet.js.org                                                  
+sass                             1.97.2   1.97.3   1.97.3  dependencies    https://github.com/sass/dart-sass                                             
+tailwindcss                      3.4.19   3.4.19   4.1.18  devDependencies https://tailwindcss.com                                                       
+typescript                       4.9.5    4.9.5    5.9.3   devDependencies https://www.typescriptlang.org/                                               
+Done in 1.31s.

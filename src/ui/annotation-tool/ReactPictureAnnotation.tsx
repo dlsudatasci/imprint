@@ -14,9 +14,9 @@ import {
   RectShape,
 } from "./Shape";
 import Transformer, { ITransformer } from "./Transformer";
-import { P } from "@/ui/Typography";
-import { H2 } from "@/ui/Typography";
-import { H3 } from "@/ui/Typography";
+import { P } from "../Typography";
+import { H2 } from "../Typography";
+import { H3 } from "../Typography";
 
 interface IReactPictureAnnotationProps {
   annotationData?: IAnnotation[];
@@ -258,7 +258,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           </div>
           <div className="rp-annotations">
             <div className="rp-annotations-list">
-              <H3 className>
+              <H3>
                 <span className="text-2xl">Selected Obstructions</span>
               </H3>
               <div className="annotation-instruction">
@@ -306,7 +306,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               </ul>
             </div>
             <div className="rp-annotations-list">
-              <H3 className>
+              <H3>
                 {" "}
                 <span className="text-2xl">New Obstructions</span>
               </H3>

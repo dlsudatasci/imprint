@@ -4,7 +4,7 @@
 
   position: relative;
   padding: 10px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", Helvetica, Arial,
     sans-serif;
   background-color: var(--theme-background);
@@ -15,7 +15,7 @@
 
 .rp-stage {
   position: relative;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", Helvetica, Arial,
     sans-serif;
 }
@@ -56,38 +56,80 @@
 .rp-default-input-section {
   display: flex;
   align-items: stretch;
-  background-color: #3384ff;
+  background-color: black;
   border: none;
   border-radius: 5px;
 }
 
-.rp-default-input-section input {
-  padding: 10px;
-  color: white;
-  background: transparent;
-  border: 0;
+.rp-default-input-section input,
+.rp-default-input-section select {
+  padding: 8px;
+  color: black;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
   outline: none;
+  flex-grow: 1;
+}
+
+/* Vendor prefixes for placeholder color */
+.rp-default-input-section input::-webkit-input-placeholder {
+  color: black !important;
+  opacity: 1;
+}
+
+.rp-default-input-section input::-moz-placeholder {
+  color: black !important;
+  opacity: 1;
+}
+
+.rp-default-input-section input:-ms-input-placeholder {
+  color: black !important;
+  opacity: 1;
 }
 
 .rp-default-input-section input::placeholder {
-  color: #94bfff;
+  color: black !important;
+  opacity: 1;
 }
 
-.rp-default-input-section a {
+.rp-default-input-section a,
+.rp-default-input-section a.yes,
+.rp-default-input-section a.no,
+.rp-default-input-section_select,
+.rp-default-input-section_delete {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 35px;
-  color: white;
-  font-size: 12px;
-  background-color: #3b5bdb;
-  border-radius: 0 5px 5px 0;
+  width: 50px;
+  color: white !important;
+  font-size: 14px;
+  background-color: black !important;
+  border-radius: 0;
   cursor: pointer;
-  transition: background-color 0.5s, color 0.5s;
+  transition: none !important;
 }
 
 .rp-default-input-section a:hover,
-.rp-default-input-section a:active {
-  color: #3384ff;
-  background-color: #5c7cfa;
+.rp-default-input-section a:active,
+.rp-default-input-section_select:hover,
+.rp-default-input-section_delete:hover {
+  color: white !important;
+  background-color: black;
+}
+
+/* Specific Hovers requested by user */
+.rp-default-input-section_select.yes:hover {
+  background-color: #28a745 !important;
+  /* Green */
+}
+
+.rp-default-input-section_delete:hover {
+  background-color: #dc3545 !important;
+  /* Red */
+}
+
+/* Ensure last button has rounded corner on right if container has rounding */
+.rp-default-input-section a:last-child {
+  border-radius: 0 5px 5px 0;
 }

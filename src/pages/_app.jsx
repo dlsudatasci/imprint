@@ -1,5 +1,6 @@
 import { Inter } from 'next/font/google';
 import './_app/globals.scss';
+import "@/ui/annotation-tool/Toolstyles.css";
 import { SessionProvider } from 'next-auth/react';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });

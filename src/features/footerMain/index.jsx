@@ -72,7 +72,7 @@ export default function Footer() {
             </div>
             <div className="md:flex-1 md:px-4 text-center md:text-center">
               <p className="text-white">
-                © 2026 IMPRINT
+                © 2026 Imprint
               </p>
             </div>
             <div className="md:flex-1 md:px-4 text-center md:text-right">

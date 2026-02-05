@@ -16,7 +16,7 @@ module.exports = {
         offwhite: "#F8F7F9",
       },
       fontFamily: {
-        sans: ["Inter", ...defaultTheme.fontFamily.sans],
+        sans: ["var(--font-inter)", ...defaultTheme.fontFamily.sans],
       },
     },
   },

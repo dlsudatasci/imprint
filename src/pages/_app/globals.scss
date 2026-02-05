@@ -8,10 +8,13 @@
   --offwhite: #F8F7F9;
 }
 
+
 body {
   background-color: var(--offwhite);
   color: #333;
+  font-family: var(--font-inter), sans-serif;
 }
+
 
 /* =========================================
    ANNOTATION TOOL STYLES (ORIGINAL RESTORED)
@@ -76,52 +79,6 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-/* --- Input Bar --- */
-.rp-default-input-section {
-  display: flex;
-  align-items: stretch;
-  background-color: white;
-  border: none;
-}
-
-.rp-default-input-section input {
-  padding: 20px;
-  color: white;
-  background: transparent;
-  border: 0;
-  outline: none;
-}
-
-.rp-default-input-section input::placeholder {
-  color: #94bfff;
-}
-
-.rp-default-input-section a {
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 35px;
-  color: white;
-  font-size: 12px;
-  background-color: black;
-  cursor: pointer;
-  transition: background-color 0.5s, color 0.5s;
-}
-
-.rp-default-input-section a:hover,
-.rp-default-input-section a:active {
-  background-color: red;
-}
-
-.rp-default-input-section_select.yes:hover {
-  background-color: green;
-}
-
-.rp-default-input-section_select.no:hover {
-  background-color: red;
 }
 
 /* --- Read Only Popup --- */
@@ -243,9 +200,13 @@ body {
       user-select: none;
       cursor: pointer;
 
+      input[type="radio"] {
+        display: none;
+      }
+
       p {
         margin: 0;
-        margin-bottom: -1.6rem;
+        margin-bottom: 0.5rem;
         text-align: center;
         font-size: 1.2rem;
       }

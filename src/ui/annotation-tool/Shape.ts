@@ -165,7 +165,6 @@ export class RectShape implements IShape {
       isSolid = false;
     }
 
-    canvas2D.strokeStyle = strokeColor;
     let currentLineWidth = lineWidth;
     if (isSolid) {
       currentLineWidth = 3;

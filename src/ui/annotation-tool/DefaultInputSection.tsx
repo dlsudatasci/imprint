@@ -46,7 +46,7 @@ const DefaultInputSection = ({
     const isStandard = OBSTRUCTION_OPTIONS.some((opt) => opt.value === value);
     if (!isStandard && value && value !== "---") {
       setIsCustom(true);
-    } else {
+    } else if (isStandard || value === "---") {
       setIsCustom(false);
     }
   }, [value]);
@@ -61,6 +61,11 @@ const DefaultInputSection = ({
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      onSelectObstruction();
+    }
+  };
 
 
   return (
@@ -78,6 +83,7 @@ const DefaultInputSection = ({
                 placeholder="Type label name..."
                 value={value === "---" ? "" : value}
                 onChange={(e) => onChange(e.target.value)}
+                onKeyDown={handleKeyDown}
                 style={{}}
               />
             </>

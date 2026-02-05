@@ -1,4 +1,4 @@
- 
+
 import React, { MouseEventHandler } from "react";
 import Router from "next/router";
 
@@ -811,7 +811,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       const currentCanvas2D = currentCanvas.getContext("2d");
       const currentImageCanvas2D = currentImageCanvas.getContext("2d");
       if (currentCanvas2D && currentImageCanvas2D) {
+        currentCanvas2D.setTransform(1, 0, 0, 1, 0, 0);
         currentCanvas2D.scale(2, 2);
+        currentImageCanvas2D.setTransform(1, 0, 0, 1, 0, 0);
         currentImageCanvas2D.scale(2, 2);
       }
     }

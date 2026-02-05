@@ -9,7 +9,7 @@ import Page from "@/ui/page";
 import { H1 } from "@/ui/Typography";
 import { H2 } from "@/ui/Typography";
 
-export default function register({ providers, csrfToken }) {
+export default function register() {
   const [loadingForm, setLoading] = useState(false);
   const { data: session, status } = useSession();
   const loading = status === "loading";

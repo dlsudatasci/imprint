@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import NavLink from "@/ui/navlink";
 import Logo from "@/ui/logo";
@@ -19,9 +19,9 @@ export default function Nav() {
   return (
     <nav className="flex items-center justify-between container mx-auto px-1 md:px-5 py-5 md:py-10 z-10 relative">
       <div>
-        <a href="/">
+        <Link href="/">
           <Logo height={30} />
-        </a>
+        </Link>
       </div>
       <div className="hidden md:flex flex-grow align-middle justify-end">
         <ul className="flex align-bottom">
@@ -62,18 +62,18 @@ export default function Nav() {
           }
         >
           <ul className={`${styles.ul} ${menuState ? "block" : "hidden"}`}>
-            <Link passHref href="/">
-              <li>Home</li>
-            </Link>
-            <Link passHref href="/about">
-              <li>About</li>
-            </Link>
-            <Link passHref href="/demo">
-              <li>Demo</li>
-            </Link>
-            <Link passHref href="/contribute">
-              <li>Contribute</li>
-            </Link>
+            <li>
+              <Link href="/">Home</Link>
+            </li>
+            <li>
+              <Link href="/about">About</Link>
+            </li>
+            <li>
+              <Link href="/demo">Demo</Link>
+            </li>
+            <li>
+              <Link href="/contribute">Contribute</Link>
+            </li>
           </ul>
         </div>
       </div>

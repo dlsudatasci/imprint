@@ -1,12 +1,10 @@
 import { ReactPictureAnnotation } from "@/ui/annotation-tool/index";
 import { H1 } from "@/ui/Typography";
-import Button from "@/ui/buttons/Button";
-import Link from "next/link";
 import { getSession, useSession } from "next-auth/react";
 
 export default function AnnotateForm({ data, current, total }) {
-  const onSelect = (selectedId) => { };
-  const onChange = (data) => { };
+  const onSelect = () => { };
+  const onChange = () => { };
   const { data: session, status } = useSession();
   const loading = status === "loading";
 

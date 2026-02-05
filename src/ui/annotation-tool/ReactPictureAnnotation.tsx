@@ -286,7 +286,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                             </a>
                             <span
                               className="uppercase"
-                              onClick={(e) => {
+                              onClick={() => {
                                 this.currentAnnotationState.onMouseDown(
                                   data.mark.x + 1,
                                   data.mark.y + 1
@@ -300,7 +300,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                         </li>
                       );
                     } else {
-                      return <div />;
+                      return <div key={data.id} />;
                     }
                   })}
               </ul>
@@ -321,7 +321,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                       return (
                         <li
                           className="flex flex-row ml-5"
-                          onClick={(e) => {
+                          onClick={() => {
                             this.currentAnnotationState.onMouseUp();
                             this.currentAnnotationState.onMouseDown(
                               data.mark.x + 1,
@@ -343,7 +343,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                             </a>
                             <span
                               className="uppercase"
-                              onClick={(e) => {
+                              onClick={() => {
                                 this.currentAnnotationState.onMouseDown(
                                   data.mark.x + 1,
                                   data.mark.y + 1
@@ -359,7 +359,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                         </li>
                       );
                     } else {
-                      return <div />;
+                      return <div key={data.id} />;
                     }
                   })}
               </ul>
@@ -459,7 +459,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                     });
                   }}
                 />
-                <img src="/images/annotationTool/smooth_paving.png"></img>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/annotationTool/smooth_paving.png" alt="Smooth Paving"></img>
               </label>
               <label className="radio-control" htmlFor="rough_paving">
                 <p className="radio-label">Rough Surface</p>
@@ -475,7 +476,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                     });
                   }}
                 />
-                <img src="/images/annotationTool/rough_paving.jpg"></img>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/annotationTool/rough_paving.jpg" alt="Rough Paving"></img>
               </label>
               <label className="radio-control" htmlFor="slippery_paving">
                 <p className="radio-label">Tile/Slippery Surface</p>
@@ -491,7 +493,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                     });
                   }}
                 />
-                <img src="/images/annotationTool/tile_slippery_sidewalk.jpg"></img>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/annotationTool/tile_slippery_sidewalk.jpg" alt="Tile Slippery Sidewalk"></img>
               </label>
               <label className="radio-control" htmlFor="no_sidewalk">
                 <p className="radio-label">No Sidewalk</p>
@@ -507,7 +510,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                     });
                   }}
                 />
-                <img src="/images/annotationTool/no_sidewalk.png"></img>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/annotationTool/no_sidewalk.png" alt="No Sidewalk"></img>
               </label>
             </fieldset>
             <p className="text-center mt-10">
@@ -931,6 +935,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     return "";
   };
 
+  /* eslint-disable @typescript-eslint/no-unused-vars */
   private sliderValueText = (sliderValue) => {
     //   switch (sliderValue) {
     //     case 1:

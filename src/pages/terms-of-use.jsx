@@ -16,15 +16,15 @@ export default function Index() {
                 <div className='mx-16'>
                     <H1>Terms of Use and Privacy Policy </H1>
                     <br />
-                    <P className="text-xl mb-2">This terms of use and privacy policy will help you understand how 
+                    <P className="text-xl mb-2">This terms of use and privacy policy will help you understand how
                         <Link href="https://dlsucomet.github.io/" target="_blank" className="text-primary hover:underline"> Human-X Interaction Lab </Link>
-                       and student researchers will use and
+                        and student researchers will use and
                         protect the data you provide to us when you visit and use Imprint. </P>
                     <br />
-                    <H3 className="mb-2"> Overview</H3> 
-                    <P> Greetings! I am Francis Bawa and I'm currently working on my Master's thesis at De La Salle University titled &quot;Leveraging Human-in-the-Loop Crowdsourcing to 
-                        Support Richer Human Perception Data Collection in Streetscape Evaluation&quot;. In this study, I'm trying to ....</P>
-                    
+                    <H3 className="mb-2"> Overview</H3>
+                    <P> Greetings! I am Francis Bawa and I&apos;m currently working on my Master&apos;s thesis at De La Salle University titled &quot;Leveraging Human-in-the-Loop Crowdsourcing to
+                        Support Richer Human Perception Data Collection in Streetscape Evaluation&quot;. In this study, I&apos;m trying to ....</P>
+
                     <br />
                     <H3 className="mb-2"> Procedure</H3>
                     <P> Register to Imprint through the &quot;Contribute&quot; Page, and provide the following:</P>

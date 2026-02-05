@@ -1,8 +1,9 @@
-export default function Logo({ subTitle, white }) {
+export default function Logo({ subTitle }) {
   const logoHeight = 60;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center' }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/images/logo/imprint.png"
         alt="Logo"

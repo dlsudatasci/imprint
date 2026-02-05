@@ -8,8 +8,8 @@ export default function AnnotateForm({
   id,
   city,
 }) {
-  const onSelect = (selectedId) => { };
-  const onChange = (data) => { };
+  const onSelect = () => { };
+  const onChange = () => { };
 
   const annotObjects = newObjects;
   for (let i = 0; i < detectedObjects.length; i++) {

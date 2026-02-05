@@ -6,7 +6,7 @@ import { useRouter } from "next/router";
 import Page from "@/ui/page";
 import { H1 } from "@/ui/Typography";
 
-export default function login({ providers, csrfToken }) {
+export default function login() {
   const [loadingForm, setLoading] = useState(false);
   const { data: session, status } = useSession();
   const loading = status === "loading";

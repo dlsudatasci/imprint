@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import Page from "@/ui/page";
 import { H1 } from "@/ui/Typography";
 import { H2 } from "@/ui/Typography";
-import Button from "ui/buttons/Button";
+
 import DashboardInfo from "../../features/contribute/dashboard/infoSection";
 
 export default function ContributePage({ session }) {

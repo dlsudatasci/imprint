@@ -1,7 +1,5 @@
- 
-import Link from "next/link";
 
-import Logo from "@/ui/logo";
+import Link from "next/link";
 import HXIL from "@/ui/logo/hxil";
 import styles from "./styles.module.css";
 

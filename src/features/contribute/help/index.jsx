@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import { P } from "@/ui/Typography";
 import HelpItem from "./helpItem";
 
@@ -28,7 +29,7 @@ export default function HelpDirectory() {
             </P>
             <P>1. Click on the <b>white boxes</b> that you think are blocking the sidewalk.</P>
             <P>2. If the object blocks the pathway, select <b>&quot;Yes&quot;</b>; otherwise, select <b>&quot;No&quot;</b>.</P>
-            <P>3. The object appears on the <b>&quot;Selected Obstructions&quot;</b> list if you selected "Yes".</P>
+            <P>3. The object appears on the <b>&quot;Selected Obstructions&quot;</b> list if you selected &quot;Yes&quot;.</P>
           </div>
         </div>
       </HelpItem>
@@ -56,7 +57,7 @@ export default function HelpDirectory() {
             <img src="/images/help/Rating Accessibility.gif" alt="Rating accessibility" />
           </div>
           <div className="mt-4 text-lg max-w-3xl mx-auto px-4">
-            <P>1. Drag the slider to set the sidewalk's accessibility rating.</P>
+            <P>1. Drag the slider to set the sidewalk&apos;s accessibility rating.</P>
             <P>2. A rating of 1 means the sidewalk is <b>unsafe and inaccessible</b>.</P>
             <P>3. A rating of 10 means it is <b>safe and accessible</b>.</P>
           </div>
@@ -70,7 +71,7 @@ export default function HelpDirectory() {
           </div>
           <div className="mt-4 text-lg max-w-3xl mx-auto px-4">
             <P>1. Select the image that <b>best describes the surface type</b> of the sidewalk.</P>
-            <P>2. If there's no sidewalk, select <b>&quot;No Sidewalk&quot;</b>.</P>
+            <P>2. If there&apos;s no sidewalk, select <b>&quot;No Sidewalk&quot;</b>.</P>
           </div>
         </div>
       </HelpItem>

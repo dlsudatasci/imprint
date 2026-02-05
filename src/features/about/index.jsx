@@ -1,4 +1,4 @@
-/* eslint-disable no-use-before-define */
+ 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 

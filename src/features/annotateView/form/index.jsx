@@ -6,6 +6,7 @@ export default function AnnotateForm({
   detectedObjects,
   url,
   id,
+  city,
 }) {
   const onSelect = (selectedId) => { };
   const onChange = (data) => { };

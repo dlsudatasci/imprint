@@ -1,6 +1,6 @@
 import { IAnnotation } from "./Annotation";
 
-// eslint-disable-next-line no-use-before-define
+ 
 export const defaultShapeStyle: IShapeStyle = {
   padding: 5,
   lineWidth: 2,

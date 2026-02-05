@@ -1,4 +1,4 @@
-// eslint-disable-next-line no-use-before-define
+ 
 import React from "react";
 import { isMobile } from "react-device-detect";
 import { useSession } from "next-auth/react"; // Add this import

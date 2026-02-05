@@ -1,4 +1,4 @@
-// eslint-disable-next-line no-use-before-define
+ 
 import React, { MouseEventHandler } from "react";
 import Router from "next/router";
 
@@ -30,9 +30,9 @@ interface IReactPictureAnnotationProps {
   image: string;
   annotationStyle: IShapeStyle;
   defaultAnnotationSize?: number[];
-  username: String;
-  imageID: String;
-  city: String;
+  username: string;
+  imageID: string;
+  city: string;
   currentAnnotationCount: number;
   inputElement: (
     value: string,

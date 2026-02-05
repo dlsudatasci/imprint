@@ -1,5 +1,5 @@
 import { connectToDatabase } from "@/util/mongodb";
-const { ObjectID } = require("mongodb");
+import { ObjectID } from "mongodb";
 
 const handler = async (req, res) => {
   if (req.method === "GET") {

@@ -1,4 +1,4 @@
-/* eslint-disable no-use-before-define */
+ 
 import React, { useEffect, useState, useRef } from "react";
 
 import { H2 } from "@/ui/Typography";

@@ -1,4 +1,4 @@
-// eslint-disable-next-line no-use-before-define
+ 
 import React from "react";
 import { H3 } from "@/ui/Typography";
 import { P } from "@/ui/Typography";

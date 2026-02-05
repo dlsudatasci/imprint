@@ -29,7 +29,6 @@ export default function Logo({ subTitle, white }) {
         <em
           className="text-gray-500"
           style={{
-            marginTop: `${logoHeight * .100}px`,
             marginTop: '4px',
           }}
         >

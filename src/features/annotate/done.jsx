@@ -6,7 +6,7 @@ import { getSession, useSession } from "next-auth/react";
 import H2 from "ui/heading/h2";
 import H3 from "ui/heading/h3";
 import P from "ui/heading/p";
-import SolidButton from "ui/buttons/buttonSolid";
+import Button from "ui/buttons/Button";
 
 export default function AnnotationDone({ data, total }) {
   const { data: session, status } = useSession();
@@ -42,16 +42,16 @@ export default function AnnotationDone({ data, total }) {
       <div className="flex flex-col border px-5 py-5 my-5 rounded-md">
         <H2>Annotation session done!</H2>
         <div className="py-4">
-          <SolidButton className="mr-2">
+          <Button className="mr-2">
             <Link href="/contribute">Dashboard</Link>
-          </SolidButton>
-          <SolidButton
+          </Button>
+          <Button
             onClick={() => {
               router.reload(window.location.pathname);
             }}
           >
             Start Another Session
-          </SolidButton>
+          </Button>
         </div>
         <H3 className="mt-4">You finished {total} annotations</H3>
         <P>You annotated the following images: </P>

@@ -1,0 +1,14 @@
+.button {
+    @apply font-semibold py-2 px-4 border rounded;
+    @apply transition-colors duration-500 ease-in-out;
+}
+
+.outline {
+    @apply bg-transparent text-primary border-primary;
+    @apply hover:bg-primary hover:text-white;
+}
+
+.solid {
+    @apply bg-[#1d1d1d] text-white border-black;
+    @apply hover:bg-white hover:text-[#1d1d1d];
+}

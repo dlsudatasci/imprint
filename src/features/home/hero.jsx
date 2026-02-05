@@ -5,7 +5,7 @@ import Image from 'next/image';
 
 import H1 from '@/ui/heading/h1';
 import P from '@/ui/heading/p';
-import OutlineButton from '@/ui/buttons/buttonOutline';
+import Button from '@/ui/buttons/Button';
 
 export default function Hero() {
   const [scrollState, setScrollState] = useState(0);
@@ -25,9 +25,9 @@ export default function Hero() {
         </div>
         <div className="mt-5 flex">
           <div className="mr-5">
-            <OutlineButton><Link href="/contribute">Contribute</Link></OutlineButton>
+            <Button variant="outline"><Link href="/contribute">Contribute</Link></Button>
           </div>
-          <OutlineButton><Link href="/about">Learn More</Link></OutlineButton>
+          <Button variant="outline"><Link href="/about">Learn More</Link></Button>
         </div>
       </div>
       <div className="flex pt-12">

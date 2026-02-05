@@ -3,7 +3,7 @@ import Link from "next/link";
 import { signOut } from "next-auth/react";
 
 import Logo from "@/ui/logo";
-import SolidButton from "ui/buttons/buttonSolid";
+import Button from "@/ui/buttons/Button";
 import styles from "./styles.module.css";
 
 export default function Nav() {
@@ -45,22 +45,21 @@ export default function Nav() {
         </Link>
       </div>
       <div ref={wrapperRef} className="flex flex-grow align-middle justify-end relative">
-        <SolidButton
+        <Button
+          variant="solid"
           onClick={menuToggle}
-          className={`mr-2 md:mr-5 pt-4 z-10 hover:bg-red-500 hover:text-white border-red-500 ${
-            menuState
+          className={`mr-2 md:mr-5 pt-4 z-10 hover:bg-red-500 hover:text-white border-red-500 ${menuState
               ? "bg-red-500 text-white"
               : "text-red-500 bg-transparent focus:outline-none"
-          }`}
+            }`}
         >
           Menu
-        </SolidButton>
+        </Button>
         <div
-          className={`absolute mt-16 mr-5 w-32 z-20 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 transition-all duration-300 ease-in-out origin-top-right ${
-            menuState
+          className={`absolute mt-16 mr-5 w-32 z-20 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 transition-all duration-300 ease-in-out origin-top-right ${menuState
               ? "opacity-100 scale-100 pointer-events-auto"
               : "opacity-0 scale-95 pointer-events-none"
-          }`}
+            }`}
         >
           <ul className={styles.ul}>
             <li><Link href="/">Home</Link></li>

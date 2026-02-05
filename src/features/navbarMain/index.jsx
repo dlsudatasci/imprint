@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import NavLink from "@/ui/navlink";
 import Logo from "@/ui/logo";
-import SolidButton from "ui/buttons/buttonSolid";
+import Button from "ui/buttons/Button";
 import styles from "./styles.module.css";
 import { useOutsideClick } from "@/hooks/useOutsideClick";
 
@@ -45,15 +45,15 @@ export default function Nav() {
         ref={wrapperRef}
         className="flex flex-grow align-middle justify-end md:hidden"
       >
-        <SolidButton
+        <Button
           onClick={() => menuToggle()}
           className={`mr-2 md:mr-5 pt-4 z-10 hover:bg-red-500 hover:text-white border-red-500 ${menuState
-              ? "bg-red-500 text-white"
-              : "text-red-500 bg-transparent focus:outline-none"
+            ? "bg-red-500 text-white"
+            : "text-red-500 bg-transparent focus:outline-none"
             }`}
         >
           ☰
-        </SolidButton>
+        </Button>
         <div
           className={
             menuState

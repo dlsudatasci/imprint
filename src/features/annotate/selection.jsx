@@ -1,7 +1,7 @@
 import { useRouter } from "next/router";
 
 import H2 from "ui/heading/h2";
-import OutlineButton from "@/ui/buttons/buttonOutline";
+import Button from "@/ui/buttons/Button";
 
 export default function AnnotationSessionSelection({ username }) {
   const router = useRouter();
@@ -47,24 +47,24 @@ export default function AnnotationSessionSelection({ username }) {
           <hr className="mt-4" />
           <div className="mt-5 flex flex-wrap justify-center">
             <div className="mr-5 mt-4">
-              <OutlineButton onClick={() => setAnnotationSession(5)}>
+              <Button onClick={() => setAnnotationSession(5)}>
                 <span className="block px-3 py-3 text-5xl">05</span>
-              </OutlineButton>
+              </Button>
             </div>
             <div className="mr-5 mt-4">
-              <OutlineButton onClick={() => setAnnotationSession(10)}>
+              <Button onClick={() => setAnnotationSession(10)}>
                 <span className="block px-3 py-3 text-5xl">10</span>
-              </OutlineButton>
+              </Button>
             </div>
             <div className="mr-5 mt-4">
-              <OutlineButton onClick={() => setAnnotationSession(20)}>
+              <Button onClick={() => setAnnotationSession(20)}>
                 <span className="block px-3 py-3 text-5xl">20</span>
-              </OutlineButton>
+              </Button>
             </div>
             <div className="mt-4">
-              <OutlineButton onClick={() => setAnnotationSession(40)}>
+              <Button onClick={() => setAnnotationSession(40)}>
                 <span className="block px-3 py-3 text-5xl">40</span>
-              </OutlineButton>
+              </Button>
             </div>
           </div>
 

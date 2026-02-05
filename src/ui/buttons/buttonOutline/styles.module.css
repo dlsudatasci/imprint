@@ -1,9 +1,0 @@
-.button {
-  @apply font-semibold  py-2 px-4 border rounded;
-  @apply transition-colors duration-500 ease-in-out;
-}
-
-.buttonPrimary {
-  @apply bg-transparent text-primary border-primary;
-  @apply hover:bg-primary hover:text-white;
-}

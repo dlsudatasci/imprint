@@ -47,6 +47,12 @@ const handler = async (req, res) => {
         { upsert: true } // Create if it doesn't exist
       );
 
+      // Update the active session with the completed image
+      await db.collection("sessions").updateOne(
+        { username: username, status: "active" },
+        { $addToSet: { completedImageIDs: imageID } }
+      );
+
       console.log(
         `User: ${username} submitted/updated annotation for ImageID: ${imageID}`
       );

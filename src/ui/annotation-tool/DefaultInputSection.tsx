@@ -43,13 +43,31 @@ const DefaultInputSection = ({
 
   // Auto-detect if value is custom (not in list) to show input mode automatically
   useEffect(() => {
-    const isStandard = OBSTRUCTION_OPTIONS.some((opt) => opt.value === value);
-    if (!isStandard && value && value !== "---") {
+    const exactMatch = OBSTRUCTION_OPTIONS.find((opt) => opt.value === value);
+
+    if (exactMatch) {
+      setIsCustom(false);
+      return;
+    }
+    const fuzzyMatch = OBSTRUCTION_OPTIONS.find(
+      (opt) =>
+        opt.label.toLowerCase() === value.toLowerCase() ||
+        opt.value.replace(/_/g, " ") === value.toLowerCase()
+    );
+
+    if (fuzzyMatch) {
+      console.log("Correcting fuzzy match:", value, "->", fuzzyMatch.value);
+      onChange(fuzzyMatch.value);
+      setIsCustom(false);
+    } else if (value && value !== "---") {
+      console.log("Setting isCustom to true because custom value is:", value);
       setIsCustom(true);
-    } else if (isStandard || value === "---") {
+    } else if (value === "---") {
+      // Standard empty/default
       setIsCustom(false);
     }
-  }, [value]);
+    // If value is "" (e.g. from selecting "Other" or clearing input), we do nothing and let state persist.
+  }, [value, onChange]);
 
   const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedVal = e.target.value;
@@ -68,110 +86,105 @@ const DefaultInputSection = ({
   };
 
 
+  const showInputSection = editable || selected;
+  const deleteAction = editable ? onDelete : onUnselectObstruction;
+
+  if (showInputSection) {
+    return (
+      <div className="rp-default-input-section">
+        {isCustom ? (
+          <input
+            autoFocus
+            className="rp-default-input-section_input"
+            placeholder="Type label name..."
+            value={value === "---" ? "" : value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+        ) : (
+          <select
+            className="rp-default-input-section_input"
+            value={value || "---"}
+            onChange={handleSelectChange}
+          >
+            <option value="---" disabled>
+              Select your option
+            </option>
+            {OBSTRUCTION_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+            <option value="OTHER_CUSTOM" style={{ fontWeight: "bold" }}>
+              Other...
+            </option>
+          </select>
+        )}
+
+        {isCustom && (
+          <a
+            className="rp-default-input-section_select list"
+            onClick={() => {
+              setIsCustom(false);
+              onChange("---");
+            }}
+            title="Switch to list"
+          >
+            ≡
+          </a>
+        )}
+
+        <a
+          className="rp-default-input-section_select yes"
+          onClick={() => onSelectObstruction()}
+        >
+          ✓
+        </a>
+        <a
+          className="rp-default-input-section_delete"
+          onClick={() => deleteAction()}
+        >
+          <DeleteButton />
+        </a>
+      </div>
+    );
+  }
+
+  // --- READ ONLY / NEUTRAL / REJECTED MODE ---
   return (
-    <>
-      {editable ? (
-        <div className="rp-default-input-section">
-
-          {/* --- TERNARY OPERATOR: SWAP SELECT FOR INPUT --- */}
-          {isCustom ? (
-            // 1. CUSTOM INPUT MODE
-            <>
-              <input
-                autoFocus
-                className="rp-default-input-section_input"
-                placeholder="Type label name..."
-                value={value === "---" ? "" : value}
-                onChange={(e) => onChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-                style={{}}
-              />
-            </>
-          ) : (
-            // 2. DROPDOWN MODE
-            <select
-              className="rp-default-input-section_input"
-              value={value || "---"}
-              onChange={handleSelectChange}
-              style={{}}
+    <div className="rp-default-select-section">
+      {isRejected ? (
+        <>
+          <p>You selected {translateValue(value)} as not an obstruction.</p>
+          <div>
+            <a
+              className="rp-default-input-section_select no"
+              onClick={() => onUnselectObstruction()}
             >
-              <option value="---" disabled>
-                Select your option
-              </option>
-              {OBSTRUCTION_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-              <option value="OTHER_CUSTOM" style={{ fontWeight: "bold" }}>
-                Other...
-              </option>
-            </select>
-          )}
-
-          {/* --- COMMON BUTTONS (Confirm & Delete) --- */}
-          <a
-            className="rp-default-input-section_select yes"
-            onClick={() => onSelectObstruction()}
-          >
-            ✓
-          </a>
-          <a
-            className="rp-default-input-section_delete"
-            onClick={() => onDelete()}
-          >
-            <DeleteButton />
-          </a>
-        </div>
+              Undo
+            </a>
+          </div>
+        </>
       ) : (
-        // --- READ ONLY MODE ---
-        <div className="rp-default-select-section">
-          {selected ? (
-            <>
-              <p>You selected {translateValue(value)} as an obstruction.</p>
-              <div>
-                <a
-                  className="rp-default-input-section_select no"
-                  onClick={() => onUnselectObstruction()}
-                >
-                  Remove
-                </a>
-              </div>
-            </>
-          ) : isRejected ? (
-            <>
-              <p>You selected {translateValue(value)} as not an obstruction.</p>
-              <div>
-                <a
-                  className="rp-default-input-section_select no"
-                  onClick={() => onUnselectObstruction()}
-                >
-                  Undo
-                </a>
-              </div>
-            </>
-          ) : (
-            <>
-              <p>Is {translateValue(value)} an obstruction?</p>
-              <div>
-                <a
-                  className="rp-default-input-section_select yes"
-                  onClick={() => onSelectObstruction()}
-                >
-                  Yes
-                </a>
-                <a
-                  className="rp-default-input-section_select no"
-                  onClick={() => onUnselectObstruction()}
-                >
-                  No
-                </a>
-              </div>
-            </>
-          )}
-        </div>
+        <>
+          <p>Is {translateValue(value)} an obstruction?</p>
+          <div>
+            <a
+              className="rp-default-input-section_select yes"
+              onClick={() => onSelectObstruction()}
+            >
+              Yes
+            </a>
+            <a
+              className="rp-default-input-section_select no"
+              onClick={() => onUnselectObstruction()}
+            >
+              No
+            </a>
+          </div>
+        </>
       )}
-    </>
+    </div>
   );
 };
 

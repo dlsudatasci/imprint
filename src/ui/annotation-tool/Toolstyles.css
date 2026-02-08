@@ -59,7 +59,7 @@
   background-color: black;
   border: none;
   border-radius: 5px;
-  width: 300px;
+  width: 350px;
   /* Fixed width to prevent resizing */
 }
 
@@ -139,6 +139,12 @@
 .rp-default-input-section_delete:hover {
   background-color: #dc3545 !important;
   /* Red */
+}
+
+.rp-default-input-section_select.list:hover {
+  background-color: #ffc107 !important;
+  /* Yellow */
+  color: black !important;
 }
 
 /* Ensure last button has rounded corner on right if container has rounding */

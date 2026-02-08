@@ -42,7 +42,8 @@ interface IReactPictureAnnotationProps {
     onUnselectObstruction: () => void,
     editable: boolean,
     selected: boolean,
-    isRejected: boolean
+    isRejected: boolean,
+    id: string
   ) => React.ReactElement;
 }
 
@@ -71,9 +72,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       onUnselectObstruction: () => void,
       editable: boolean,
       selected: boolean,
-      isRejected: boolean
+      isRejected: boolean,
+      id: string
     ) => (
       <DefaultInputSection
+        key={id}
         value={value}
         onChange={onChange}
         onDelete={onDelete}
@@ -258,7 +261,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   this.onUnselectObstruction,
                   editable,
                   selected,
-                  isRejected
+                  isRejected,
+                  this.selectedId || ""
                 )}
               </div>
             )}
@@ -606,11 +610,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     this.setState({ error: null });
 
-    for (const object of newObjects) {
+    const objectsToValidate = [...newObjects, ...selectedObjects];
+    for (const object of objectsToValidate) {
       if (!object.comment || object.comment === "---") {
         this.setState({
           error:
-            "You have an unlabeled obstruction. Please select a label for all the boxes you drew.",
+            "You have an unlabeled obstruction. Please select a label for all the boxes.",
         });
         return; // Stop the submission here
       }
@@ -879,6 +884,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       (item) => item.getAnnotationData().id === this.selectedId
     );
     this.shapes[selectedShapeIndex].setComment(comment);
+    this.currentAnnotationData = this.shapes.map((item) =>
+      item.getAnnotationData()
+    );
     this.setState({ inputComment: comment });
   };
 

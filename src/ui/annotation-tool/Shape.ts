@@ -256,9 +256,7 @@ export class RectShape implements IShape {
   };
 
   public setComment = (comment: string) => {
-    if (this.annotationData.editable) {
-      this.annotationData.comment = comment;
-    }
+    this.annotationData.comment = comment;
   };
 
   public equal = (data: IAnnotation) => {

@@ -59,6 +59,8 @@
   background-color: black;
   border: none;
   border-radius: 5px;
+  width: 300px;
+  /* Fixed width to prevent resizing */
 }
 
 .rp-default-input-section input,
@@ -70,6 +72,11 @@
   border-radius: 4px;
   outline: none;
   flex-grow: 1;
+  box-sizing: border-box;
+  /* Ensure padding doesn't affect width */
+  height: 36px;
+  /* Consistent height */
+  font-size: 14px;
 }
 
 /* Vendor prefixes for placeholder color */

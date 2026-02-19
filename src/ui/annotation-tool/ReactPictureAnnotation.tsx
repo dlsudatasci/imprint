@@ -590,6 +590,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     );
 
     // 3. Reload to fetch the previous image
+    sessionStorage.setItem("isNavigatingImages", "true");
     Router.reload();
   };
 
@@ -649,6 +650,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         "annotationCurrentCount",
         JSON.stringify(newCount)
       );
+      sessionStorage.setItem("isNavigatingImages", "true");
       Router.reload();
       window.scrollTo(0, 0);
       // Add ui to indicate sucessful submission

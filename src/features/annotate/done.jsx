@@ -25,19 +25,16 @@ export default function AnnotationDone({ data, total }) {
     window.localStorage.setItem("annotationCurrentCount", null);
     window.localStorage.setItem("annotationSetData", null);
 
-    async function postActivity() {
-      await fetch("/api/userActivity", {
+    async function completeSession() {
+      await fetch("/api/annotationComplete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: session.user.username,
-          date: new Date(),
-          tag: "Annotation Session Done",
-          activity: `You finished ${total} annotations`,
+          total: total
         }),
       });
     }
-    postActivity();
+    completeSession();
   }, [session, total]);
 
   const annotationData = data;

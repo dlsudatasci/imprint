@@ -42,6 +42,7 @@ const handler = async (req, res) => {
             pavementType,
             selectedObjectsID,
             newObjects,
+            status: "pending", // Keep it pending until session completes
           },
         },
         { upsert: true } // Create if it doesn't exist

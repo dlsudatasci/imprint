@@ -29,6 +29,7 @@ export default function AnnotationSessionSelection({ username }) {
       JSON.stringify(annotationJson)
     );
 
+    window.sessionStorage.setItem("isNavigatingImages", "true");
     router.reload(window.location.pathname);
   };
 

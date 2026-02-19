@@ -9,13 +9,13 @@ const handler = async (req, res) => {
     // Annotation Count
     const annotationCount = await db
       .collection("annotations")
-      .find({ username: username })
+      .find({ username: username, status: { $ne: "pending" } })
       .count();
 
     // Latest Annotation
     const lastAnnotation = await db
       .collection("annotations")
-      .find({ username: username })
+      .find({ username: username, status: { $ne: "pending" } })
       .sort({ _id: -1 })
       .limit(1)
       .toArray();

@@ -23,12 +23,47 @@ const handler = async (req, res) => {
         .map((id) => imgRecords.find((img) => img._id.toString() === id.toString()))
         .filter((img) => img !== undefined);
 
+      // Fetch user's existing annotations for these images using the numeric id
+      const imageNumberIDs = sortedImgRecords.map((img) => img.imageID);
+      const userAnnotations = await db
+        .collection("annotations")
+        .find({
+          username: username,
+          imageID: { $in: imageNumberIDs },
+        })
+        .toArray();
+
+      // Merge user annotations into the image payload
+      for (const img of sortedImgRecords) {
+        const annotation = userAnnotations.find((a) => a.imageID === img.imageID);
+        if (annotation) {
+          // Merge user annotations into the original ground-truth list
+          const mergedAnnotationList = (img.annotationList || []).map(originalBox => {
+            const userEdit = (annotation.selectedObjectsID || []).find(
+              (editedBox) => editedBox.id === originalBox.id
+            );
+            return userEdit ? userEdit : originalBox;
+          });
+
+          const finalAnnotationList = [
+            ...mergedAnnotationList,
+            ...(annotation.newObjects || [])
+          ];
+
+          img.annotationList = finalAnnotationList;
+          img.userSliderValue = annotation.accessibilityRating;
+          img.userPavementType = annotation.pavementType;
+        }
+      }
+
       const completedCount = existingSession.completedImageIDs
         ? existingSession.completedImageIDs.length
         : 0;
 
-      // Ensure we don't go past the total
-      const currentCount = Math.min(completedCount + 1, existingSession.totalCount);
+      // Ensure we don't go past the total. If the user was on an earlier image (and clicked Previous),
+      // we restore that specific image using the saved currentCount.
+      const currentCount = existingSession.currentCount
+        || Math.min(completedCount + 1, existingSession.totalCount);
 
       return res.json({
         imgRecords: sortedImgRecords,
@@ -78,8 +113,42 @@ const handler = async (req, res) => {
       imgRecords = imgRecords.concat(additional);
     }
 
-    // 3. Save the new session
     const imageIDs = imgRecords.map((img) => img._id);
+
+    // Fetch user's existing annotations for these new images using the numeric id
+    const imageNumberIDs = imgRecords.map((img) => img.imageID);
+    const userAnnotations = await db
+      .collection("annotations")
+      .find({
+        username: username,
+        imageID: { $in: imageNumberIDs },
+      })
+      .toArray();
+
+    // Merge user annotations into the image payload
+    for (const img of imgRecords) {
+      const annotation = userAnnotations.find((a) => a.imageID === img.imageID);
+      if (annotation) {
+        // Merge user annotations into the original ground-truth list
+        const mergedAnnotationList = (img.annotationList || []).map(originalBox => {
+          const userEdit = (annotation.selectedObjectsID || []).find(
+            (editedBox) => editedBox.id === originalBox.id
+          );
+          return userEdit ? userEdit : originalBox;
+        });
+
+        const finalAnnotationList = [
+          ...mergedAnnotationList,
+          ...(annotation.newObjects || [])
+        ];
+
+        img.annotationList = finalAnnotationList;
+        img.userSliderValue = annotation.accessibilityRating;
+        img.userPavementType = annotation.pavementType;
+      }
+    }
+
+    // 3. Save the new session
     await db.collection("sessions").insertOne({
       username: username,
       imageIDs: imageIDs,

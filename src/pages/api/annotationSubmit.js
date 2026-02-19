@@ -23,6 +23,7 @@ const handler = async (req, res) => {
       pavementType,
       selectedObjectsID,
       newObjects,
+      currentAnnotationCount,
     } = req.body;
 
     if (!imageID || !city) {
@@ -51,7 +52,10 @@ const handler = async (req, res) => {
       // Update the active session with the completed image
       await db.collection("sessions").updateOne(
         { username: username, status: "active" },
-        { $addToSet: { completedImageIDs: imageID } }
+        {
+          $addToSet: { completedImageIDs: imageID },
+          $set: { currentCount: currentAnnotationCount }
+        }
       );
 
 

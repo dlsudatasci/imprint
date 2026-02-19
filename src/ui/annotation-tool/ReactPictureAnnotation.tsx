@@ -146,6 +146,22 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.canvas2D = currentCanvas.getContext("2d");
       this.imageCanvas2D = currentImageCanvas.getContext("2d");
       this.onImageChange();
+
+      // --- Restore User Caches ---
+      const localData = JSON.parse(localStorage.getItem("annotationSetData"));
+      if (localData && localData.imgRecords) {
+        const currentIndex = this.props.currentAnnotationCount - 1;
+        const currentRecord = localData.imgRecords[currentIndex];
+
+        if (currentRecord) {
+          if (currentRecord.userSliderValue !== undefined) {
+            this.setState({ sliderValue: currentRecord.userSliderValue });
+          }
+          if (currentRecord.userPavementType !== undefined) {
+            this.setState({ pavementType: currentRecord.userPavementType });
+          }
+        }
+      }
     }
 
     this.syncAnnotationData();
@@ -414,7 +430,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                     min="1"
                     max="10"
                     step="1"
-                    defaultValue={sliderValue}
+                    value={sliderValue}
                     list="sliderValueList"
                     id="accessibilityScore"
                     onChange={(e) => {
@@ -469,6 +485,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                       pavementType: e.target.value,
                     });
                   }}
+                  checked={this.state.pavementType === "smooth_paving"}
                 />
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/images/annotationTool/smooth_paving.png" alt="Smooth Paving"></img>
@@ -486,6 +503,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                       pavementType: e.target.value,
                     });
                   }}
+                  checked={this.state.pavementType === "rough_paving"}
                 />
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/images/annotationTool/rough_paving.jpg" alt="Rough Paving"></img>
@@ -503,6 +521,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                       pavementType: e.target.value,
                     });
                   }}
+                  checked={this.state.pavementType === "slippery_paving"}
                 />
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/images/annotationTool/tile_slippery_sidewalk.jpg" alt="Tile Slippery Sidewalk"></img>
@@ -520,6 +539,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                       pavementType: e.target.value,
                     });
                   }}
+                  checked={this.state.pavementType === "no_sidewalk"}
                 />
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/images/annotationTool/no_sidewalk.png" alt="No Sidewalk"></img>
@@ -578,18 +598,35 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     );
   }
 
-  private onPrevious = () => {
+  private onPrevious = async () => {
     // 1. Check if we are at the start
     if (this.props.currentAnnotationCount <= 1) return;
 
-    // 2. Decrement the counter in Local Storage
-    const currentCount = parseInt(localStorage.getItem("annotationCurrentCount") || "1");
-    window.localStorage.setItem(
-      "annotationCurrentCount",
-      JSON.stringify(currentCount - 1)
-    );
+    // 2. Save User Edits Locally (Just in case they drew something before going back)
+    const localData = JSON.parse(localStorage.getItem("annotationSetData"));
+    if (localData && localData.imgRecords) {
+      const currentIndex = this.props.currentAnnotationCount - 1;
+      if (localData.imgRecords[currentIndex]) {
+        localData.imgRecords[currentIndex].annotationList = this.currentAnnotationData;
+        localData.imgRecords[currentIndex].userSliderValue = this.state.sliderValue;
+        localData.imgRecords[currentIndex].userPavementType = this.state.pavementType;
+        localStorage.setItem("annotationSetData", JSON.stringify(localData));
+      }
+    }
 
-    // 3. Reload to fetch the previous image
+    // 3. Decrement the counter in Local Storage
+    const currentCount = parseInt(localStorage.getItem("annotationCurrentCount") || "1");
+    const newCount = currentCount - 1;
+    window.localStorage.setItem("annotationCurrentCount", JSON.stringify(newCount));
+
+    // 4. Update the DB Session so logouts resume correctly
+    await fetch("/api/updateSessionCount", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentAnnotationCount: newCount }),
+    }).catch(err => console.error(err));
+
+    // 5. Reload to fetch the previous image
     sessionStorage.setItem("isNavigatingImages", "true");
     Router.reload();
   };
@@ -603,7 +640,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     );
     const selectedObjectsID = [];
     for (let i = 0; i < selectedObjects.length; i++) {
-      selectedObjectsID.push(selectedObjects[i].id);
+      selectedObjectsID.push(selectedObjects[i]);
     }
     const newObjects = this.currentAnnotationData.filter(
       (element) => element.editable
@@ -637,6 +674,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       pavementType: this.state.pavementType,
       selectedObjectsID: selectedObjects,
       newObjects: newObjects,
+      currentAnnotationCount: this.props.currentAnnotationCount + 1,
     };
     const res = await fetch("/api/annotationSubmit", {
       method: "POST",
@@ -644,6 +682,19 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       body: JSON.stringify(body),
     });
     if (res.status === 200) {
+      // --- Save User Edits Locally ---
+      const localData = JSON.parse(localStorage.getItem("annotationSetData"));
+      if (localData && localData.imgRecords) {
+        const currentIndex = this.props.currentAnnotationCount - 1;
+        if (localData.imgRecords[currentIndex]) {
+          // Merge current UI state into the cached payload so 'Previous' loads it
+          localData.imgRecords[currentIndex].annotationList = this.currentAnnotationData;
+          localData.imgRecords[currentIndex].userSliderValue = this.state.sliderValue;
+          localData.imgRecords[currentIndex].userPavementType = this.state.pavementType;
+          localStorage.setItem("annotationSetData", JSON.stringify(localData));
+        }
+      }
+
       const newCount =
         parseInt(localStorage.getItem("annotationCurrentCount")) + 1;
       window.localStorage.setItem(

@@ -56,11 +56,9 @@ const DefaultInputSection = ({
     );
 
     if (fuzzyMatch) {
-      console.log("Correcting fuzzy match:", value, "->", fuzzyMatch.value);
       onChange(fuzzyMatch.value);
       setIsCustom(false);
     } else if (value && value !== "---") {
-      console.log("Setting isCustom to true because custom value is:", value);
       setIsCustom(true);
     } else if (value === "---") {
       // Standard empty/default

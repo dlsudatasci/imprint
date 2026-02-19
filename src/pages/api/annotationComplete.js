@@ -42,7 +42,7 @@ const handler = async (req, res) => {
                 }
             );
 
-            console.log(`User ${username} successfully completed a session of ${total} annotations.`);
+
             return res.status(200).json({ message: "Session and annotations finalized successfully." });
 
         } catch (error) {

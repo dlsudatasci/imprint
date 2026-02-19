@@ -5,7 +5,6 @@ const handler = async (req, res) => {
     const { db } = await connectToDatabase();
 
     const { annotationTotalCount, username } = req.body;
-    console.log("username:", username);
 
     // 1. Check for an existing active session
     const existingSession = await db.collection("sessions").findOne({
@@ -14,7 +13,6 @@ const handler = async (req, res) => {
     });
 
     if (existingSession) {
-      console.log("Found existing active session for user:", username);
       const imgRecords = await db
         .collection("Image")
         .find({ _id: { $in: existingSession.imageIDs } })
@@ -53,7 +51,7 @@ const handler = async (req, res) => {
     }
 
     const targetCities = [user.city, ...(user.frequentlyWalkedCities || [])];
-    console.log("Target Cities:", targetCities);
+
 
     let imgRecords = await db
       .collection("Image")
@@ -90,12 +88,6 @@ const handler = async (req, res) => {
       createdAt: new Date(),
     });
 
-    console.log("🧭 Annotation Request - New Session Created:");
-    console.log("Requested count:", annotationTotalCount);
-    console.log(
-      "Returned image cities:",
-      imgRecords.map((img) => img.city)
-    );
 
     res.json({
       imgRecords: imgRecords,

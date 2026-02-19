@@ -976,7 +976,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   public onMouseDownHack(positionX, positionY) {
-    console.log("simulate click");
+
     this.currentAnnotationState.onMouseUp();
     this.currentAnnotationState.onMouseDown(positionX, positionY);
     this.currentAnnotationState.onMouseUp();

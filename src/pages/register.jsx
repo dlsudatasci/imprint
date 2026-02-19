@@ -127,7 +127,7 @@ export default function register() {
           password,
           callbackUrl: `${window.location.origin}/contribute/help`,
         });
-        console.log("success");
+
       } else if (res.status === 409 || res.status === 422) {
         if (data.message.toLowerCase().includes("email")) {
           emailInput.setCustomValidity(data.message);

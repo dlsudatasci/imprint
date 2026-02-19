@@ -6,7 +6,7 @@ const handler = async (req, res) => {
     const { db } = await connectToDatabase();
     const { username, activity, tag, date } = req.body;
     // Insert Activity in user
-    console.log("Insert user activity");
+
     await db
       .collection("users")
       .updateOne(

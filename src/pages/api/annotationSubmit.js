@@ -11,7 +11,7 @@ const handler = async (req, res) => {
     }
 
     const { db } = await connectToDatabase();
-    console.log("post route");
+
     const username = session.user.username;
     const date = new Date();
 
@@ -54,9 +54,7 @@ const handler = async (req, res) => {
         { $addToSet: { completedImageIDs: imageID } }
       );
 
-      console.log(
-        `User: ${username} submitted/updated annotation for ImageID: ${imageID}`
-      );
+
 
       return res.status(200).json({ message: "Annotation submitted successfully." });
 

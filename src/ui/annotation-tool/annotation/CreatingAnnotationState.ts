@@ -35,7 +35,7 @@ export default class CreatingAnnotationState implements IAnnotationState {
     ) {
       shapes.push(data);
       this.context.selectedId = data.getAnnotationData().id;
-      console.log(data.getAnnotationData().id);
+
       makeNewBox = true;
     } else {
       if (data && this.applyDefaultAnnotationSize(data)) {

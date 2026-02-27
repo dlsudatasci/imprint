@@ -1,4 +1,5 @@
 import { connectToDatabase } from "@/util/mongodb";
+import { logTelemetryEvent } from "@/util/telemetryLogger";
 
 const handler = async (req, res) => {
   if (req.method === "POST") {
@@ -157,6 +158,11 @@ const handler = async (req, res) => {
       createdAt: new Date(),
     });
 
+    await logTelemetryEvent({
+      event: "SESSION_START",
+      username: username,
+      sessionTotalCount: annotationTotalCount,
+    });
 
     res.json({
       imgRecords: imgRecords,

@@ -136,6 +136,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private currentAnnotationState: IAnnotationState = new DefaultAnnotationState(
     this
   );
+  private mountTime: number = Date.now();
 
   public componentDidMount = () => {
     const currentCanvas = this.canvasRef.current;
@@ -176,6 +177,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.onImageChange();
     }
     if (preProps.image !== image) {
+      this.mountTime = Date.now();
       this.cleanImage();
       if (this.currentImageElement) {
         this.currentImageElement.src = image;
@@ -634,9 +636,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private submit = async () => {
     // isLoading(true);
 
+    const durationMs = Date.now() - this.mountTime;
+
     const username = this.props.username;
     const selectedObjects = this.currentAnnotationData.filter(
-      (element) => !element.editable && element.selected
+      (element) => !element.editable && (element.selected || element.isRejected)
     );
     const selectedObjectsID = [];
     for (let i = 0; i < selectedObjects.length; i++) {
@@ -645,6 +649,54 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const newObjects = this.currentAnnotationData.filter(
       (element) => element.editable
     );
+
+    let manualBoxCount = 0;
+    let acceptedSuggestionCount = 0;
+    let modifiedSuggestionCount = 0;
+    let deletedSuggestionCount = 0;
+
+    for (const obj of this.currentAnnotationData) {
+      if (obj.editable) {
+        manualBoxCount++;
+      } else {
+        if (obj.isRejected) {
+          deletedSuggestionCount++;
+        } else if (obj.selected) {
+          const init = obj.initialState;
+          let isModified = false;
+          if (init) {
+            let normalizedInit = init.comment ? init.comment.toLowerCase().replace(/_/g, " ") : "";
+            let normalizedObj = obj.comment ? obj.comment.toLowerCase().replace(/_/g, " ") : "";
+
+            if (normalizedInit !== normalizedObj) isModified = true;
+
+            // Allow a small 3-pixel tolerance for accidental mouse twitches when clicking
+            if (
+              Math.abs(init.mark.x - obj.mark.x) > 3 ||
+              Math.abs(init.mark.y - obj.mark.y) > 3 ||
+              Math.abs(init.mark.width - obj.mark.width) > 3 ||
+              Math.abs(init.mark.height - obj.mark.height) > 3
+            ) {
+              isModified = true;
+            }
+          }
+          if (isModified) {
+            modifiedSuggestionCount++;
+          } else {
+            acceptedSuggestionCount++;
+          }
+        }
+      }
+    }
+
+    const telemetryPayload = {
+      imageDurationMs: durationMs,
+      manualBoxCount,
+      acceptedSuggestionCount,
+      modifiedSuggestionCount,
+      deletedSuggestionCount,
+      totalBoxesSubmitted: manualBoxCount + acceptedSuggestionCount + modifiedSuggestionCount,
+    };
 
     this.setState({ error: null });
 
@@ -687,6 +739,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       selectedObjectsID: selectedObjects,
       newObjects: newObjects,
       currentAnnotationCount: this.props.currentAnnotationCount + 1,
+      telemetry: telemetryPayload,
     };
     const res = await fetch("/api/annotationSubmit", {
       method: "POST",
@@ -841,12 +894,19 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const refreshShapesWithAnnotationData = () => {
       this.selectedId = null;
       this.shapes = annotationData.map(
-        (eachAnnotationData) =>
-          new RectShape(
+        (eachAnnotationData) => {
+          if (!eachAnnotationData.editable && !eachAnnotationData.initialState) {
+            eachAnnotationData.initialState = {
+              comment: eachAnnotationData.comment,
+              mark: { ...eachAnnotationData.mark }
+            };
+          }
+          return new RectShape(
             eachAnnotationData,
             this.onShapeChange,
             this.annotationStyle
-          )
+          );
+        }
       );
       this.onShapeChange();
     };

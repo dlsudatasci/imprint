@@ -1,6 +1,7 @@
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
+import { logTelemetryEvent } from "@/util/telemetryLogger";
 
 const handler = async (req, res) => {
     if (req.method === "POST") {
@@ -42,6 +43,12 @@ const handler = async (req, res) => {
                 }
             );
 
+            await logTelemetryEvent({
+                event: "SESSION_END",
+                username: username,
+                outcome: "completed",
+                imagesCompleted: total,
+            });
 
             return res.status(200).json({ message: "Session and annotations finalized successfully." });
 

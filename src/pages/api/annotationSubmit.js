@@ -1,6 +1,7 @@
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
+import { logTelemetryEvent } from "@/util/telemetryLogger";
 
 const handler = async (req, res) => {
   if (req.method === "POST") {
@@ -24,6 +25,7 @@ const handler = async (req, res) => {
       selectedObjectsID,
       newObjects,
       currentAnnotationCount,
+      telemetry,
     } = req.body;
 
     if (!imageID || !city) {
@@ -58,7 +60,15 @@ const handler = async (req, res) => {
         }
       );
 
-
+      // Log the telemetry event
+      if (telemetry) {
+        await logTelemetryEvent({
+          event: "IMAGE_SUBMITTED",
+          username,
+          imageID,
+          ...telemetry,
+        });
+      }
 
       return res.status(200).json({ message: "Annotation submitted successfully." });
 

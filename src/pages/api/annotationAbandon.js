@@ -1,6 +1,7 @@
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
+import { logTelemetryEvent } from "@/util/telemetryLogger";
 
 const handler = async (req, res) => {
     if (req.method === "POST") {
@@ -56,6 +57,13 @@ const handler = async (req, res) => {
                 await db.collection("annotations").deleteMany({
                     username: username,
                     status: "pending",
+                });
+
+                await logTelemetryEvent({
+                    event: "SESSION_END",
+                    username: username,
+                    outcome: "abandoned",
+                    imagesCompleted: completedCount,
                 });
 
                 console.log(`Session abandoned for user: ${username}. Saved ${completedCount} annotations.`);

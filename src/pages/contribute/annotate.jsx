@@ -19,7 +19,6 @@ export default function AnnotatePage() {
     annotationTotalCount: null,
     annotationCurrentCount: null,
     annotationSetData: null,
-    showResumePrompt: false,
   });
 
   React.useEffect(() => {
@@ -47,7 +46,6 @@ export default function AnnotatePage() {
           annotationCurrentCount: localCurrent,
           annotationTotalCount: localTotal,
           annotationSetData: localData,
-          showResumePrompt: !isNavigating
         };
       });
     } else if (status === "authenticated" && session?.user?.username) {
@@ -81,7 +79,6 @@ export default function AnnotatePage() {
               annotationCurrentCount: currentCount,
               annotationTotalCount: totalCount,
               annotationSetData: data,
-              showResumePrompt: !isNavigating,
             });
           }
         })
@@ -98,55 +95,7 @@ export default function AnnotatePage() {
       return <MobileWarning />;
     }
 
-    /* Show Resume Prompt */
-    if (state.showResumePrompt) {
-      return (
-        <section className="container px-5 mx-auto">
-          <section className="pb-12 mt-12">
-            <div className="flex flex-col items-center border px-12 py-12 my-5 rounded-md shadow-xl bg-white">
-              <H2>Resume Session?</H2>
-              <p className="mt-4 text-accent text-center max-w-2xl">
-                You have an unfinished annotation session. Would you like to continue from where you left off, or restart with a new session?
-              </p>
-              <div className="mt-8 flex gap-4">
-                {/* Restart Button (Matches Previous Button style) */}
-                <button
-                  type="button"
-                  className="transition-all duration-500 ease-in-out font-semibold py-2 px-6 rounded border hover:-translate-y-0.5 hover:shadow-md text-accent hover:border-accent"
-                  onClick={async () => {
-                    if (session?.user?.username) {
-                      await fetch("/api/annotationAbandon", {
-                        method: "POST",
-                      });
-                    }
-                    localStorage.removeItem("annotationTotalCount");
-                    localStorage.removeItem("annotationCurrentCount");
-                    localStorage.removeItem("annotationSetData");
-                    setState({
-                      annotationTotalCount: null,
-                      annotationCurrentCount: null,
-                      annotationSetData: null,
-                      showResumePrompt: false,
-                    });
-                  }}
-                >
-                  Restart
-                </button>
 
-                {/* Continue Button (Matches Submit Button style) */}
-                <button
-                  type="button"
-                  className="transition-all duration-500 ease-in-out font-semibold py-2 px-6 rounded border bg-primary border-primary text-white hover:bg-opacity-90 hover:-translate-y-0.5 hover:shadow-md"
-                  onClick={() => setState(prev => ({ ...prev, showResumePrompt: false }))}
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-          </section>
-        </section>
-      );
-    }
 
     /* If the user has no annotation sessions active */
     if (

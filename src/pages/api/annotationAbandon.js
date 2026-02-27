@@ -43,7 +43,7 @@ const handler = async (req, res) => {
                         {
                             $push: {
                                 activities: {
-                                    activity: `Abandoned session but finished ${completedCount} annotations`,
+                                    activity: `Abandoned session (${completedCount} annotation${completedCount === 1 ? '' : 's'} finished)`,
                                     date: new Date(),
                                     tag: "Session Abandoned",
                                 },

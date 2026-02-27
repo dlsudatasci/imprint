@@ -5,12 +5,12 @@ export default function Logo({ subTitle }) {
     <div style={{ display: 'flex', alignItems: 'center' }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/images/logo/imprint.png"
+        src="/images/logo/3.png"
         alt="Logo"
         style={{
           height: `${logoHeight}px`,
           objectFit: 'contain',
-          marginRight: '0.75rem',
+          marginRight: '0.3rem',
         }}
       />
       <div
@@ -27,14 +27,21 @@ export default function Logo({ subTitle }) {
         >
           Imprint
         </h1> */}
-        <em
-          className="text-gray-500"
-          style={{
-            marginTop: '4px',
-          }}
-        >
-          {subTitle}
-        </em>
+        {subTitle === 'imprint' ? (
+          <span
+            className="text-black text-[20px] leading-none m-0 tracking-tight"
+            style={{ marginTop: '2px' }}
+          >
+            {subTitle}
+          </span>
+        ) : (
+          <em
+            className="text-gray-500"
+            style={{ marginTop: '4px' }}
+          >
+            {subTitle}
+          </em>
+        )}
       </div>
     </div>
   );

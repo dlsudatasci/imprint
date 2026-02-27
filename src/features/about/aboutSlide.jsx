@@ -8,7 +8,7 @@ export default function aboutSlide({
   title, head, img, desc, active,
 }) {
   return (
-    <div className={active ? 'flex flex-col max-w-5xl mx-auto transition-all' : 'opacity-0 fixed w-0 top-0 h-0 z-0'}>
+    <div className={active ? 'flex flex-col max-w-screen-xl mx-auto transition-all' : 'opacity-0 fixed w-0 top-0 h-0 z-0'}>
       {/* <div classNam="flex"> */}
       <div className={`${active
         ? 'transition-all duration-700 left-0 h-screen fixed w-0 z-0 bg-offwhite top-0 pointer-events-none'

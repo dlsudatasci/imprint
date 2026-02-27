@@ -24,6 +24,7 @@ export default function ContributePage({ session }) {
     current: 0,
     total: 0,
   });
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
   useEffect(() => {
     if (status !== "authenticated" || !username) {
@@ -83,8 +84,11 @@ export default function ContributePage({ session }) {
     // Attempt to close out server session so it doesn't hang
     await fetch("/api/annotationAbandon", { method: "POST" });
 
-    // Redirect to start fresh
-    router.push("/contribute/annotate");
+    // Update state to reflect session is closed
+    setSessionState({ status: "none", current: 0, total: 0 });
+
+    // Trigger a refresh of the DashboardInfo profile stats
+    setRefreshCounter((prev) => prev + 1);
   };
 
   const baseButton =
@@ -111,7 +115,7 @@ export default function ContributePage({ session }) {
                   disabled={isLoadingSession}
                   className={`${baseButton} text-accent hover:border-accent`}
                 >
-                  Restart Annotation
+                  Restart Session
                 </button>
               )}
 
@@ -131,7 +135,7 @@ export default function ContributePage({ session }) {
           </div>
         </div>
       </section>
-      <DashboardInfo username={username} />
+      <DashboardInfo username={username} refreshCounter={refreshCounter} />
     </Page>
   );
 }

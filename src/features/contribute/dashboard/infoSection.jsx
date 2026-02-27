@@ -1,4 +1,4 @@
- 
+
 import React from "react";
 import { H3 } from "@/ui/Typography";
 import { P } from "@/ui/Typography";
@@ -9,7 +9,6 @@ export default class DashboardInfo extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
-      annotationActiveCount: 0,
       userActivity: [],
       lastAnnotation: 0,
       totalAnnotation: 0,
@@ -17,31 +16,27 @@ export default class DashboardInfo extends React.Component {
     };
   }
 
-  async componentDidMount() {
-    // For Active Annotation Session
-    const annotationTotalCount = parseInt(
-      localStorage.getItem("annotationTotalCount")
-    );
+  componentDidMount() {
+    this.fetchData();
+  }
 
-    const annotationCurrentCount = parseInt(
-      localStorage.getItem("annotationCurrentCount")
-    );
-
-    let annotationActiveCount = 0;
-    if (annotationTotalCount && annotationCurrentCount) {
-      annotationActiveCount = annotationTotalCount - annotationCurrentCount + 1;
+  componentDidUpdate(prevProps) {
+    if (prevProps.refreshCounter !== this.props.refreshCounter || prevProps.username !== this.props.username) {
+      this.setState({ username: this.props.username }, () => {
+        this.fetchData();
+      });
     }
+  }
 
+  async fetchData() {
+    if (!this.state.username) return;
     const extractUser = await fetch("/api/extractUser", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(this.state.username),
-    }).then(function (result) {
-      return result.json();
-    });
+    }).then((result) => result.json());
 
     this.setState({
-      annotationActiveCount,
       userActivity: extractUser.userActivities,
       lastAnnotation: extractUser.lastAnnotationDate,
       totalAnnotation: extractUser.annotationCount,
@@ -66,13 +61,6 @@ export default class DashboardInfo extends React.Component {
                 <Tooltip>Last time you annotated</Tooltip>
                 <span className="font-bold">Latest Annotation: </span>{" "}
                 {this.state.lastAnnotation}
-              </P>
-              <P>
-                <Tooltip>Current active annotation from this session</Tooltip>
-                <span className="font-bold">
-                  Active Annotation Sessions:{" "}
-                </span>{" "}
-                {this.state.annotationActiveCount}
               </P>
             </div>
           </div>

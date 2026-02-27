@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/router";
 
-import Navbar from "@/features/navbarContribute";
+import Navbar from "@/features/navbarMain";
 import Footer from "@/features/footerMain";
 import { H1 } from "@/ui/Typography";
 

@@ -655,7 +655,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     if (unconfirmedExistingAnnotations.length > 0) {
       this.setState({
-        error: "Please click Yes or No on all existing yellow dashed annotations before submitting.",
+        error: "Please click Yes or No on all existing annotations before submitting.",
       });
       return;
     }

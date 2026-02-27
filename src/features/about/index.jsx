@@ -1,4 +1,4 @@
- 
+
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
@@ -56,33 +56,31 @@ export default function AboutSection() {
         }
         active={slideState === 2}
       />
-      <div className="z-10 flex justify-end max-w-5xl mx-auto mt-10 relative mb-12">
-        <div className="z-10 flex justify-end max-w-5xl mx-auto mt-10 relative mb-12 gap-4 px-5 md:px-0">
-          {/* LEFT ARROW BUTTON */}
-          <button
-            type="button"
-            className="outline-none focus:outline-none border-black border-2 p-2 text-accent transition-colors duration-300 ease-in-out hover:text-white hover:bg-accent"
-            onClick={() => { setSlide((slideState - 1 + max) % max); scrollTop(); }}
-            aria-label="Previous Slide"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-            </svg>
-          </button>
+      <div className="z-10 flex justify-center w-full mt-10 relative mb-12 gap-4 px-5 xl:px-0">
+        {/* LEFT ARROW BUTTON */}
+        <button
+          type="button"
+          className="outline-none focus:outline-none border-black border-2 p-2 text-accent transition-colors duration-300 ease-in-out hover:text-white hover:bg-accent"
+          onClick={() => { setSlide((slideState - 1 + max) % max); scrollTop(); }}
+          aria-label="Previous Slide"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+          </svg>
+        </button>
 
-          {/* RIGHT ARROW BUTTON */}
-          <button
-            type="button"
-            className="outline-none focus:outline-none border-black border-2 p-2 text-accent transition-colors duration-300 ease-in-out hover:text-white hover:bg-accent"
-            onClick={() => { setSlide((slideState + 1) % max); scrollTop(); }}
-            aria-label="Next Slide"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-            </svg>
-          </button>
+        {/* RIGHT ARROW BUTTON */}
+        <button
+          type="button"
+          className="outline-none focus:outline-none border-black border-2 p-2 text-accent transition-colors duration-300 ease-in-out hover:text-white hover:bg-accent"
+          onClick={() => { setSlide((slideState + 1) % max); scrollTop(); }}
+          aria-label="Next Slide"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+          </svg>
+        </button>
 
-        </div>
       </div>
     </section>
   );

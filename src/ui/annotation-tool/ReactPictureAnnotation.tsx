@@ -648,6 +648,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     this.setState({ error: null });
 
+    // Enforce that all existing annotations are explicitly confirmed or rejected
+    const unconfirmedExistingAnnotations = this.currentAnnotationData.filter(
+      (element) => !element.editable && !element.selected && !element.isRejected
+    );
+
+    if (unconfirmedExistingAnnotations.length > 0) {
+      this.setState({
+        error: "Please click Yes or No on all existing yellow dashed annotations before submitting.",
+      });
+      return;
+    }
+
     const objectsToValidate = [...newObjects, ...selectedObjects];
     for (const object of objectsToValidate) {
       if (!object.comment || object.comment === "---") {

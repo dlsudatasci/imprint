@@ -9,8 +9,7 @@ const handler = async (req, res) => {
     // Annotation Count
     const annotationCount = await db
       .collection("annotations")
-      .find({ username: username, status: { $ne: "pending" } })
-      .count();
+      .countDocuments({ username: username, status: { $ne: "pending" } });
 
     // Latest Annotation
     const lastAnnotation = await db

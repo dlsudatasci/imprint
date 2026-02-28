@@ -7,8 +7,20 @@ import { useRouter } from "next/router";
 import Page from "@/ui/page";
 import { H1 } from "@/ui/Typography";
 import { H2 } from "@/ui/Typography";
+import { Lightbulb } from "lucide-react";
 
 import DashboardInfo from "../../features/contribute/dashboard/infoSection";
+
+const FUN_FACTS = [
+  "Did you know? Under Philippine Law (BP 344), an accessible wheelchair ramp must have a maximum slope of 1:12 to be safe.",
+  "According to the WHO, an estimated 1.3 billion people—or 16% of the global population—experience a significant disability.",
+  "Tactile paving (the textured ground on sidewalks) was invented by Seiichi Miyake in Japan in 1965 to help visually impaired pedestrians.",
+  "The international standard for a safe wheelchair turning space is a minimum of 1.5 meters (1500mm) in diameter.",
+  "Walkable cities naturally lower local temperatures. Trees along mapped sidewalks can reduce surface heat by up to 10-20°C.",
+  "In a recent global index, Metro Manila was ranked among the least walkable cities—making your mapping efforts incredibly important!",
+  "A standard wheelchair requires a minimum clear width of 0.9 meters just to move forward safely.",
+  "Over 50% of the world's population lives in cities today, making urban accessibility a top priority for the United Nations."
+];
 
 export default function ContributePage({ session }) {
   const { data: clientSession, status } = useSession();
@@ -19,12 +31,20 @@ export default function ContributePage({ session }) {
   const activeSession = clientSession || session;
   const username = activeSession?.user?.username || "";
   const router = useRouter();
+
   const [sessionState, setSessionState] = useState({
     status: "loading", // "loading" | "active" | "none"
     current: 0,
     total: 0,
   });
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const [randomFact, setRandomFact] = useState("");
+
+  useEffect(() => {
+    // Pick a random fact on the client side to avoid Next.js hydration errors
+    const randomIndex = Math.floor(Math.random() * FUN_FACTS.length);
+    setRandomFact(FUN_FACTS[randomIndex]);
+  }, []);
 
   useEffect(() => {
     if (status !== "authenticated" || !username) {
@@ -103,26 +123,43 @@ export default function ContributePage({ session }) {
       description="Contribute to Imprint! Let's make our streets accessible for all."
       contribute
     >
-      <section className="container flex flex-col pb-24 mx-auto px-5">
-        <div className="lg:max-w-7xl lg:w-4/5 lg:mx-auto">
-          <H1>Contribute to Imprint</H1>
-          <div className="flex flex-col pt-8 md:flex-row justify-between items-center md:items-start">
-            <H2>{username}</H2>
-            <div className="mt-4 md:mt-2 flex space-x-4">
+      <section className="pt-10 pb-16 border-b-2 border-gray-200">
+        <div className="container mx-auto px-5 lg:max-w-7xl lg:w-4/5">
+
+          {/* Top Centered Fun Fact Pill (Removed max-w-4xl so it stretches naturally) */}
+          {randomFact && (
+            <div className="flex justify-center w-full mb-10">
+              <div className="flex items-center gap-3 bg-amber-50/80 border border-amber-200/80 rounded-full py-2 px-5 text-sm font-medium text-amber-800 shadow-sm text-center">
+                <Lightbulb className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                <span>{randomFact}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+
+            {/* Left Side: Welcome Text */}
+            <div className="w-full md:w-auto">
+              <p className="text-primary font-semibold mb-2 uppercase tracking-wide text-sm">Contributor Dashboard</p>
+              <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">Welcome back, {username}!</h1>
+            </div>
+
+            {/* Right Side: The Action Buttons */}
+            <div className="flex space-x-4 w-full md:w-auto">
               {hasSession && (
                 <button
                   onClick={handleRestart}
                   disabled={isLoadingSession}
-                  className={`${baseButton} text-accent hover:border-accent`}
+                  className={`${baseButton} flex-1 md:flex-none border-gray-300 text-gray-700 bg-white hover:bg-gray-50`}
                 >
-                  Restart Session
+                  Stop Session
                 </button>
               )}
 
-              <Link href="/contribute/annotate">
+              <Link href="/contribute/annotate" className="flex-1 md:flex-none flex">
                 <button
                   disabled={isLoadingSession}
-                  className={`${baseButton} bg-primary border-primary text-white hover:bg-opacity-90`}
+                  className={`${baseButton} w-full bg-primary border-primary text-white hover:brightness-110 shadow-[0_4px_14px_0_rgba(0,74,173,0.39)]`}
                 >
                   {isLoadingSession
                     ? "Loading..."
@@ -132,6 +169,7 @@ export default function ContributePage({ session }) {
                 </button>
               </Link>
             </div>
+
           </div>
         </div>
       </section>

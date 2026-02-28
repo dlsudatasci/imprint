@@ -66,7 +66,6 @@ const handler = async (req, res) => {
                     imagesCompleted: completedCount,
                 });
 
-                console.log(`Session abandoned for user: ${username}. Saved ${completedCount} annotations.`);
                 return res.status(200).json({ message: "Session abandoned successfully." });
             } else {
                 return res.status(404).json({ message: "No active session found to abandon." });

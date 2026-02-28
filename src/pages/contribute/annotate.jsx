@@ -61,14 +61,10 @@ export default function AnnotatePage() {
             const totalCount = data.imgRecords.length;
             const currentCount = data.currentCount || 1;
 
-
-
             // Restore session locally, strictly trusting the server's accurate progress index
             localStorage.setItem("annotationTotalCount", totalCount);
             localStorage.setItem("annotationCurrentCount", currentCount);
             localStorage.setItem("annotationSetData", JSON.stringify(data));
-
-
 
             const isNavigating = sessionStorage.getItem("isNavigatingImages") === "true";
             if (isNavigating) {

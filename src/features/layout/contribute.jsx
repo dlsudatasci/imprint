@@ -33,9 +33,11 @@ export default function Layout({ children }) {
 
   // If session exists, show full layout
   return (
-    <div>
+    <div className="flex flex-col min-h-screen">
       <Navbar />
-      {children}
+      <main className="flex-grow">
+        {children}
+      </main>
       <Footer />
     </div>
   );

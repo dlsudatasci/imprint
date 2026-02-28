@@ -9,27 +9,8 @@ const handler = async (req, res) => {
     // Annotation Count
     const annotationCount = await db
       .collection("annotations")
-      .find({ username: username, status: { $ne: "pending" } })
-      .count();
+      .countDocuments({ username: username, status: { $ne: "pending" } });
 
-    // Latest Annotation
-    const lastAnnotation = await db
-      .collection("annotations")
-      .find({ username: username, status: { $ne: "pending" } })
-      .sort({ _id: -1 })
-      .limit(1)
-      .toArray();
-
-    let lastAnnotationDate = "N/A";
-    if (lastAnnotation.length > 0) {
-      const options = {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      };
-      const jsDate = new Date(lastAnnotation[0].date);
-      lastAnnotationDate = jsDate.toLocaleDateString("en-US", options);
-    }
 
     // User Activities
     const user = await db
@@ -40,7 +21,6 @@ const handler = async (req, res) => {
     const userActivities = user[0].activities;
 
     res.json({
-      lastAnnotationDate,
       annotationCount,
       userActivities,
     });

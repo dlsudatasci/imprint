@@ -3,7 +3,7 @@ import { H3 } from "@/ui/Typography";
 import { P } from "@/ui/Typography";
 import Tooltip from "ui/tooltip";
 import ActivityItem from "./activityItem";
-import { Activity, Target, Zap, Flame, Footprints, Lightbulb } from 'lucide-react';
+import { Activity, Target, Zap, Flame, Footprints } from 'lucide-react';
 
 export default class DashboardInfo extends React.Component {
   constructor(props) {

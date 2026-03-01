@@ -91,7 +91,7 @@ export class RectShape implements IShape {
   }
 
   public onDragStart = (positionX: number, positionY: number) => {
-    if (this.annotationData.editable || this.annotationData.selected) {
+    if (!this.annotationData.isRejected) {
       const { x, y } = this.annotationData.mark;
       this.dragStartOffset = {
         offsetX: positionX - x,
@@ -101,7 +101,10 @@ export class RectShape implements IShape {
   };
 
   public onDrag = (positionX: number, positionY: number) => {
-    if (this.annotationData.editable || this.annotationData.selected) {
+    if (!this.annotationData.isRejected) {
+      if (!this.dragStartOffset) {
+        this.onDragStart(positionX, positionY);
+      }
       this.annotationData.mark.x = positionX - this.dragStartOffset.offsetX;
       this.annotationData.mark.y = positionY - this.dragStartOffset.offsetY;
       this.onChangeCallBack();
@@ -242,7 +245,7 @@ export class RectShape implements IShape {
     width?: number;
     height?: number;
   }) => {
-    if (this.annotationData.editable || this.annotationData.selected) {
+    if (!this.annotationData.isRejected) {
       this.annotationData.mark.x = x;
       this.annotationData.mark.y = y;
       this.annotationData.mark.width = width;

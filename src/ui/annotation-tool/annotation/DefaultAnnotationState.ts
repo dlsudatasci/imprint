@@ -34,20 +34,40 @@ export class DefaultAnnotationState implements IAnnotationState {
       return;
     }
 
+    // Find all shapes that the mouse is hovering over
+    const intersectingShapes = [];
     for (let i = shapes.length - 1; i >= 0; i--) {
       if (shapes[i].checkBoundary(positionX, positionY)) {
-        this.context.selectedId = shapes[i].getAnnotationData().id;
-        this.context.currentTransformer = new Transformer(
-          shapes[i],
-          this.context.scaleState.scale
-        );
-        const [selectedShape] = shapes.splice(i, 1);
-        shapes.push(selectedShape);
-        selectedShape.onDragStart(positionX, positionY);
-        onShapeChange();
-        setState(new DraggingAnnotationState(this.context));
-        return;
+        const mark = shapes[i].getAnnotationData().mark;
+        intersectingShapes.push({
+          shape: shapes[i],
+          originalIndex: i,
+          area: mark.width * mark.height
+        });
       }
+    }
+
+    if (intersectingShapes.length > 0) {
+      // Sort intersecting shapes by area (smallest first)
+      intersectingShapes.sort((a, b) => a.area - b.area);
+
+      // The target is the smallest matching shape under the cursor
+      const target = intersectingShapes[0];
+
+      this.context.selectedId = target.shape.getAnnotationData().id;
+      this.context.currentTransformer = new Transformer(
+        target.shape,
+        this.context.scaleState.scale
+      );
+
+      // Bring the selected shape to the front (end of the array) so it renders on top
+      const [selectedShape] = shapes.splice(target.originalIndex, 1);
+      shapes.push(selectedShape);
+
+      selectedShape.onDragStart(positionX, positionY);
+      onShapeChange();
+      setState(new DraggingAnnotationState(this.context));
+      return;
     }
 
     this.context.shapes.push(

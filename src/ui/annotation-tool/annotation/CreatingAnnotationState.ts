@@ -5,19 +5,20 @@ import { DefaultAnnotationState } from "./DefaultAnnotationState";
 
 export default class CreatingAnnotationState implements IAnnotationState {
   private readonly context: ReactPictureAnnotation;
+  private readonly currentShape: IShape;
+
   constructor(context: ReactPictureAnnotation) {
     this.context = context;
+    this.currentShape = context.shapes[context.shapes.length - 1];
   }
 
   public onMouseDown = () => undefined;
   public onMouseMove = (positionX: number, positionY: number) => {
-    const { shapes } = this.context;
-    if (shapes.length > 0) {
-      const currentShape = shapes[shapes.length - 1];
+    if (this.currentShape) {
       const {
         mark: { x, y },
-      } = currentShape.getAnnotationData();
-      currentShape.adjustMark({
+      } = this.currentShape.getAnnotationData();
+      this.currentShape.adjustMark({
         width: positionX - x,
         height: positionY - y,
       });
@@ -26,7 +27,10 @@ export default class CreatingAnnotationState implements IAnnotationState {
 
   public onMouseUp = () => {
     const { shapes, onShapeChange, setAnnotationState } = this.context;
-    const data = shapes.pop();
+
+    const shapeIndex = shapes.findIndex((s) => s === this.currentShape);
+    const data = shapeIndex !== -1 ? shapes.splice(shapeIndex, 1)[0] : undefined;
+
     let makeNewBox = false;
     if (
       data &&

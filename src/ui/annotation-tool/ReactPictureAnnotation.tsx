@@ -891,6 +891,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   private syncAnnotationData = () => {
     const { annotationData } = this.props;
+
     const refreshShapesWithAnnotationData = () => {
       this.selectedId = null;
       this.shapes = annotationData.map(
@@ -910,6 +911,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       );
       this.onShapeChange();
     };
+
     for (const annotationDataItem of annotationData) {
       const targetShape = this.shapes.find(
         (item) => item.getAnnotationData().id === annotationDataItem.id

@@ -578,7 +578,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             {/* --- NEW PREVIOUS BUTTON --- */}
             {this.props.currentAnnotationCount > 1 && (
               <button
-                className="transition-all duration-500 ease-in-out font-semibold py-2 px-6 rounded border hover:-translate-y-0.5 hover:shadow-md text-accent hover:border-accent"
+                className="transition-all duration-500 ease-in-out font-semibold py-2 px-6 rounded-[2rem] border hover:-translate-y-0.5 hover:shadow-md text-accent hover:border-accent"
                 type="button"
                 onClick={this.onPrevious}
               >
@@ -588,7 +588,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
             {/* Existing Submit Button */}
             <button
-              className="transition-all duration-500 ease-in-out font-semibold py-2 px-6 rounded border bg-primary border-primary text-white hover:bg-opacity-90 hover:-translate-y-0.5 hover:shadow-md"
+              className="transition-all duration-500 ease-in-out font-semibold py-2 px-6 rounded-[2rem] border bg-primary border-primary text-white hover:bg-opacity-90 hover:-translate-y-0.5 hover:shadow-md"
               type="submit"
               onClick={this.submit}
             >

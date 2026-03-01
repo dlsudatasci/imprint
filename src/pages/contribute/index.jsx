@@ -1,13 +1,8 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { getSession } from "next-auth/react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/router";
+import { getSession, useSession } from "next-auth/react";
 
 import Page from "@/ui/page";
-import { H1 } from "@/ui/Typography";
-import { H2 } from "@/ui/Typography";
-import { Lightbulb } from "lucide-react";
 
 import DashboardInfo from "../../features/contribute/dashboard/infoSection";
 
@@ -30,7 +25,6 @@ export default function ContributePage({ session }) {
 
   const activeSession = clientSession || session;
   const username = activeSession?.user?.username || "";
-  const router = useRouter();
 
   const [sessionState, setSessionState] = useState({
     status: "loading", // "loading" | "active" | "none"
@@ -112,7 +106,7 @@ export default function ContributePage({ session }) {
   };
 
   const baseButton =
-    "transition-all duration-500 ease-in-out font-semibold py-2 px-4 rounded border hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none";
+    "transition-all duration-500 ease-in-out font-semibold py-3 px-8 text-lg rounded-[2rem] border hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none";
 
   const hasSession = sessionState.status === "active";
   const isLoadingSession = sessionState.status === "loading";
@@ -123,25 +117,18 @@ export default function ContributePage({ session }) {
       description="Contribute to Imprint! Let's make our streets accessible for all."
       contribute
     >
-      <section className="pt-10 pb-16 border-b-2 border-gray-200">
-        <div className="container mx-auto px-5 lg:max-w-7xl lg:w-4/5">
+      <section className="pt-12 pb-8 border-b border-gray-100">
+        <div className="container mx-auto px-5 lg:max-w-7xl lg:w-4/5 relative z-10">
 
-          {/* Top Centered Fun Fact Pill (Removed max-w-4xl so it stretches naturally) */}
-          {randomFact && (
-            <div className="flex justify-center w-full mb-10">
-              <div className="flex items-center gap-3 bg-amber-50/80 border border-amber-200/80 rounded-full py-2 px-5 text-sm font-medium text-amber-800 shadow-sm text-center">
-                <Lightbulb className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                <span>{randomFact}</span>
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
 
             {/* Left Side: Welcome Text */}
             <div className="w-full md:w-auto">
-              <p className="text-primary font-semibold mb-2 uppercase tracking-wide text-sm">Contributor Dashboard</p>
-              <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">Welcome back, {username}!</h1>
+              <p className="text-primary font-semibold mb-3 tracking-widest text-sm inline-block px-3 py-1 bg-blue-50 rounded-lg">Contributor Dashboard</p>
+              <h1 className="text-4xl lg:text-5xl font-extrabold text-gray-900 tracking-tight leading-tight">
+                Welcome back, <br className="hidden md:block" />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#004aad] to-indigo-500">{username}.</span>
+              </h1>
             </div>
 
             {/* Right Side: The Action Buttons */}
@@ -150,7 +137,7 @@ export default function ContributePage({ session }) {
                 <button
                   onClick={handleRestart}
                   disabled={isLoadingSession}
-                  className={`${baseButton} flex-1 md:flex-none border-gray-300 text-gray-700 bg-white hover:bg-gray-50`}
+                  className={`${baseButton} flex-1 md:flex-none border-gray-200 text-accent hover:border-accent bg-white`}
                 >
                   Stop Session
                 </button>
@@ -159,7 +146,7 @@ export default function ContributePage({ session }) {
               <Link href="/contribute/annotate" className="flex-1 md:flex-none flex">
                 <button
                   disabled={isLoadingSession}
-                  className={`${baseButton} w-full bg-primary border-primary text-white hover:brightness-110 shadow-[0_4px_14px_0_rgba(0,74,173,0.39)]`}
+                  className={`${baseButton} w-full bg-primary border-primary text-white hover:bg-opacity-90`}
                 >
                   {isLoadingSession
                     ? "Loading..."
@@ -169,11 +156,10 @@ export default function ContributePage({ session }) {
                 </button>
               </Link>
             </div>
-
           </div>
         </div>
       </section>
-      <DashboardInfo username={username} refreshCounter={refreshCounter} />
+      <DashboardInfo username={username} refreshCounter={refreshCounter} randomFact={randomFact} />
     </Page>
   );
 }

@@ -46,7 +46,7 @@ export default function Nav() {
     <nav className="flex items-center justify-between container mx-auto px-1 md:px-5 py-5 md:py-10 z-10 relative">
       <div>
         <Link href="/">
-          <Logo height={30} subTitle={isContributePage ? "contribute" : "imprint"} />
+          <Logo height={30} subTitle={isContributePage ? "contribute" : "Imprint"} />
         </Link>
       </div>
       <div className="hidden md:flex flex-grow justify-end items-center">

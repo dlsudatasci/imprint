@@ -27,7 +27,7 @@ export default function Logo({ subTitle }) {
         >
           Imprint
         </h1> */}
-        {subTitle === 'imprint' ? (
+        {subTitle === 'Imprint' ? (
           <span
             className="text-black text-[20px] leading-none m-0 tracking-tight"
             style={{ marginTop: '2px' }}

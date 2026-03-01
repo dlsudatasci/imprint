@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { getSession, useSession } from "next-auth/react";
@@ -7,11 +7,13 @@ import { getSession, useSession } from "next-auth/react";
 import { H2, H3, P } from "@/ui/Typography";
 import Confetti from "react-confetti";
 import { useWindowSize } from "react-use";
+import { getCrossedMilestone, KILOMETERS_PER_ANNOTATION } from "@/util/milestones";
 
 export default function AnnotationDone({ data, total }) {
   const { data: session, status } = useSession();
   const loading = status === "loading";
   const { width, height } = useWindowSize();
+  const [crossedMilestone, setCrossedMilestone] = React.useState(null);
 
   if (typeof window !== "undefined" && loading) return null;
 
@@ -26,13 +28,23 @@ export default function AnnotationDone({ data, total }) {
     window.localStorage.setItem("annotationSetData", null);
 
     async function completeSession() {
-      await fetch("/api/annotationComplete", {
+      const res = await fetch("/api/annotationComplete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           total: total
         }),
       });
+
+      if (res.ok) {
+        const payload = await res.json();
+        if (payload.previousTotal !== undefined && payload.newTotal !== undefined) {
+          const milestone = getCrossedMilestone(payload.previousTotal, payload.newTotal);
+          if (milestone) {
+            setCrossedMilestone(milestone);
+          }
+        }
+      }
     }
     completeSession();
   }, [session, total]);
@@ -47,9 +59,9 @@ export default function AnnotationDone({ data, total }) {
       <Confetti
         width={width}
         height={height}
-        recycle={false}    // stops spawning new confetti after initial burst
-        numberOfPieces={500}
-        gravity={0.15}     // slightly slower fall for better effect
+        recycle={false}
+        numberOfPieces={crossedMilestone ? 1200 : 500}
+        gravity={0.15}
       />
       <section className="container px-5 mx-auto flex flex-col items-center justify-center min-h-[70vh] py-12">
 
@@ -82,6 +94,22 @@ export default function AnnotationDone({ data, total }) {
               Return to Dashboard
             </button>
           </Link>
+
+          {crossedMilestone && (
+            <div className="mt-8 transition-transform duration-500 hover:scale-105 flex justify-center w-full min-w-max">
+              <div className="inline-block bg-gradient-to-r from-yellow-400 via-orange-500 to-pink-500 p-1 rounded-2xl shadow-lg">
+                <div className="bg-white rounded-xl px-6 py-4 text-center">
+                  <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-orange-500 to-pink-600 block mb-1">
+                    🏆 NEW MILESTONE REACHED! 🏆
+                  </span>
+                  <p className="text-gray-700 font-bold">
+                    You've mathematically mapped the equivalent of <br />
+                    <span className="text-primary font-black text-lg">{crossedMilestone.name}</span>!
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Image Gallery */}

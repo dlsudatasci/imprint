@@ -4,6 +4,7 @@ import { P } from "@/ui/Typography";
 import Tooltip from "ui/tooltip";
 import ActivityItem from "./activityItem";
 import { Activity, Target, Zap, Flame, Footprints } from 'lucide-react';
+import { MILESTONES, KILOMETERS_PER_ANNOTATION } from "@/util/milestones";
 
 export default class DashboardInfo extends React.Component {
   constructor(props) {
@@ -63,27 +64,13 @@ export default class DashboardInfo extends React.Component {
       currentStreak: 0
     };
 
-    // Math for Real-World Impact
-    const kmMapped = (totalAnnotation * 0.002).toFixed(2);
+    const rawKmMapped = totalAnnotation * KILOMETERS_PER_ANNOTATION;
+    const kmMapped = rawKmMapped.toFixed(2);
 
-    // Actual Philippine Landmark Milestones
-    const MILESTONES = [
-      { name: "the length of the San Juanico Bridge", km: 2.16 },
-      { name: "the length of Roxas Boulevard", km: 7.6 },
-      { name: "the entire length of EDSA", km: 23.8 },
-      { name: "the length of C-5 Road", km: 32.5 },
-      { name: "the distance from Manila to Tagaytay", km: 65.0 },
-      { name: "the length of SCTEX", km: 93.7 },
-      { name: "the distance from Manila to Baguio", km: 246.0 },
-      { name: "the entire length of Palawan Island", km: 450.0 },
-      { name: "the length of the Maharlika Highway", km: 3379.73 } // The ultimate boss
-    ];
+    const currentMilestone = MILESTONES.find(m => m.km > rawKmMapped) || { name: "the next major highway", km: rawKmMapped + 20 };
 
-    // Find the first milestone they haven't reached yet
-    const currentMilestone = MILESTONES.find(m => m.km > parseFloat(kmMapped)) || { name: "the next major highway", km: parseFloat(kmMapped) + 20 };
-
-    const kmLeft = (currentMilestone.km - kmMapped).toFixed(2);
-    const milestoneProgress = Math.min((parseFloat(kmMapped) / currentMilestone.km) * 100, 100);
+    const kmLeft = (currentMilestone.km - rawKmMapped).toFixed(2);
+    const milestoneProgress = Math.min((rawKmMapped / currentMilestone.km) * 100, 100);
 
     return (
       <section className="pb-12 min-h-[60vh] pt-10">

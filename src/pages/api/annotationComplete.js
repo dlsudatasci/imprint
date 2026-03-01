@@ -17,19 +17,24 @@ const handler = async (req, res) => {
         const date = new Date();
 
         try {
-            // 1. Mark the active session as completed
+            const previousTotal = await db
+                .collection("annotations")
+                .countDocuments({ username: username, status: "completed" });
+
             await db.collection("sessions").updateOne(
                 { username: username, status: "active" },
                 { $set: { status: "completed", completedAt: date } }
             );
 
-            // 2. Mark all pending annotations for this user as completed
             await db.collection("annotations").updateMany(
                 { username: username, status: "pending" },
                 { $set: { status: "completed" } }
             );
 
-            // 3. Log the "Finished" activity
+            const newTotal = await db
+                .collection("annotations")
+                .countDocuments({ username: username, status: "completed" });
+
             await db.collection("users").updateOne(
                 { username: username },
                 {
@@ -50,7 +55,11 @@ const handler = async (req, res) => {
                 imagesCompleted: total,
             });
 
-            return res.status(200).json({ message: "Session and annotations finalized successfully." });
+            return res.status(200).json({
+                message: "Session and annotations finalized successfully.",
+                previousTotal: previousTotal,
+                newTotal: newTotal
+            });
 
         } catch (error) {
             console.error("Database Error:", error);

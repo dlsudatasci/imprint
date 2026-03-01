@@ -6,8 +6,6 @@ import CreatableSelect from "react-select/creatable";
 import cities from "./cities.json";
 
 import Page from "@/ui/page";
-import { H1 } from "@/ui/Typography";
-import { H2 } from "@/ui/Typography";
 
 export default function register() {
   const [loadingForm, setLoading] = useState(false);
@@ -33,16 +31,18 @@ export default function register() {
   const customSelectStyles = {
     control: (provided, state) => ({
       ...provided,
-      backgroundColor: "#f3f4f6",
-      borderRadius: "0.25rem",
-      borderWidth: "2px",
+      backgroundColor: "#f9fafb",
+      borderRadius: "1rem",
+      borderWidth: "1px",
       borderStyle: "solid",
-      borderColor: state.isFocused ? "#015fcc" : "transparent",
-      boxShadow: "none",
-      minHeight: "2.5rem",
+      borderColor: state.isFocused ? "#004aad" : "#e5e7eb",
+      boxShadow: state.isFocused ? "0 0 0 2px rgba(0, 74, 173, 0.2)" : "none",
+      minHeight: "3.2rem",
+      padding: "0.2rem 0.5rem",
       alignItems: "center",
+      transition: "all 0.3s ease",
       "&:hover": {
-        borderColor: state.isFocused ? undefined : "transparent",
+        borderColor: state.isFocused ? "#004aad" : "#e5e7eb",
       },
     }),
     input: (provided) => ({
@@ -160,208 +160,210 @@ export default function register() {
       description="Register to Imprint! Register to Imprint in order to contribute to our platform."
       contribute={false}
     >
-      <section className="container mx-auto p-4 my-12 mb-32 bg-offwhite flex flex-col items-center justify-center">
-        <div className="w-10/12 sm:w-8/12 md:w-6/12 lg:w-5/12 xl:w-5/12 mb-4">
-          <H1>Register to Imprint!</H1>
-          <p className="mt-5">
-            Already have an account?
-            <Link href="/login">
-              <span className="text-sm ml-2 font-bold text-primary hover:underline cursor-pointer">
-                Login Here
-              </span>
-            </Link>
-          </p>
-        </div>
-        <form
-          onSubmit={onSubmit}
-          className="w-10/12 sm:w-8/12 md:w-6/12 lg:w-5/12 xl:w-5/12 mb-6"
-        >
-          <H2 className="mb-4">User Credentials</H2>
-          <label className="font-bold" htmlFor="username">
-            Username
-          </label>
-          <input
-            className="mb-4 p-2 appearance-none block w-full bg-gray-100 placeholder-gray-400 rounded border focus:border-primary"
-            type="text"
-            placeholder="Username"
-            name="username"
-            required
-            onInput={(e) => e.target.setCustomValidity("")}
-          />
-          <label className="font-bold" htmlFor="email">
-            Email
-          </label>
-          <input
-            className="mb-4 p-2 appearance-none block w-full bg-gray-100 placeholder-gray-400 rounded border focus:border-primary"
-            type="email"
-            placeholder="hello@website.com"
-            name="email"
-            required
-            onInput={(e) => e.target.setCustomValidity("")}
-          />
-          <label className="font-bold" htmlFor="password">
-            Password
-          </label>
-          <input
-            className="mb-4 p-2 appearance-none block w-full bg-gray-100 placeholder-gray-400 rounded border focus:border-primary"
-            type="password"
-            placeholder="Password"
-            name="password"
-            required
-            onInput={(e) => e.target.setCustomValidity("")}
-          />
-          <label className="font-bold" htmlFor="confirm-password">
-            Confirm Password
-          </label>
+      <section className="container mx-auto p-4 my-12 mb-32 flex flex-col items-center justify-center">
+        <div className="w-full sm:w-11/12 md:w-9/12 lg:w-7/12 xl:w-6/12 bg-white rounded-[2rem] shadow-[0_4px_40px_rgb(0,0,0,0.06)] border border-gray-100 p-8 sm:p-12 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-blue-50 to-transparent rounded-full blur-3xl opacity-60 -translate-y-1/2 translate-x-1/3 pointer-events-none" />
 
-          <input
-            className="mb-4 p-2 appearance-none block w-full bg-gray-100 placeholder-gray-400 rounded border focus:border-primary"
-            type="password"
-            placeholder="Confirm Password"
-            name="confirmPassword"
-            required
-            onInput={(e) => e.target.setCustomValidity("")}
-          />
-          <hr className="my-1 mb-5" />
-          <H2 className="mb-4">User Demographic</H2>
-          <label className="font-bold" htmlFor="city">
-            City of Residence
-          </label>
-          <input
-            className="mb-4 p-2 appearance-none block w-full bg-gray-100 placeholder-gray-400 rounded border focus:border-primary"
-            type="text"
-            placeholder="City of Residence"
-            name="city"
-            required
-          />
-          <label className="font-bold mb-2 block" htmlFor="frequentlyWalkedCities">
-            Frequently Walked Cities
-          </label>
-          <CreatableSelect
-            isMulti
-            options={cityOptions}
-            onChange={(selectedOptions) => setFrequentlyWalkedCities(selectedOptions)}
-            className="mb-4"
-            placeholder="Type and select cities (e.g., Makati, Cebu)"
-            styles={customSelectStyles}
-          />
-          <label className="font-bold" htmlFor="age">
-            Age
-          </label>
-          <input
-            className="mb-4 p-2 appearance-none block w-full bg-gray-100 placeholder-gray-400 rounded border focus:border-primary"
-            type="number"
-            placeholder="Age"
-            name="age"
-            required
-            onInput={(e) => e.target.setCustomValidity("")}
-          />
-          <fieldset className="border-0 mb-4">
-            <legend className="block text-gray-700 mb-2 font-bold">
-              How often do you walk in your usual commute?
-            </legend>
-            <label className="block text-gray-700 font-bold mb-2">
-              <input
-                className="mr-2 leading-tight"
-                type="radio"
-                name="commuteFrequency"
-                value="never"
-                required
-              />
-              <span className="text-sm">Never</span>
-            </label>
-            <label className="block text-gray-700 font-bold mb-2">
-              <input
-                className="mr-2 leading-tight"
-                type="radio"
-                name="commuteFrequency"
-                value="rarely"
-                required
-              />
-              <span className="text-sm">Rarely</span>
-            </label>
-            <label className="block text-gray-700 font-bold mb-2">
-              <input
-                className="mr-2 leading-tight"
-                type="radio"
-                name="commuteFrequency"
-                value="occasionally"
-              />
-              <span className="text-sm">Occasionally</span>
-            </label>
-            <label className="block text-gray-700 font-bold mb-2">
-              <input
-                className="mr-2 leading-tight"
-                type="radio"
-                name="commuteFrequency"
-                value="frequently"
-                required
-              />
-              <span className="text-sm">Frequently</span>
-            </label>
-            <label className="block text-gray-700 font-bold mb-2">
-              <input
-                className="mr-2 leading-tight"
-                type="radio"
-                name="commuteFrequency"
-                value="always"
-                required
-              />
-              <span className="text-sm">Always</span>
-            </label>
-          </fieldset>
-          <label className="font-bold" htmlFor="city">
-            Referred by
-          </label>
-          <input
-            className="mb-4 p-2 appearance-none block w-full bg-gray-100 placeholder-gray-400 rounded border focus:border-primary"
-            type="text"
-            placeholder="Referred by"
-            name="referred"
-          />
-          <div className="text-xs -mb-2 pb-4 text-gray-600">
-            *This is optional. If there is a person or a group who invited you
-            to use this platform, indicate his/her username or the name of the
-            entity.
+          <div className="mb-8 relative z-10 text-center">
+            <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Register to Imprint</h1>
+            <p className="mt-3 text-gray-500 font-medium">
+              Already have an account?
+              <Link href="/login">
+                <span className="text-primary hover:text-[#004aad] ml-2 font-bold transition-colors cursor-pointer hover:underline">
+                  Login Here
+                </span>
+              </Link>
+            </p>
           </div>
+          <form
+            onSubmit={onSubmit}
+            className="relative z-10"
+          >
+            <h2 className="text-xl font-bold text-gray-800 mb-6 mt-2">User Credentials</h2>
+            <label className="font-bold" htmlFor="username">
+              Username
+            </label>
+            <input
+              className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
+              type="text"
+              placeholder="Username"
+              name="username"
+              required
+              onInput={(e) => e.target.setCustomValidity("")}
+            />
+            <label className="font-bold" htmlFor="email">
+              Email
+            </label>
+            <input
+              className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
+              type="email"
+              placeholder="hello@website.com"
+              name="email"
+              required
+              onInput={(e) => e.target.setCustomValidity("")}
+            />
+            <label className="font-bold" htmlFor="password">
+              Password
+            </label>
+            <input
+              className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
+              type="password"
+              placeholder="Password"
+              name="password"
+              required
+              onInput={(e) => e.target.setCustomValidity("")}
+            />
+            <label className="font-bold" htmlFor="confirm-password">
+              Confirm Password
+            </label>
 
-          <div className="flex items-center mt-6 ">
-            <div className="w-2/3 flex items-center">
-              <input
-                id="remember-me"
-                type="checkbox"
-                className="mt-1 mr-2"
-                required
-              />
-              <label htmlFor="remember-me">
-                I have read the{" "}
-                <Link
-                  href="/terms-of-use"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="cursor-pointer py-2 px-0 text-black inline-block underline"
-                >
-                  Terms of Use
-                </Link>
+            <input
+              className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
+              type="password"
+              placeholder="Confirm Password"
+              name="confirmPassword"
+              required
+              onInput={(e) => e.target.setCustomValidity("")}
+            />
+            <hr className="my-1 mb-5" />
+            <h2 className="text-xl font-bold text-gray-800 mb-6 mt-2">User Demographic</h2>
+            <label className="font-bold" htmlFor="city">
+              City of Residence
+            </label>
+            <input
+              className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
+              type="text"
+              placeholder="City of Residence"
+              name="city"
+              required
+            />
+            <label className="font-bold mb-2 block" htmlFor="frequentlyWalkedCities">
+              Frequently Walked Cities
+            </label>
+            <CreatableSelect
+              isMulti
+              options={cityOptions}
+              onChange={(selectedOptions) => setFrequentlyWalkedCities(selectedOptions)}
+              className="mb-4"
+              placeholder="Type and select cities (e.g., Makati, Cebu)"
+              styles={customSelectStyles}
+            />
+            <label className="font-bold" htmlFor="age">
+              Age
+            </label>
+            <input
+              className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
+              type="number"
+              placeholder="Age"
+              name="age"
+              required
+              onInput={(e) => e.target.setCustomValidity("")}
+            />
+            <fieldset className="border-0 mb-4">
+              <legend className="block text-gray-700 mb-2 font-bold">
+                How often do you walk in your usual commute?
+              </legend>
+              <label className="block text-gray-700 font-bold mb-2">
+                <input
+                  className="mr-2 leading-tight"
+                  type="radio"
+                  name="commuteFrequency"
+                  value="never"
+                  required
+                />
+                <span className="text-sm">Never</span>
               </label>
+              <label className="block text-gray-700 font-bold mb-2">
+                <input
+                  className="mr-2 leading-tight"
+                  type="radio"
+                  name="commuteFrequency"
+                  value="rarely"
+                  required
+                />
+                <span className="text-sm">Rarely</span>
+              </label>
+              <label className="block text-gray-700 font-bold mb-2">
+                <input
+                  className="mr-2 leading-tight"
+                  type="radio"
+                  name="commuteFrequency"
+                  value="occasionally"
+                />
+                <span className="text-sm">Occasionally</span>
+              </label>
+              <label className="block text-gray-700 font-bold mb-2">
+                <input
+                  className="mr-2 leading-tight"
+                  type="radio"
+                  name="commuteFrequency"
+                  value="frequently"
+                  required
+                />
+                <span className="text-sm">Frequently</span>
+              </label>
+              <label className="block text-gray-700 font-bold mb-2">
+                <input
+                  className="mr-2 leading-tight"
+                  type="radio"
+                  name="commuteFrequency"
+                  value="always"
+                  required
+                />
+                <span className="text-sm">Always</span>
+              </label>
+            </fieldset>
+            <label className="font-bold" htmlFor="city">
+              Referred by
+            </label>
+            <input
+              className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
+              type="text"
+              placeholder="Referred by"
+              name="referred"
+            />
+            <div className="text-xs -mb-2 pb-4 text-gray-600">
+              *This is optional. If there is a person or a group who invited you
+              to use this platform, indicate his/her username or the name of the
+              entity.
             </div>
-            <button
-              className="ml-auto w-1/3 bg-accent text-white p-2 rounded font-semibold hover:bg-gray-900"
-              type="submit"
-              disabled={loadingForm}
-            >
-              {loadingForm ? "Loading..." : "Submit"}
-            </button>
-          </div>
 
-          {serverError ? (
-            <div className="text-xs -mb-2 pb-4 text-red-600">
-              {serverError}
+            <div className="flex items-center mt-8">
+              <div className="w-full sm:w-2/3 flex items-center">
+                <input
+                  id="remember-me"
+                  type="checkbox"
+                  className="mt-1 mr-3 w-5 h-5 text-primary bg-gray-100 border-gray-300 rounded focus:ring-primary focus:ring-2"
+                  required
+                />
+                <label htmlFor="remember-me" className="text-gray-600 font-medium text-sm">
+                  I have read the{" "}
+                  <Link
+                    href="/terms-of-use"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="cursor-pointer text-primary font-bold hover:underline"
+                  >
+                    Terms of Use
+                  </Link>
+                </label>
+              </div>
+              <button
+                className="ml-auto transition-all duration-500 ease-in-out font-bold py-3.5 px-8 text-lg rounded-[2rem] bg-primary border border-primary text-white hover:bg-opacity-90 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_-4px_rgba(0,74,173,0.3)] disabled:opacity-50"
+                type="submit"
+                disabled={loadingForm}
+              >
+                {loadingForm ? "Loading..." : "Submit"}
+              </button>
             </div>
-          ) : (
-            <div />
-          )}
-        </form>
+
+            {serverError && (
+              <div className="text-sm mt-6 text-red-500 font-medium text-center bg-red-50 p-3 rounded-xl border border-red-100">
+                {serverError}
+              </div>
+            )}
+          </form>
+        </div>
       </section>
     </Page>
   );

@@ -164,7 +164,7 @@ export default function ContributePage({ session }) {
                   {isLoadingSession
                     ? "Loading..."
                     : hasSession
-                      ? `Resume Annotation (${sessionState.current}/${sessionState.total})`
+                      ? `Resume Annotation (${sessionState.current - 1}/${sessionState.total})`
                       : "Start Annotating"}
                 </button>
               </Link>

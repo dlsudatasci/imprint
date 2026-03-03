@@ -4,7 +4,6 @@ import { isMobile } from "react-device-detect";
 import { useSession } from "next-auth/react"; // Add this import
 
 import Page from "@/ui/page";
-import { H2 } from "@/ui/Typography";
 import MobileWarning from "features/annotate/mobileWarning";
 import AnnotationSessionSelection from "features/annotate/selection";
 import AnnotateForm from "features/annotate/form";

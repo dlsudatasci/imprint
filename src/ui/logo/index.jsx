@@ -5,7 +5,7 @@ export default function Logo({ subTitle }) {
     <div style={{ display: 'flex', alignItems: 'center' }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/images/logo/3.png"
+        src="/images/logo/imprint.png"
         alt="Logo"
         style={{
           height: `${logoHeight}px`,

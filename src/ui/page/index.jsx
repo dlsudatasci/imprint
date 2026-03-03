@@ -16,7 +16,7 @@ export default function Page({
         <title>{title}</title>
 
         <meta name="description" content={description} />
-
+        <link rel="icon" href="images/logo/browser.jpg" />
       </Head>
 
       {!contribute ? (

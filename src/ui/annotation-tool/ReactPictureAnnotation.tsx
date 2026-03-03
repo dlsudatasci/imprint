@@ -665,8 +665,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           const init = obj.initialState;
           let isModified = false;
           if (init) {
-            let normalizedInit = init.comment ? init.comment.toLowerCase().replace(/_/g, " ") : "";
-            let normalizedObj = obj.comment ? obj.comment.toLowerCase().replace(/_/g, " ") : "";
+            const normalizedInit = init.comment ? init.comment.toLowerCase().replace(/_/g, " ") : "";
+            const normalizedObj = obj.comment ? obj.comment.toLowerCase().replace(/_/g, " ") : "";
 
             if (normalizedInit !== normalizedObj) isModified = true;
 

@@ -48,11 +48,6 @@ export default function AnnotationSessionSelection({ username }) {
           <hr className="mt-4" />
           <div className="mt-5 flex flex-wrap justify-center">
             <div className="mr-5 mt-4">
-              <Button onClick={() => setAnnotationSession(1)}>
-                <span className="block px-3 py-3 text-5xl">01</span>
-              </Button>
-            </div>
-            <div className="mr-5 mt-4">
               <Button onClick={() => setAnnotationSession(5)}>
                 <span className="block px-3 py-3 text-5xl">05</span>
               </Button>

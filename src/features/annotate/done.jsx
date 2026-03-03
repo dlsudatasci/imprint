@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { getSession, useSession } from "next-auth/react";
 
-import { H2, H3, P } from "@/ui/Typography";
+import { H3 } from "@/ui/Typography";
 import Confetti from "react-confetti";
 import { useWindowSize } from "react-use";
-import { getCrossedMilestone, KILOMETERS_PER_ANNOTATION } from "@/util/milestones";
+import { getCrossedMilestone } from "@/util/milestones";
 
 export default function AnnotationDone({ data, total }) {
   const { data: session, status } = useSession();
@@ -103,7 +103,7 @@ export default function AnnotationDone({ data, total }) {
                     🏆 NEW MILESTONE REACHED! 🏆
                   </span>
                   <p className="text-gray-700 font-bold">
-                    You've mathematically mapped the equivalent of <br />
+                    You&apos;ve mathematically mapped the equivalent of <br />
                     <span className="text-primary font-black text-lg">{crossedMilestone.name}</span>!
                   </p>
                 </div>

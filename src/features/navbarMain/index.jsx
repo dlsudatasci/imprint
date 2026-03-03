@@ -12,7 +12,7 @@ export default function Nav() {
   const router = useRouter();
   const isContributePage = router.pathname.startsWith('/contribute');
   const isAuthPage = router.pathname === '/login' || router.pathname === '/register';
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const [menuState, setMenuState] = useState(false);
   const [profileMenuState, setProfileMenuState] = useState(false);
 

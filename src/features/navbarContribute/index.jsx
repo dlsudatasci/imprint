@@ -5,8 +5,6 @@ import NavLink from "@/ui/navlink";
 import { signOut } from "next-auth/react";
 
 import Logo from "@/ui/logo";
-import Button from "@/ui/buttons/Button";
-import styles from "./styles.module.css";
 
 export default function Nav() {
   const [menuState, setMenuState] = useState(false);

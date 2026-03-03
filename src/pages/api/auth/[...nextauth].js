@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { connectToDatabase } from "@/util/mongodb";
 
@@ -26,20 +27,63 @@ export const authOptions = {
         return null;
       },
     }),
+    GoogleProvider({
+      clientId: process.env.GOOGLE_ID,
+      clientSecret: process.env.GOOGLE_SECRET,
+      allowDangerousEmailAccountLinking: true,
+    }),
   ],
   pages: {
-    signIn: "/login", // Redirects here if not logged in
-    error: "/login",  // Redirects here on error
+    signIn: "/login",
+    error: "/login",
   },
   session: {
     strategy: "jwt",
   },
   secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
-    jwt: async ({ token, user }) => {
+    jwt: async ({ token, user, account, trigger, session }) => {
+      // If the client calls `update({ username: ... })` to silently refresh the cookie mid-session
+      if (trigger === "update" && session?.username) {
+        token.user.username = session.username;
+        token.user.isNewGoogleUser = false;
+      }
+
+      // This logic only runs on the very first sign-in when 'user' object is passed
       if (user) {
         token.user = user;
+
+        if (account && account.provider === "google") {
+          try {
+            const { db } = await connectToDatabase();
+            // Check if user already exists in DB AND has a username (fully complete profile)
+            const dbUser = await db.collection("users").findOne({ email: user.email });
+
+            if (dbUser && dbUser.username) {
+              // They exist fully! Overwrite the default Google token.user with their full DB record
+              token.user = {
+                ...dbUser,
+                _id: dbUser._id.toString()
+              };
+            } else {
+              // They don't exist in DB yet, or exist but have an incomplete profile without a username
+              token.user.isNewGoogleUser = true;
+            }
+          } catch (error) {
+            console.error("Error connecting to database during Google callback", error);
+            token.user.isNewGoogleUser = true; // Default to prompting completion on error to be safe
+          }
+        }
       }
+
+      // Failsafe check: If the token was loaded from an older cookie and lacks a username, flag it.
+      if (token.user && !token.user.username) {
+        token.user.isNewGoogleUser = true;
+      } else if (token.user && token.user.username) {
+        // Ensure the flag is removed if they successfully registered it
+        token.user.isNewGoogleUser = false;
+      }
+
       return token;
     },
     session: async ({ session, token }) => {
@@ -76,7 +120,7 @@ export default async function auth(req, res) {
     if (!rememberMe) {
       customOptions.session = {
         ...customOptions.session,
-        maxAge: 24 * 60 * 60, // 24 hours
+        maxAge: 24 * 60 * 60,
       };
     }
   }

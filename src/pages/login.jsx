@@ -131,6 +131,7 @@ export default function Login() {
 
                 <button
                   type="button"
+                  onClick={() => signIn("google", { callbackUrl: `${window.location.origin}/contribute` })}
                   className="w-full flex items-center justify-center gap-2 transition-all duration-300 ease-in-out font-bold py-3 px-6 text-base rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:-translate-y-0.5 hover:shadow-sm focus:ring-2 focus:ring-gray-200 focus:outline-none"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}

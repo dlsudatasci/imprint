@@ -179,6 +179,23 @@ export default function register() {
             onSubmit={onSubmit}
             className="relative z-10"
           >
+            {/* Google Sign-Up */}
+            <button
+              type="button"
+              onClick={() => signIn("google", { callbackUrl: `${window.location.origin}/contribute` })}
+              className="w-full flex items-center justify-center gap-2 transition-all duration-300 ease-in-out font-bold py-3 px-6 text-base rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:-translate-y-0.5 hover:shadow-sm focus:ring-2 focus:ring-gray-200 focus:outline-none mb-6"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
+              Sign up with Google
+            </button>
+
+            <div className="flex items-center gap-3 mb-6">
+              <hr className="flex-1 border-gray-200" />
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">or</span>
+              <hr className="flex-1 border-gray-200" />
+            </div>
+
             <h2 className="text-xl font-bold text-gray-800 mb-6 mt-2">User Credentials</h2>
             <label className="font-bold" htmlFor="username">
               Username

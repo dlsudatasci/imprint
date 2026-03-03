@@ -10,6 +10,7 @@ export const authOptions = {
       credentials: {
         username: { label: "username", type: "text", placeholder: "username" },
         password: { label: "Password", type: "password" },
+        rememberMe: { label: "Remember Me", type: "text" }
       },
       async authorize(credentials) {
         const { db } = await connectToDatabase();
@@ -59,4 +60,26 @@ export const authOptions = {
   },
 };
 
-export default NextAuth(authOptions);
+export default async function auth(req, res) {
+  const isCredentialsCallback =
+    req.method === "POST" &&
+    req.query?.nextauth?.includes("callback") &&
+    req.query?.nextauth?.includes("credentials");
+
+  let customOptions = { ...authOptions };
+
+  if (isCredentialsCallback) {
+    const rememberMe = req.body?.rememberMe === "true";
+
+    // If user does not want to be remembered for 30 days,
+    // expire the session in 24 hours (1 day).
+    if (!rememberMe) {
+      customOptions.session = {
+        ...customOptions.session,
+        maxAge: 24 * 60 * 60, // 24 hours
+      };
+    }
+  }
+
+  return await NextAuth(req, res, customOptions);
+}

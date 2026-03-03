@@ -1,7 +1,6 @@
 import Page from "@/ui/page";
 import AnnotateView from "@/features/annotateView/form";
 export default function ViewAnnotation({ data }) {
-  // console.log(data);
   return (
     <Page
       title="About - Imprint"

@@ -29,10 +29,6 @@ const handler = async (req, res) => {
       username: annotationRecord.username,
       date: annotationRecord.date,
     };
-    // console.log("0----------------------");
-    // console.log(annotationRecord);
-    // console.log(data);
-    // console.log("0----------------------");
 
     res.json(data);
   }

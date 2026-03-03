@@ -52,7 +52,7 @@ export default function ForgotPassword() {
                     <div className="mb-8 text-center flex flex-col items-center">
                         <div className="mb-4">
                             <Image
-                                src="/images/logo/3.png"
+                                src="/images/logo/imprint.png"
                                 alt="Imprint Logo"
                                 width={80}
                                 height={80}

@@ -41,12 +41,20 @@ export default function ContributePage({ session }) {
   }, []);
 
   useEffect(() => {
-    if (status !== "authenticated" || !username) {
-      if (status === "unauthenticated") {
-        setSessionState({ status: "none", current: 0, total: 0 });
-      }
+    if (status === "unauthenticated") {
+      setSessionState({ status: "none", current: 0, total: 0 });
       return;
     }
+
+    if (status !== "authenticated") return;
+
+    if (activeSession?.user?.isNewGoogleUser) {
+      // Intercept incomplete Google profiles and force them to fill it out
+      window.location.replace("/complete-profile");
+      return;
+    }
+
+    if (!username) return;
 
     const checkSession = async () => {
       // 1. Check local storage first

@@ -163,7 +163,7 @@ export default class DashboardInfo extends React.Component {
             </div>
 
             <ul className="flex-1 overflow-y-auto pr-2 space-y-3">
-              {userActivity.length > 0 ? (
+              {userActivity?.length > 0 ? (
                 userActivity
                   .slice()
                   .reverse()

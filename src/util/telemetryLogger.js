@@ -17,8 +17,6 @@ export async function logTelemetryEvent(eventPayload) {
 
         // Insert into the telemetry_logs collection
         await db.collection("telemetry_logs").insertOne(payloadWithTime);
-
-        console.log(`[Telemetry Logged] Event: ${eventPayload.event}`);
     } catch (err) {
         console.error(`[Telemetry Error] Failed to write event ${eventPayload.event} to DB:`, err);
     }

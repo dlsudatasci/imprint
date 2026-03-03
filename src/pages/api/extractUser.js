@@ -6,23 +6,14 @@ const handler = async (req, res) => {
     const { db } = await connectToDatabase();
     const username = req.body;
 
-    // Annotation Count
-    const annotationCount = await db
-      .collection("annotations")
-      .countDocuments({ username: username, status: { $ne: "pending" } });
-
-
-    // User Activities
+    // Fetch user once — totalAnnotations and activities live on the same document
     const user = await db
       .collection("users")
-      .find({ username: username })
-      .limit(1)
-      .toArray();
-    const userActivities = user[0].activities;
+      .findOne({ username: username }, { projection: { activities: 1, totalAnnotations: 1 } });
 
     res.json({
-      annotationCount,
-      userActivities,
+      annotationCount: user?.totalAnnotations ?? 0,
+      userActivities: user?.activities ?? [],
     });
   }
 };

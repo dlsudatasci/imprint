@@ -33,8 +33,6 @@ const handler = async (req, res) => {
     }
 
     try {
-      // CHANGED: Use updateOne with upsert: true instead of insertOne
-      // This ensures that if the user annotates the same image twice, it updates the old one.
       await db.collection("annotations").updateOne(
         { imageID: imageID, username: username }, // Search Criteria
         {
@@ -77,7 +75,6 @@ const handler = async (req, res) => {
       return res.status(500).json({ message: "Internal Server Error" });
     }
   } else {
-    // Handle non-POST requests
     res.setHeader("Allow", ["POST"]);
     return res.status(405).json({ message: `Method ${req.method} Not Allowed` });
   }

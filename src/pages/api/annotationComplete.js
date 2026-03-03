@@ -35,9 +35,12 @@ const handler = async (req, res) => {
                 .collection("annotations")
                 .countDocuments({ username: username, status: "completed" });
 
+            const sessionDelta = newTotal - previousTotal;
+
             await db.collection("users").updateOne(
                 { username: username },
                 {
+                    $inc: { totalAnnotations: sessionDelta },
                     $push: {
                         activities: {
                             activity: `You finished ${total} annotations`,

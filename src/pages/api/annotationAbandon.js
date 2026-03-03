@@ -38,10 +38,11 @@ const handler = async (req, res) => {
                         { $set: { status: "completed" } }
                     );
 
-                    // Log activity for the portion they finished
+                    // Log activity and increment the denormalized counter for the portion they finished
                     await db.collection("users").updateOne(
                         { username: username },
                         {
+                            $inc: { totalAnnotations: completedCount },
                             $push: {
                                 activities: {
                                     activity: `Abandoned session (${completedCount} annotation${completedCount === 1 ? '' : 's'} finished)`,

@@ -124,39 +124,31 @@ export default async function handler(req, res) {
             { $sort: { _id: -1 } } // Sort newest to oldest
         ]).toArray();
 
-        // Calculate consecutive streak
         let currentStreak = 0;
         if (uniqueDatesCursor.length > 0) {
+            const manilaFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' });
+
             const today = new Date();
-            // Convert 'today' to Manila timezone string to perfectly match DB aggregation
-            const todayString = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(today); // YYYY-MM-DD
+            const todayString = manilaFormatter.format(today);
 
             const yesterday = new Date(today);
             yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayString = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(yesterday);
+            const yesterdayString = manilaFormatter.format(yesterday);
 
-            let checkDate = new Date(todayString);
-
-            // The streak can start either today or yesterday (if they haven't logged in yet today)
-            // If the most recent log isn't today OR yesterday, their streak is broken (0).
             const mostRecentString = uniqueDatesCursor[0]._id;
 
             if (mostRecentString === todayString || mostRecentString === yesterdayString) {
-                // If it starts yesterday, step our checking date back by one
-                if (mostRecentString === yesterdayString) {
-                    checkDate.setDate(checkDate.getDate() - 1);
-                }
+                // Walk backwards day-by-day from whichever date the streak starts on
+                let checkDate = new Date(mostRecentString + "T00:00:00+08:00");
 
-                // Track backwards day by day to see how long the unbroken chain is
                 for (const row of uniqueDatesCursor) {
-                    const rowDateString = row._id;
-                    const expectedString = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(checkDate); // use UTC format parsing to match YYYY-MM-DD exactly
+                    const expectedString = manilaFormatter.format(checkDate);
 
-                    if (rowDateString === expectedString) {
+                    if (row._id === expectedString) {
                         currentStreak++;
-                        checkDate.setDate(checkDate.getDate() - 1); // step back one day
+                        checkDate.setDate(checkDate.getDate() - 1);
                     } else {
-                        break; // streak broken
+                        break;
                     }
                 }
             }

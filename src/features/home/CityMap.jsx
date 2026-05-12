@@ -1,52 +1,108 @@
-import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import cities from '@/pages/dataset_cities.json';
+import { useEffect, useCallback } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  GeoJSON,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import boundaries from "@/pages/cityBoundaries.json";
 
-const fixLeafletIcons = () => {
-  delete L.Icon.Default.prototype._getIconUrl;
-  L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  });
-};
+// Colors auto-assigned to cities by index. Add more if needed.
+const CITY_COLORS = ["#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#ef4444", "#ec4899", "#06b6d4"];
 
-if (typeof window !== 'undefined') {
-  fixLeafletIcons();
+function getCityColor(index) {
+  return CITY_COLORS[index % CITY_COLORS.length];
 }
 
-export default function CityMap() {
-  // Default center (Metro Manila)
-  const center = [14.5547, 121.0244];
+function getStyle(color, mode) {
+  if (mode === "active") return { fillColor: color, fillOpacity: 0.4, color, weight: 3, opacity: 0.9 };
+  if (mode === "hover") return { fillColor: color, fillOpacity: 0.25, color, weight: 2, opacity: 0.7 };
+  return { fillColor: color, fillOpacity: 0.12, color, weight: 1.5, opacity: 0.4 };
+}
+
+// Auto-fit map to show all polygons on load
+function FitBounds() {
+  const map = useMap();
+  useEffect(() => {
+    if (!boundaries?.features?.length) return;
+    const L = require("leaflet");
+    map.fitBounds(L.geoJSON(boundaries).getBounds().pad(0.15), { animate: false });
+  }, [map]);
+  return null;
+}
+
+// Clicking empty map area deselects
+function MapDeselect({ onCitySelect }) {
+  useMapEvents({
+    click: (e) => {
+      if (!e.originalEvent._polygonClick) onCitySelect(null);
+    },
+  });
+  return null;
+}
+
+// Remounts via key when selectedCity changes so closures stay fresh
+function CityPolygons({ selectedCity, onCitySelect }) {
+  const styleFunc = useCallback(
+    (feature) => {
+      const i = boundaries.features.indexOf(feature);
+      const color = getCityColor(i);
+      return getStyle(color, feature.properties.name === selectedCity ? "active" : "default");
+    },
+    [selectedCity]
+  );
+
+  const onEachFeature = useCallback(
+    (feature, layer) => {
+      const name = feature.properties.name;
+      const i = boundaries.features.indexOf(feature);
+      const color = getCityColor(i);
+
+      layer.on({
+        mouseover: () => { if (name !== selectedCity) layer.setStyle(getStyle(color, "hover")); },
+        mouseout:  () => { if (name !== selectedCity) layer.setStyle(getStyle(color, "default")); },
+        click: (e) => {
+          e.originalEvent._polygonClick = true;
+          onCitySelect(selectedCity === name ? null : name);
+        },
+      });
+    },
+    [selectedCity, onCitySelect]
+  );
 
   return (
-    <div className="w-full h-[500px] rounded-xl overflow-hidden shadow-lg border-4 border-black relative z-0">
+    <GeoJSON
+      key={`polygons-${selectedCity || "none"}`}
+      data={boundaries}
+      style={styleFunc}
+      onEachFeature={onEachFeature}
+    />
+  );
+}
+
+export default function CityMap({ selectedCity, onCitySelect }) {
+  return (
+    <div className="w-full h-full min-h-[400px] rounded-2xl overflow-hidden shadow-lg border border-gray-200 relative z-0">
       <MapContainer
-        center={center}
-        zoom={11}
+        center={[14.5, 121.01]}
+        zoom={12}
         scrollWheelZoom={false}
+        zoomControl={true}
+        doubleClickZoom={false}
+        touchZoom={false}
+        dragging={true}
         className="h-full w-full"
+        style={{ minHeight: "400px", background: "#f8f9fa" }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
-
-        {cities && cities.map((city, index) => (
-          <Marker
-            key={index}
-            position={[city.lat, city.lng]}
-          >
-            <Popup>
-              <div className="text-center">
-                <h3 className="font-bold text-lg">{city.name}</h3>
-                <p>Target Area for Annotation</p>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        <FitBounds />
+        <MapDeselect onCitySelect={onCitySelect} />
+        <CityPolygons selectedCity={selectedCity} onCitySelect={onCitySelect} />
       </MapContainer>
     </div>
   );

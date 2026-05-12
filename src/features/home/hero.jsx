@@ -1,54 +1,46 @@
+import Link from "next/link";
+import dynamic from "next/dynamic";
+import { H1 } from "@/ui/Typography";
+import { P } from "@/ui/Typography";
+import Button from "@/ui/buttons/Button";
 
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
+const CityMap = dynamic(() => import("./CityMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-[400px] bg-gray-100 animate-pulse flex items-center justify-center rounded-2xl border border-gray-200">
+      <p className="text-sm font-medium text-gray-400">Loading Map...</p>
+    </div>
+  ),
+});
 
-import { H1 } from '@/ui/Typography';
-import { P } from '@/ui/Typography';
-import Button from '@/ui/buttons/Button';
-
-export default function Hero() {
-  const [scrollState, setScrollState] = useState(0);
-
-  useEffect(() => {
-    setScrollState(2);
-  }, [scrollState]);
-
+export default function Hero({ selectedCity, onCitySelect }) {
   return (
-    <section className="container flex flex-col mx-auto items-center md:flex-row justify-center py-10 md:p-5 px-5">
-      <div className="flex flex-col mx-auto justify-center max-w-md md:max-w-2xl md:mr-12">
-        <H1>Welcome to <span className="font-bold text-primary">Imprint</span></H1>
+    <section className="container flex flex-col mx-auto items-center lg:flex-row justify-center py-10 md:p-5 px-5 gap-10 lg:gap-16">
+      <div className="flex flex-col mx-auto justify-center max-w-md lg:max-w-lg xl:max-w-xl flex-shrink-0">
+        <H1>
+          Welcome to <span className="font-bold text-primary">Imprint</span>
+        </H1>
         <div className="mt-4">
           <P>
-            We aim to accelerate crowdsourced streetscape data collection to understand how people perceive accessibility, safety, and walkability in urban environments.
+            We aim to accelerate crowdsourced streetscape data collection to
+            understand how people perceive accessibility, safety, and
+            walkability in urban environments.
           </P>
         </div>
         <div className="mt-5 flex">
           <div className="mr-5">
-            <Button variant="outline"><Link href="/contribute">Contribute</Link></Button>
+            <Button variant="outline">
+              <Link href="/contribute">Contribute</Link>
+            </Button>
           </div>
-          <Button variant="outline"><Link href="/about">Learn More</Link></Button>
+          <Button variant="outline">
+            <Link href="/about">Learn More</Link>
+          </Button>
         </div>
       </div>
-      <div className="flex pt-12">
-        <div style={{ position: 'relative', height: '450px', width: '300px' }} className="rounded-lg overflow-hidden">
-          <Image
-            src="/images/home/hero1.jpg"
-            fill
-            style={{ objectFit: 'cover' }}
-            alt="Sidewalk in Manila 1"
-          />
-        </div>
-        <div className={`mt-12 -ml-12 duration-500 ease-in ${scrollState < 1 ? 'opacity-0' : 'opacity-100'}`}>
-          <div style={{ position: 'relative', height: '450px', width: '300px' }} className="shadow-xl rounded-lg overflow-hidden">
-            <Image
-              src="/images/home/hero2.jpg"
-              fill
-              style={{ objectFit: 'cover' }}
-              alt="Sidewalk in Manila 2"
-            />
-          </div>
-        </div>
+
+      <div className="w-full lg:w-1/2 xl:w-[55%] flex-shrink-0">
+        <CityMap selectedCity={selectedCity} onCitySelect={onCitySelect} />
       </div>
     </section>
   );

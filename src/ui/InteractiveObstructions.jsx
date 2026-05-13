@@ -4,9 +4,8 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { Environment } from '@react-three/drei';
 import * as THREE from 'three';
 
-function easeOutElastic(x) {
-    const c4 = (2 * Math.PI) / 3;
-    return x === 0 ? 0 : x === 1 ? 1 : Math.pow(2, -10 * x) * Math.sin((x * 10 - 0.75) * c4) + 1;
+function easeOutCubic(x) {
+    return 1 - Math.pow(1 - x, 3);
 }
 
 // Blinking logic hook
@@ -82,14 +81,15 @@ function VirtualMouse() {
 
     const cursorShape = useMemo(() => {
         const shape = new THREE.Shape();
-        shape.moveTo(0, 0);          // Tip
-        shape.lineTo(0.4, -1.0);     // Right corner
-        shape.lineTo(0.15, -1.0);    // Inner right
-        shape.lineTo(0.3, -1.6);     // Tail right
-        shape.lineTo(0.05, -1.7);    // Tail bottom
-        shape.lineTo(-0.1, -1.05);   // Inner left
-        shape.lineTo(-0.35, -1.05);  // Left corner
-        shape.lineTo(0, 0);          // Back to Tip
+        // Standard mouse cursor — vertical left edge, no bend
+        shape.moveTo(0, 0);             // Tip
+        shape.lineTo(0, -1.4);          // Straight down (perfectly vertical)
+        shape.lineTo(0.18, -1.05);      // Notch inward
+        shape.lineTo(0.25, -1.6);       // Tail bottom
+        shape.lineTo(0.42, -1.4);       // Tail outer
+        shape.lineTo(0.32, -0.98);      // Notch outward
+        shape.lineTo(0.6, -0.95);       // Right wing
+        shape.closePath();
         return shape;
     }, []);
 
@@ -115,8 +115,7 @@ function VirtualMouse() {
 
         const pos = interpolatePath(t, waypoints);
         mouseRef.current.position.set(pos[0], pos[1], pos[2]);
-        // Point like a cursor towards top left
-        mouseRef.current.rotation.z = Math.PI / 6;
+        mouseRef.current.rotation.z = 0;
     });
 
     return (
@@ -320,30 +319,29 @@ function UtilityPole({ position, delay = 0, showPassword = false }) {
     useFrame((state) => {
         if (!group.current) return;
 
-        const initialPos = [-8, position[1], position[2] - 2];
         if (state.clock.elapsedTime <= delay) {
-            group.current.position.set(...initialPos);
             group.current.scale.set(0.01, 0.01, 0.01);
+            group.current.position.set(...position);
             return;
         }
 
-        const progress = Math.min((state.clock.elapsedTime - delay) * 1.2, 1);
-        const bounce = easeOutElastic(progress);
+        const progress = Math.min((state.clock.elapsedTime - delay) * 1.0, 1);
+        const ease = easeOutCubic(progress);
 
         const sway = Math.sin(state.clock.elapsedTime * 1.5) * 0.05;
-        group.current.scale.setScalar(bounce);
+        group.current.scale.setScalar(ease);
 
         const targetX = position[0] + state.pointer.x * 0.2;
         const targetY = position[1] + state.pointer.y * 0.2;
 
-        group.current.position.x = THREE.MathUtils.lerp(initialPos[0], targetX, bounce);
-        group.current.position.y = THREE.MathUtils.lerp(initialPos[1], targetY, bounce);
-        group.current.position.z = THREE.MathUtils.lerp(initialPos[2], position[2], bounce);
+        group.current.position.x = THREE.MathUtils.lerp(position[0], targetX, ease);
+        group.current.position.y = THREE.MathUtils.lerp(position[1], targetY, ease);
+        group.current.position.z = position[2];
 
-        // Swinging entrance rotation + Idle Sway
-        group.current.rotation.z = THREE.MathUtils.lerp(-Math.PI / 4, sway, bounce);
-        group.current.rotation.y = THREE.MathUtils.lerp(0, state.pointer.x * 0.15, bounce);
-        group.current.rotation.x = THREE.MathUtils.lerp(0, -state.pointer.y * 0.15, bounce);
+        // Gentle idle sway
+        group.current.rotation.z = sway * ease;
+        group.current.rotation.y = state.pointer.x * 0.15 * ease;
+        group.current.rotation.x = -state.pointer.y * 0.15 * ease;
     });
 
     return (
@@ -384,32 +382,31 @@ function Bench({ position, delay = 0, showPassword = false }) {
     useFrame((state) => {
         if (!group.current) return;
 
-        const initialPos = [position[0], -8, position[2] - 2];
         if (state.clock.elapsedTime <= delay) {
-            group.current.position.set(...initialPos);
             group.current.scale.set(0.01, 0.01, 0.01);
+            group.current.position.set(...position);
             return;
         }
 
-        const progress = Math.min((state.clock.elapsedTime - delay) * 1.2, 1);
-        const bounce = easeOutElastic(progress);
+        const progress = Math.min((state.clock.elapsedTime - delay) * 1.0, 1);
+        const ease = easeOutCubic(progress);
 
         const breatheY = 1 + Math.sin(state.clock.elapsedTime * 2) * 0.03;
         const breatheXZ = 1 - Math.sin(state.clock.elapsedTime * 2) * 0.015;
-        group.current.scale.set(bounce * breatheXZ, bounce * breatheY, bounce * breatheXZ);
+        group.current.scale.set(ease * breatheXZ, ease * breatheY, ease * breatheXZ);
 
         const targetX = position[0] + state.pointer.x * 0.15;
         const targetY = position[1] + state.pointer.y * 0.15;
 
-        group.current.position.x = THREE.MathUtils.lerp(initialPos[0], targetX, bounce);
-        group.current.position.y = THREE.MathUtils.lerp(initialPos[1], targetY, bounce);
-        group.current.position.z = THREE.MathUtils.lerp(initialPos[2], position[2], bounce);
+        group.current.position.x = THREE.MathUtils.lerp(position[0], targetX, ease);
+        group.current.position.y = THREE.MathUtils.lerp(position[1], targetY, ease);
+        group.current.position.z = position[2];
 
-        // Swinging entrance rotation + Idle Rocking
+        // Gentle idle rocking
         const rock = Math.sin(state.clock.elapsedTime * 1.2) * 0.02;
-        group.current.rotation.x = THREE.MathUtils.lerp(Math.PI / 4, -state.pointer.y * 0.1, bounce);
-        group.current.rotation.y = THREE.MathUtils.lerp(0, state.pointer.x * 0.1, bounce);
-        group.current.rotation.z = rock * bounce;
+        group.current.rotation.x = -state.pointer.y * 0.1 * ease;
+        group.current.rotation.y = state.pointer.x * 0.1 * ease;
+        group.current.rotation.z = rock * ease;
     });
 
     return (
@@ -457,31 +454,30 @@ function PottedPlant({ position, delay = 0, showPassword = false }) {
     useFrame((state) => {
         if (!group.current) return;
 
-        const initialPos = [8, position[1], position[2] - 2];
         if (state.clock.elapsedTime <= delay) {
-            group.current.position.set(...initialPos);
             group.current.scale.set(0.01, 0.01, 0.01);
+            group.current.position.set(...position);
             return;
         }
 
-        const progress = Math.min((state.clock.elapsedTime - delay) * 1.2, 1);
-        const bounce = easeOutElastic(progress);
+        const progress = Math.min((state.clock.elapsedTime - delay) * 1.0, 1);
+        const ease = easeOutCubic(progress);
 
-        group.current.scale.setScalar(bounce);
+        group.current.scale.setScalar(ease);
 
         const hop = Math.abs(Math.sin(state.clock.elapsedTime * 3)) * 0.05;
         const targetX = position[0] + state.pointer.x * 0.1;
         const targetY = position[1] + state.pointer.y * 0.1 + hop;
 
-        group.current.position.x = THREE.MathUtils.lerp(initialPos[0], targetX, bounce);
-        group.current.position.y = THREE.MathUtils.lerp(initialPos[1], targetY, bounce);
-        group.current.position.z = THREE.MathUtils.lerp(initialPos[2], position[2], bounce);
+        group.current.position.x = THREE.MathUtils.lerp(position[0], targetX, ease);
+        group.current.position.y = THREE.MathUtils.lerp(position[1], targetY, ease);
+        group.current.position.z = position[2];
 
-        // Swinging entrance rotation + Idle Wiggle
+        // Gentle idle wiggle
         const wiggle = Math.cos(state.clock.elapsedTime * 6) * 0.03;
-        group.current.rotation.z = THREE.MathUtils.lerp(Math.PI / 4, wiggle, bounce);
-        group.current.rotation.y = THREE.MathUtils.lerp(0, state.pointer.x * 0.05, bounce);
-        group.current.rotation.x = THREE.MathUtils.lerp(0, -state.pointer.y * 0.05, bounce);
+        group.current.rotation.z = wiggle * ease;
+        group.current.rotation.y = state.pointer.x * 0.05 * ease;
+        group.current.rotation.x = -state.pointer.y * 0.05 * ease;
     });
 
     return (
@@ -539,8 +535,8 @@ function PottedPlant({ position, delay = 0, showPassword = false }) {
 
 export default function InteractiveObstructions({ showPassword = false }) {
     return (
-        <div className="w-full h-full min-h-[500px] lg:min-h-full overflow-hidden relative">
-            <Canvas camera={{ position: [0, 0, 8], fov: 45 }}>
+        <div className="w-full h-full min-h-[500px] lg:min-h-full overflow-hidden relative bg-[#F8F7F9]" style={{ backgroundColor: '#F8F7F9' }}>
+            <Canvas camera={{ position: [0, 0, 8], fov: 45 }} gl={{ alpha: true }} style={{ background: 'transparent' }}>
                 <ambientLight intensity={0.7} />
                 <directionalLight position={[5, 10, 5]} intensity={1.5} castShadow />
                 <directionalLight position={[-5, 5, -5]} intensity={0.5} />
@@ -548,7 +544,7 @@ export default function InteractiveObstructions({ showPassword = false }) {
                 {/* Environment map for realistic lighting reflections */}
                 <Environment preset="city" />
 
-                <group position={[0, -0.2, 0]}>
+                <group position={[0.6, 0.0, 0]}>
                     {/* 3 Interactive Environment Obstructions */}
                     <UtilityPole position={[-1.7, 0.5, -1.0]} delay={0.2} showPassword={showPassword} />
                     <Bench position={[0.2, -0.8, 0.8]} delay={0.4} showPassword={showPassword} />

@@ -1,6 +1,6 @@
 import { ReactPictureAnnotation } from "@/ui/annotation-tool/index";
 import { H1 } from "@/ui/Typography";
-import { getSession, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 
 export default function AnnotateForm({ data, current, total }) {
   const onSelect = () => { };
@@ -37,9 +37,3 @@ export default function AnnotateForm({ data, current, total }) {
   );
 }
 
-AnnotateForm.getInitialProps = async (context) => {
-  const session = await getSession(context);
-  return {
-    session,
-  };
-};

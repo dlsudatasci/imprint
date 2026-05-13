@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { getSession, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 
 import { H3 } from "@/ui/Typography";
 import Confetti from "react-confetti";
@@ -14,10 +14,8 @@ export default function AnnotationDone({ data, total }) {
   const loading = status === "loading";
   const { width, height } = useWindowSize();
   const [crossedMilestone, setCrossedMilestone] = React.useState(null);
-
-  if (typeof window !== "undefined" && loading) return null;
-
   const initialized = useRef(false);
+  const router = useRouter();
 
   useEffect(() => {
     if (initialized.current) return;
@@ -49,9 +47,9 @@ export default function AnnotationDone({ data, total }) {
     completeSession();
   }, [session, total]);
 
-  const annotationData = data;
-  const router = useRouter();
+  if (typeof window !== "undefined" && loading) return null;
 
+  const annotationData = data;
   const baseButton = "transition-all duration-500 ease-in-out font-semibold py-2 px-4 rounded border hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
@@ -151,9 +149,3 @@ export default function AnnotationDone({ data, total }) {
   );
 }
 
-AnnotationDone.getInitialProps = async (context) => {
-  const session = await getSession(context);
-  return {
-    session,
-  };
-};

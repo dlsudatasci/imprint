@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getSession, signIn, useSession } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { Eye, EyeOff } from "lucide-react";
@@ -11,11 +11,10 @@ import InteractiveObstructions from "@/ui/InteractiveObstructions";
 export default function Login() {
   const [loadingForm, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState(false);
   const { data: session, status } = useSession();
   const loading = status === "loading";
   const router = useRouter();
-
-  const { error } = router.query;
 
   useEffect(() => {
     if (!loading && session) {
@@ -26,16 +25,23 @@ export default function Login() {
   async function onSubmit(e) {
     e.preventDefault();
     setLoading(true);
+    setLoginError(false);
     const username = e.currentTarget.username.value;
     const password = e.currentTarget.password.value;
     const rememberMe = e.currentTarget.rememberMe.checked;
-    signIn("credentials", {
+    const result = await signIn("credentials", {
       username,
       password,
       rememberMe,
-      callbackUrl: `${window.location.origin}/contribute`,
+      redirect: false,
     });
-    setLoading(false);
+
+    if (result?.error) {
+      setLoginError(true);
+      setLoading(false);
+    } else {
+      router.push("/contribute");
+    }
   }
   return (
     <Page
@@ -46,7 +52,7 @@ export default function Login() {
       <div className="min-h-screen w-full flex flex-col lg:flex-row">
 
         {/* Left Side: Interactive 3D Canvas (Hidden on small screens) */}
-        <div className="hidden lg:block lg:w-1/2 relative">
+        <div className="hidden lg:block lg:w-[58%] relative">
           <InteractiveObstructions showPassword={showPassword} />
         </div>
 
@@ -114,7 +120,7 @@ export default function Login() {
                 </div>
               </div>
 
-              {error && (
+              {loginError && (
                 <div className="text-xs mt-[-12px] mb-4 text-red-500 font-medium px-1">
                   Invalid Credentials. Please try again.
                 </div>
@@ -154,9 +160,3 @@ export default function Login() {
   );
 }
 
-Login.getInitialProps = async (context) => {
-  const session = await getSession(context);
-  return {
-    props: { session },
-  };
-};

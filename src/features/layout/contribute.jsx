@@ -4,7 +4,6 @@ import { useRouter } from "next/router";
 
 import Navbar from "@/features/navbarMain";
 import Footer from "@/features/footerMain";
-import { H1 } from "@/ui/Typography";
 
 export default function Layout({ children }) {
   const { data: session, status } = useSession();
@@ -20,15 +19,7 @@ export default function Layout({ children }) {
   if (loading) return null;
 
   if (!session) {
-    return (
-      <div>
-        <Navbar />
-        <section className="container mx-auto py-20">
-          <H1>Protected page. Redirecting to login page</H1>
-        </section>
-        <Footer />
-      </div>
-    );
+    return null;
   }
 
   // If session exists, show full layout

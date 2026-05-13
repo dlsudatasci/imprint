@@ -98,9 +98,7 @@ export default function AnnotatePage() {
       !state.annotationTotalCount
     ) {
       return (
-        <AnnotationSessionSelection
-          username={session?.user?.username}
-        />
+        <AnnotationSessionSelection />
       );
     }
 

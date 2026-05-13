@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { getSession, signIn, useSession } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
 import Page from "@/ui/page";
 
-export default function register() {
+export default function Register() {
   const [loadingForm, setLoading] = useState(false);
   const { data: session, status } = useSession();
   const loading = status === "loading";
@@ -215,9 +215,3 @@ export default function register() {
   );
 }
 
-register.getInitialProps = async (context) => {
-  const session = await getSession(context);
-  return {
-    props: { session },
-  };
-};

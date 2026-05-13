@@ -23,13 +23,6 @@ export default function ContributePage({ session }) {
   const { data: clientSession, status } = useSession();
   const loading = status === "loading";
 
-  if (typeof window !== "undefined" && loading) return null;
-
-  // Prioritize the server-side session because it contains our live DB stats
-  const activeSession = session || clientSession;
-  const username = activeSession?.user?.username || "";
-  const userId = activeSession?.user?._id || "";
-
   const [sessionState, setSessionState] = useState({
     status: "loading", // "loading" | "active" | "none"
     current: 0,
@@ -37,6 +30,11 @@ export default function ContributePage({ session }) {
   });
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [randomFact, setRandomFact] = useState("");
+
+  // Prioritize the server-side session because it contains our live DB stats
+  const activeSession = session || clientSession;
+  const username = activeSession?.user?.username || "";
+  const userId = activeSession?.user?._id || "";
 
   useEffect(() => {
     // Pick a random fact on the client side to avoid Next.js hydration errors
@@ -103,6 +101,8 @@ export default function ContributePage({ session }) {
 
     checkSession();
   }, [status, username]);
+
+  if (typeof window !== "undefined" && loading) return null;
 
   const handleRestart = async () => {
     // Clear local cache

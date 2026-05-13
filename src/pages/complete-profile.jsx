@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { useSession, signIn } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/router";
+import Select from "react-select";
 import CreatableSelect from "react-select/creatable";
 import cities from "./cities.json";
 
@@ -14,11 +15,41 @@ export default function CompleteProfile() {
 
     const [serverError, setServerError] = useState("");
     const [frequentlyWalkedCities, setFrequentlyWalkedCities] = useState([]);
+    const [age, setAge] = useState(null);
+    const [gender, setGender] = useState(null);
+    const [disability, setDisability] = useState(null);
+
+    const ageOptions = [
+        { value: "16-19", label: "16-19 years" },
+        { value: "20-24", label: "20-24 years" },
+        { value: "25-29", label: "25-29 years" },
+        { value: "30-34", label: "30-34 years" },
+        { value: "35-39", label: "35-39 years" },
+        { value: "40-44", label: "40-44 years" },
+        { value: "45-49", label: "45-49 years" },
+        { value: "50-54", label: "50-54 years" },
+        { value: "55-59", label: "55-59 years" },
+        { value: "60-64", label: "60-64 years" },
+        { value: "65+", label: "65 years and over" },
+    ];
+
+    const genderOptions = [
+        { value: "Male", label: "Male" },
+        { value: "Female", label: "Female" },
+        { value: "Other", label: "Other" },
+        { value: "Prefer not to say", label: "Prefer not to say" },
+    ];
+
+    const disabilityOptions = [
+        { value: "No", label: "No" },
+        { value: "Yes", label: "Yes" },
+        { value: "Prefer not to say", label: "Prefer not to say" },
+    ];
 
     useEffect(() => {
         if (!loading && session) {
             // If they somehow landed here but already have a full profile, kick them to contribute
-            if (!session.user?.isNewGoogleUser) {
+            if (!session.user?.isProfileIncomplete) {
                 router.replace("/contribute");
             }
         } else if (!loading && !session) {
@@ -58,25 +89,28 @@ export default function CompleteProfile() {
         setServerError("");
         setLoading(true);
 
-        const usernameInput = e.currentTarget.username;
-        const username = usernameInput.value;
-        const city = e.currentTarget.city.value;
         const walkedCities = frequentlyWalkedCities.map((c) => c.value);
-        const age = e.currentTarget.age.value;
+        const ageValue = age?.value;
+        const genderValue = gender?.value;
+        const disabilityValue = disability?.value;
+
+        if (!ageValue || !genderValue || !disabilityValue) {
+            setServerError("Please select an option for all demographic dropdowns.");
+            setLoading(false);
+            return;
+        }
         const commuteFrequency = e.currentTarget.commuteFrequency.value;
-        const referred = e.currentTarget.referred.value;
 
         const body = {
-            username,
-            city,
             frequentlyWalkedCities: walkedCities,
-            age,
+            age: ageValue,
+            gender: genderValue,
+            disability: disabilityValue,
             commuteFrequency,
-            referred,
         };
 
         try {
-            const res = await fetch("/api/auth/complete-google-profile", {
+            const res = await fetch("/api/auth/complete-profile", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
@@ -87,16 +121,11 @@ export default function CompleteProfile() {
             if (res.status === 200) {
                 // Trigger the 'update' event inside NextAuth JWT callback to instantly assign the username securely and silently!
                 if (update) {
-                    await update({ username: username });
+                    await update({ profileCompleted: true });
                 }
                 router.replace("/contribute");
             } else {
-                if (data.message.toLowerCase().includes("username")) {
-                    usernameInput.setCustomValidity(data.message);
-                    usernameInput.reportValidity();
-                } else {
-                    setServerError(data.message || "Failed to update profile");
-                }
+                setServerError(data.message || "Failed to update profile");
             }
         } catch (error) {
             console.error(error);
@@ -107,7 +136,7 @@ export default function CompleteProfile() {
     }
 
     // Prevent flash while assessing session
-    if (loading || !session?.user?.isNewGoogleUser) return null;
+    if (loading || !session?.user?.isProfileIncomplete) return null;
 
     return (
         <Page title="Complete Profile - Imprint" contribute={false}>
@@ -123,29 +152,9 @@ export default function CompleteProfile() {
                     </div>
 
                     <form onSubmit={onSubmit} className="relative z-10">
-                        <h2 className="text-xl font-bold text-gray-800 mb-6 mt-2">Choose a Username</h2>
-                        <input
-                            className="mb-8 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
-                            type="text"
-                            placeholder="Unique Username"
-                            name="username"
-                            required
-                            onInput={(e) => e.target.setCustomValidity("")}
-                        />
-
-                        <hr className="my-1 mb-5" />
                         <h2 className="text-xl font-bold text-gray-800 mb-6 mt-2">User Demographic</h2>
 
-                        <label className="font-bold" htmlFor="city">City of Residence</label>
-                        <input
-                            className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
-                            type="text"
-                            placeholder="City of Residence"
-                            name="city"
-                            required
-                        />
-
-                        <label className="font-bold mb-2 block" htmlFor="frequentlyWalkedCities">Frequently Walked Cities</label>
+                        <label className="font-bold mb-2 block" htmlFor="frequentlyWalkedCities">What cities do you want to help us assess?</label>
                         <CreatableSelect
                             isMulti
                             options={cityOptions}
@@ -155,36 +164,45 @@ export default function CompleteProfile() {
                             styles={customSelectStyles}
                         />
 
-                        <label className="font-bold" htmlFor="age">Age</label>
-                        <input
-                            className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
-                            type="number"
-                            placeholder="Age"
-                            name="age"
-                            required
-                            onInput={(e) => e.target.setCustomValidity("")}
+                        <label className="font-bold" htmlFor="age">Age Group</label>
+                        <Select
+                            options={ageOptions}
+                            value={age}
+                            onChange={setAge}
+                            styles={customSelectStyles}
+                            className="mb-4"
+                            placeholder="Select age group"
                         />
 
-                        <fieldset className="border-0 mb-4">
-                            <legend className="block text-gray-700 mb-2 font-bold">How often do you walk in your usual commute?</legend>
-                            {["never", "rarely", "occasionally", "frequently", "always"].map(freq => (
+                        <label className="font-bold" htmlFor="gender">Gender</label>
+                        <Select
+                            options={genderOptions}
+                            value={gender}
+                            onChange={setGender}
+                            styles={customSelectStyles}
+                            className="mb-4"
+                            placeholder="Select gender"
+                        />
+
+                        <label className="font-bold" htmlFor="disability">Do you have any mobility impairments or disabilities?</label>
+                        <Select
+                            options={disabilityOptions}
+                            value={disability}
+                            onChange={setDisability}
+                            styles={customSelectStyles}
+                            className="mb-6"
+                            placeholder="Select an option"
+                        />
+
+                        <fieldset className="border-0 mb-8">
+                            <legend className="block text-gray-700 mb-2 font-bold">How often do you walk outdoors in a typical week?</legend>
+                            {["Daily", "A few times a week", "Once a week", "Rarely", "Never"].map(freq => (
                                 <label key={freq} className="block text-gray-700 font-bold mb-2">
                                     <input className="mr-2 leading-tight" type="radio" name="commuteFrequency" value={freq} required />
                                     <span className="text-sm capitalize">{freq}</span>
                                 </label>
                             ))}
                         </fieldset>
-
-                        <label className="font-bold" htmlFor="referred">Referred by</label>
-                        <input
-                            className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
-                            type="text"
-                            placeholder="Username of referrer (optional)"
-                            name="referred"
-                        />
-                        <div className="text-xs -mb-2 pb-4 text-gray-600">
-                            *If someone invited you, indicate their username or entity here.
-                        </div>
 
                         <div className="flex items-center mt-8">
                             <button

@@ -2,22 +2,31 @@ import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
+import { ObjectId } from "mongodb";
 
+/**
+ * POST /api/annotationAbandon
+ * 
+ * Handles the premature termination of an active session.
+ * Finalizes any completed annotations, discards pending/skipped images,
+ * and increments the user's overall count only for the images they actually finished.
+ */
 const handler = async (req, res) => {
     if (req.method === "POST") {
         const session = await getServerSession(req, res, authOptions);
 
-        if (!session) {
+        if (!session || !session.user?._id) {
             return res.status(401).json({ message: "Unauthorized: Please log in." });
         }
 
         const { db } = await connectToDatabase();
+        const userId = session.user._id;
         const username = session.user.username;
 
         try {
             // Find the active session before abandoning
             const activeSession = await db.collection("sessions").findOne({
-                username: username,
+                userId: userId,
                 status: "active",
             });
 
@@ -34,13 +43,13 @@ const handler = async (req, res) => {
                 if (completedCount > 0) {
                     // Finalize the ones they actually finished
                     await db.collection("annotations").updateMany(
-                        { username: username, status: "pending", imageID: { $in: completedImages } },
+                        { userId: userId, status: "pending", imageID: { $in: completedImages } },
                         { $set: { status: "completed" } }
                     );
 
                     // Log activity and increment the denormalized counter for the portion they finished
                     await db.collection("users").updateOne(
-                        { username: username },
+                        { _id: new ObjectId(userId) },
                         {
                             $inc: { totalAnnotations: completedCount },
                             $push: {
@@ -56,12 +65,13 @@ const handler = async (req, res) => {
 
                 // Clean up any other pending annotations that weren't completed
                 await db.collection("annotations").deleteMany({
-                    username: username,
+                    userId: userId,
                     status: "pending",
                 });
 
                 await logTelemetryEvent({
                     event: "SESSION_END",
+                    userId: userId,
                     username: username,
                     outcome: "abandoned",
                     imagesCompleted: completedCount,

@@ -13,15 +13,10 @@ const handler = async (req, res) => {
       username,
       password,
       email,
-      city,
-      frequentlyWalkedCities,
-      age,
-      commuteFrequency,
-      referred,
     } = req.body;
 
     // --- SECURITY VALIDATION ---
-    if (!username || !password || !email || !city) {
+    if (!username || !password || !email) {
       return res.status(422).json({ message: "Missing required fields." });
     }
 
@@ -37,13 +32,6 @@ const handler = async (req, res) => {
       return res.status(422).json({ message: "Username is too long." });
     }
 
-    if (age < 0) {
-      return res.status(422).json({ message: "Age cannot be negative." });
-    }
-
-    if (age < 16) {
-      return res.status(422).json({ message: "You must be at least 16 years old to register." });
-    }
     // ---------------------------
 
     // Check for duplicates
@@ -74,13 +62,8 @@ const handler = async (req, res) => {
       username,
       hashedPassword,
       email,
-      city,
-      frequentlyWalkedCities,
-      age,
-      commuteFrequency,
       activities,
       totalAnnotations: 0,
-      referred,
     });
 
     return res.status(201).json({ message: "User created successfully" });

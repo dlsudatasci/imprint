@@ -52,7 +52,7 @@ export default function AnnotatePage() {
       fetch("/api/annotationGet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: session.user.username }),
+        body: JSON.stringify({}),
       })
         .then((res) => res.json())
         .then((data) => {

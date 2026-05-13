@@ -3,13 +3,12 @@ import { useRouter } from "next/router";
 import { H2 } from "@/ui/Typography";
 import Button from "@/ui/buttons/Button";
 
-export default function AnnotationSessionSelection({ username }) {
+export default function AnnotationSessionSelection() {
   const router = useRouter();
 
   const setAnnotationSession = async (annotationTotalCount) => {
     const requestBody = {
       annotationTotalCount,
-      username,
     };
 
     const annotationResponse = await fetch("/api/annotationGet", {
@@ -18,6 +17,12 @@ export default function AnnotationSessionSelection({ username }) {
       body: JSON.stringify(requestBody),
     });
     const annotationJson = await annotationResponse.json();
+
+    if (!annotationResponse.ok) {
+      console.error("Failed to start session:", annotationJson);
+      alert(annotationJson.message || "Failed to start session. Please try again.");
+      return;
+    }
 
     window.localStorage.setItem(
       "annotationTotalCount",

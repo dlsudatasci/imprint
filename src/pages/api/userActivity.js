@@ -1,6 +1,7 @@
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
+import { ObjectId } from "mongodb";
 
 const handler = async (req, res) => {
   if (req.method !== "POST") {
@@ -9,18 +10,18 @@ const handler = async (req, res) => {
   }
 
   const session = await getServerSession(req, res, authOptions);
-  if (!session) {
+  if (!session || !session.user?._id) {
     return res.status(401).json({ message: "Unauthorized: Please log in." });
   }
 
   const { db } = await connectToDatabase();
   const { activity, tag, date } = req.body;
-  const username = session.user.username;
+  const userId = session.user._id;
 
   await db
     .collection("users")
     .updateOne(
-      { username },
+      { _id: new ObjectId(userId) },
       { $push: { activities: { activity, date, tag } } }
     );
 

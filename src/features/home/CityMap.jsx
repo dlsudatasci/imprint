@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from "react";
+import L from "leaflet";
 import {
   MapContainer,
   TileLayer,
@@ -27,8 +28,7 @@ function FitBounds() {
   const map = useMap();
   useEffect(() => {
     if (!boundaries?.features?.length) return;
-    const L = require("leaflet");
-    map.fitBounds(L.geoJSON(boundaries).getBounds().pad(0.15), { animate: false });
+    map.fitBounds(L.geoJSON(boundaries).getBounds().pad(0.02), { animate: false });
   }, [map]);
   return null;
 }
@@ -93,11 +93,12 @@ export default function CityMap({ selectedCity, onCitySelect }) {
         doubleClickZoom={false}
         touchZoom={false}
         dragging={true}
+        attributionControl={false}
         className="h-full w-full"
         style={{ minHeight: "400px", background: "#f8f9fa" }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+          attribution=""
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
         <FitBounds />

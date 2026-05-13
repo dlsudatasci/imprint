@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { getSession, useSession } from "next-auth/react";
+import { connectToDatabase } from "@/util/mongodb";
+import { ObjectId } from "mongodb";
 
 import Page from "@/ui/page";
 
@@ -23,8 +25,10 @@ export default function ContributePage({ session }) {
 
   if (typeof window !== "undefined" && loading) return null;
 
-  const activeSession = clientSession || session;
+  // Prioritize the server-side session because it contains our live DB stats
+  const activeSession = session || clientSession;
   const username = activeSession?.user?.username || "";
+  const userId = activeSession?.user?._id || "";
 
   const [sessionState, setSessionState] = useState({
     status: "loading", // "loading" | "active" | "none"
@@ -49,8 +53,7 @@ export default function ContributePage({ session }) {
     if (status !== "authenticated") return;
 
     if (activeSession?.user?.isNewGoogleUser) {
-      // Intercept incomplete Google profiles and force them to fill it out
-      window.location.replace("/complete-profile");
+      window.location.replace("/choose-username");
       return;
     }
 
@@ -75,8 +78,12 @@ export default function ContributePage({ session }) {
         const response = await fetch("/api/annotationGet", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username }),
+          body: JSON.stringify({}),
         });
+        if (!response.ok) {
+          throw new Error("Server returned " + response.status);
+        }
+        
         const data = await response.json();
 
         if (data.isExistingSession) {
@@ -111,6 +118,9 @@ export default function ContributePage({ session }) {
 
     // Trigger a refresh of the DashboardInfo profile stats
     setRefreshCounter((prev) => prev + 1);
+
+    // Force a full page reload to guarantee getServerSideProps fetches the updated totalAnnotations
+    window.location.reload();
   };
 
   const baseButton =
@@ -132,15 +142,14 @@ export default function ContributePage({ session }) {
 
             {/* Left Side: Welcome Text */}
             <div className="w-full md:w-auto">
-              <p className="text-primary font-semibold mb-3 tracking-widest text-sm inline-block px-3 py-1 bg-blue-50 rounded-lg">Contributor Dashboard</p>
-              <h1 className="text-4xl lg:text-5xl font-extrabold text-gray-900 tracking-tight leading-tight">
-                Welcome back, <br className="hidden md:block" />
+              <p className="text-gray-500 font-semibold text-lg mb-1">Welcome back,</p>
+              <h1 className="text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight">
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#004aad] to-indigo-500">{username}.</span>
               </h1>
             </div>
 
             {/* Right Side: The Action Buttons */}
-            <div className="flex space-x-4 w-full md:w-auto">
+            <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 w-full md:w-auto">
               {hasSession && (
                 <button
                   onClick={handleRestart}
@@ -151,28 +160,67 @@ export default function ContributePage({ session }) {
                 </button>
               )}
 
-              <Link href="/contribute/annotate" className="flex-1 md:flex-none flex">
-                <button
-                  disabled={isLoadingSession}
-                  className={`${baseButton} w-full bg-primary border-primary text-white hover:bg-opacity-90`}
-                >
-                  {isLoadingSession
-                    ? "Loading..."
-                    : hasSession
-                      ? `Resume Annotation (${sessionState.current - 1}/${sessionState.total})`
-                      : "Start Annotating"}
-                </button>
-              </Link>
+              {activeSession?.user?.isProfileIncomplete && activeSession?.user?.totalAnnotations > 0 ? (
+                <div className="flex-1 md:flex-none flex relative group cursor-not-allowed">
+                  <button
+                    disabled
+                    className={`${baseButton} w-full bg-gray-400 border-gray-400 text-white opacity-70 pointer-events-none`}
+                  >
+                    Start Annotating
+                  </button>
+                  {/* Custom Tooltip */}
+                  <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-gray-800 text-white text-sm font-semibold rounded py-2 px-4 whitespace-nowrap pointer-events-none z-50 shadow-xl">
+                    Complete your profile to continue mapping
+                    <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-gray-800 rotate-45"></div>
+                  </div>
+                </div>
+              ) : (
+                <Link href="/contribute/annotate" className="flex-1 md:flex-none flex">
+                  <button
+                    disabled={isLoadingSession}
+                    className={`${baseButton} w-full bg-primary border-primary text-white hover:bg-opacity-90`}
+                  >
+                    {isLoadingSession
+                      ? "Loading..."
+                      : hasSession
+                        ? `Resume Annotation (${sessionState.current - 1}/${sessionState.total})`
+                        : "Start Annotating"}
+                  </button>
+                </Link>
+              )}
             </div>
           </div>
+
         </div>
       </section>
-      <DashboardInfo username={username} refreshCounter={refreshCounter} randomFact={randomFact} />
+      <DashboardInfo username={username} userId={userId} refreshCounter={refreshCounter} randomFact={randomFact} />
     </Page>
   );
 }
 
 export async function getServerSideProps(context) {
   const session = await getSession(context);
+  
+  if (!session || !session.user?._id) {
+    return { props: { session } };
+  }
+
+  try {
+    const { db } = await connectToDatabase();
+    const dbUser = await db.collection("users").findOne({ _id: new ObjectId(session.user._id) });
+
+    if (dbUser) {
+      // Inject the true, live values into the session object passed to the frontend
+      session.user.totalAnnotations = dbUser.totalAnnotations || 0;
+      
+      // If they completed their profile on another device or tab, reflect it instantly
+      if (dbUser.age) {
+        session.user.isProfileIncomplete = false;
+      }
+    }
+  } catch (error) {
+    console.error("Failed to fetch live user stats in dashboard getServerSideProps:", error);
+  }
+
   return { props: { session } };
 }

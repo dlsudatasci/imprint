@@ -8,6 +8,7 @@ export default class DashboardInfo extends React.Component {
     userActivity: [],
     totalAnnotation: 0,
     username: this.props.username,
+    userId: this.props.userId,
     telemetryStats: null,
   };
 
@@ -16,24 +17,24 @@ export default class DashboardInfo extends React.Component {
   }
 
   componentDidUpdate(prevProps) {
-    if (prevProps.refreshCounter !== this.props.refreshCounter || prevProps.username !== this.props.username) {
-      this.setState({ username: this.props.username }, () => {
+    if (prevProps.refreshCounter !== this.props.refreshCounter || prevProps.userId !== this.props.userId || prevProps.username !== this.props.username) {
+      this.setState({ userId: this.props.userId, username: this.props.username }, () => {
         this.fetchData();
       });
     }
   }
 
   async fetchData() {
-    if (!this.state.username) return;
+    if (!this.state.userId) return;
 
     try {
       const [extractUserRes, telemetryRes] = await Promise.all([
         fetch("/api/extractUser", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(this.state.username),
+          body: JSON.stringify({}),
         }),
-        fetch(`/api/telemetryStats?username=${this.state.username}`)
+        fetch("/api/telemetryStats")
       ]);
 
       const extractUser = await extractUserRes.json();
@@ -93,7 +94,7 @@ export default class DashboardInfo extends React.Component {
               </div>
               <div className="mt-auto">
                 <p className="text-[40px] leading-none font-black text-gray-900 truncate tracking-tight">{totalAnnotation}</p>
-                <p className="text-sm text-gray-500 mt-2 font-semibold truncate">bounding boxes</p>
+                <p className="text-sm text-gray-500 mt-2 font-semibold truncate">obstructions annotated</p>
               </div>
             </div>
 

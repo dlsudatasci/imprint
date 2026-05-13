@@ -15,8 +15,8 @@ const CityMap = dynamic(() => import("./CityMap"), {
 
 export default function Hero({ selectedCity, onCitySelect }) {
   return (
-    <section className="container flex flex-col mx-auto items-center lg:flex-row justify-center py-10 md:p-5 px-5 gap-10 lg:gap-16">
-      <div className="flex flex-col mx-auto justify-center max-w-md lg:max-w-lg xl:max-w-xl flex-shrink-0">
+    <section className="container flex flex-col mx-auto items-center lg:flex-row lg:justify-between py-10 md:p-5 px-5 mb-6 gap-10 lg:gap-16">
+      <div className="flex flex-col mx-auto lg:mx-0 justify-center w-full max-w-md lg:max-w-lg xl:max-w-xl">
         <H1>
           Welcome to <span className="font-bold text-primary">Imprint</span>
         </H1>
@@ -39,7 +39,7 @@ export default function Hero({ selectedCity, onCitySelect }) {
         </div>
       </div>
 
-      <div className="w-full lg:w-1/2 xl:w-[55%] flex-shrink-0">
+      <div className="w-full lg:flex-1 min-w-[50%]">
         <CityMap selectedCity={selectedCity} onCitySelect={onCitySelect} />
       </div>
     </section>

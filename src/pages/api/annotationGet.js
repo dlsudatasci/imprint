@@ -1,15 +1,37 @@
 import { connectToDatabase } from "@/util/mongodb";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
+import { ObjectId } from "mongodb";
+
+/**
+ * POST /api/annotationGet
+ * 
+ * Retrieves images for a user to annotate. 
+ * Workflow:
+ * 1. Checks if the user already has an active session. If so, restores it.
+ * 2. If no active session, fetches new images based on the user's walked cities.
+ * 3. Merges any of the user's existing edits (from the `annotations` collection) 
+ *    with the baseline ground-truth data so they can resume where they left off.
+ */
 
 const handler = async (req, res) => {
   if (req.method === "POST") {
-    const { db } = await connectToDatabase();
+    const session = await getServerSession(req, res, authOptions);
 
-    const { annotationTotalCount, username } = req.body;
+    if (!session || !session.user?._id) {
+      return res.status(401).json({ message: "Unauthorized: Please log in." });
+    }
+
+    const { db } = await connectToDatabase();
+    const userId = session.user._id;
+    const username = session.user.username;
+
+    const { annotationTotalCount } = req.body;
 
     // 1. Check for an existing active session
     const existingSession = await db.collection("sessions").findOne({
-      username: username,
+      userId: userId,
       status: "active",
     });
 
@@ -29,21 +51,30 @@ const handler = async (req, res) => {
       const userAnnotations = await db
         .collection("annotations")
         .find({
-          username: username,
+          userId: userId,
           imageID: { $in: imageNumberIDs },
         })
         .toArray();
 
+      // Build an O(1) Hash Map for fast lookups
+      const userAnnotationsMap = userAnnotations.reduce((acc, curr) => {
+        acc[curr.imageID] = curr;
+        return acc;
+      }, {});
+
       // Merge user annotations into the image payload
       for (const img of sortedImgRecords) {
-        const annotation = userAnnotations.find((a) => a.imageID === img.imageID);
+        const annotation = userAnnotationsMap[img.imageID];
         if (annotation) {
+          // Build a Hash Map of edited boxes for fast merging
+          const editedBoxMap = (annotation.selectedObjectsID || []).reduce((acc, curr) => {
+            acc[curr.id] = curr;
+            return acc;
+          }, {});
+
           // Merge user annotations into the original ground-truth list
           const mergedAnnotationList = (img.annotationList || []).map(originalBox => {
-            const userEdit = (annotation.selectedObjectsID || []).find(
-              (editedBox) => editedBox.id === originalBox.id
-            );
-            return userEdit ? userEdit : originalBox;
+            return editedBoxMap[originalBox.id] || originalBox;
           });
 
           const finalAnnotationList = [
@@ -81,7 +112,7 @@ const handler = async (req, res) => {
       });
     }
 
-    const user = await db.collection("users").findOne({ username });
+    const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -121,21 +152,30 @@ const handler = async (req, res) => {
     const userAnnotations = await db
       .collection("annotations")
       .find({
-        username: username,
+        userId: userId,
         imageID: { $in: imageNumberIDs },
       })
       .toArray();
 
+    // Build an O(1) Hash Map for fast lookups
+    const userAnnotationsMap = userAnnotations.reduce((acc, curr) => {
+      acc[curr.imageID] = curr;
+      return acc;
+    }, {});
+
     // Merge user annotations into the image payload
     for (const img of imgRecords) {
-      const annotation = userAnnotations.find((a) => a.imageID === img.imageID);
+      const annotation = userAnnotationsMap[img.imageID];
       if (annotation) {
+        // Build a Hash Map of edited boxes for fast merging
+        const editedBoxMap = (annotation.selectedObjectsID || []).reduce((acc, curr) => {
+          acc[curr.id] = curr;
+          return acc;
+        }, {});
+
         // Merge user annotations into the original ground-truth list
         const mergedAnnotationList = (img.annotationList || []).map(originalBox => {
-          const userEdit = (annotation.selectedObjectsID || []).find(
-            (editedBox) => editedBox.id === originalBox.id
-          );
-          return userEdit ? userEdit : originalBox;
+          return editedBoxMap[originalBox.id] || originalBox;
         });
 
         const finalAnnotationList = [
@@ -151,7 +191,8 @@ const handler = async (req, res) => {
 
     // 3. Save the new session
     await db.collection("sessions").insertOne({
-      username: username,
+      userId: userId,
+      username: username, // Keep for readability
       imageIDs: imageIDs,
       totalCount: annotationTotalCount,
       status: "active",
@@ -160,6 +201,7 @@ const handler = async (req, res) => {
 
     await logTelemetryEvent({
       event: "SESSION_START",
+      userId: userId,
       username: username,
       sessionTotalCount: annotationTotalCount,
     });

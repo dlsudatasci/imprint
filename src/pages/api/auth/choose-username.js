@@ -7,71 +7,46 @@ export default function handler(req, res) {
         return res.status(405).json({ message: "Method not allowed" });
     }
 
-    // We wrap the async logic so we can cleanly return the Promise Next.js expects from API routes
     return (async () => {
         try {
             const session = await getServerSession(req, res, authOptions);
 
             if (!session || !session.user || !session.user.email) {
-                return res.status(401).json({ message: "Unauthorized. Please log in with Google first." });
+                return res.status(401).json({ message: "Unauthorized. Please log in first." });
             }
 
-            const {
-                username,
-                city,
-                frequentlyWalkedCities,
-                age,
-                commuteFrequency,
-                referred,
-            } = req.body;
+            const { username } = req.body;
 
-            if (!username || !city || !age || !commuteFrequency) {
-                return res.status(400).json({ message: "Please fill in all required demographic fields." });
+            if (!username) {
+                return res.status(400).json({ message: "Please choose a username." });
             }
-
-            const parsedAge = parseInt(age, 10);
 
             if (username.length > 50) {
                 return res.status(422).json({ message: "Username is too long." });
             }
 
-            if (parsedAge < 0) {
-                return res.status(422).json({ message: "Age cannot be negative." });
-            }
-
-            if (parsedAge < 16) {
-                return res.status(422).json({ message: "You must be at least 16 years old to register." });
-            }
-
             const { db } = await connectToDatabase();
 
-            // 1. Ensure username isn't already taken by someone else
             const existingUserWithUsername = await db.collection("users").findOne({
                 username: username,
-                email: { $ne: session.user.email } // Ensure we don't conflict with ourselves if repeating
+                email: { $ne: session.user.email }
             });
 
             if (existingUserWithUsername) {
                 return res.status(409).json({ message: "Username is already taken" });
             }
 
-            // 2. Upsert the user document with the new demographics
             const updateDoc = {
                 $set: {
-                    email: session.user.email, // from Google
-                    name: session.user.name || "", // from Google
-                    image: session.user.image || "", // from Google
+                    email: session.user.email,
+                    name: session.user.name || "",
+                    image: session.user.image || "",
                     username,
-                    city,
-                    frequentlyWalkedCities: frequentlyWalkedCities || [],
-                    age: parsedAge,
-                    commuteFrequency,
-                    referred: referred || "",
                     updatedAt: new Date(),
                 },
                 $setOnInsert: {
                     createdAt: new Date(),
-                    role: "user", // Default Role
+                    role: "user",
                     totalAnnotations: 0,
                     activities: [
                         {
@@ -89,9 +64,9 @@ export default function handler(req, res) {
                 { upsert: true }
             );
 
-            return res.status(200).json({ message: "Profile successfully completed" });
+            return res.status(200).json({ message: "Username saved successfully" });
         } catch (error) {
-            console.error("Error completing profile:", error);
+            console.error("Error saving username:", error);
             return res.status(500).json({ message: "Internal server error" });
         }
     })();

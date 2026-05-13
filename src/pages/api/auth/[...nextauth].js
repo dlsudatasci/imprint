@@ -42,16 +42,29 @@ export const authOptions = {
   },
   secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
+    /**
+     * JWT Callback
+     * Responsible for storing user data into the session cookie.
+     * This runs on EVERY request, but the `user` parameter is only passed on the very first sign-in.
+     */
     jwt: async ({ token, user, account, trigger, session }) => {
-      // If the client calls `update({ username: ... })` to silently refresh the cookie mid-session
-      if (trigger === "update" && session?.username) {
-        token.user.username = session.username;
-        token.user.isNewGoogleUser = false;
+      if (trigger === "update" && session) {
+        if (session.username) {
+          token.user.username = session.username;
+          token.user.isNewGoogleUser = false;
+        }
+        if (session.profileCompleted) {
+          token.user.isProfileIncomplete = false;
+        }
       }
 
       // This logic only runs on the very first sign-in when 'user' object is passed
       if (user) {
         token.user = user;
+        // Ensure _id is always a string on the token
+        if (token.user._id) {
+          token.user._id = token.user._id.toString();
+        }
 
         if (account && account.provider === "google") {
           try {
@@ -74,18 +87,32 @@ export const authOptions = {
             token.user.isNewGoogleUser = true; // Default to prompting completion on error to be safe
           }
         }
+
+        // Evaluate profile completion status
+        token.user.isNewGoogleUser = !token.user.username;
+        token.user.isProfileIncomplete = !token.user.age;
       }
 
-      // Failsafe check: If the token was loaded from an older cookie and lacks a username, flag it.
-      if (token.user && !token.user.username) {
-        token.user.isNewGoogleUser = true;
-      } else if (token.user && token.user.username) {
-        // Ensure the flag is removed if they successfully registered it
-        token.user.isNewGoogleUser = false;
+      // Self-heal older session tokens that were created before we added _id to the session
+      if (token.user && !token.user._id && token.user.username) {
+        try {
+          const { db } = await connectToDatabase();
+          const dbUser = await db.collection("users").findOne({ username: token.user.username });
+          if (dbUser) {
+            token.user._id = dbUser._id.toString();
+          }
+        } catch (error) {
+          console.error("Failed to self-heal token _id", error);
+        }
       }
 
       return token;
     },
+    
+    /**
+     * Session Callback
+     * Passes the data from the JWT into the client-side session object.
+     */
     session: async ({ session, token }) => {
       if (token.user) {
         const sessionUser = { ...token.user };

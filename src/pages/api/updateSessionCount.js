@@ -6,12 +6,12 @@ const handler = async (req, res) => {
     if (req.method === "POST") {
         const session = await getServerSession(req, res, authOptions);
 
-        if (!session) {
+        if (!session || !session.user?._id) {
             return res.status(401).json({ message: "Unauthorized: Please log in." });
         }
 
         const { db } = await connectToDatabase();
-        const username = session.user.username;
+        const userId = session.user._id;
 
         const { currentAnnotationCount } = req.body;
 
@@ -21,7 +21,7 @@ const handler = async (req, res) => {
 
         try {
             await db.collection("sessions").updateOne(
-                { username: username, status: "active" },
+                { userId: userId, status: "active" },
                 { $set: { currentCount: currentAnnotationCount } }
             );
             return res.status(200).json({ message: "Session count updated." });

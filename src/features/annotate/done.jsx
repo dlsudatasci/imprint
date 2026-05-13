@@ -83,12 +83,22 @@ export default function AnnotationDone({ data, total }) {
 
         {/* Action Buttons */}
         <div className="flex flex-col items-center gap-4 w-full max-w-sm mb-16">
-          <button
-            onClick={() => router.reload(window.location.pathname)}
-            className={`${baseButton} w-full bg-primary border-primary text-white hover:brightness-110 shadow-[0_4px_14px_0_rgba(0,74,173,0.39)] py-4 text-lg`}
-          >
-            Start Another Session
-          </button>
+          {session?.user?.isProfileIncomplete ? (
+            <Link href="/complete-profile" className="w-full flex">
+              <button
+                className={`${baseButton} w-full bg-primary border-primary text-white hover:brightness-110 shadow-[0_4px_14px_0_rgba(0,74,173,0.39)] py-4 text-lg`}
+              >
+                Complete Profile to Continue
+              </button>
+            </Link>
+          ) : (
+            <button
+              onClick={() => router.reload(window.location.pathname)}
+              className={`${baseButton} w-full bg-primary border-primary text-white hover:brightness-110 shadow-[0_4px_14px_0_rgba(0,74,173,0.39)] py-4 text-lg`}
+            >
+              Start Another Session
+            </button>
+          )}
           <Link href="/contribute" className="w-full flex">
             <button className={`${baseButton} w-full border-gray-300 text-gray-700 bg-white hover:bg-gray-50 py-3 text-lg`}>
               Return to Dashboard

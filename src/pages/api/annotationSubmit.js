@@ -3,16 +3,24 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 
+/**
+ * POST /api/annotationSubmit
+ * 
+ * Handles saving an individual image annotation during an active session.
+ * Upserts the annotation into the `annotations` collection with a "pending" status,
+ * adds the imageID to the session's completed list, and logs telemetry.
+ */
 const handler = async (req, res) => {
   if (req.method === "POST") {
     const session = await getServerSession(req, res, authOptions);
 
-    if (!session) {
+    if (!session || !session.user?._id) {
       return res.status(401).json({ message: "Unauthorized: Please log in." });
     }
 
     const { db } = await connectToDatabase();
 
+    const userId = session.user._id;
     const username = session.user.username;
     const date = new Date();
 
@@ -34,11 +42,12 @@ const handler = async (req, res) => {
 
     try {
       await db.collection("annotations").updateOne(
-        { imageID: imageID, username: username }, // Search Criteria
+        { imageID: imageID, userId: userId }, // Search Criteria
         {
           $set: {
             date, // Updates the timestamp
             city,
+            username, // Keep for display/reporting purposes
             accessibilityRating,
             pavementType,
             selectedObjectsID,
@@ -51,7 +60,7 @@ const handler = async (req, res) => {
 
       // Update the active session with the completed image
       await db.collection("sessions").updateOne(
-        { username: username, status: "active" },
+        { userId: userId, status: "active" },
         {
           $addToSet: { completedImageIDs: imageID },
           $set: { currentCount: currentAnnotationCount }
@@ -62,6 +71,7 @@ const handler = async (req, res) => {
       if (telemetry) {
         await logTelemetryEvent({
           event: "IMAGE_SUBMITTED",
+          userId,
           username,
           imageID,
           ...telemetry,

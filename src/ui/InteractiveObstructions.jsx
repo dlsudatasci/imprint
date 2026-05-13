@@ -538,7 +538,6 @@ function PottedPlant({ position, delay = 0, showPassword = false }) {
 }
 
 export default function InteractiveObstructions({ showPassword = false }) {
-    const group = useRef();
     return (
         <div className="w-full h-full min-h-[500px] lg:min-h-full overflow-hidden relative">
             <Canvas camera={{ position: [0, 0, 8], fov: 45 }}>

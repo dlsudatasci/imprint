@@ -29,7 +29,7 @@ export default async function handler(req, res) {
           _id: null,
           total: { $sum: 1 },
           avgRating: { $avg: "$accessibilityRating" },
-          users: { $addToSet: "$username" },
+          users: { $addToSet: "$userId" },
         },
       },
     ]).toArray();

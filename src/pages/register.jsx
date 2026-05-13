@@ -2,8 +2,6 @@ import { useState, useEffect } from "react";
 import { getSession, signIn, useSession } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import CreatableSelect from "react-select/creatable";
-import cities from "./cities.json";
 
 import Page from "@/ui/page";
 
@@ -21,57 +19,6 @@ export default function register() {
 
   const [serverError, setServerError] = useState("");
 
-  const cityOptions = cities.map((city) => ({
-    value: city,
-    label: city,
-  }));
-
-  const [frequentlyWalkedCities, setFrequentlyWalkedCities] = useState([]);
-
-  const customSelectStyles = {
-    control: (provided, state) => ({
-      ...provided,
-      backgroundColor: "#f9fafb",
-      borderRadius: "1rem",
-      borderWidth: "1px",
-      borderStyle: "solid",
-      borderColor: state.isFocused ? "#004aad" : "#e5e7eb",
-      boxShadow: state.isFocused ? "0 0 0 2px rgba(0, 74, 173, 0.2)" : "none",
-      minHeight: "3.2rem",
-      padding: "0.2rem 0.5rem",
-      alignItems: "center",
-      transition: "all 0.3s ease",
-      "&:hover": {
-        borderColor: state.isFocused ? "#004aad" : "#e5e7eb",
-      },
-    }),
-    input: (provided) => ({
-      ...provided,
-      color: "#111827",
-      margin: 0,
-      padding: 0,
-    }),
-    placeholder: (provided) => ({
-      ...provided,
-      color: "#9ca3af",
-      margin: 0,
-      padding: 0,
-    }),
-    menu: (provided) => ({
-      ...provided,
-      zIndex: 10,
-    }),
-    multiValue: (provided) => ({
-      ...provided,
-      backgroundColor: "#d1d5db",
-      borderRadius: "0.3rem",
-    }),
-    multiValueLabel: (provided) => ({
-      ...provided,
-      color: "#1f2937",
-      padding: "2px 6px",
-    })
-  };
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -83,29 +30,17 @@ export default function register() {
     const password = e.currentTarget.password.value;
     const confirmPassword = e.currentTarget.confirmPassword.value;
 
-    const city = e.currentTarget.city.value;
-    const walkedCities = frequentlyWalkedCities.map((city) => city.value);
-    const age = e.currentTarget.age.value;
-    const commuteFrequency = e.currentTarget.commuteFrequency.value;
-    const referred = e.currentTarget.referred.value;
-
     const body = {
       username,
       email,
       password,
       confirmPassword,
-      city,
-      frequentlyWalkedCities: walkedCities,
-      age,
-      commuteFrequency,
-      referred,
     };
 
     const confirmInput = e.currentTarget.confirmPassword;
     const emailInput = e.currentTarget.email;
     const usernameInput = e.currentTarget.username;
     const passwordInput = e.currentTarget.password;
-    const ageInput = e.currentTarget.age;
 
     if (password !== confirmPassword) {
       confirmInput.setCustomValidity("Passwords do not match");
@@ -125,7 +60,7 @@ export default function register() {
         signIn("credentials", {
           username,
           password,
-          callbackUrl: `${window.location.origin}/contribute/help`,
+          callbackUrl: `${window.location.origin}/contribute`,
         });
 
       } else if (res.status === 409 || res.status === 422) {
@@ -138,9 +73,6 @@ export default function register() {
         } else if (data.message.toLowerCase().includes("password")) {
           passwordInput.setCustomValidity(data.message);
           passwordInput.reportValidity();
-        } else if (data.message.toLowerCase().includes("age") || data.message.toLowerCase().includes("years old")) {
-          ageInput.setCustomValidity(data.message);
-          ageInput.reportValidity();
         } else {
           setServerError(data.message);
         }
@@ -242,115 +174,12 @@ export default function register() {
               required
               onInput={(e) => e.target.setCustomValidity("")}
             />
-            <hr className="my-1 mb-5" />
-            <h2 className="text-xl font-bold text-gray-800 mb-6 mt-2">User Demographic</h2>
-            <label className="font-bold" htmlFor="city">
-              City of Residence
-            </label>
-            <input
-              className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
-              type="text"
-              placeholder="City of Residence"
-              name="city"
-              required
-            />
-            <label className="font-bold mb-2 block" htmlFor="frequentlyWalkedCities">
-              Frequently Walked Cities
-            </label>
-            <CreatableSelect
-              isMulti
-              options={cityOptions}
-              onChange={(selectedOptions) => setFrequentlyWalkedCities(selectedOptions)}
-              className="mb-4"
-              placeholder="Type and select cities (e.g., Makati, Cebu)"
-              styles={customSelectStyles}
-            />
-            <label className="font-bold" htmlFor="age">
-              Age
-            </label>
-            <input
-              className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
-              type="number"
-              placeholder="Age"
-              name="age"
-              required
-              onInput={(e) => e.target.setCustomValidity("")}
-            />
-            <fieldset className="border-0 mb-4">
-              <legend className="block text-gray-700 mb-2 font-bold">
-                How often do you walk in your usual commute?
-              </legend>
-              <label className="block text-gray-700 font-bold mb-2">
-                <input
-                  className="mr-2 leading-tight"
-                  type="radio"
-                  name="commuteFrequency"
-                  value="never"
-                  required
-                />
-                <span className="text-sm">Never</span>
-              </label>
-              <label className="block text-gray-700 font-bold mb-2">
-                <input
-                  className="mr-2 leading-tight"
-                  type="radio"
-                  name="commuteFrequency"
-                  value="rarely"
-                  required
-                />
-                <span className="text-sm">Rarely</span>
-              </label>
-              <label className="block text-gray-700 font-bold mb-2">
-                <input
-                  className="mr-2 leading-tight"
-                  type="radio"
-                  name="commuteFrequency"
-                  value="occasionally"
-                />
-                <span className="text-sm">Occasionally</span>
-              </label>
-              <label className="block text-gray-700 font-bold mb-2">
-                <input
-                  className="mr-2 leading-tight"
-                  type="radio"
-                  name="commuteFrequency"
-                  value="frequently"
-                  required
-                />
-                <span className="text-sm">Frequently</span>
-              </label>
-              <label className="block text-gray-700 font-bold mb-2">
-                <input
-                  className="mr-2 leading-tight"
-                  type="radio"
-                  name="commuteFrequency"
-                  value="always"
-                  required
-                />
-                <span className="text-sm">Always</span>
-              </label>
-            </fieldset>
-            <label className="font-bold" htmlFor="city">
-              Referred by
-            </label>
-            <input
-              className="mb-4 p-3.5 block w-full bg-gray-50 placeholder-gray-400 text-gray-900 rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
-              type="text"
-              placeholder="Referred by"
-              name="referred"
-            />
-            <div className="text-xs -mb-2 pb-4 text-gray-600">
-              *This is optional. If there is a person or a group who invited you
-              to use this platform, indicate his/her username or the name of the
-              entity.
-            </div>
-
             <div className="flex items-center mt-8">
               <div className="w-full sm:w-2/3 flex items-center">
                 <input
                   id="remember-me"
                   type="checkbox"
-                  className="mt-1 mr-3 w-5 h-5 text-primary bg-gray-100 border-gray-300 rounded focus:ring-primary focus:ring-2"
+                  className="mr-3 w-5 h-5 text-primary bg-gray-100 border-gray-300 rounded focus:ring-primary focus:ring-2"
                   required
                 />
                 <label htmlFor="remember-me" className="text-gray-600 font-medium text-sm">

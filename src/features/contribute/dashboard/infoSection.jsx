@@ -1,11 +1,11 @@
 import React from "react";
-import ActivityItem from "./activityItem";
-import { Activity, Target, Zap, Flame, Footprints, Lightbulb } from 'lucide-react';
+import RecentSessionItem from "./recentSessionItem";
+import { Activity, Target, Zap, Flame, Footprints } from 'lucide-react';
 import { MILESTONES, KILOMETERS_PER_ANNOTATION } from "@/util/milestones";
 
 export default class DashboardInfo extends React.Component {
   state = {
-    userActivity: [],
+    recentSessions: [],
     totalAnnotation: 0,
     username: this.props.username,
     userId: this.props.userId,
@@ -28,20 +28,22 @@ export default class DashboardInfo extends React.Component {
     if (!this.state.userId) return;
 
     try {
-      const [extractUserRes, telemetryRes] = await Promise.all([
+      const [extractUserRes, telemetryRes, recentSessionsRes] = await Promise.all([
         fetch("/api/extractUser", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
         }),
-        fetch("/api/telemetryStats")
+        fetch("/api/telemetryStats"),
+        fetch("/api/recentSessions")
       ]);
 
       const extractUser = await extractUserRes.json();
       const telemetryStats = await telemetryRes.json();
+      const recentSessionsData = await recentSessionsRes.json();
 
       this.setState({
-        userActivity: extractUser.userActivities,
+        recentSessions: recentSessionsData.sessions || [],
         totalAnnotation: extractUser.annotationCount,
         telemetryStats: telemetryStats
       });
@@ -51,7 +53,7 @@ export default class DashboardInfo extends React.Component {
   }
 
   render() {
-    const { totalAnnotation, userActivity, telemetryStats } = this.state;
+    const { totalAnnotation, recentSessions, telemetryStats } = this.state;
 
     // Safely default if telemetry is still loading
     const stats = telemetryStats || {
@@ -68,66 +70,35 @@ export default class DashboardInfo extends React.Component {
     const milestoneProgress = Math.min((rawKmMapped / currentMilestone.km) * 100, 100);
 
     return (
-      <section className="pb-12 min-h-[60vh] pt-4">
+      <section className="pb-12 min-h-[60vh] pt-2">
         <div className="container mx-auto px-5 lg:max-w-7xl lg:w-4/5">
+          <hr className="border-gray-300 border-t-2 mb-8" />
 
-          {/* Fun Fact Pill (Now closer to the cards) */}
-          {this.props.randomFact && (
-            <div className="flex justify-center w-full mb-8">
-              <div className="flex items-center gap-3 bg-amber-50/90 border border-amber-100 rounded-full py-2.5 px-6 text-[15px] font-medium text-amber-900 shadow-[0_2px_10px_rgb(0,0,0,0.02)] text-center leading-relaxed">
-                <Lightbulb className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                <span>{this.props.randomFact}</span>
+          {/* ROW 1: Recent Sessions */}
+          <div className="mb-12">
+            <div className="flex items-center gap-4 mb-6 px-2">
+              <div className="p-3 bg-pink-50 text-pink-500 rounded-2xl shadow-sm">
+                <Activity className="w-6 h-6" />
               </div>
-            </div>
-          )}
-
-          {/* ROW 1: The "Hype" Stats Display */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12 w-full">
-
-            {/* Card 1: Total Annotations */}
-            <div className="bg-white/60 hover:bg-white backdrop-blur-md transition-colors duration-300 rounded-3xl border-2 border-white p-6 flex flex-col shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg text-gray-700 font-bold capitalize break-words">Total Contributions</h3>
-                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex justify-center items-center shadow-inner flex-shrink-0">
-                  <Target className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="mt-auto">
-                <p className="text-[40px] leading-none font-black text-gray-900 truncate tracking-tight">{totalAnnotation}</p>
-                <p className="text-sm text-gray-500 mt-2 font-semibold truncate">obstructions annotated</p>
-              </div>
+              <h3 className="text-2xl font-semibold text-slate-800 tracking-tight">Recent Sessions</h3>
             </div>
 
-            {/* Card 2: Login Streak */}
-            <div className="bg-white/60 hover:bg-white backdrop-blur-md transition-colors duration-300 rounded-3xl border-2 border-white p-6 flex flex-col shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg text-gray-700 font-bold capitalize break-words">Active Streak</h3>
-                <div className="w-10 h-10 bg-orange-50 text-orange-500 rounded-2xl flex justify-center items-center shadow-inner flex-shrink-0">
-                  <Flame className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="mt-auto">
-                <p className="text-[40px] leading-none font-black text-gray-900 truncate tracking-tight">{stats.currentStreak} <span className="text-2xl font-bold text-gray-400">days</span></p>
-                <p className="text-sm text-gray-500 mt-2 font-semibold truncate">keep the fire going!</p>
-              </div>
-            </div>
-
-            {/* Card 3: Speed */}
-            <div className="bg-white/60 hover:bg-white backdrop-blur-md transition-colors duration-300 rounded-3xl border-2 border-white p-6 flex flex-col shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg text-gray-700 font-bold capitalize break-words">Image Speed</h3>
-                <div className="w-10 h-10 bg-amber-50 text-amber-500 rounded-2xl flex justify-center items-center shadow-inner flex-shrink-0">
-                  <Zap className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="mt-auto">
-                <p className="text-[40px] leading-none font-black text-gray-900 truncate tracking-tight">{stats.averageTimePerImageSeconds}<span className="text-2xl font-bold text-gray-400"> s</span></p>
-                <p className="text-sm text-gray-500 mt-2 font-semibold truncate">average per image</p>
+            <div className="bg-white/60 backdrop-blur-md rounded-3xl border border-gray-100 px-8 py-4 shadow-sm">
+              <div className="flex-1 overflow-y-auto max-h-[380px] pr-2">
+                <ul className="flex flex-col">
+                  {recentSessions?.length > 0 ? (
+                    recentSessions.map((session, index) => (
+                      <RecentSessionItem sessionData={session} key={session.id || index} />
+                    ))
+                  ) : (
+                    <p className="text-[13px] text-gray-400 text-center mt-6">No recent sessions found.</p>
+                  )}
+                </ul>
               </div>
             </div>
           </div>
 
-          {/* ROW 2: Real-World Impact Banner */}
+          {/* Real-World Impact Banner */}
           <div className="bg-gradient-to-r from-[#004aad] to-indigo-500 rounded-3xl p-8 mb-12 relative overflow-hidden text-white shadow-md">
             <Footprints className="absolute -right-4 -bottom-4 w-32 h-32 text-white/10 transform -rotate-12 pointer-events-none" />
 
@@ -154,27 +125,50 @@ export default class DashboardInfo extends React.Component {
             </div>
           </div>
 
-          {/* ROW 3: Recent Activity */}
-          <div className="bg-white/60 backdrop-blur-md rounded-3xl border border-gray-100 p-8 flex flex-col shadow-sm max-h-[400px]">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="p-3 bg-pink-50 text-pink-600 rounded-2xl">
-                <Activity className="w-6 h-6" />
+          {/* The "Hype" Stats Display */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12 w-full">
+
+            {/* Card 1: Total Annotations */}
+            <div className="bg-white/60 hover:bg-white backdrop-blur-md transition-colors duration-300 rounded-3xl border-2 border-white p-6 flex flex-col shadow-sm">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg text-gray-700 font-bold capitalize break-words">Total Contributions</h3>
+                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex justify-center items-center shadow-inner flex-shrink-0">
+                  <Target className="w-5 h-5" />
+                </div>
               </div>
-              <h3 className="text-2xl font-black text-gray-900 tracking-tight">Recent Activity</h3>
+              <div className="mt-auto">
+                <p className="text-[40px] leading-none font-black text-gray-900 truncate tracking-tight">{totalAnnotation}</p>
+                <p className="text-sm text-gray-500 mt-2 font-semibold truncate">{totalAnnotation === 1 ? 'obstruction' : 'obstructions'} annotated</p>
+              </div>
             </div>
 
-            <ul className="flex-1 overflow-y-auto pr-2 space-y-3">
-              {userActivity?.length > 0 ? (
-                userActivity
-                  .slice()
-                  .reverse()
-                  .map((activity, index) => (
-                    <ActivityItem activity={activity} key={index} />
-                  ))
-              ) : (
-                <p className="text-[13px] text-gray-400 text-center mt-10">No recent activity found.</p>
-              )}
-            </ul>
+            {/* Card 2: Login Streak */}
+            <div className="bg-white/60 hover:bg-white backdrop-blur-md transition-colors duration-300 rounded-3xl border-2 border-white p-6 flex flex-col shadow-sm">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg text-gray-700 font-bold capitalize break-words">Active Streak</h3>
+                <div className="w-10 h-10 bg-orange-50 text-orange-500 rounded-2xl flex justify-center items-center shadow-inner flex-shrink-0">
+                  <Flame className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-auto">
+                <p className="text-[40px] leading-none font-black text-gray-900 truncate tracking-tight">{stats.currentStreak} <span className="text-2xl font-bold text-gray-400">{stats.currentStreak === 1 ? 'day' : 'days'}</span></p>
+                <p className="text-sm text-gray-500 mt-2 font-semibold truncate">keep the fire going!</p>
+              </div>
+            </div>
+
+            {/* Card 3: Speed */}
+            <div className="bg-white/60 hover:bg-white backdrop-blur-md transition-colors duration-300 rounded-3xl border-2 border-white p-6 flex flex-col shadow-sm">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg text-gray-700 font-bold capitalize break-words">Image Speed</h3>
+                <div className="w-10 h-10 bg-amber-50 text-amber-500 rounded-2xl flex justify-center items-center shadow-inner flex-shrink-0">
+                  <Zap className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-auto">
+                <p className="text-[40px] leading-none font-black text-gray-900 truncate tracking-tight">{stats.averageTimePerImageSeconds}<span className="text-2xl font-bold text-gray-400"> s</span></p>
+                <p className="text-sm text-gray-500 mt-2 font-semibold truncate">average per image</p>
+              </div>
+            </div>
           </div>
 
         </div>

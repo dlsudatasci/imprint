@@ -117,7 +117,7 @@ const handler = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const targetCities = [user.city, ...(user.frequentlyWalkedCities || [])];
+    const targetCities = [...(user.frequentlyWalkedCities || [])];
 
 
     let imgRecords = await db

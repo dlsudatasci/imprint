@@ -3,20 +3,21 @@ import Link from "next/link";
 import { getSession, useSession } from "next-auth/react";
 import { connectToDatabase } from "@/util/mongodb";
 import { ObjectId } from "mongodb";
+import { Lightbulb } from "lucide-react";
 
 import Page from "@/ui/page";
 
 import DashboardInfo from "../../features/contribute/dashboard/infoSection";
 
 const FUN_FACTS = [
-  "Did you know? Under Philippine Law (BP 344), an accessible wheelchair ramp must have a maximum slope of 1:12 to be safe.",
-  "According to the WHO, an estimated 1.3 billion people—or 16% of the global population—experience a significant disability.",
-  "Tactile paving (the textured ground on sidewalks) was invented by Seiichi Miyake in Japan in 1965 to help visually impaired pedestrians.",
-  "The international standard for a safe wheelchair turning space is a minimum of 1.5 meters (1500mm) in diameter.",
-  "Walkable cities naturally lower local temperatures. Trees along mapped sidewalks can reduce surface heat by up to 10-20°C.",
-  "In a recent global index, Metro Manila was ranked among the least walkable cities—making your mapping efforts incredibly important!",
-  "A standard wheelchair requires a minimum clear width of 0.9 meters just to move forward safely.",
-  "Over 50% of the world's population lives in cities today, making urban accessibility a top priority for the United Nations."
+  "Wheelchair ramps need a 1:12 max slope to be safe.",
+  "1.3 billion people globally experience a disability.",
+  "Tactile paving was invented in Japan in 1965.",
+  "Safe wheelchair turning space is 1.5m minimum.",
+  "Trees along sidewalks reduce surface heat by 10-20°C.",
+  "Metro Manila is ranked among the least walkable cities.",
+  "A standard wheelchair needs 0.9m clear width.",
+  "Over 50% of the world lives in urban areas."
 ];
 
 export default function ContributePage({ session }) {
@@ -135,59 +136,59 @@ export default function ContributePage({ session }) {
       description="Contribute to Imprint! Let's make our streets accessible for all."
       contribute
     >
-      <section className="pt-12 pb-8 border-b border-gray-100">
+      <section className="pt-12 pb-6">
         <div className="container mx-auto px-5 lg:max-w-7xl lg:w-4/5 relative z-10">
 
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
 
             {/* Left Side: Welcome Text */}
             <div className="w-full md:w-auto">
-              <p className="text-gray-500 font-semibold text-lg mb-1">Welcome back,</p>
-              <h1 className="text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight">
+              <p className="text-gray-500 font-semibold text-xl mb-1">Welcome back,</p>
+              <h1 className="text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight">
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#004aad] to-indigo-500">{username}.</span>
               </h1>
             </div>
 
-            {/* Right Side: The Action Buttons */}
-            <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 w-full md:w-auto">
-              {hasSession && (
-                <button
-                  onClick={handleRestart}
-                  disabled={isLoadingSession}
-                  className={`${baseButton} flex-1 md:flex-none border-gray-200 text-accent hover:border-accent bg-white`}
-                >
-                  Stop Session
-                </button>
+            {/* Right Side: Fun Fact & Action Buttons */}
+            <div className="flex flex-col items-start md:items-end w-full md:w-auto mt-4 md:mt-0 gap-3">
+              {/* Fun Fact Pill */}
+              {!hasSession && randomFact && (
+                <div className="flex items-center gap-2 bg-amber-50/90 border border-amber-100 rounded-full py-1.5 px-3.5 text-xs font-medium text-amber-900 shadow-sm text-right whitespace-nowrap">
+                  <Lightbulb className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                  <span>{randomFact}</span>
+                </div>
               )}
 
-              {activeSession?.user?.isProfileIncomplete && activeSession?.user?.totalAnnotations > 0 ? (
-                <div className="flex-1 md:flex-none flex relative group cursor-not-allowed">
-                  <button
-                    disabled
-                    className={`${baseButton} w-full bg-gray-400 border-gray-400 text-white opacity-70 pointer-events-none`}
-                  >
-                    Start Annotating
-                  </button>
-                  {/* Custom Tooltip */}
-                  <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-gray-800 text-white text-sm font-semibold rounded py-2 px-4 whitespace-nowrap pointer-events-none z-50 shadow-xl">
-                    Complete your profile to continue mapping
-                    <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-gray-800 rotate-45"></div>
-                  </div>
-                </div>
-              ) : (
-                <Link
-                  href={isLoadingSession ? "" : "/contribute/annotate"}
-                  className={`flex-1 md:flex-none flex justify-center items-center ${baseButton} w-full bg-primary border-primary text-white hover:bg-opacity-90 ${
-                    isLoadingSession ? "opacity-50 pointer-events-none" : ""
-                  }`}
-                >
-                  {isLoadingSession
-                    ? "Loading..."
-                    : hasSession
-                      ? `Resume Session (${sessionState.current - 1}/${sessionState.total})`
-                      : "Let's Annotate!"}
-                </Link>
+              <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 w-full md:w-auto">
+              {!hasSession && (
+                <>
+                  {activeSession?.user?.isProfileIncomplete && activeSession?.user?.totalAnnotations > 0 ? (
+                    <div className="flex-1 md:flex-none flex relative group cursor-not-allowed">
+                      <button
+                        disabled
+                        className={`${baseButton} w-full bg-gray-400 border-gray-400 text-white opacity-70 pointer-events-none`}
+                      >
+                        Start Annotating
+                      </button>
+                      {/* Custom Tooltip */}
+                      <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-gray-800 text-white text-sm font-semibold rounded py-2 px-4 whitespace-nowrap pointer-events-none z-50 shadow-xl">
+                        Complete your profile to continue mapping
+                        <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-gray-800 rotate-45"></div>
+                      </div>
+                    </div>
+                  ) : (
+                    <Link
+                      href={isLoadingSession ? "" : "/contribute/annotate"}
+                      className={`flex-1 md:flex-none flex justify-center items-center ${baseButton} w-full md:w-auto bg-primary border-primary text-white hover:bg-opacity-90 ${
+                        isLoadingSession ? "opacity-50 pointer-events-none" : ""
+                      }`}
+                    >
+                      {isLoadingSession ? "Loading..." : "Let's Annotate!"}
+                    </Link>
+                  )}
+                </>
               )}
+              </div>
             </div>
           </div>
 

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import NavLink from "@/ui/navlink";
@@ -15,6 +15,34 @@ export default function Nav() {
   const [menuState, setMenuState] = useState(false);               // Mobile hamburger menu state
   const [profileMenuState, setProfileMenuState] = useState(false); // Desktop profile dropdown state
   const [notificationMenuState, setNotificationMenuState] = useState(false); // Notifications dropdown state
+  const [hasActiveSession, setHasActiveSession] = useState(false);
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      const localTotal = parseInt(localStorage.getItem("annotationTotalCount"));
+      const localCurrent = parseInt(localStorage.getItem("annotationCurrentCount"));
+
+      if (localTotal && localCurrent) {
+        setHasActiveSession(true);
+        return;
+      }
+
+      fetch("/api/annotationGet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.isExistingSession) {
+            setHasActiveSession(true);
+          } else {
+            setHasActiveSession(false);
+          }
+        })
+        .catch((err) => console.error("Failed to check session in navbar", err));
+    }
+  }, [status]);
 
   const menuToggle = () => {
     setMenuState(!menuState);
@@ -58,18 +86,15 @@ export default function Nav() {
           <Logo height={30} subTitle={"Imprint"} />
         </Link>
       </div>
-      <div className="hidden md:flex flex-grow justify-end items-center">
-        <ul className="flex align-bottom m-0 p-0 list-none items-center">
-          <li className="mr-2 md:mr-5"><NavLink href="/">Home</NavLink></li>
-          <li className="mr-2 md:mr-5"><NavLink href="/about">About</NavLink></li>
-          <li className="mr-2 md:mr-5"><NavLink href="/demo">Demo</NavLink></li>
-          {status === "authenticated" && (
-            <li className="mr-2 md:mr-5"><NavLink href="/contribute">Dashboard</NavLink></li>
-          )}
+      <div className="hidden md:flex flex-grow justify-end items-center gap-2 md:gap-5">
+        <ul className="flex align-bottom m-0 p-0 list-none items-center gap-2 md:gap-5">
+          <li><NavLink href="/">Home</NavLink></li>
+          <li><NavLink href="/about">About</NavLink></li>
+          {/* <li><NavLink href="/demo">Demo</NavLink></li> */}
 
           {/* Conditional Contribute Link */}
           {status === "unauthenticated" && !isAuthPage && (
-            <li className="ml-2">
+            <li>
               <Link href="/contribute" className="font-bold text-primary hover:text-white border-2 border-primary hover:bg-primary px-6 py-2.5 rounded-full shadow-sm hover:shadow-md transition-all duration-300">
                 Volunteer
               </Link>
@@ -153,6 +178,15 @@ export default function Nav() {
               </div>
             </div>
 
+            {/* Let's Annotate Button */}
+            {(router.pathname !== '/contribute' && router.pathname !== '/contribute/annotate') && (
+              <div className="hidden md:block">
+                <Link href="/contribute/annotate" className="font-bold text-primary hover:text-white border-2 border-primary hover:bg-primary px-6 py-2.5 rounded-full shadow-sm hover:shadow-md transition-all duration-300 inline-block bg-white whitespace-nowrap">
+                  {hasActiveSession ? "Resume Session" : "Let's Annotate!"}
+                </Link>
+              </div>
+            )}
+
             <div className="relative flex items-center" ref={profileDropdownRef}>
               <button
                 type="button"
@@ -171,6 +205,15 @@ export default function Nav() {
                   }`}
               >
                 <ul className="py-2 flex flex-col m-0 list-none">
+                  <li>
+                    <Link
+                      href="/contribute"
+                      className="block w-full text-left px-4 py-2 text-gray-700 font-medium hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                      onClick={() => setProfileMenuState(false)}
+                    >
+                      Dashboard
+                    </Link>
+                  </li>
                   <li>
                     <button
                       type="button"
@@ -211,7 +254,7 @@ export default function Nav() {
           <ul className={`${styles.ul} ${menuState ? "block" : "hidden"}`}>
             <li><Link href="/" onClick={() => setMenuState(false)}>Home</Link></li>
             <li><Link href="/about" onClick={() => setMenuState(false)}>About</Link></li>
-            <li><Link href="/demo" onClick={() => setMenuState(false)}>Demo</Link></li>
+            {/* <li><Link href="/demo" onClick={() => setMenuState(false)}>Demo</Link></li> */}
             {status === "unauthenticated" && !isAuthPage && (
               <li>
                 <Link href="/contribute" onClick={() => setMenuState(false)} className="font-bold text-primary">Volunteer</Link>
@@ -220,6 +263,11 @@ export default function Nav() {
             {status === "authenticated" && (
               <>
                 <hr className="my-1 border-gray-200" />
+                <li>
+                  <Link href="/contribute/annotate" onClick={() => setMenuState(false)} className="text-primary font-bold">
+                    {hasActiveSession ? "Resume Session" : "Let's Annotate!"}
+                  </Link>
+                </li>
                 <li>
                   <Link href="/contribute" onClick={() => setMenuState(false)} className="text-gray-700">Dashboard</Link>
                 </li>

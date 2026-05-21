@@ -55,11 +55,11 @@ export default function AboutSection() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
           {/* Value Card */}
-          <div className="border-2 border-green-100 rounded-3xl p-10 shadow-sm hover:shadow-lg transition-shadow duration-300 relative overflow-hidden group">
-            <div className="absolute -right-6 -top-6 bg-green-50 w-32 h-32 rounded-full z-0 group-hover:scale-150 transition-transform duration-500"></div>
+          <div className="border-2 border-blue-100 rounded-3xl p-10 shadow-sm hover:shadow-lg transition-shadow duration-300 relative overflow-hidden group">
+            <div className="absolute -right-6 -top-6 bg-blue-50 w-32 h-32 rounded-full z-0 group-hover:scale-150 transition-transform duration-500"></div>
             <div className="relative z-10">
               <div className="flex items-center gap-4 mb-8">
-                <div className="bg-green-100 p-4 rounded-2xl text-green-600">
+                <div className="bg-blue-100 p-4 rounded-2xl text-primary">
                   <ThumbsUp size={32} />
                 </div>
                 <h3 className="text-3xl font-bold text-gray-900">Identifying What People Value</h3>
@@ -73,7 +73,7 @@ export default function AboutSection() {
                   "Safe, clearly marked pedestrian crossings"
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-3">
-                    <ShieldCheck className="text-green-500 mt-1 shrink-0" size={20} />
+                    <ShieldCheck className="text-primary mt-1 shrink-0" size={20} />
                     <span className="text-gray-600 text-lg">{item}</span>
                   </li>
                 ))}
@@ -82,11 +82,11 @@ export default function AboutSection() {
           </div>
 
           {/* Hate Card */}
-          <div className="border-2 border-red-100 rounded-3xl p-10 shadow-sm hover:shadow-lg transition-shadow duration-300 relative overflow-hidden group">
-            <div className="absolute -right-6 -top-6 bg-red-50 w-32 h-32 rounded-full z-0 group-hover:scale-150 transition-transform duration-500"></div>
+          <div className="border-2 border-gray-200 rounded-3xl p-10 shadow-sm hover:shadow-lg transition-shadow duration-300 relative overflow-hidden group">
+            <div className="absolute -right-6 -top-6 bg-gray-100 w-32 h-32 rounded-full z-0 group-hover:scale-150 transition-transform duration-500"></div>
             <div className="relative z-10">
               <div className="flex items-center gap-4 mb-8">
-                <div className="bg-red-100 p-4 rounded-2xl text-red-600">
+                <div className="bg-gray-100 p-4 rounded-2xl text-gray-600">
                   <ThumbsDown size={32} />
                 </div>
                 <h3 className="text-3xl font-bold text-gray-900">Identifying The Barriers</h3>
@@ -100,7 +100,7 @@ export default function AboutSection() {
                   "Open manholes and hazardous construction zones"
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-3">
-                    <MapPin className="text-red-500 mt-1 shrink-0" size={20} />
+                    <MapPin className="text-gray-500 mt-1 shrink-0" size={20} />
                     <span className="text-gray-600 text-lg">{item}</span>
                   </li>
                 ))}

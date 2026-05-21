@@ -89,99 +89,80 @@ const DefaultInputSection = ({
 
   if (showInputSection) {
     return (
-      <div className="rp-default-input-section">
+      <div className="bg-white rounded-xl shadow-2xl border border-gray-200 p-2 flex items-center gap-2 w-[280px] pointer-events-auto">
         {isCustom ? (
           <input
             autoFocus
-            className="rp-default-input-section_input"
+            className="flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder-gray-400"
             placeholder="Type label name..."
             value={value === "---" ? "" : value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
           />
         ) : (
-          <select
-            className="rp-default-input-section_input"
-            value={value || "---"}
-            onChange={handleSelectChange}
-          >
-            <option value="---" disabled>
-              Select your option
-            </option>
-            {OBSTRUCTION_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
+          <div className="relative flex-1 min-w-0">
+            <select
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
+              value={value || "---"}
+              onChange={handleSelectChange}
+            >
+              <option value="---" disabled>
+                Select your option
               </option>
-            ))}
-            <option value="OTHER_CUSTOM" style={{ fontWeight: "bold" }}>
-              Other...
-            </option>
-          </select>
+              {OBSTRUCTION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+              <option value="OTHER_CUSTOM" style={{ fontWeight: "bold" }}>
+                Other...
+              </option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+            </div>
+          </div>
         )}
 
-        {isCustom && (
-          <a
-            className="rp-default-input-section_select list"
-            onClick={() => {
-              setIsCustom(false);
-              onChange("---");
-            }}
-            title="Switch to list"
-          >
-            ≡
-          </a>
-        )}
-
-        <a
-          className="rp-default-input-section_select yes"
+        <button
+          className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-blue-50 hover:bg-blue-100 text-primary transition-colors shadow-sm border border-blue-200"
           onClick={() => onSelectObstruction()}
+          title="Confirm"
         >
-          ✓
-        </a>
-        <a
-          className="rp-default-input-section_delete"
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+        </button>
+
+        <button
+          className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-gray-50 hover:bg-gray-200 text-gray-700 transition-colors shadow-sm border border-gray-200"
           onClick={() => deleteAction()}
+          title="Delete / Reject"
         >
-          <DeleteButton />
-        </a>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+        </button>
       </div>
     );
   }
 
   // --- READ ONLY / NEUTRAL / REJECTED MODE ---
   return (
-    <div className="rp-default-select-section">
-      {isRejected ? (
-        <>
-          <p>You selected {translateValue(value)} as not an obstruction.</p>
-          <div>
-            <a
-              className="rp-default-input-section_select no"
-              onClick={() => onUnselectObstruction()}
-            >
-              Undo
-            </a>
-          </div>
-        </>
-      ) : (
-        <>
-          <p>Is {translateValue(value)} an obstruction?</p>
-          <div>
-            <a
-              className="rp-default-input-section_select yes"
-              onClick={() => onSelectObstruction()}
-            >
-              Yes
-            </a>
-            <a
-              className="rp-default-input-section_select no"
-              onClick={() => onUnselectObstruction()}
-            >
-              No
-            </a>
-          </div>
-        </>
-      )}
+    <div className="bg-white rounded-xl shadow-2xl border border-gray-200 p-4 w-[280px] pointer-events-auto">
+      <p className="text-sm font-semibold text-gray-800 mb-3 text-center">Is <span className="text-primary">{translateValue(value)}</span> an obstruction?</p>
+      <div className="flex gap-2">
+        <button
+          className="flex-1 py-2 rounded-lg font-bold text-sm transition-all shadow-sm border border-blue-200 bg-blue-50 hover:bg-blue-100 text-primary"
+          onClick={() => onSelectObstruction()}
+        >
+          Yes
+        </button>
+        <button
+          className="flex-1 py-2 rounded-lg font-bold text-sm transition-all shadow-sm border bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-700"
+          onClick={() => {
+            onUnselectObstruction();
+          }}
+        >
+          No
+        </button>
+      </div>
     </div>
   );
 };

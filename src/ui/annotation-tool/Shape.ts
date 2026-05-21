@@ -11,7 +11,7 @@ export const defaultShapeStyle: IShapeStyle = {
   fontBackground: "#f8f9fa",
   fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', Helvetica, Arial, sans-serif",
   shapeBackground: "hsla(210, 16%, 93%, 0.2)",
-  shapeStrokeStyle: "yellow",
+  shapeStrokeStyle: "#eab308",
   shapeShadowStyle: "hsla(210, 9%, 31%, 0.35)",
   transformerBackground: "black",
   transformerSize: 10,
@@ -153,18 +153,18 @@ export class RectShape implements IShape {
     let isSolid = false;
 
     if (editable) {
-      strokeColor = "orange";
+      strokeColor = "#6366f1"; // Indigo for New
       if (comment) {
         isSolid = true;
       }
     } else if (selected) {
-      strokeColor = "#28a745"; // Success green
+      strokeColor = "#004aad"; // Primary Blue
       isSolid = true;
     } else if (isRejected) {
-      strokeColor = "#dc3545"; // Danger red
+      strokeColor = "#eab308"; // Solid Yellow for Rejected
       isSolid = true;
     } else {
-      strokeColor = "yellow";
+      strokeColor = "#eab308";
       isSolid = false;
     }
 
@@ -186,19 +186,23 @@ export class RectShape implements IShape {
       canvas2D.fillRect(x, y, width, height);
     } else {
       if (comment) {
+        const formattedComment = comment.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         canvas2D.font = `bold ${fontSize}px ${fontFamily}`;
-        const metrics = canvas2D.measureText(comment);
+        const metrics = canvas2D.measureText(formattedComment);
         canvas2D.save();
 
-        let labelBgColor = "yellow";
-        const labelTextColor = "black";
+        let labelBgColor = "#eab308";
+        let labelTextColor = "black";
 
         if (editable) {
-          labelBgColor = "orange";
+          labelBgColor = "#6366f1"; // Indigo
+          labelTextColor = "white";
         } else if (selected) {
-          labelBgColor = "#28a745"; // Success green
+          labelBgColor = "#004aad"; // Primary Blue
+          labelTextColor = "white";
         } else if (isRejected) {
-          labelBgColor = "#dc3545"; // Danger red
+          labelBgColor = "#eab308"; // Solid Yellow
+          labelTextColor = "black";
         }
 
         canvas2D.fillStyle = labelBgColor;
@@ -226,7 +230,7 @@ export class RectShape implements IShape {
         canvas2D.textBaseline = "middle";
         canvas2D.fillStyle = labelTextColor;
 
-        canvas2D.fillText(comment, x + paddingX, y + rectH / 2);
+        canvas2D.fillText(formattedComment, x + paddingX, y + rectH / 2);
       }
     }
     canvas2D.restore();

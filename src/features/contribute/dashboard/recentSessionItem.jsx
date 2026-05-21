@@ -1,8 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 
 export default function RecentSessionItem({ sessionData }) {
   const { isActive, currentCount, date, location, totalImages, imageUrls, chartData = [], averageScore } = sessionData;
+  const [showAbandonModal, setShowAbandonModal] = useState(false);
 
   const handleStopSession = async () => {
     try {
@@ -74,7 +76,7 @@ export default function RecentSessionItem({ sessionData }) {
         {isActive ? (
           <div className="flex flex-row space-x-3 w-full justify-end">
             <button
-              onClick={handleStopSession}
+              onClick={() => setShowAbandonModal(true)}
               className="transition-all duration-500 ease-in-out font-semibold py-3 px-8 text-sm rounded-[2rem] border hover:-translate-y-0.5 hover:shadow-md border-gray-200 text-accent hover:border-accent bg-white whitespace-nowrap"
             >
               Stop Session
@@ -121,6 +123,32 @@ export default function RecentSessionItem({ sessionData }) {
         )}
       </div>
 
+      {/* Stop Confirmation Modal */}
+      {showAbandonModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm font-sans antialiased">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 transform transition-all text-left">
+            <h3 className="text-2xl font-bold text-accent mb-3">Stop Session?</h3>
+            <p className="text-gray-500 mb-8 leading-relaxed">
+              Are you sure you want to stop this session? Images you have already submitted will be saved, but progress on current image will be lost.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowAbandonModal(false)}
+                className="transition-all duration-500 ease-in-out font-semibold py-3 px-6 text-sm rounded-[2rem] border hover:-translate-y-0.5 hover:shadow-md border-gray-200 text-accent hover:border-accent bg-white whitespace-nowrap"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStopSession}
+                className="transition-all duration-500 ease-in-out font-semibold py-3 px-6 text-sm rounded-[2rem] border hover:-translate-y-0.5 hover:shadow-md bg-primary border-primary text-white hover:bg-opacity-90 whitespace-nowrap"
+              >
+                Yes, Stop Session
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.querySelector('main') || document.body
+      )}
     </li>
   );
 }

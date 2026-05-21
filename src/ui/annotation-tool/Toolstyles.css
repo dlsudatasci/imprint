@@ -127,18 +127,18 @@
 
 /* Specific Hovers requested by user */
 .rp-default-input-section_select.yes:hover {
-  background-color: #28a745 !important;
-  /* Green */
+  background-color: #004aad !important;
+  /* Primary Blue */
 }
 
 .rp-default-input-section_select.no:hover {
-  background-color: #dc3545 !important;
-  /* Red */
+  background-color: #475569 !important;
+  /* Slate */
 }
 
 .rp-default-input-section_delete:hover {
-  background-color: #dc3545 !important;
-  /* Red */
+  background-color: #475569 !important;
+  /* Slate */
 }
 
 .rp-default-input-section_select.list:hover {

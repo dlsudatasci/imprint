@@ -95,7 +95,7 @@ export class DefaultAnnotationState implements IAnnotationState {
           fontBackground: "#f8f9fa",
           fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', Helvetica, Arial, sans-serif",
           shapeBackground: "hsla(210, 16%, 93%, 0.2)",
-          shapeStrokeStyle: "orange",
+          shapeStrokeStyle: "#6366f1",
           shapeShadowStyle: "hsla(210, 9%, 31%, 0.35)",
           transformerBackground: "black",
           transformerSize: 10,

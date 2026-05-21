@@ -30,7 +30,7 @@ export default function Hero({ selectedCity, onCitySelect }) {
         <div className="mt-5 flex">
           <div className="mr-5">
             <Button variant="outline">
-              <Link href="/contribute">Contribute</Link>
+              <Link href="/contribute">Volunteer</Link>
             </Button>
           </div>
           <Button variant="outline">

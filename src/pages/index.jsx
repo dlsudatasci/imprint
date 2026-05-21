@@ -3,8 +3,7 @@ import Page from "@/ui/page";
 import Hero from "@/features/home/hero";
 import CityStats from "@/features/home/CityStats";
 import SubHero from "@/features/home/subhero";
-import Help from "@/features/home/help";
-import Raffle from "@/features/home/raffle";
+import ActionSection from "@/features/home/ActionSection";
 
 export default function Index() {
   const [selectedCity, setSelectedCity] = useState(null);
@@ -18,8 +17,7 @@ export default function Index() {
       <Hero selectedCity={selectedCity} onCitySelect={setSelectedCity} />
       <CityStats selectedCity={selectedCity} />
       <SubHero />
-      <Help />
-      <Raffle />
+      <ActionSection />
     </Page>
   );
 }

@@ -81,7 +81,7 @@ export default function ContributePage({ session }) {
         if (!response.ok) {
           throw new Error("Server returned " + response.status);
         }
-        
+
         const data = await response.json();
 
         if (data.isExistingSession) {
@@ -175,17 +175,17 @@ export default function ContributePage({ session }) {
                   </div>
                 </div>
               ) : (
-                <Link href="/contribute/annotate" className="flex-1 md:flex-none flex">
-                  <button
-                    disabled={isLoadingSession}
-                    className={`${baseButton} w-full bg-primary border-primary text-white hover:bg-opacity-90`}
-                  >
-                    {isLoadingSession
-                      ? "Loading..."
-                      : hasSession
-                        ? `Resume Annotation (${sessionState.current - 1}/${sessionState.total})`
-                        : "Start Annotating"}
-                  </button>
+                <Link
+                  href={isLoadingSession ? "" : "/contribute/annotate"}
+                  className={`flex-1 md:flex-none flex justify-center items-center ${baseButton} w-full bg-primary border-primary text-white hover:bg-opacity-90 ${
+                    isLoadingSession ? "opacity-50 pointer-events-none" : ""
+                  }`}
+                >
+                  {isLoadingSession
+                    ? "Loading..."
+                    : hasSession
+                      ? `Resume Session (${sessionState.current - 1}/${sessionState.total})`
+                      : "Let's Annotate!"}
                 </Link>
               )}
             </div>
@@ -200,7 +200,7 @@ export default function ContributePage({ session }) {
 
 export async function getServerSideProps(context) {
   const session = await getSession(context);
-  
+
   if (!session || !session.user?._id) {
     return { props: { session } };
   }
@@ -212,7 +212,7 @@ export async function getServerSideProps(context) {
     if (dbUser) {
       // Inject the true, live values into the session object passed to the frontend
       session.user.totalAnnotations = dbUser.totalAnnotations || 0;
-      
+
       // If they completed their profile on another device or tab, reflect it instantly
       if (dbUser.age) {
         session.user.isProfileIncomplete = false;

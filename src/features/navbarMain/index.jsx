@@ -7,6 +7,7 @@ import Button from "@/ui/buttons/Button";
 import styles from "./styles.module.css";
 import { useOutsideClick } from "@/hooks/useOutsideClick";
 import { useSession, signOut } from "next-auth/react";
+import { LayoutDashboard, LogOut } from "lucide-react";
 
 export default function Nav() {
   const router = useRouter();
@@ -199,31 +200,34 @@ export default function Nav() {
               </button>
 
               <div
-                className={`absolute right-0 top-full mt-2 w-48 z-20 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 transition-all duration-300 ease-in-out origin-top-right overflow-hidden ${profileMenuState
-                  ? "opacity-100 scale-100 pointer-events-auto"
-                  : "opacity-0 scale-95 pointer-events-none"
+                className={`absolute right-0 top-full mt-2 w-56 z-20 rounded-2xl shadow-xl bg-white ring-1 ring-black ring-opacity-5 transition-all duration-300 ease-in-out origin-top-right overflow-hidden ${profileMenuState
+                  ? "opacity-100 scale-100 pointer-events-auto translate-y-0"
+                  : "opacity-0 scale-95 pointer-events-none -translate-y-2"
                   }`}
               >
-                <ul className="py-2 flex flex-col m-0 list-none">
-                  <li>
-                    <Link
-                      href="/contribute"
-                      className="block w-full text-left px-4 py-2 text-gray-700 font-medium hover:bg-gray-50 hover:text-gray-900 transition-colors"
-                      onClick={() => setProfileMenuState(false)}
-                    >
-                      Dashboard
-                    </Link>
-                  </li>
-                  <li>
-                    <button
-                      type="button"
-                      className="w-full text-left px-4 py-2 text-red-600 font-medium hover:bg-red-50 hover:text-red-700 transition-colors"
-                      onClick={logoutFunction}
-                    >
-                      Logout
-                    </button>
-                  </li>
-                </ul>
+                <div className="p-2 flex flex-col m-0 list-none gap-1">
+                  <div className="px-3 py-2 border-b border-gray-100 mb-1">
+                    <p className="text-sm font-semibold text-gray-800 truncate">
+                      {session?.user?.name || session?.user?.email || "Signed In"}
+                    </p>
+                  </div>
+                  <Link
+                    href="/contribute"
+                    className="flex items-center gap-3 w-full px-3 py-2.5 text-gray-700 font-medium hover:bg-gray-50 rounded-xl transition-colors group"
+                    onClick={() => setProfileMenuState(false)}
+                  >
+                    <LayoutDashboard size={18} className="text-gray-400 group-hover:text-primary transition-colors" />
+                    <span className="group-hover:text-primary transition-colors">Dashboard</span>
+                  </Link>
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 w-full text-left px-3 py-2.5 text-red-600 font-medium hover:bg-red-50 rounded-xl transition-colors"
+                    onClick={logoutFunction}
+                  >
+                    <LogOut size={18} />
+                    <span>Logout</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -50,7 +50,6 @@ export default function TermsOfUse() {
                                     <li>Username</li>
                                     <li>Email address</li>
                                     <li>Password</li>
-                                    <li>City of Residence</li>
                                     <li>Frequently Walked Cities</li>
                                     <li>Age</li>
                                     <li>Frequency of walking during your usual commute</li>

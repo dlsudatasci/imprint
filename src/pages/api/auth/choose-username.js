@@ -48,6 +48,7 @@ export default function handler(req, res) {
                     createdAt: new Date(),
                     role: "user",
                     totalAnnotations: 0,
+                    hasCompletedTutorial: false,
                     activities: [
                         {
                             activity: "Registered to Imprint",

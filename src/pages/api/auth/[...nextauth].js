@@ -56,6 +56,9 @@ export const authOptions = {
         if (session.profileCompleted) {
           token.user.isProfileIncomplete = false;
         }
+        if (session.tutorialCompleted) {
+          token.user.hasCompletedTutorial = true;
+        }
       }
 
       // This logic only runs on the very first sign-in when 'user' object is passed

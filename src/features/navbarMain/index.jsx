@@ -17,9 +17,11 @@ export default function Nav() {
   const [profileMenuState, setProfileMenuState] = useState(false); // Desktop profile dropdown state
   const [notificationMenuState, setNotificationMenuState] = useState(false); // Notifications dropdown state
   const [hasActiveSession, setHasActiveSession] = useState(false);
+  const [hasCompletedDemo, setHasCompletedDemo] = useState(false);
 
   useEffect(() => {
     if (status === "authenticated") {
+      setHasCompletedDemo(session?.user?.hasCompletedTutorial === true);
       const localTotal = parseInt(localStorage.getItem("annotationTotalCount"));
       const localCurrent = parseInt(localStorage.getItem("annotationCurrentCount"));
 
@@ -180,7 +182,7 @@ export default function Nav() {
             </div>
 
             {/* Let's Annotate Button */}
-            {(router.pathname !== '/contribute' && router.pathname !== '/contribute/annotate') && (
+            {(router.pathname !== '/contribute' && router.pathname !== '/contribute/annotate' && !session?.user?.isProfileIncomplete && hasCompletedDemo) && (
               <div className="hidden md:block">
                 <Link href="/contribute/annotate" className="font-bold text-primary hover:text-white border-2 border-primary hover:bg-primary px-6 py-2.5 rounded-full shadow-sm hover:shadow-md transition-all duration-300 inline-block bg-white whitespace-nowrap">
                   {hasActiveSession ? "Resume Session" : "Let's Annotate!"}
@@ -208,7 +210,7 @@ export default function Nav() {
                 <div className="p-2 flex flex-col m-0 list-none gap-1">
                   <div className="px-3 py-2 border-b border-gray-100 mb-1">
                     <p className="text-sm font-semibold text-gray-800 truncate">
-                      {session?.user?.name || session?.user?.email || "Signed In"}
+                      {session?.user?.email || session?.user?.name || "Signed In"}
                     </p>
                   </div>
                   <Link
@@ -267,11 +269,13 @@ export default function Nav() {
             {status === "authenticated" && (
               <>
                 <hr className="my-1 border-gray-200" />
-                <li>
-                  <Link href="/contribute/annotate" onClick={() => setMenuState(false)} className="text-primary font-bold">
-                    {hasActiveSession ? "Resume Session" : "Let's Annotate!"}
-                  </Link>
-                </li>
+                {(!session?.user?.isProfileIncomplete && hasCompletedDemo) && (
+                  <li>
+                    <Link href="/contribute/annotate" onClick={() => setMenuState(false)} className="text-primary font-bold">
+                      {hasActiveSession ? "Resume Session" : "Let's Annotate!"}
+                    </Link>
+                  </li>
+                )}
                 <li>
                   <Link href="/contribute" onClick={() => setMenuState(false)} className="text-gray-700">Dashboard</Link>
                 </li>

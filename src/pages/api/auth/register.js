@@ -64,6 +64,7 @@ const handler = async (req, res) => {
       email,
       activities,
       totalAnnotations: 0,
+      hasCompletedTutorial: false,
     });
 
     return res.status(201).json({ message: "User created successfully" });

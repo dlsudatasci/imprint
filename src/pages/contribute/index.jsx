@@ -31,6 +31,7 @@ export default function ContributePage({ session }) {
   });
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [randomFact, setRandomFact] = useState("");
+  const [hasCompletedDemo, setHasCompletedDemo] = useState(false);
 
   // Prioritize the server-side session because it contains our live DB stats
   const activeSession = session || clientSession;
@@ -41,7 +42,10 @@ export default function ContributePage({ session }) {
     // Pick a random fact on the client side to avoid Next.js hydration errors
     const randomIndex = Math.floor(Math.random() * FUN_FACTS.length);
     setRandomFact(FUN_FACTS[randomIndex]);
-  }, []);
+    
+    // Use database status as the absolute source of truth
+    setHasCompletedDemo(activeSession?.user?.hasCompletedTutorial === true);
+  }, [activeSession]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -162,7 +166,20 @@ export default function ContributePage({ session }) {
               <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 w-full md:w-auto">
               {!hasSession && (
                 <>
-                  {activeSession?.user?.isProfileIncomplete && activeSession?.user?.totalAnnotations > 0 ? (
+                  {hasCompletedDemo && (
+                     <Link href="/contribute/tutorial" className={`flex-1 md:flex-none flex justify-center items-center ${baseButton} w-full md:w-auto border-gray-200 text-accent hover:border-accent bg-white`}>
+                        Replay Tutorial
+                     </Link>
+                  )}
+
+                  {!hasCompletedDemo ? (
+                    <Link
+                      href={isLoadingSession ? "" : "/contribute/tutorial"}
+                      className={`flex-1 md:flex-none flex justify-center items-center ${baseButton} w-full md:w-auto bg-primary border-primary text-white hover:bg-opacity-90 ${isLoadingSession ? "opacity-50 pointer-events-none" : ""}`}
+                    >
+                      {isLoadingSession ? "Loading..." : "Start Demo Tutorial"}
+                    </Link>
+                  ) : activeSession?.user?.isProfileIncomplete ? (
                     <div className="flex-1 md:flex-none flex relative group cursor-not-allowed">
                       <button
                         disabled
@@ -213,6 +230,7 @@ export async function getServerSideProps(context) {
     if (dbUser) {
       // Inject the true, live values into the session object passed to the frontend
       session.user.totalAnnotations = dbUser.totalAnnotations || 0;
+      session.user.hasCompletedTutorial = dbUser.hasCompletedTutorial || false;
 
       // If they completed their profile on another device or tab, reflect it instantly
       if (dbUser.age) {

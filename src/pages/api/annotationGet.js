@@ -117,7 +117,13 @@ const handler = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const targetCities = [...(user.frequentlyWalkedCities || [])];
+    // DB stores cities as lowercase slugs (e.g. "makati", "quezoncity").
+    // user.frequentlyWalkedCities stores display names (e.g. "Makati", "Quezon City").
+    // Normalize them before querying the Image collection.
+    const rawCities = user.frequentlyWalkedCities || [];
+    const targetCities = rawCities.map((name) =>
+      name.toLowerCase().replace(/ñ/g, "n").replace(/[^a-z0-9]/g, "")
+    );
 
 
     let imgRecords = await db

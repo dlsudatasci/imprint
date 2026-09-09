@@ -1,6 +1,18 @@
 import { connectToDatabase } from "@/util/mongodb";
 import crypto from "crypto";
 
+/**
+ * POST /api/auth/verify-reset-token — checks a reset link without using it up.
+ *
+ * Exists purely so /reset-password can say "this link has expired" as the page
+ * opens, rather than after someone has typed a new password twice. It changes
+ * nothing, and /api/auth/reset-password runs the same check again, so this
+ * endpoint being skipped or wrong cannot let a bad token through.
+ *
+ * Always answers 200 with a valid flag. Errors come back as invalid, because
+ * from the page's point of view a database problem and an expired token call
+ * for the same thing: ask for a fresh link.
+ */
 const handler = async (req, res) => {
     if (req.method !== "POST") {
         res.setHeader("Allow", ["POST"]);
@@ -9,7 +21,7 @@ const handler = async (req, res) => {
 
     const { email, token } = req.body;
 
-    if (!email || !token) {
+    if (typeof email !== "string" || typeof token !== "string") {
         return res.status(400).json({ valid: false });
     }
 

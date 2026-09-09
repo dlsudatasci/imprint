@@ -1,26 +1,37 @@
 import { connectToDatabase } from "@/util/mongodb";
+import { normalizeCityName } from "@/util/cities";
 
-// DB stores cities as lowercase slugs (e.g. "makati", "laspinas").
-// This converts display names like "Las Piñas" → "laspinas".
-function normalizeCityName(displayName) {
-  return displayName.toLowerCase().replace(/ñ/g, "n").replace(/[^a-z0-9]/g, "");
-}
-
-// GET /api/publicStats              → global stats
-// GET /api/publicStats?city=Makati  → per-city stats
+/**
+ * GET /api/publicStats             → totals across every city
+ * GET /api/publicStats?city=Makati → the same figures for one city
+ *
+ * Supplies the contribution figures under the map on the landing page.
+ *
+ * Open to everyone without signing in, which is the point — showing progress to
+ * people who haven't joined yet is what the landing page is for. Everything
+ * returned is therefore an aggregate: no usernames, no individual records,
+ * nothing identifying who contributed what.
+ *
+ * Runs four separate database aggregations rather than one. They group at
+ * different levels — whole images, then individual boxes — and combining them
+ * would be harder to follow than four straightforward passes.
+ */
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("Allow", ["GET"]);
     return res.status(405).json({ message: `Method ${req.method} Not Allowed` });
   }
 
-  const { city } = req.query;
-  const filter = city ? { city: normalizeCityName(city) } : {};
+  // Repeating the param (?city=a&city=b) makes req.query.city an array, so let
+  // normalizeCityName reject it rather than blowing up on .toLowerCase()
+  const citySlug = normalizeCityName(req.query.city);
+  const imageFilter = citySlug ? { city: citySlug } : {};
+  const filter = { ...imageFilter, source: { $ne: "annotator" } };
 
   try {
     const { db } = await connectToDatabase();
 
-    const totalImages = await db.collection("Image").countDocuments(filter);
+    const totalImages = await db.collection("Image").countDocuments(imageFilter);
 
     const [annStats] = await db.collection("annotations").aggregate([
       { $match: filter },
@@ -28,12 +39,16 @@ export default async function handler(req, res) {
         $group: {
           _id: null,
           total: { $sum: 1 },
-          avgRating: { $avg: "$accessibilityRating" },
+          avgRating: { $avg: "$sceneLevel.overallAccessibility" },
           users: { $addToSet: "$userId" },
         },
       },
     ]).toArray();
 
+    // Leaderboard of what actually blocks sidewalks. Confirmed model
+    // suggestions and user-drawn boxes are concatenated because both are real
+    // obstructions — only the provenance differs — then unwound so each box
+    // becomes its own row to group by label.
     const obstructions = await db.collection("annotations").aggregate([
       { $match: filter },
       { $project: { boxes: { $concatArrays: [{ $ifNull: ["$selectedObjectsID", []] }, { $ifNull: ["$newObjects", []] }] } } },
@@ -51,7 +66,7 @@ export default async function handler(req, res) {
     ]).toArray() || [null];
 
     return res.status(200).json({
-      city: city || "All Areas",
+      city: citySlug ? req.query.city : "All Areas",
       totalImages,
       totalAnnotations: annStats?.total ?? 0,
       avgAccessibilityRating: annStats ? parseFloat(annStats.avgRating?.toFixed(1)) : 0,

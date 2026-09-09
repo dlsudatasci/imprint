@@ -3,6 +3,18 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { ObjectId } from "mongodb";
 
+/**
+ * GET|POST /api/recentSessions — the session history shown on the dashboard.
+ *
+ * Returns up to eight finished sessions, with any active session first and
+ * flagged, so the dashboard can offer Resume within the same list.
+ *
+ * Sessions where nothing was completed are excluded, so opening a batch and
+ * leaving immediately doesn't produce an empty row.
+ *
+ * Note this runs a couple of queries per session in a loop. That is fine at a
+ * limit of eight, but worth combining into a single query if the limit grows.
+ */
 export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
     res.setHeader("Allow", ["GET", "POST"]);
@@ -62,8 +74,9 @@ export default async function handler(req, res) {
       annotations.forEach((ann) => {
         annotationMap[ann.imageID] = ann;
         
-        if (ann.accessibilityRating !== undefined && ann.accessibilityRating !== null) {
-          totalScore += Number(ann.accessibilityRating);
+        const rating = ann.sceneLevel?.overallAccessibility ?? ann.sceneRatings?.accessibility ?? ann.accessibilityRating;
+        if (rating !== undefined && rating !== null) {
+          totalScore += Number(rating);
           validScores++;
         }
         
@@ -72,9 +85,13 @@ export default async function handler(req, res) {
         }
       });
 
+      // A batch tops up from other cities when the user's own run dry, so a
+      // session can legitimately span several — label it rather than picking
+      // one arbitrarily
       let location = "Unknown";
       if (cities.size === 1) {
         location = Array.from(cities)[0];
+        // Slugs lose the ñ, and this is the one city where that's visible
         if (location.toLowerCase().replace(/\s+/g, '') === 'laspinas') {
           location = 'Las Piñas';
         }
@@ -84,12 +101,13 @@ export default async function handler(req, res) {
       
       const averageScore = validScores > 0 ? (totalScore / validScores).toFixed(1) : 0;
 
-      // 3. Fetch images to get their URLs
-      // `Image` collection uses string IDs for completedImageIDs sometimes, or object IDs.
-      // We will try finding by _id or imageID depending on how the session saved it.
-      // The `annotationSubmit.js` saves `imageID` to `completedImageIDs`.
-      // Let's assume they are the numeric/string IDs matching the Image collection's `imageID` or `_id`.
-      
+      // Thumbnails. The three-way $or is legacy tolerance: completedImageIDs
+      // has been written as ObjectIds, as ObjectId strings, and (currently, via
+      // annotationSubmit) as the numeric Image.imageID. Old sessions are still
+      // in the collection, so all three shapes have to resolve.
+      //
+      // Worth a migration to one representation — then this collapses to a
+      // single $in and the string-compare matching below goes away too.
       let images = await db
         .collection("Image")
         .find({
@@ -113,8 +131,8 @@ export default async function handler(req, res) {
         }
       }
 
-      // For chart data, we want to respect the order of completedImageIDs if possible, 
-      // or just map the annotations we have.
+      // Obstruction count per image, in the order they were annotated — the
+      // sparkline reads left-to-right as the session progressed
       for (const imgId of completedImageIDs) {
         const ann = annotationMap[imgId];
         if (ann) {
@@ -125,6 +143,9 @@ export default async function handler(req, res) {
         }
       }
 
+      // A 40-image session would render 40 bars in a strip a few pixels wide,
+      // so anything longer is averaged down into five buckets. Averaged rather
+      // than sampled so a busy stretch still shows up as a taller bar.
       let finalChartData = chartData;
       if (chartData.length > 5) {
         const chunkSize = chartData.length / 5;

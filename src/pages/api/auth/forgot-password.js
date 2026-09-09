@@ -2,6 +2,20 @@ import { connectToDatabase } from "@/util/mongodb";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 
+/**
+ * POST /api/auth/forgot-password — the first step of resetting a password.
+ *
+ * Creates a random token, emails it, and stores only a hashed copy that expires
+ * after an hour. Storing the hash matters for the same reason it does for
+ * passwords: anyone able to read the user records still can't use what they
+ * find there to take over an account.
+ *
+ * The response is the same whether or not the address is registered, so this
+ * can't be used to discover who has an account.
+ *
+ * Only applies to password accounts. Someone who signed up with Google has no
+ * password to reset and is sent nothing.
+ */
 const handler = async (req, res) => {
     if (req.method !== "POST") {
         res.setHeader("Allow", ["POST"]);
@@ -10,27 +24,32 @@ const handler = async (req, res) => {
 
     const { email } = req.body;
 
-    if (!email || !email.includes("@")) {
+    // Guard the type before touching string methods — a JSON body can send an
+    // object here, which would both crash .includes() and smuggle a Mongo
+    // operator into the findOne below.
+    if (typeof email !== "string" || !email.includes("@")) {
         return res.status(422).json({ message: "Invalid email address." });
     }
 
     try {
         const { db } = await connectToDatabase();
 
-        // Check if user exists
         const user = await db.collection("users").findOne({ email });
         if (!user) {
-            // Security best practice: Do not reveal if an email exists or not
+            // Same 200 and same wording as the success path — anything else
+            // turns this endpoint into an account-existence oracle
             return res.status(200).json({ message: "If that email exists, a reset link has been sent." });
         }
 
-        // Generate secure reset token
+        // randomBytes, not Math.random: this value is the only thing standing
+        // between a stranger and the account
         const token = crypto.randomBytes(32).toString("hex");
 
-        // Hash token to save in DB
+        // Only the hash is stored. Plain SHA-256 is fine here where it wouldn't
+        // be for a password — 32 random bytes aren't guessable, so there's
+        // nothing for a slow hash to protect against.
         const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
-        // Expiration time (1 hour from now)
         const tokenExpiration = new Date();
         tokenExpiration.setHours(tokenExpiration.getHours() + 1);
 
@@ -45,10 +64,12 @@ const handler = async (req, res) => {
             }
         );
 
-        // Create reset URL
-        const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-        const host = req.headers.host || 'localhost:3000';
-        const resetUrl = `${protocol}://${host}/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
+        // Build the reset URL from our own configured origin, never from
+        // req.headers.host. The Host header is attacker-controlled, so trusting
+        // it lets someone request a reset for a victim and have the emailed link
+        // point at their own domain, handing them a live token.
+        const baseUrl = (process.env.NEXTAUTH_URL || "http://localhost:3000").replace(/\/+$/, "");
+        const resetUrl = `${baseUrl}/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
 
         // Set up nodemailer transport
         // Ensure you have these environment variables set in .env.local!

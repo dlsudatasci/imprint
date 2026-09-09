@@ -3,12 +3,17 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 
 /**
- * GET /api/telemetryStats
- * 
- * Retrieves user-specific telemetry statistics for the dashboard.
- * Currently returns:
- * - averageTimePerImageSeconds: Average time spent per image annotation.
- * - currentStreak: Consecutive days of activity based on IMAGE_SUBMITTED events.
+ * GET /api/telemetryStats — the two calculated figures on the dashboard:
+ *
+ *   averageTimePerImageSeconds  how long a contributor takes per image
+ *   currentStreak               consecutive days with at least one submission
+ *
+ * Both are worked out from the telemetry log each time rather than stored, so
+ * there is no running counter that can drift out of step with reality.
+ *
+ * Days are counted in Philippine time, not UTC. Contributors are in the
+ * Philippines, and under UTC an evening session would be recorded as the next
+ * day and break a streak the contributor experienced as unbroken.
  */
 
 export default async function handler(req, res) {
@@ -56,10 +61,13 @@ export default async function handler(req, res) {
             { $sort: { _id: -1 } }
         ]).toArray();
 
-        // Calculate consecutive active days (streak)
+        // Walk backwards from the most recent active day, counting while the
+        // dates stay consecutive. The aggregation already sorted them newest
+        // first and collapsed duplicates, so this is a single pass.
         let currentStreak = 0;
         if (uniqueDatesCursor.length > 0) {
-            // Helper to get YYYY-MM-DD string adjusted to Manila time (+8)
+            // Shifting by +8h and reading the UTC date gives the Manila
+            // calendar day, matching how $dateToString bucketed the rows above
             const getManilaDateString = (dateObj) => {
                 const manilaDate = new Date(dateObj.getTime() + 8 * 60 * 60 * 1000);
                 return manilaDate.toISOString().split("T")[0];
@@ -74,9 +82,13 @@ export default async function handler(req, res) {
 
             const mostRecentString = uniqueDatesCursor[0]._id;
 
-            // A streak is only active if the latest activity was today or yesterday
+            // Yesterday still counts: someone who hasn't annotated *yet* today
+            // hasn't lost their streak, they just haven't extended it. Anything
+            // older means the chain is already broken, so the streak is 0.
             if (mostRecentString === todayString || mostRecentString === yesterdayString) {
-                // Initialize check date to the most recent activity date at midnight UTC
+                // Parsed as UTC midnight deliberately — these are calendar-day
+                // labels being stepped through, not real instants, so local
+                // timezone must not enter into it
                 let checkDate = new Date(mostRecentString + "T00:00:00Z");
 
                 for (const row of uniqueDatesCursor) {
@@ -86,7 +98,8 @@ export default async function handler(req, res) {
                         currentStreak++;
                         checkDate.setUTCDate(checkDate.getUTCDate() - 1);
                     } else {
-                        // Break the streak if the sequence skips a day
+                        // First gap ends the streak — everything older is a
+                        // separate run and doesn't count toward the current one
                         break;
                     }
                 }

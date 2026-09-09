@@ -5,11 +5,17 @@ import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
 
 /**
- * POST /api/annotationComplete
- * 
- * Finalizes an active session.
- * Marks the session as "completed", transitions all "pending" annotations to "completed",
- * updates the user's total annotations count, and appends a success activity log.
+ * POST /api/annotationComplete — called when a contributor finishes a full
+ * batch.
+ *
+ * Annotations are saved one image at a time as "pending" and only become
+ * "completed" here, so an interrupted session never inflates anyone's count.
+ * Stopping early goes through /api/annotationAbandon instead, which counts only
+ * the images actually finished.
+ *
+ * The new total is recounted from the database rather than taken from the
+ * request. The count stored on the user record is a cached copy of that number,
+ * kept because the dashboard reads it on every page load.
  */
 const handler = async (req, res) => {
     if (req.method === "POST") {
@@ -26,6 +32,11 @@ const handler = async (req, res) => {
         const date = new Date();
 
         try {
+            // Snapshot before and after the promotion. Counting the difference
+            // rather than the pending rows keeps this correct when someone
+            // re-annotates an image they'd already finished in an earlier
+            // session: that row goes back to "pending" but was already counted,
+            // so it contributes 0 to the delta instead of double-counting.
             const previousTotal = await db
                 .collection("annotations")
                 .countDocuments({ userId: userId, status: "completed" });
@@ -46,15 +57,76 @@ const handler = async (req, res) => {
 
             const sessionDelta = newTotal - previousTotal;
 
+            // `total` is only ever echoed back into the activity string, but it
+            // comes from the request body, so clamp it to a plain number rather
+            // than writing arbitrary client text into the feed.
+            const reportedTotal = Number.isFinite(Number(total))
+                ? Math.max(0, Math.trunc(Number(total)))
+                : sessionDelta;
+
+            // The session was just marked completed — look it up by the
+            // timestamp we wrote so we can find which images were in it.
+            const completedSession = await db.collection("sessions").findOne({
+                userId: userId,
+                status: "completed",
+                completedAt: date,
+            });
+
+            // For reference images: append the contributor's judgments to the
+            // Image record so inter-rater agreement can be computed later.
+            const sessionImageIDs = completedSession?.imageIDs || [];
+            if (sessionImageIDs.length > 0) {
+                const refImages = await db
+                    .collection("Image")
+                    .find(
+                        { _id: { $in: sessionImageIDs }, isReference: true },
+                        { projection: { _id: 1, imageID: 1 } }
+                    )
+                    .toArray();
+
+                if (refImages.length > 0) {
+                    const refImageIDs = refImages.map((img) => img.imageID);
+                    const refAnnotations = await db
+                        .collection("annotations")
+                        .find({ userId, imageID: { $in: refImageIDs } })
+                        .toArray();
+
+                    const ops = refAnnotations.map((ann) => ({
+                        updateOne: {
+                            filter: { imageID: ann.imageID },
+                            update: {
+                                $push: {
+                                    referenceGroundTruth: {
+                                        userId,
+                                        source: ann.source,
+                                        sceneLevel: ann.sceneLevel,
+                                        selectedObjectsID: ann.selectedObjectsID,
+                                        newObjects: ann.newObjects,
+                                        submittedAt: date,
+                                    },
+                                },
+                            },
+                        },
+                    }));
+
+                    if (ops.length > 0) {
+                        await db.collection("Image").bulkWrite(ops);
+                    }
+                }
+            }
+
             await db.collection("users").updateOne(
                 { _id: new ObjectId(userId) },
                 {
                     $inc: { totalAnnotations: sessionDelta },
                     $push: {
                         activities: {
-                            activity: `You finished ${total} annotations`,
-                            date: date,
-                            tag: "Annotation Session Done",
+                            $each: [{
+                                activity: `You finished ${reportedTotal} annotations`,
+                                date: date,
+                                tag: "Annotation Session Done",
+                            }],
+                            $slice: -100,
                         },
                     },
                 }

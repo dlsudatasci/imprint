@@ -1,10 +1,21 @@
-/* eslint-disable @next/next/no-img-element */
-import { P } from "@/ui/Typography";
+/* eslint-disable @next/next/no-img-element -- animated GIFs; next/image doesn't
+   optimize them and would only add overhead */
+import { P, Container } from "@/ui";
 import HelpItem from "./helpItem";
 
+/**
+ * The annotation guide: one screen recording per step.
+ *
+ * Covers the same five actions as the interactive tutorial, for contributors
+ * who want to look something up rather than replay the walkthrough.
+ *
+ * The recordings live in /public/images/help. Changing the annotation interface
+ * makes them stale without anything failing — the page will simply be showing
+ * an older version of the tool, so re-record them alongside interface changes.
+ */
 export default function HelpDirectory() {
   return (
-    <section className="container mx-auto my-12 max-w-screen-xl px-4 py-1">
+    <Container as="section" className="my-12 py-1">
       <HelpItem heading="Starting a new Annotation Session">
         <div className="flex flex-col">
           <div className="gifContainer border-black border-4 self-center">
@@ -75,6 +86,6 @@ export default function HelpDirectory() {
           </div>
         </div>
       </HelpItem>
-    </section>
+    </Container>
   );
 }

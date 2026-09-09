@@ -1,24 +1,40 @@
+import { useSession } from "next-auth/react";
 import { ReactPictureAnnotation } from "@/ui/annotation-tool/index";
 
-export default function AnnotateForm({
-  selectedObjects,
-  newObjects,
-  detectedObjects,
+/**
+ * Read-only view of an annotation that has already been submitted.
+ *
+ * Rebuilds what the contributor saw: the boxes they drew themselves, plus the
+ * model's suggestions they confirmed. Rejected suggestions are left out.
+ */
+export default function AnnotateView({
+  selectedObjects = [],
+  newObjects = [],
+  detectedObjects = [],
   url,
   id,
   city,
 }) {
+  const { data: session } = useSession();
+
   const onSelect = () => { };
   const onChange = () => { };
 
-  const annotObjects = newObjects;
-  for (let i = 0; i < detectedObjects.length; i++) {
-    for (let x = 0; x < selectedObjects.length; x++) {
-      if (selectedObjects[x] === detectedObjects[i].id) {
-        annotObjects.push(detectedObjects[i]);
-      }
-    }
-  }
+  // annotationSubmit stores selectedObjectsID as whole annotation objects, not
+  // bare ids — the old `selectedObjects[x] === detectedObjects[i].id` compared
+  // an object to a string and so never matched, silently dropping every
+  // confirmed suggestion. Pull the ids out and match on those.
+  const confirmedIds = new Set(
+    selectedObjects.map((entry) =>
+      entry && typeof entry === "object" ? entry.id : entry
+    )
+  );
+
+  // Build a fresh array; pushing into `newObjects` would mutate the caller's prop
+  const annotObjects = [
+    ...newObjects,
+    ...detectedObjects.filter((box) => confirmedIds.has(box.id)),
+  ];
 
   return (
     <div className="px-5">
@@ -32,7 +48,7 @@ export default function AnnotateForm({
         imageID={id}
         city={city}
         currentAnnotationCount={0}
-        username={"test"}
+        username={session?.user?.username ?? ""}
       />
     </div>
   );

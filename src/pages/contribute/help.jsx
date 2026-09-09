@@ -1,5 +1,9 @@
+/**
+ * Route for /contribute/help — the annotation guide for signed-in
+ * contributors. The same guide is available publicly at /demo.
+ */
+import { H1, Container } from "@/ui";
 import Page from '@/ui/page';
-import { H1 } from '@/ui/Typography';
 import HelpDirectory from 'features/contribute/help';
 
 export default function ContributePage() {
@@ -9,9 +13,9 @@ export default function ContributePage() {
       description="Learn more how to use Imprint as a crowdsourcing platform."
       contribute
     >
-      <section className="container mx-auto px-5">
+      <Container as="section">
         <H1>Imprint Annotation Guide</H1>
-      </section>
+      </Container>
       <HelpDirectory />
     </Page>
   );

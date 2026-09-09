@@ -2,6 +2,12 @@ import { ReactPictureAnnotation } from "../index";
 import { IAnnotationState } from "./AnnotationState";
 import { DefaultAnnotationState } from "./DefaultAnnotationState";
 
+/**
+ * Active while one of the eight resize handles is being dragged.
+ *
+ * The transformer already knows which handle was grabbed, so this forwards
+ * cursor positions to it and does nothing else.
+ */
 export default class TransformationState implements IAnnotationState {
   private readonly context: ReactPictureAnnotation;
   constructor(context: ReactPictureAnnotation) {

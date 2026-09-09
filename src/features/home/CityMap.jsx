@@ -1,3 +1,4 @@
+import { IconButton } from "@/ui";
 import { useEffect, useCallback, useState } from "react";
 import L from "leaflet";
 import {
@@ -8,13 +9,19 @@ import {
   useMapEvents,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import boundaries from "@/pages/cityBoundaries.json";
+import boundaries from "@/data/cityBoundaries.json";
 
-// Colors auto-assigned to cities by index. Add more if needed.
-const CITY_COLORS = ["#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#ef4444", "#ec4899", "#06b6d4"];
+// Fallback palette, cycled by feature order. A city can override this by
+// setting `properties.color` in cityBoundaries.json — prefer doing that, since
+// index-based colors shift as soon as someone reorders the GeoJSON.
+// Muted and deliberately one family: these are drawn from the illustration
+// palette in SidewalkLoader (sage, clay, ochre) plus a desaturated brand blue,
+// rather than the fully-saturated 500-weights they replaced. Seven bright
+// unrelated hues on one map read as decoration; these read as categories.
+const CITY_COLORS = ["#2f5d8f", "#8f9b6f", "#c1703f", "#6f7f96", "#a8894f", "#7a6a8c", "#4f8878"];
 
-function getCityColor(index) {
-  return CITY_COLORS[index % CITY_COLORS.length];
+function getCityColor(feature, index) {
+  return feature?.properties?.color || CITY_COLORS[index % CITY_COLORS.length];
 }
 
 function getStyle(color, mode) {
@@ -23,7 +30,9 @@ function getStyle(color, mode) {
   return { fillColor: color, fillOpacity: 0.12, color, weight: 1.5, opacity: 0.4 };
 }
 
-// Auto-fit map to show all polygons on load
+// Frames the covered cities on load, so the hardcoded center/zoom on
+// MapContainer only ever shows for the instant before this runs. Adding a city
+// to the GeoJSON adjusts the view automatically.
 function FitBounds() {
   const map = useMap();
   useEffect(() => {
@@ -33,7 +42,10 @@ function FitBounds() {
   return null;
 }
 
-// Invalidate map size when fullscreen toggles so tiles re-render
+// Leaflet caches the container size and only reloads tiles when told the size
+// changed. Toggling fullscreen resizes via CSS, which it can't detect, so the
+// map would keep painting at the old dimensions — grey gaps around the edges.
+// The delay lets the CSS transition land before we measure.
 function InvalidateOnResize({ isFullscreen }) {
   const map = useMap();
   useEffect(() => {
@@ -43,7 +55,14 @@ function InvalidateOnResize({ isFullscreen }) {
   return null;
 }
 
-// Clicking empty map area deselects
+/**
+ * Clicking empty map clears the selected city.
+ *
+ * Leaflet also fires the map's click handler when a city is clicked, so the
+ * city handler marks the event and this checks for that mark. Marking the event
+ * is better than stopping propagation, which would also block Leaflet's own
+ * handling of the click.
+ */
 function MapDeselect({ onCitySelect }) {
   useMapEvents({
     click: (e) => {
@@ -53,12 +72,18 @@ function MapDeselect({ onCitySelect }) {
   return null;
 }
 
-// Remounts via key when selectedCity changes so closures stay fresh
+/**
+ * The city outlines drawn on the map.
+ *
+ * react-leaflet attaches these handlers once when the layer is built, so they
+ * keep whatever `selectedCity` was at that moment and never see a later value.
+ * Changing the `key` rebuilds the layer on each selection, which is blunt but
+ * reliable.
+ */
 function CityPolygons({ selectedCity, onCitySelect }) {
   const styleFunc = useCallback(
     (feature) => {
-      const i = boundaries.features.indexOf(feature);
-      const color = getCityColor(i);
+      const color = getCityColor(feature, boundaries.features.indexOf(feature));
       return getStyle(color, feature.properties.name === selectedCity ? "active" : "default");
     },
     [selectedCity]
@@ -67,8 +92,7 @@ function CityPolygons({ selectedCity, onCitySelect }) {
   const onEachFeature = useCallback(
     (feature, layer) => {
       const name = feature.properties.name;
-      const i = boundaries.features.indexOf(feature);
-      const color = getCityColor(i);
+      const color = getCityColor(feature, boundaries.features.indexOf(feature));
 
       layer.on({
         mouseover: () => { if (name !== selectedCity) layer.setStyle(getStyle(color, "hover")); },
@@ -92,6 +116,18 @@ function CityPolygons({ selectedCity, onCitySelect }) {
   );
 }
 
+/**
+ * The interactive city map on the landing page. Clicking a city filters the
+ * figures underneath it.
+ *
+ * Must be loaded through a dynamic import with `ssr: false` — see hero.jsx.
+ * Leaflet uses `window` as soon as it is imported, so pulling this into a
+ * server-rendered page breaks the build.
+ *
+ * Scroll and pinch zoom are disabled inline and enabled in fullscreen. The map
+ * sits partway down the page, and one that captures scrolling traps anyone
+ * trying to swipe past it on a phone.
+ */
 export default function CityMap({ selectedCity, onCitySelect }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -108,19 +144,19 @@ export default function CityMap({ selectedCity, onCitySelect }) {
       className={`${
         isFullscreen
           ? "fixed inset-0 z-[9999] rounded-none"
-          : "w-full h-full min-h-[400px] rounded-2xl relative z-0"
-      } overflow-hidden shadow-lg border border-gray-200`}
+          : "w-full h-full min-h-[400px] rounded-card relative z-0"
+      } overflow-hidden shadow-md border border-line`}
     >
       {/* Fullscreen toggle button */}
-      <button
+      <IconButton
         onClick={() => setIsFullscreen((f) => !f)}
-        className="absolute top-3 right-3 z-[10000] bg-white hover:bg-gray-50 border border-gray-300 rounded-lg p-2 shadow-md transition-colors duration-150 cursor-pointer"
+        className="absolute top-3 right-3 z-[10000] shadow-md"
         title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
         aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
       >
         {isFullscreen ? (
           // Collapse icon (arrows inward)
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="4 14 10 14 10 20" />
             <polyline points="20 10 14 10 14 4" />
             <line x1="14" y1="10" x2="21" y2="3" />
@@ -128,14 +164,14 @@ export default function CityMap({ selectedCity, onCitySelect }) {
           </svg>
         ) : (
           // Expand icon (arrows outward)
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 3 21 3 21 9" />
             <polyline points="9 21 3 21 3 15" />
             <line x1="21" y1="3" x2="14" y2="10" />
             <line x1="3" y1="21" x2="10" y2="14" />
           </svg>
         )}
-      </button>
+      </IconButton>
 
       <MapContainer
         center={[14.5, 121.01]}

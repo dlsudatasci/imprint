@@ -5,7 +5,7 @@
       "type": "Feature",
       "properties": {
         "name": "Makati",
-        "color": "#3b82f6"
+        "color": "#2f5d8f"
       },
       "geometry": {
         "type": "Polygon",
@@ -275,7 +275,7 @@
       "type": "Feature",
       "properties": {
         "name": "Las Pi\u00f1as",
-        "color": "#8b5cf6"
+        "color": "#8f9b6f"
       },
       "geometry": {
         "type": "Polygon",

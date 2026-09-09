@@ -1,0 +1,61 @@
+# systemd unit for Imprint.
+#
+# Install on the VM as /etc/systemd/system/imprint.service, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now imprint
+#   sudo systemctl status imprint
+#   journalctl -u imprint -f          # logs
+#
+# Assumes the standalone build lives at /srv/imprint and .env sits beside it.
+# Adjust User= and the paths if you deploy somewhere else.
+
+[Unit]
+Description=Imprint (Next.js)
+Documentation=https://github.com/dlsudatasci/imprint
+After=network-online.target
+Wants=network-online.target
+# If Mongo runs on this same VM, uncomment so Imprint starts after it:
+# After=mongod.service
+# Wants=mongod.service
+
+[Service]
+Type=simple
+User=imprint
+Group=imprint
+WorkingDirectory=/srv/imprint
+
+# EnvironmentFile is read by systemd, not by a shell: no quotes, no export,
+# no variable expansion. Keep it 0600 and owned by the service user.
+EnvironmentFile=/srv/imprint/.env
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+Environment=NEXT_TELEMETRY_DISABLED=1
+
+ExecStart=/usr/bin/node server.js
+
+Restart=on-failure
+RestartSec=5s
+
+# Restart forever rather than giving up after the default 5 tries in 10s —
+# a VM that reboots with Mongo still starting shouldn't leave the app dead.
+StartLimitIntervalSec=0
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=imprint
+
+# --- hardening -------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/imprint
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

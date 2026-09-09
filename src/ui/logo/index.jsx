@@ -1,48 +1,36 @@
-export default function Logo({ subTitle }) {
-  const logoHeight = 60;
+import { cn } from '../cn';
+
+/**
+ * The Imprint wordmark: the glyph plus an optional text label.
+ *
+ * `src` is a prop rather than a fixed path because the image file belongs to
+ * the host app, not to the component library. It defaults to Imprint's own
+ * public path, so call sites in this app can leave it alone.
+ */
+export default function Logo({ subTitle, height = 40, src = '/images/logo/imprint.png' }) {
+  const isWordmark = subTitle === 'Imprint';
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center' }}>
+    <div className="flex items-center gap-2">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/images/logo/imprint.png"
-        alt="Logo"
-        style={{
-          height: `${logoHeight}px`,
-          objectFit: 'contain',
-          marginRight: '0.3rem',
-        }}
+        src={src}
+        alt="Imprint"
+        style={{ height: `${height}px` }}
+        className="object-contain w-auto"
       />
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}
-      >
-        {/* <h1
-          className={`text-[20px] leading-none m-0 font-bold ${
-            white ? 'text-white' : 'text-primary'
-          }`}
+      {subTitle && (
+        <span
+          className={cn(
+            'leading-none',
+            isWordmark
+              ? 'font-display text-xl font-bold text-ink tracking-tight'
+              : 'text-sm font-medium text-muted italic',
+          )}
         >
-          Imprint
-        </h1> */}
-        {subTitle === 'Imprint' ? (
-          <span
-            className="text-black text-[20px] leading-none m-0 tracking-tight"
-            style={{ marginTop: '2px' }}
-          >
-            {subTitle}
-          </span>
-        ) : (
-          <em
-            className="text-gray-500"
-            style={{ marginTop: '4px' }}
-          >
-            {subTitle}
-          </em>
-        )}
-      </div>
+          {subTitle}
+        </span>
+      )}
     </div>
   );
 }

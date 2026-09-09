@@ -1,0 +1,27 @@
+{
+  "name": "@imprint/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Imprint design system — the component library the app builds screens from.",
+  "type": "module",
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "sideEffects": false,
+  "//": [
+    "Deliberately no main/module/exports/types.",
+    "",
+    "This manifest sits inside the app's own source tree, so those fields would",
+    "hijack directory resolution: `import { Button } from '@/ui'` would resolve",
+    "to ./dist/index.mjs — the last *built* snapshot — instead of ./index.ts.",
+    "The app would then silently run stale components until someone remembered",
+    "to re-run `npm run build:ui`, which is exactly the bug this comment exists",
+    "to prevent recurring.",
+    "",
+    "Nothing needs those fields. `npm run build:ui` names ./index.ts as its",
+    "entry directly, and design-sync is passed --entry ./src/ui/dist/index.mjs",
+    "on the command line. The file is kept only so the package has a name and",
+    "version for the design-sync converter to report."
+  ]
+}

@@ -46,7 +46,15 @@ next-env.d.ts
 .idea/
 .vscode/
 .cursor/
+.claude/
 
 # Agents
 .agents/
 skills-lock.json
+
+# Design system library build output (regenerate with `npm run build:ui`)
+src/ui/dist/
+# Design system sync tooling - local only, never committed
+.ds-sync/
+ds-bundle/
+.design-sync/

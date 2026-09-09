@@ -1,7 +1,25 @@
 import { connectToDatabase } from "@/util/mongodb";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from "@/util/validation";
 
+/**
+ * POST /api/auth/reset-password — the second step, redeeming the emailed token.
+ *
+ * Hashes the token from the request and compares it with the stored hash, so
+ * the token itself only ever exists in the email and the link. A token that
+ * matches but has expired is refused, and a successful reset clears it, so a
+ * forwarded email can't be used a second time.
+ *
+ * Every failure returns the same message. Telling "wrong token" apart from
+ * "expired token" or "no such account" would give an attacker something to
+ * probe with.
+ *
+ * One limitation worth knowing: sign-in sessions are self-contained tokens with
+ * no server-side record, so existing sessions stay valid after a reset. If
+ * someone resets because their account was taken over, the intruder stays
+ * signed in until their session expires on its own.
+ */
 const handler = async (req, res) => {
     if (req.method !== "POST") {
         res.setHeader("Allow", ["POST"]);
@@ -10,12 +28,20 @@ const handler = async (req, res) => {
 
     const { email, token, newPassword } = req.body;
 
-    if (!email || !token || !newPassword) {
+    // email goes into a Mongo query and token into a hash, so both have to be
+    // strings before we touch them
+    if (
+        typeof email !== "string" ||
+        typeof token !== "string" ||
+        typeof newPassword !== "string"
+    ) {
         return res.status(422).json({ message: "Missing required fields." });
     }
 
-    if (newPassword.length < 6) {
-        return res.status(422).json({ message: "Password must be at least 6 characters long." });
+    if (newPassword.length < MIN_PASSWORD_LENGTH || newPassword.length > MAX_PASSWORD_LENGTH) {
+        return res.status(422).json({
+            message: `Password must be between ${MIN_PASSWORD_LENGTH} and ${MAX_PASSWORD_LENGTH} characters.`,
+        });
     }
 
     try {
@@ -41,7 +67,8 @@ const handler = async (req, res) => {
         // Hash the new password
         const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-        // Update the password and clear out the security reset fields
+        // Unsetting the token is what makes it single-use — without this the
+        // link in the email would keep working for the rest of the hour
         await db.collection("users").updateOne(
             { email },
             {

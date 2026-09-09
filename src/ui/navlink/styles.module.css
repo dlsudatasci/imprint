@@ -1,6 +1,6 @@
 .link {
   cursor: pointer;
-  display: relative;
+  position: relative;
 }
 .link::after {
   content: " ";
@@ -19,7 +19,7 @@
 
 .active {
   cursor: pointer;
-  display: relative;
+  position: relative;
 }
 .active::after {
   /* background: none repeat scroll 0 0 transparent;

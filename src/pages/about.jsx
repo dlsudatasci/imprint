@@ -1,3 +1,6 @@
+/**
+ * Route for /about. The page content lives in features/about.
+ */
 import Page from '@/ui/page';
 import AboutSection from '@/features/about';
 

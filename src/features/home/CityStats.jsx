@@ -1,12 +1,27 @@
 import { useEffect, useState, useRef } from "react";
+import { Container } from "@/ui";
 
-export default function CityStats({ selectedCity }) {
+/**
+ * The contribution figures shown under the map on the landing page.
+ *
+ * `selectedCity` comes from clicking a city on the map, and null means "all
+ * areas". It travels as a display name such as "Las Piñas"; the API converts it
+ * to a database slug, so nothing here needs to.
+ *
+ * `onFirstLoad` fires once the first request finishes, whether it succeeded or
+ * not. The landing page keeps its loading screen up until then, and this is the
+ * only component on the page that makes a network call, so it is the only one
+ * that can say when the data has arrived.
+ */
+export default function CityStats({ selectedCity, onFirstLoad }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const announced = useRef(false);
   const [isVisible, setIsVisible] = useState(false);
   const sectionRef = useRef(null);
 
-  // Fade-in on scroll
+  // Slide the section in the first time it scrolls into view, then leave it
+  // alone — no unsetting on the way back out
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting) setIsVisible(true); },
@@ -17,19 +32,35 @@ export default function CityStats({ selectedCity }) {
     return () => { if (el) observer.unobserve(el); };
   }, []);
 
-  // Fetch stats when city changes
   useEffect(() => {
     setLoading(true);
     const url = selectedCity
       ? `/api/publicStats?city=${encodeURIComponent(selectedCity)}`
       : "/api/publicStats";
 
+    // Clicking across the map fires overlapping requests, and they don't
+    // necessarily come back in order. The flag drops any response that isn't
+    // for the city currently selected, so a slow earlier request can't
+    // overwrite the numbers with stale ones.
+    let stale = false;
+
     fetch(url)
       .then((res) => res.json())
-      .then(setStats)
+      .then((data) => { if (!stale) setStats(data); })
       .catch((err) => console.error("Failed to fetch public stats:", err))
-      .finally(() => setLoading(false));
-  }, [selectedCity]);
+      .finally(() => {
+        if (stale) return;
+        setLoading(false);
+        // Only the first settle matters — later ones are city filter changes,
+        // which swap in a skeleton rather than covering the page again.
+        if (!announced.current) {
+          announced.current = true;
+          onFirstLoad?.();
+        }
+      });
+
+    return () => { stale = true; };
+  }, [selectedCity, onFirstLoad]);
 
   const statItems = stats
     ? [
@@ -43,27 +74,28 @@ export default function CityStats({ selectedCity }) {
 
   const skeleton = (count) =>
     Array.from({ length: count }, (_, i) => (
-      <div key={i} className="animate-pulse py-5 border-t-2 border-gray-100">
-        <div className="h-9 w-16 bg-gray-200 rounded mb-2" />
-        <div className="h-4 w-24 bg-gray-100 rounded mb-1" />
-        <div className="h-3 w-20 bg-gray-50 rounded" />
+      <div key={i} className="animate-pulse py-5 border-t-2 border-line-card">
+        <div className="h-9 w-16 bg-line rounded mb-2" />
+        <div className="h-4 w-24 bg-surface-subtle rounded mb-1" />
+        <div className="h-3 w-20 bg-surface-subtle rounded" />
       </div>
     ));
 
   return (
-    <section
+    <Container
+      as="section"
       ref={sectionRef}
-      className={`container mx-auto px-5 pt-8 pb-12 transition-all duration-700 ease-out ${
+      className={`pt-8 pb-12 transition-all duration-700 ease-out ${
         isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
       }`}
     >
       {/* Header */}
       <div className="mb-8">
-        <h2 className="text-2xl lg:text-3xl font-extrabold text-gray-900 tracking-tight">
+        <h2 className="text-2xl lg:text-3xl font-extrabold text-ink tracking-tight">
           {selectedCity || "All Areas"}{" "}
-          <span className="font-medium text-gray-400">at a glance</span>
+          <span className="font-medium text-subtle">at a glance</span>
         </h2>
-        <p className="text-gray-500 mt-1 text-sm">
+        <p className="text-muted mt-1 text-sm">
           {selectedCity
             ? "Click the highlighted area again to deselect."
             : "Select a highlighted city on the map above to filter."}
@@ -76,11 +108,11 @@ export default function CityStats({ selectedCity }) {
           ? skeleton(5)
           : statItems.map((item) => (
               <div key={item.label} className="py-5 border-t-2 border-primary/20">
-                <p className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tight leading-none mb-1.5">
+                <p className="text-3xl lg:text-4xl font-extrabold text-ink tracking-tight leading-none mb-1.5">
                   {item.value}
                 </p>
-                <p className="text-sm font-bold text-gray-700">{item.label}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{item.sub}</p>
+                <p className="text-sm font-bold text-body">{item.label}</p>
+                <p className="text-xs text-subtle mt-0.5">{item.sub}</p>
               </div>
             ))}
       </div>
@@ -88,29 +120,29 @@ export default function CityStats({ selectedCity }) {
       {/* Common Obstructions */}
       {!loading && stats?.commonObstructions?.length > 0 && (
         <div>
-          <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">
+          <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">
             Common Obstructions
             {selectedCity && (
-              <span className="normal-case tracking-normal font-medium text-gray-400">
+              <span className="normal-case tracking-normal font-medium text-subtle">
                 {" "}in {selectedCity}
               </span>
             )}
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6">
             {stats.commonObstructions.map((obs, i) => (
-              <div key={obs.type} className="py-4 border-t-2 border-gray-100">
-                <p className="text-2xl font-black text-gray-900 tracking-tight leading-none mb-1">
+              <div key={obs.type} className="py-4 border-t-2 border-line-card">
+                <p className="text-2xl font-extrabold text-ink tracking-tight leading-none mb-1">
                   {obs.count}
                 </p>
-                <p className="text-sm font-bold text-gray-700 capitalize">
+                <p className="text-sm font-bold text-body capitalize">
                   {obs.type.replace(/_/g, " ")}
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5">#{i + 1} most common</p>
+                <p className="text-xs text-subtle mt-0.5">#{i + 1} most common</p>
               </div>
             ))}
           </div>
         </div>
       )}
-    </section>
+    </Container>
   );
 }

@@ -5,11 +5,17 @@ import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
 
 /**
- * POST /api/annotationAbandon
- * 
- * Handles the premature termination of an active session.
- * Finalizes any completed annotations, discards pending/skipped images,
- * and increments the user's overall count only for the images they actually finished.
+ * POST /api/annotationAbandon — called when a contributor stops partway through
+ * a batch.
+ *
+ * The rule is that submitted work counts and work in progress does not. Images
+ * the session recorded as finished become "completed", and any remaining
+ * pending records for that contributor are deleted. Those are half-finished
+ * images from the batch just abandoned, and keeping them would put unreviewed
+ * boxes into the dataset.
+ *
+ * Takes no request body. Which images were finished is server-side state, not
+ * something the browser gets to claim.
  */
 const handler = async (req, res) => {
     if (req.method === "POST") {
@@ -42,28 +48,84 @@ const handler = async (req, res) => {
 
                 if (completedCount > 0) {
                     // Finalize the ones they actually finished
-                    await db.collection("annotations").updateMany(
+                    const finalized = await db.collection("annotations").updateMany(
                         { userId: userId, status: "pending", imageID: { $in: completedImages } },
                         { $set: { status: "completed" } }
                     );
 
-                    // Log activity and increment the denormalized counter for the portion they finished
-                    await db.collection("users").updateOne(
-                        { _id: new ObjectId(userId) },
-                        {
-                            $inc: { totalAnnotations: completedCount },
-                            $push: {
-                                activities: {
-                                    activity: `Abandoned session (${completedCount} annotation${completedCount === 1 ? '' : 's'} finished)`,
-                                    date: new Date(),
-                                    tag: "Session Abandoned",
+                    // Append completed reference-image judgments to the Image
+                    // record, same as annotationComplete does for full sessions.
+                    const refImages = await db
+                        .collection("Image")
+                        .find(
+                            { _id: { $in: activeSession.imageIDs || [] }, isReference: true },
+                            { projection: { _id: 1, imageID: 1 } }
+                        )
+                        .toArray();
+
+                    if (refImages.length > 0) {
+                        const refImageIDs = refImages.map((img) => img.imageID);
+                        const completedRefIDs = refImageIDs.filter((id) => completedImages.includes(id));
+
+                        if (completedRefIDs.length > 0) {
+                            const refAnnotations = await db
+                                .collection("annotations")
+                                .find({ userId, imageID: { $in: completedRefIDs }, status: "completed" })
+                                .toArray();
+
+                            const ops = refAnnotations.map((ann) => ({
+                                updateOne: {
+                                    filter: { imageID: ann.imageID },
+                                    update: {
+                                        $push: {
+                                            referenceGroundTruth: {
+                                                userId,
+                                                source: ann.source,
+                                                sceneLevel: ann.sceneLevel,
+                                                selectedObjectsID: ann.selectedObjectsID,
+                                                newObjects: ann.newObjects,
+                                                submittedAt: new Date(),
+                                            },
+                                        },
+                                    },
                                 },
-                            },
+                            }));
+
+                            if (ops.length > 0) {
+                                await db.collection("Image").bulkWrite(ops);
+                            }
                         }
-                    );
+                    }
+
+                    // Count only the rows this call actually flipped to completed.
+                    // Using completedImages.length would double-count anything the
+                    // user re-annotated, since re-submitting an image resets it to
+                    // "pending" even though it was already tallied once.
+                    const newlyCompleted = finalized.modifiedCount;
+
+                    if (newlyCompleted > 0) {
+                        await db.collection("users").updateOne(
+                            { _id: new ObjectId(userId) },
+                            {
+                                $inc: { totalAnnotations: newlyCompleted },
+                                $push: {
+                                    activities: {
+                                        $each: [{
+                                            activity: `Abandoned session (${newlyCompleted} annotation${newlyCompleted === 1 ? '' : 's'} finished)`,
+                                            date: new Date(),
+                                            tag: "Session Abandoned",
+                                        }],
+                                        $slice: -100,
+                                    },
+                                },
+                            }
+                        );
+                    }
                 }
 
-                // Clean up any other pending annotations that weren't completed
+                // Whatever is still pending after the promotion above is work
+                // from the image they were mid-way through. Drop it — partial
+                // annotations aren't usable training data.
                 await db.collection("annotations").deleteMany({
                     userId: userId,
                     status: "pending",

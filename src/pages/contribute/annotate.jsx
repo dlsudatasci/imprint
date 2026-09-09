@@ -1,18 +1,45 @@
 
 import React from "react";
-import { isMobile } from "react-device-detect";
 import { useSession } from "next-auth/react"; // Add this import
 
 import Page from "@/ui/page";
-import MobileWarning from "features/annotate/mobileWarning";
-import AnnotationSessionSelection from "features/annotate/selection";
-import AnnotateForm from "features/annotate/form";
-import AnnotationDone from "features/annotate/done";
+import DesktopOnly from "@/features/annotate/desktopOnly";
+import { useCanAnnotate } from "@/hooks/useCanAnnotate";
+import AnnotationSessionSelection from "@/features/annotate/selection";
+import AnnotateForm from "@/features/annotate/form";
+import AnnotationDone from "@/features/annotate/done";
+import ContentSkeleton from "@/features/layout/contentSkeleton";
+import {
+  readTotalCount,
+  readCurrentCount,
+  readSessionData,
+  writeSession,
+} from "@/util/sessionCache";
 
-// Convert to functional component to use useSession hook
+/**
+ * The annotation flow — where contributors do the actual work.
+ *
+ * Which of four screens appears is worked out from the session counters rather
+ * than stored as a step number:
+ *
+ *   no session          → choose a batch size
+ *   current <= total    → annotate the current image
+ *   current > total     → finished; finalise and celebrate
+ *   no mouse or trackpad → desktop-only notice, whatever the above says
+ *
+ * Session state is read from the local cache first and only fetched from the
+ * server when nothing is cached. That is what lets the flow survive a page
+ * reload, which matters because the annotation tool reloads the page between
+ * every image.
+ *
+ * The device check runs before the session logic, so nobody on a phone can open
+ * a batch they then can't work through. See hooks/useCanAnnotate.
+ */
 export default function AnnotatePage() {
   const { data: session, status } = useSession(); // Add this line
   const loading = status === "loading";
+  // null until the device check runs in the browser; see the skeleton below.
+  const canAnnotate = useCanAnnotate();
 
   const [state, setState] = React.useState({
     annotationTotalCount: null,
@@ -20,24 +47,34 @@ export default function AnnotatePage() {
     annotationSetData: null,
   });
 
+  // True until we know whether a session exists — locally or on the server.
+  // Without it, the moment between "nothing cached" and the server answering
+  // renders the batch-size picker, so someone resuming a session on a new
+  // device is briefly invited to start a second one.
+  const [restoring, setRestoring] = React.useState(true);
+
   React.useEffect(() => {
     if (status === "loading") return;
 
-    const localTotal = parseInt(localStorage.getItem("annotationTotalCount"));
-    const localCurrent = parseInt(localStorage.getItem("annotationCurrentCount"));
-    const localData = JSON.parse(localStorage.getItem("annotationSetData"));
+    const localTotal = readTotalCount();
+    const localCurrent = readCurrentCount();
+    const localData = readSessionData();
 
-    const hasLocalSession = localTotal && localCurrent && localData;
+    const hasLocalSession = localTotal !== null && localCurrent !== null && localData;
 
     if (hasLocalSession) {
-      // Handle case where session is already in localStorage (e.g. reload, nav from home, reopen tab)
+      setRestoring(false);
+
+      // Set by the annotation tool just before it reloads the page, so we can
+      // tell a deliberate move to the next image from a cold visit
       const isNavigating = sessionStorage.getItem("isNavigatingImages") === "true";
       if (isNavigating) {
         sessionStorage.removeItem("isNavigatingImages");
       }
 
       setState((prevState) => {
-        // If already set, don't keep resetting it
+        // Only seed once. The effect reruns as the session settles, and
+        // re-seeding would throw away progress made since.
         if (prevState.annotationCurrentCount !== null) return prevState;
 
         return {
@@ -48,7 +85,9 @@ export default function AnnotatePage() {
         };
       });
     } else if (status === "authenticated" && session?.user?.username) {
-      // Try to fetch active session from server if not found locally
+      // Nothing cached — different browser, cleared storage, or a resume from
+      // another device. The server holds the real session, so ask it. An empty
+      // body means "just tell me what's active", never "start something new".
       fetch("/api/annotationGet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -61,9 +100,7 @@ export default function AnnotatePage() {
             const currentCount = data.currentCount || 1;
 
             // Restore session locally, strictly trusting the server's accurate progress index
-            localStorage.setItem("annotationTotalCount", totalCount);
-            localStorage.setItem("annotationCurrentCount", currentCount);
-            localStorage.setItem("annotationSetData", JSON.stringify(data));
+            writeSession({ total: totalCount, current: currentCount, data });
 
             const isNavigating = sessionStorage.getItem("isNavigatingImages") === "true";
             if (isNavigating) {
@@ -77,20 +114,37 @@ export default function AnnotatePage() {
             });
           }
         })
-        .catch((err) => console.error("Failed to restore session:", err));
+        .catch((err) => console.error("Failed to restore session:", err))
+        .finally(() => setRestoring(false));
+    } else {
+      // Signed out, or signed in without a username yet. ContributeLayout
+      // handles the redirect; there is nothing to restore.
+      setRestoring(false);
     }
   }, [status, session]);
 
-  // Handle loading state
-  if (typeof window !== "undefined" && loading) return null;
+  // Hold the page until we know whether a session exists. `restoring` matters
+  // as much as `loading`: without it the gap between "nothing cached" and the
+  // server answering renders the batch-size picker, so someone resuming on a
+  // new device is briefly invited to start a second session.
+  //
+  // This renders the skeleton rather than null, and has no `typeof window`
+  // branch. Both matter: the layout already puts the shell and a skeleton on
+  // the server while loading, so returning null here made the client's first
+  // render disagree with the server's HTML and hydration failed.
+  if (loading || restoring || canAnnotate === null) {
+    return (
+      <Page title="Annotate - Imprint Contribute" contribute>
+        <ContentSkeleton />
+      </Page>
+    );
+  }
 
   const renderComponent = () => {
-    /* If the user is using a mobile device */
-    if (isMobile) {
-      return <MobileWarning />;
+    /* If the device can't drive the canvas */
+    if (!canAnnotate) {
+      return <DesktopOnly />;
     }
-
-
 
     /* If the user has no annotation sessions active */
     if (
@@ -130,7 +184,7 @@ export default function AnnotatePage() {
       );
     }
 
-    return <>Loading</>;
+    return <ContentSkeleton />;
   };
 
   return (

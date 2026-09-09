@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import { writeSession } from "@/util/sessionCache";
 
+import { Button, Card, Container } from "@/ui";
+
+// Must stay in sync with ALLOWED_SESSION_SIZES in /api/annotationGet — that
+// endpoint rejects any count not on its list.
 const SESSION_OPTIONS = [
   { count: 5, label: "05", time: "2-3 minutes" },
   { count: 10, label: "10", time: "4-7 minutes" },
@@ -9,6 +14,17 @@ const SESSION_OPTIONS = [
   { count: 40, label: "40", time: "12-15 minutes" },
 ];
 
+/**
+ * The first screen of a new annotation session, asking how many images to take.
+ *
+ * Choosing a batch size up front gives contributors a finite target. "8 of 20"
+ * is easier to finish than an open-ended queue, and it gives the progress bar
+ * and the end-of-session screen something to count toward.
+ *
+ * Starting a session reloads the page rather than changing state in place, so
+ * the annotate page picks the batch up from the session cache using the same
+ * path as an ordinary visit.
+ */
 export default function AnnotationSessionSelection() {
   const router = useRouter();
   const [selected, setSelected] = useState(null);
@@ -37,15 +53,7 @@ export default function AnnotationSessionSelection() {
         return;
       }
 
-      window.localStorage.setItem(
-        "annotationTotalCount",
-        JSON.stringify(selected)
-      );
-      window.localStorage.setItem("annotationCurrentCount", JSON.stringify(1));
-      window.localStorage.setItem(
-        "annotationSetData",
-        JSON.stringify(annotationJson)
-      );
+      writeSession({ total: selected, current: 1, data: annotationJson });
 
       window.sessionStorage.setItem("isNavigatingImages", "true");
       router.reload();
@@ -56,52 +64,47 @@ export default function AnnotationSessionSelection() {
     }
   };
 
-  const baseButton =
-    "transition-all duration-500 ease-in-out font-semibold py-3 px-8 text-lg rounded-[2rem] border hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none";
-
   return (
-    <section className="container px-5 mx-auto">
+    <Container as="section">
       <section className="pb-12 mt-12">
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_4px_40px_rgb(0,0,0,0.06)] px-8 sm:px-12 py-10 my-5 mb-32 relative overflow-hidden">
-
-          {/* Subtle decorative gradient */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-blue-50 to-transparent rounded-full blur-3xl opacity-60 -translate-y-1/2 translate-x-1/3 pointer-events-none" />
+        <Card padding="none" className="px-8 sm:px-12 py-10 my-5 mb-32 relative overflow-hidden">
 
           <div className="relative z-10 text-center">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
+            <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-ink tracking-tight">
               How many images would you like to annotate?
             </h2>
-            <p className="mt-3 text-gray-500 font-medium leading-relaxed mx-auto">
+            <p className="mt-3 text-muted font-medium leading-relaxed mx-auto">
               Each image takes about 30 seconds on average. You&apos;ll identify
               obstructions, rate sidewalk accessibility, and identify the surface type.
             </p>
 
-            <hr className="my-6 border-gray-100" />
+            <hr className="my-6 border-line-card" />
 
             {/* Selection Cards */}
             <div className="flex flex-wrap justify-center gap-5 mt-2">
               {SESSION_OPTIONS.map((option) => {
                 const isSelected = selected === option.count;
                 return (
+                  // eslint-disable-next-line react/forbid-elements -- selectable card, not a Button variant: it carries its own selected state and sizing
                   <button
                     key={option.count}
                     onClick={() => setSelected(option.count)}
                     disabled={loading}
                     className={`
                       group flex flex-col items-center justify-center
-                      w-28 sm:w-32 py-6 rounded-2xl border-2
-                      transition-all duration-300 cursor-pointer
+                      w-28 sm:w-32 py-6 rounded-card border-2
+                      transition-colors duration-300 cursor-pointer
                       ${isSelected
-                        ? "border-primary shadow-[0_4px_20px_-4px_rgba(0,74,173,0.25)]"
-                        : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+                        ? "border-primary bg-primary-50"
+                        : "border-line bg-surface hover:border-subtle"
                       }
                       disabled:cursor-not-allowed
                     `}
                   >
-                    <span className={`text-4xl sm:text-5xl font-black tracking-tight transition-colors duration-300 ${isSelected ? "text-primary" : "text-gray-800 group-hover:text-gray-900"}`}>
+                    <span className={`text-4xl sm:text-5xl font-extrabold tracking-tight transition-colors duration-300 ${isSelected ? "text-primary" : "text-body group-hover:text-ink"}`}>
                       {option.label}
                     </span>
-                    <span className={`text-sm font-semibold mt-2 transition-colors duration-300 ${isSelected ? "text-primary/70" : "text-gray-400"}`}>
+                    <span className={`text-sm font-semibold mt-2 transition-colors duration-300 ${isSelected ? "text-primary/70" : "text-subtle"}`}>
                       {option.time}
                     </span>
                   </button>
@@ -113,23 +116,21 @@ export default function AnnotationSessionSelection() {
             <div className="flex flex-col sm:flex-row justify-center gap-4 mt-10">
               <Link
                 href={loading ? "" : "/contribute"}
-                className={`flex-1 sm:flex-none flex justify-center items-center ${baseButton} w-full sm:w-auto border-gray-200 text-accent hover:border-accent bg-white ${
-                  loading ? "opacity-50 pointer-events-none" : ""
-                }`}
+                className={`flex-1 sm:flex-none flex ${loading ? "opacity-50 pointer-events-none" : ""}`}
               >
-                Cancel
+                <Button variant="neutral" fullWidth>Cancel</Button>
               </Link>
-              <button
+              <Button
+                className="flex-1 sm:flex-none"
                 onClick={startSession}
                 disabled={!selected || loading}
-                className={`${baseButton} flex-1 sm:flex-none bg-primary border-primary text-white hover:bg-opacity-90`}
               >
                 {loading ? "Starting..." : "Start Session"}
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </Card>
       </section>
-    </section>
+    </Container>
   );
 }

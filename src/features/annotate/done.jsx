@@ -4,37 +4,58 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
 
-import { H3 } from "@/ui/Typography";
+import { H1, H3, Button, Card, Badge, Container } from "@/ui";
 import Confetti from "react-confetti";
 import { useWindowSize } from "react-use";
 import { getCrossedMilestone } from "@/util/milestones";
+import { clearSession } from "@/util/sessionCache";
 
+/**
+ * The screen shown after a contributor finishes their batch.
+ *
+ * It also finalises the session: rendering it calls /api/annotationComplete,
+ * which turns the pending annotations into saved ones. Reaching this screen is
+ * therefore the point at which the work is committed, not just a thank-you.
+ */
 export default function AnnotationDone({ data, total }) {
   const { data: session, status } = useSession();
   const loading = status === "loading";
   const { width, height } = useWindowSize();
   const [crossedMilestone, setCrossedMilestone] = React.useState(null);
+  const [commitFailed, setCommitFailed] = React.useState(false);
   const initialized = useRef(false);
   const router = useRouter();
 
   useEffect(() => {
+    // Guard against a second run. This effect finalizes the session and
+    // increments the user's total, so firing twice would double-count it —
+    // and React 18 StrictMode runs effects twice in development by design.
+    // A ref rather than state because it must not trigger a re-render.
     if (initialized.current) return;
     initialized.current = true;
 
-    window.localStorage.setItem("annotationTotalCount", null);
-    window.localStorage.setItem("annotationCurrentCount", null);
-    window.localStorage.setItem("annotationSetData", null);
+    // The batch is finished — drop the local mirror so the next visit starts
+    // at the session-size picker rather than replaying this one
+    clearSession();
 
     async function completeSession() {
-      const res = await fetch("/api/annotationComplete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          total: total
-        }),
-      });
+      try {
+        const res = await fetch("/api/annotationComplete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            total: total
+          }),
+        });
 
-      if (res.ok) {
+        if (!res.ok) {
+          setCommitFailed(true);
+          return;
+        }
+
+        // The server returns the before and after totals so we can tell whether
+        // this batch crossed a milestone — the client can't work that out alone,
+        // since the running total lives in the database
         const payload = await res.json();
         if (payload.previousTotal !== undefined && payload.newTotal !== undefined) {
           const milestone = getCrossedMilestone(payload.previousTotal, payload.newTotal);
@@ -42,15 +63,24 @@ export default function AnnotationDone({ data, total }) {
             setCrossedMilestone(milestone);
           }
         }
+      } catch (err) {
+        // This request is the commit: it promotes the batch's pending
+        // annotations. Losing it silently is the worst failure this screen has,
+        // because the page still says "Incredible work" while nothing was
+        // finalised. Say so instead.
+        console.error("Failed to finalise session:", err);
+        setCommitFailed(true);
       }
     }
     completeSession();
   }, [session, total]);
 
-  if (typeof window !== "undefined" && loading) return null;
+  // No `typeof window` branch here: rendering different trees on the server and
+  // on the client is precisely what breaks hydration. `loading` is true on both
+  // for the first render, so gating on it alone is consistent.
+  if (loading) return null;
 
   const annotationData = data;
-  const baseButton = "transition-all duration-500 ease-in-out font-semibold py-2 px-4 rounded border hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
     <>
@@ -58,23 +88,36 @@ export default function AnnotationDone({ data, total }) {
         width={width}
         height={height}
         recycle={false}
-        numberOfPieces={crossedMilestone ? 1200 : 500}
+        numberOfPieces={commitFailed ? 0 : crossedMilestone ? 1200 : 500}
         gravity={0.15}
       />
-      <section className="container px-5 mx-auto flex flex-col items-center justify-center min-h-[70vh] py-12">
+      <Container as="section" className="flex flex-col items-center justify-center min-h-[70vh] py-12">
+
+        {/* The commit failed. Say so plainly and say what it means: the work
+            is still on the server as an unfinished session, so resuming picks
+            it up. Silence here would leave someone believing they were done. */}
+        {commitFailed && (
+          <div
+            role="alert"
+            className="w-full max-w-2xl mb-8 bg-danger-soft border border-danger-border text-danger rounded-card px-6 py-4 text-center"
+          >
+            <p className="font-bold mb-1">We couldn&apos;t finish saving this session.</p>
+            <p className="text-sm">
+              Your annotations are still on the server. Reload this page to pick up
+              where you left off — nothing has been lost.
+            </p>
+          </div>
+        )}
 
         {/* Main Hero Section */}
         <div className="text-center mb-10 max-w-2xl">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mb-6 shadow-sm">
-            <span className="text-4xl">🎉</span>
-          </div>
-          <h1 className="text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">
+          <H1 className="mb-4">
             Incredible work{session?.user?.username ? `, ${session.user.username}` : ""}!
-          </h1>
-          <p className="text-xl text-gray-600 mb-2">
-            You successfully completed a batch of <strong className="text-[#004aad]">{total} annotation{total === 1 ? '' : 's'}</strong>.
+          </H1>
+          <p className="text-xl text-body mb-2">
+            You successfully completed a batch of <strong className="text-primary">{total} annotation{total === 1 ? '' : 's'}</strong>.
           </p>
-          <p className="text-md text-gray-500">
+          <p className="text-base text-muted">
             Every image you map brings us one step closer to truly accessible cities for everyone.
           </p>
         </div>
@@ -83,68 +126,55 @@ export default function AnnotationDone({ data, total }) {
         <div className="flex flex-col items-center gap-4 w-full max-w-sm mb-16">
           {session?.user?.isProfileIncomplete ? (
             <Link href="/complete-profile" className="w-full flex">
-              <button
-                className={`${baseButton} w-full bg-primary border-primary text-white hover:brightness-110 shadow-[0_4px_14px_0_rgba(0,74,173,0.39)] py-4 text-lg`}
-              >
-                Complete Profile to Continue
-              </button>
+              <Button fullWidth>Complete Profile to Continue</Button>
             </Link>
           ) : (
-            <button
-              onClick={() => router.reload(window.location.pathname)}
-              className={`${baseButton} w-full bg-primary border-primary text-white hover:brightness-110 shadow-[0_4px_14px_0_rgba(0,74,173,0.39)] py-4 text-lg`}
-            >
+            <Button fullWidth onClick={() => router.reload(window.location.pathname)}>
               Start Another Session
-            </button>
+            </Button>
           )}
           <Link href="/contribute" className="w-full flex">
-            <button className={`${baseButton} w-full border-gray-300 text-gray-700 bg-white hover:bg-gray-50 py-3 text-lg`}>
-              Return to Dashboard
-            </button>
+            <Button variant="neutral" fullWidth>Return to Dashboard</Button>
           </Link>
 
           {crossedMilestone && (
-            <div className="mt-8 transition-transform duration-500 hover:scale-105 flex justify-center w-full min-w-max">
-              <div className="inline-block bg-gradient-to-r from-yellow-400 via-orange-500 to-pink-500 p-1 rounded-2xl shadow-lg">
-                <div className="bg-white rounded-xl px-6 py-4 text-center">
-                  <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-orange-500 to-pink-600 block mb-1">
-                    🏆 NEW MILESTONE REACHED! 🏆
-                  </span>
-                  <p className="text-gray-700 font-bold">
-                    You&apos;ve mathematically mapped the equivalent of <br />
-                    <span className="text-primary font-black text-lg">{crossedMilestone.name}</span>!
-                  </p>
-                </div>
+            <div className="mt-8 w-full">
+              <div className="border-2 border-primary rounded-card px-6 py-5 text-center bg-surface">
+                <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-2">
+                  New milestone
+                </p>
+                <p className="text-body font-medium">
+                  Your annotations now cover the same distance as{' '}
+                  <span className="text-ink font-bold">{crossedMilestone.name}</span>.
+                </p>
               </div>
             </div>
           )}
         </div>
 
         {/* Image Gallery */}
-        <div className="w-full max-w-5xl bg-white border border-gray-100 rounded-2xl p-8 shadow-sm">
-          <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-4">
-            <H3 className="text-gray-800 m-0">Annotated Images</H3>
-            <span className="bg-[#004aad]/10 text-[#004aad] font-semibold py-1 px-3 rounded-full text-sm">
-              {data?.imgRecords?.length || 0} Total
-            </span>
+        <Card padding="lg" className="w-full max-w-5xl">
+          <div className="flex items-center justify-between mb-6 border-b border-line-card pb-4">
+            <H3 className="m-0">Annotated Images</H3>
+            <Badge tone="info">{data?.imgRecords?.length || 0} Total</Badge>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {annotationData?.imgRecords?.map((image, index) => (
               <div
                 key={image._id}
-                className="relative aspect-square overflow-hidden rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200 group"
+                className="relative aspect-square overflow-hidden rounded-control border border-line"
               >
                 <img
                   src={image.url}
                   alt={`Annotated image ${index + 1}`}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  className="w-full h-full object-cover"
                 />
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </Card>
+      </Container>
     </>
   );
 }

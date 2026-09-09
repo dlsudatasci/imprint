@@ -11,11 +11,25 @@ export interface ITransformer {
   ) => void;
 }
 
+/**
+ * The eight drag handles around a selected box.
+ *
+ * Each handle turns a cursor position into a resize, and they behave
+ * differently: corner handles resize both axes, edge handles only one. A top or
+ * left handle also has to adjust width or height to compensate for moving the
+ * box's origin, otherwise the opposite edge drifts along with it.
+ *
+ * Handle positions are recalculated from the box on every read rather than
+ * stored, so they follow it as it moves.
+ */
 export default class Transformer implements ITransformer {
   private readonly shape: IShape;
   private currentNodeCenterIndex: number;
   private scale: number;
 
+  // Divided by scale so the handles stay a constant size on screen regardless
+  // of how far the image is zoomed — otherwise they'd shrink to nothing on a
+  // zoomed-out image and swallow the box when zoomed in
   private get nodeWidth() {
     return this.shape.shapeStyle.transformerSize / this.scale;
   }
@@ -91,6 +105,15 @@ export default class Transformer implements ITransformer {
     );
   };
 
+  /**
+   * The eight handles, in a fixed order that startTransformation's index
+   * depends on: top-left, top-centre, top-right, mid-left, mid-right,
+   * bottom-left, bottom-centre, bottom-right.
+   *
+   * Each carries its own `adjust`, closing over the mark as it was when the
+   * drag began — that captured origin is what the new width and height are
+   * measured against.
+   */
   private getAllCentersTable = () => {
     const { shape } = this;
     const { x, y, width, height } = shape.getAnnotationData().mark;

@@ -2,17 +2,88 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * CSS custom properties mirroring tailwind.config.js.
+ *
+ * These exist for the stylesheets that can't read the Tailwind theme — the
+ * annotation tool's plain CSS, and JS style objects like react-select's.
+ * When a token changes in tailwind.config.js, change it here too; the two are
+ * checked against each other by `npm run lint:tokens`.
+ */
 :root {
+  /* Brand */
   --c-primary: #004aad;
-  --c-accent: #1d1d1d;
-  --offwhite: #F8F7F9;
+  --c-primary-hover: #003d8f;
+  --c-primary-50: #f0f4fa;
+  --c-primary-100: #e0e9f5;
+
+  /* Text */
+  --c-ink: #111827;
+  --c-accent: #111827; /* alias of ink; see D5 */
+  --c-body: #4b5563;
+  --c-muted: #6b7280;
+  --c-subtle: #9ca3af;
+
+  /* Surfaces */
+  --c-surface: #ffffff;
+  --c-surface-subtle: #f9fafb;
+  --c-ground: #f8f7f9;
+  --offwhite: #f8f7f9; /* legacy alias */
+  --c-line: #e5e7eb;
+  --c-line-card: #f3f4f6;
+
+  /* Semantic */
+  --c-danger: #dc2626;
+  --c-success: #16a34a;
+  --c-warning: #d97706;
+
+  /* Radius */
+  --r-control: 0.75rem;
+  --r-card: 1rem;
+  --r-modal: 1.5rem;
+
+  /* Motion */
+  --t-fast: 150ms;
+  --t-base: 300ms;
 }
 
 
+/**
+ * Navbar height, for the pages that need to fill the space below it.
+ *
+ * Derived from navbarMain's `py-5 md:py-10` plus its 30px logo. It lives here
+ * rather than as a literal inside a page because a literal rots silently — if
+ * that padding ever changes, this is the single place that follows it.
+ */
+:root { --nav-h: 70px; }
+@media (min-width: 768px) {
+  :root { --nav-h: 110px; }
+}
+
 body {
-  background-color: var(--offwhite);
-  color: #333;
-  font-family: var(--font-inter), sans-serif;
+  background-color: var(--c-ground);
+  /* Faint paper grain — the same recipe SidewalkLoader draws its page texture
+     with, at a third of the alpha. Not readable as a pattern; it just stops the
+     ground being perfectly flat, which is what makes an off-white read as paper
+     rather than as an unstyled background. Fixed so it doesn't crawl on scroll. */
+  background-image: repeating-linear-gradient(
+    93deg,
+    rgba(120, 88, 36, 0.035) 0 1px,
+    transparent 1px 5px
+  );
+  background-attachment: fixed;
+  color: var(--c-body);
+  /* The font variables are declared on <main> by _app.jsx (next/font can't
+     reach <html> from the Pages Router), so they are NOT in scope here. The
+     in-var fallback matters: without it this whole declaration is invalid at
+     body level and the element silently falls back to a serif. */
+  font-family: var(--font-jakarta, ui-sans-serif), system-ui, sans-serif;
+}
+
+/* Headings take the display face by default, so raw h1-h3 stay on-system even
+   where the Typography primitives aren't used. */
+h1, h2, h3 {
+  font-family: var(--font-ysabeau, ui-sans-serif), var(--font-jakarta, ui-sans-serif), sans-serif;
 }
 
 
@@ -165,29 +236,6 @@ body {
     border: none;
   }
 
-  button.annotationModalBtn {
-    border: 1px solid #232323;
-    align-content: center;
-    justify-content: center;
-    font-size: 1.1rem;
-    color: white;
-    cursor: pointer;
-    outline: none;
-    vertical-align: middle;
-    text-decoration: none;
-    background: transparent;
-    margin: 0;
-    padding: 0.3rem 1rem;
-    position: relative;
-    width: 110px;
-    margin-right: 1rem;
-    background-color: rgb(1, 100, 1);
-
-    &:hover {
-      background-color: green;
-    }
-  }
-
   .radio-forms {
     .grouped_radio {
       display: flex;
@@ -324,38 +372,65 @@ body {
   }
 }
 
-/* --- Global Buttons --- */
-.annotation-submit-btn {
-  background-color: var(--c-primary);
-  padding: 10px 20px;
-  border-radius: 5px;
-  font-size: 1.2rem;
-  transition: all 0.3s;
-  color: #fff;
-  border-color: var(--c-primary);
-
-  &:hover {
-    color: white;
-    background-color: var(--c-primary);
-  }
-}
-
-.annotation-prev-btn {
-  background-color: var(--c-accent);
-  padding: 10px 20px;
-  border-radius: 5px;
-  font-size: 1.2rem;
-  transition: all 0.3s;
-  color: #fff;
-  border-color: var(--c-accent);
-
-  &:hover {
-    color: white;
-    background-color: var(--c-accent);
-  }
-}
-
 .gifContainer {
   width: 80vw;
   max-width: 60rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Loading animation (src/ui/SidewalkLoader.tsx)
+   Keyframes live here rather than in the component because Tailwind's arbitrary
+   animation values can't express multi-stop keyframes, and the component sets
+   `animation` inline.
+   --------------------------------------------------------------------------- */
+@keyframes imprint-dots {
+  0%, 20% { opacity: 0.15; }
+  50%     { opacity: 1; }
+  100%    { opacity: 0.15; }
+}
+
+@keyframes imprint-linein {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* The shout bubble, overshooting slightly on the way in. */
+@keyframes imprint-pop {
+  from { transform: translateY(5px) scale(0.7); }
+  60%  { transform: translateY(-1px) scale(1.06); }
+  to   { transform: none; }
+}
+
+/* Hand-drawn line wobble: step between three noise seeds so the strokes never
+   settle. `steps(1, end)` is what makes it snap rather than tween — a smooth
+   interpolation between two turbulence filters would just look like melting. */
+@keyframes crayon-boil {
+  0%   { filter: url(#cr-b1); }
+  34%  { filter: url(#cr-b2); }
+  67%  { filter: url(#cr-b3); }
+}
+
+/* The loader's scene and its flavour text are aria-hidden; this exposes one
+   stable message to screen readers instead. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The loader already paints a single static frame; this stops the caption
+     dots and fade-in from animating too. */
+  [style*="imprint-dots"],
+  [style*="imprint-linein"],
+  [style*="imprint-pop"],
+  [style*="crayon-boil"] {
+    animation: none !important;
+  }
 }

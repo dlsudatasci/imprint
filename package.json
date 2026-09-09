@@ -5,19 +5,20 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint src"
+    "start": "next start -p ${PORT:-3000}",
+    "lint": "eslint src && npm run lint:tokens",
+    "lint:tokens": "node scripts/check-tokens.mjs",
+    "build:ui": "node scripts/build-ui.mjs",
+    "db:indexes": "node --env-file=.env scripts/ensure-indexes.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "bcryptjs": "^2.4.3",
     "leaflet": "^1.9.4",
-    "lucide-react": "^0.575.0",
     "mongodb": "^7.1.0",
     "next": "^16.1.6",
     "next-auth": "^4.24.11",
-    "next-connect": "^0.10.1",
     "nodemailer": "^8.0.1",
     "react": "^19.2.4",
     "react-confetti": "^6.4.0",
@@ -40,6 +41,7 @@
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.54.0",
     "autoprefixer": "10.4.20",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.1.6",
     "eslint-config-prettier": "^8.3.0",
@@ -55,5 +57,8 @@
     "tailwindcss": "3.4.17",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0"
+  },
+  "engines": {
+    "node": ">=20.9.0"
   }
 }

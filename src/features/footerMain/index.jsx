@@ -1,24 +1,35 @@
 
 import Link from "next/link";
 import HXIL from "@/ui/logo/hxil";
-import styles from "./styles.module.css";
+import { cn, Container } from "@/ui";
+
+// The footer sits on the dark `accent` ground, so it needs a light-on-dark
+// treatment the Button variants don't cover. Kept local and named rather than
+// living in a private CSS module that duplicated the button system (F13).
+const footerLinkClass = [
+  "inline-flex items-center mr-4 mt-4",
+  "py-2 px-4 rounded-control border border-white",
+  "font-semibold text-white bg-transparent",
+  "hover:bg-white hover:text-ink hover:border-transparent",
+  "transition-colors duration-300 ease-in-out cursor-pointer",
+].join(" ");
 
 export default function Footer() {
   return (
     <footer className="bg-accent pt-6 md:pt-12 w-full relative z-10">
-      <div className="px-4 mx-auto">
+      <Container>
         <div className="md:flex justify-center md:flex-wrap md:-mx-4 md:pb-6">
 
           <div className="lg:w-1/3 md:px-4 mb-4">
             <h4 className="text-white text-2xl">
               Thank you for joining us in knowing our streets better.
             </h4>
-            <p className="text-gray-400">
+            <p className="text-subtle">
               Feel free to send us a message or view our repository.
             </p>
             <div className="flex flex-wrap">
               <a
-                className={styles.button}
+                className={cn(footerLinkClass)}
                 href="mailto:francis_bawa@dlsu.edu.ph"
                 target="_blank"
                 rel="noreferrer"
@@ -37,7 +48,7 @@ export default function Footer() {
               </a>
 
               <a
-                className={styles.button}
+                className={cn(footerLinkClass)}
                 href="https://github.com/dlsudatasci/imprint"
                 target="_blank"
                 rel="noreferrer"
@@ -57,9 +68,9 @@ export default function Footer() {
             </div>
           </div>
         </div>
-      </div>
-      <div className="border-t border-solid border-gray-900 mt-4 py-4">
-        <div className="px-4 mx-auto">
+      </Container>
+      <div className="border-t border-solid border-ink mt-4 py-4">
+        <Container>
           <div className="md:flex md:-mx-4 md:items-center">
             <div className="md:flex-1 md:px-4 text-center md:text-left">
               <p className="text-white">
@@ -76,15 +87,15 @@ export default function Footer() {
               </p>
             </div>
             <div className="md:flex-1 md:px-4 text-center md:text-right">
-              <Link href="/terms-of-use">
-                <span className="cursor-pointer py-2 px-4 text-white inline-block hover:underline">
-                  {" "}
-                  Terms of Use{" "}
-                </span>
+              <Link href="/terms-of-use" className="cursor-pointer py-2 px-3 text-white inline-block hover:underline">
+                Terms of Use
+              </Link>
+              <Link href="/privacy" className="cursor-pointer py-2 px-3 text-white inline-block hover:underline">
+                Privacy Policy
               </Link>
             </div>
           </div>
-        </div>
+        </Container>
       </div>
     </footer>
   );

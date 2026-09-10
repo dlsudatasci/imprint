@@ -332,7 +332,6 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       inputComment,
       editable,
       selected,
-      sliderValue,
       isRejected,
       obstructs,
       severity,
@@ -910,7 +909,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   public selectAnnotation = (data) => {
     for (const item of this.shapes) {
       const isSelected = item.getAnnotationData().id === data.id;
-      const { x, y, width: boxW, height } = item.paint(
+      const { x, y, width: boxW } = item.paint(
         this.canvas2D,
         this.calculateShapePosition,
         isSelected
@@ -970,7 +969,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
       for (const item of this.shapes) {
         const isSelected = item.getAnnotationData().id === this.selectedId;
-        const { x, y, width: boxW, height } = item.paint(
+        const { x, y, width: boxW } = item.paint(
           this.canvas2D,
           this.calculateShapePosition,
           isSelected

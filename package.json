@@ -9,7 +9,11 @@
     "lint": "eslint src && npm run lint:tokens",
     "lint:tokens": "node scripts/check-tokens.mjs",
     "build:ui": "node scripts/build-ui.mjs",
-    "db:indexes": "node --env-file=.env scripts/ensure-indexes.mjs"
+    "db:indexes": "node --env-file=.env scripts/ensure-indexes.mjs",
+    "db:migrate": "node --env-file=.env scripts/migrate-image-schema.mjs",
+    "db:flag-reference": "node --env-file=.env scripts/flag-reference-images.mjs",
+    "db:promote-reserve": "node --env-file=.env scripts/promote-reserve.mjs",
+    "db:set-role": "node --env-file=.env scripts/set-role.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

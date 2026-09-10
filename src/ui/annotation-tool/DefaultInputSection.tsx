@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 const OBSTRUCTION_OPTIONS = [
   { value: "bench", label: "Bench" },
@@ -125,7 +125,6 @@ const DefaultInputSection = ({
   onSelectObstruction,
   onUnselectObstruction,
   onSetSeverity,
-  onSetObstructs,
   editable,
   selected,
   obstructs,

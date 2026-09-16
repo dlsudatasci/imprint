@@ -58,3 +58,7 @@ src/ui/dist/
 .ds-sync/
 ds-bundle/
 .design-sync/
+
+# Deploy scripts
+deploy.sh
+vm-setup.sh

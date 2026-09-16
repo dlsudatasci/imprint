@@ -40,6 +40,16 @@ export default function LoadingScreen({
         className,
       )}
     >
+      {onLoopComplete && (
+        <button
+          type="button"
+          onClick={onLoopComplete}
+          className="absolute top-4 right-4 z-10 font-sans text-sm font-medium tracking-wide"
+          style={{ color: '#8a7a5c', animation: 'imprint-linein .35s ease-out' }}
+        >
+          skip &gt;&gt;&gt;
+        </button>
+      )}
       <SidewalkLoader onLoopComplete={onLoopComplete} className="w-full" />
     </div>
   );

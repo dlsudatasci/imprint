@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from './cn';
 import CrayonFilters from './CrayonFilters';
 
@@ -83,6 +83,8 @@ const START_X = 74;   // walker's centre at the start of a loop
 const SLOT_W = 72;
 const END_DIST = 500; // scrolling stops here; the walker covers the rest on foot
 const GREET_SECONDS = 2.4;
+const SCENE_H = 272;  // natural height of the stage
+const REF_W = 560;    // viewport width at which the scene looks right; narrower scales down
 
 const IDLE_LINE = 'Walking the sidewalk, allegedly';
 const SPOT_LINE = 'Oh hey, there they are';
@@ -305,7 +307,7 @@ export default function SidewalkLoader({ speed = 118, onLoopComplete, className 
     car4: useRef<HTMLDivElement>(null),
   };
 
-  const [caption, setCaption] = useState({ text: IDLE_LINE, key: 0 });
+  const [caption, setCaption] = useState({ text: '', key: 0 });
   const [shout, setShout] = useState({ text: '', key: 0 });
 
   // Per-frame state. A ref, not React state: it changes every frame and must
@@ -314,6 +316,7 @@ export default function SidewalkLoader({ speed = 118, onLoopComplete, className 
     dist: 0, wx: START_X, phase: 0, mode: 'scroll' as Mode,
     t: 0, wave: 0, dodge: 0, lift: 0, fade: 1, ex: 0, said: false, behind: false,
     keyN: 0, exN: 0, last: 0, W: 1200, friendsX: 1500, driftTo: 744,
+    friendsFade: 0,
     cars: CARS.map((c) => ({ ...c })),
   });
 
@@ -324,6 +327,17 @@ export default function SidewalkLoader({ speed = 118, onLoopComplete, className 
   const onLoopCompleteRef = useRef(onLoopComplete);
   onLoopCompleteRef.current = onLoopComplete;
 
+  useLayoutEffect(() => {
+    const s = sim.current;
+    s.W = stageRef.current?.clientWidth || 1200;
+    s.driftTo = Math.max(START_X + 60, s.W * 0.62);
+    s.friendsX = s.W >= REF_W ? (END_DIST - 200) + s.W : s.driftTo + END_DIST + 80;
+    if (stageRef.current) {
+      const h = Math.max(200, Math.round(SCENE_H * Math.min(1, s.W / REF_W)));
+      stageRef.current.style.height = `${h}px`;
+    }
+  }, []);
+
   useEffect(() => {
     const s = sim.current;
     let raf = 0;
@@ -331,15 +345,18 @@ export default function SidewalkLoader({ speed = 118, onLoopComplete, className 
     const measure = () => {
       s.W = stageRef.current?.clientWidth || 1200;
       s.driftTo = Math.max(START_X + 60, s.W * 0.62);
-      // They walk into frame while the second obstacle is still ahead.
-      s.friendsX = (END_DIST - 200) + s.W;
+      s.friendsX = s.W >= REF_W ? (END_DIST - 200) + s.W : s.driftTo + END_DIST + 80;
+      if (stageRef.current) {
+        const h = Math.max(200, Math.round(SCENE_H * Math.min(1, s.W / REF_W)));
+        stageRef.current.style.height = `${h}px`;
+      }
     };
 
     const reset = () => {
       s.dist = 0; s.wx = START_X; s.phase = 0;
       s.mode = 'scroll'; s.t = 0; s.wave = 0;
       s.dodge = 0; s.lift = 0; s.fade = 1; s.ex = 0;
-      s.said = false; s.behind = false;
+      s.said = false; s.behind = false; s.friendsFade = 0;
     };
 
     const say = (line: string) => {
@@ -430,7 +447,19 @@ export default function SidewalkLoader({ speed = 118, onLoopComplete, className 
       s.wave += (waveTarget - s.wave) * Math.min(1, dt * 6);
 
       if (trackRef.current) trackRef.current.style.transform = `translate3d(${-s.dist}px,0,0)`;
-      if (friendsRef.current) friendsRef.current.style.transform = `translate3d(${s.friendsX - s.dist}px,0,0)`;
+
+      if (s.W >= REF_W) {
+        s.friendsFade = 1;
+      } else {
+        const lastObs = COURSE[COURSE.length - 1].x + SLOT_W;
+        const friendsShow = s.dist + s.wx > lastObs || s.mode !== 'scroll';
+        s.friendsFade += (friendsShow ? 1 : 0 - s.friendsFade) * Math.min(1, dt * 3);
+      }
+      if (friendsRef.current) {
+        friendsRef.current.style.transform = `translate3d(${s.friendsX - s.dist}px,0,0)`;
+        friendsRef.current.style.opacity = String(s.friendsFade);
+      }
+
       if (sceneRef.current) sceneRef.current.style.opacity = String(s.fade);
 
       // Parallax: the far skyline crawls, lamp posts drift, the near hedge races.
@@ -551,9 +580,9 @@ export default function SidewalkLoader({ speed = 118, onLoopComplete, className 
 
       <CrayonFilters />
 
-      <div ref={stageRef} aria-hidden="true" className="relative w-full overflow-hidden" style={{ height: 272 }}>
+      <div ref={stageRef} aria-hidden="true" className="relative w-full overflow-hidden">
         {/* Everything that fades between loops, roughened as one piece */}
-        <div ref={sceneRef} className="absolute inset-0" style={{ filter: 'url(#cr-rough)' }}>
+        <div ref={sceneRef} className="absolute left-0 right-0 bottom-0" style={{ height: SCENE_H, filter: 'url(#cr-rough)' }}>
           {/* Skyline, far background */}
           <div className="absolute left-0 right-0 overflow-hidden" style={{ bottom: 200, height: 72 }}>
             <div ref={skylineRef} className="absolute left-0 bottom-0" style={{ width: 2400, height: 72, willChange: 'transform' }}>
@@ -743,8 +772,9 @@ export default function SidewalkLoader({ speed = 118, onLoopComplete, className 
         {/* Paper grain and vignette, over everything and outside the fade */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 pointer-events-none"
+          className="absolute left-0 right-0 bottom-0 pointer-events-none"
           style={{
+            height: SCENE_H,
             zIndex: 9,
             backgroundImage:
               'repeating-linear-gradient(93deg, rgba(120,88,36,.055) 0 1px, transparent 1px 5px), radial-gradient(125% 95% at 50% 42%, transparent 52%, rgba(120,88,36,.16))',

@@ -61,6 +61,7 @@ export default function Index() {
       // fallback — it costs a few seconds, it does not break anything.
     }
     if (seenAt && Date.now() - seenAt < LOADER_COOLDOWN_MS) setIntro("gone");
+    if (window.innerWidth < 560) setIntro("gone");
   }, []);
 
   // Both conditions met: stamp the cooldown and start the exit.

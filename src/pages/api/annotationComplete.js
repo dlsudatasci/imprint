@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
+import { sanitizeReportedTotal } from "@/util/validators/annotationComplete";
+import { shouldShowNasaTlx } from "@/util/validators/nasaTlx";
 
 /**
  * POST /api/annotationComplete — called when a contributor finishes a full
@@ -57,12 +59,7 @@ const handler = async (req, res) => {
 
             const sessionDelta = newTotal - previousTotal;
 
-            // `total` is only ever echoed back into the activity string, but it
-            // comes from the request body, so clamp it to a plain number rather
-            // than writing arbitrary client text into the feed.
-            const reportedTotal = Number.isFinite(Number(total))
-                ? Math.max(0, Math.trunc(Number(total)))
-                : sessionDelta;
+            const reportedTotal = sanitizeReportedTotal(total, sessionDelta);
 
             // The session was just marked completed — look it up by the
             // timestamp we wrote so we can find which images were in it.
@@ -115,6 +112,17 @@ const handler = async (req, res) => {
                 }
             }
 
+            if (sessionImageIDs.length > 0) {
+                await db.collection("Image").updateMany(
+                    { _id: { $in: sessionImageIDs } },
+                    { $inc: { annotationCount: 1 } }
+                );
+            }
+
+            const sessionNumber = await db
+                .collection("sessions")
+                .countDocuments({ userId, status: "completed" });
+
             await db.collection("users").updateOne(
                 { _id: new ObjectId(userId) },
                 {
@@ -143,7 +151,10 @@ const handler = async (req, res) => {
             return res.status(200).json({
                 message: "Session and annotations finalized successfully.",
                 previousTotal: previousTotal,
-                newTotal: newTotal
+                newTotal: newTotal,
+                sessionNumber,
+                shouldShowNasaTlx: shouldShowNasaTlx(sessionNumber),
+                sessionId: completedSession?._id?.toString() || null,
             });
 
         } catch (error) {

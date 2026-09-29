@@ -1,30 +1,7 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./[...nextauth]";
 import { connectToDatabase } from "@/util/mongodb";
-
-// Mirrors the option lists rendered by /complete-profile. Keep the two in sync
-// — both the allowlists here and the options arrays in the form component.
-// If you add a choice to the form, add it here or the submit will 400.
-const AGE_GROUPS = [
-    "16-19", "20-24", "25-29", "30-34", "35-39", "40-44",
-    "45-49", "50-54", "55-59", "60-64", "65+",
-];
-const GENDERS = ["Male", "Female", "Other", "Prefer not to say"];
-const DISABILITY_ANSWERS = ["No", "Yes", "Prefer not to say"];
-const COMMUTE_FREQUENCIES = ["Daily", "A few times a week", "Once a week", "Rarely", "Never"];
-const EDUCATION_LEVELS = [
-    "High school", "Some college", "Bachelor's", "Master's",
-    "Doctorate", "Other", "Prefer not to say",
-];
-const WALKING_FREQUENCIES = [
-    "Daily", "Several times a week", "Once a week",
-    "A few times a month", "Rarely", "Never",
-];
-const ACCESSIBILITY_FAMILIARITY = [
-    "Very familiar", "Somewhat familiar",
-    "Slightly familiar", "Not at all familiar",
-];
-const ANNOTATION_EXPERIENCE = ["Yes", "No"];
+import { validateDemographics, validateOccupation, validateCities } from "@/util/validators/completeProfile";
 
 /**
  * POST /api/auth/complete-profile — saves a contributor's demographic answers.
@@ -64,34 +41,30 @@ export default function handler(req, res) {
                 walkingFrequency,
                 accessibilityFamiliarity,
                 priorAnnotationExperience,
+                temporaryMobility,
             } = req.body;
 
-            // These are closed dropdowns in the UI, so accept only the values
-            // the form can actually produce — this is survey data the study
-            // depends on, and a direct POST could otherwise write anything.
-            if (
-                !AGE_GROUPS.includes(age) ||
-                !GENDERS.includes(gender) ||
-                !DISABILITY_ANSWERS.includes(disability) ||
-                !COMMUTE_FREQUENCIES.includes(commuteFrequency) ||
-                !EDUCATION_LEVELS.includes(educationalAttainment) ||
-                !WALKING_FREQUENCIES.includes(walkingFrequency) ||
-                !ACCESSIBILITY_FAMILIARITY.includes(accessibilityFamiliarity) ||
-                !ANNOTATION_EXPERIENCE.includes(priorAnnotationExperience)
-            ) {
-                return res.status(400).json({ message: "Please fill in all required demographic fields." });
+            const demoResult = validateDemographics({
+                age, gender, disability, commuteFrequency,
+                educationalAttainment, walkingFrequency,
+                accessibilityFamiliarity, priorAnnotationExperience,
+                temporaryMobility,
+            });
+            if (!demoResult.valid) {
+                return res.status(400).json({ message: demoResult.message });
             }
 
-            if (typeof occupation !== "string" || occupation.trim().length === 0 || occupation.length > 100) {
-                return res.status(400).json({ message: "Occupation is required (max 100 characters)." });
+            const occResult = validateOccupation(occupation);
+            if (!occResult.valid) {
+                return res.status(400).json({ message: occResult.message });
             }
 
-            // The cities field is a free-text creatable select, so it only gets
-            // shape and volume limits rather than a fixed allowlist
+            const cityResult = validateCities(frequentlyWalkedCities);
+            if (!cityResult.valid) {
+                return res.status(422).json({ message: cityResult.message });
+            }
+
             const cities = Array.isArray(frequentlyWalkedCities) ? frequentlyWalkedCities : [];
-            if (cities.length > 20 || cities.some((c) => typeof c !== "string" || c.length > 80)) {
-                return res.status(422).json({ message: "Too many cities, or a city name is too long." });
-            }
 
             const { db } = await connectToDatabase();
 
@@ -113,6 +86,7 @@ export default function handler(req, res) {
                     walkingFrequency,
                     accessibilityFamiliarity,
                     priorAnnotationExperience,
+                    temporaryMobility,
                     updatedAt: new Date(),
                 },
                 $setOnInsert: {

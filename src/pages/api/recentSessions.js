@@ -2,6 +2,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { ObjectId } from "mongodb";
+import { bucketChartData, normalizeCityDisplay } from "@/util/validators/recentSessions";
 
 /**
  * GET|POST /api/recentSessions — the session history shown on the dashboard.
@@ -90,11 +91,7 @@ export default async function handler(req, res) {
       // one arbitrarily
       let location = "Unknown";
       if (cities.size === 1) {
-        location = Array.from(cities)[0];
-        // Slugs lose the ñ, and this is the one city where that's visible
-        if (location.toLowerCase().replace(/\s+/g, '') === 'laspinas') {
-          location = 'Las Piñas';
-        }
+        location = normalizeCityDisplay(Array.from(cities)[0]);
       } else if (cities.size > 1) {
         location = "Mixed Locations";
       }
@@ -143,21 +140,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // A 40-image session would render 40 bars in a strip a few pixels wide,
-      // so anything longer is averaged down into five buckets. Averaged rather
-      // than sampled so a busy stretch still shows up as a taller bar.
-      let finalChartData = chartData;
-      if (chartData.length > 5) {
-        const chunkSize = chartData.length / 5;
-        finalChartData = [];
-        for (let i = 0; i < 5; i++) {
-          const start = Math.floor(i * chunkSize);
-          const end = Math.floor((i + 1) * chunkSize);
-          const chunk = chartData.slice(start, end);
-          const sum = chunk.reduce((a, b) => a + b, 0);
-          finalChartData.push(Math.round(sum / (chunk.length || 1)));
-        }
-      }
+      const finalChartData = bucketChartData(chartData);
 
       recentSessions.push({
         id: s._id,

@@ -29,7 +29,7 @@ export default function handler(req, res) {
                 return res.status(401).json({ message: "Unauthorized. Please log in first." });
             }
 
-            const { username } = req.body;
+            const { username, consentAgreed, ageConfirmed } = req.body;
 
             // Type check first: an object here would sail past the length check
             // (undefined > 50 is false), reach findOne as a Mongo operator, and
@@ -42,6 +42,13 @@ export default function handler(req, res) {
                 return res.status(422).json({
                     message: "Username must be 3-30 characters, using letters, numbers, dots, underscores, or hyphens.",
                 });
+            }
+
+            if (consentAgreed !== true) {
+                return res.status(422).json({ message: "You must agree to the Informed Consent Form." });
+            }
+            if (ageConfirmed !== true) {
+                return res.status(422).json({ message: "You must confirm that you are at least 18 years old." });
             }
 
             const { db } = await connectToDatabase();
@@ -67,6 +74,8 @@ export default function handler(req, res) {
                     name: session.user.name || "",
                     image: session.user.image || "",
                     username,
+                    consentAgreedAt: new Date(),
+                    ageConfirmedAt: new Date(),
                     updatedAt: new Date(),
                 },
                 $setOnInsert: {

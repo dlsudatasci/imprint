@@ -97,10 +97,11 @@ const handler = async (req, res) => {
                         }
                     }
 
-                    // Count only the rows this call actually flipped to completed.
-                    // Using completedImages.length would double-count anything the
-                    // user re-annotated, since re-submitting an image resets it to
-                    // "pending" even though it was already tallied once.
+                    await db.collection("Image").updateMany(
+                        { imageID: { $in: completedImages } },
+                        { $inc: { annotationCount: 1 } }
+                    );
+
                     const newlyCompleted = finalized.modifiedCount;
 
                     if (newlyCompleted > 0) {

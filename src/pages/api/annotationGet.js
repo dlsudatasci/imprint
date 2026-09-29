@@ -4,6 +4,11 @@ import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { normalizeCityName } from "@/util/cities";
 import { ObjectId } from "mongodb";
+import {
+  ALLOWED_SESSION_SIZES,
+  ANNOTATOR_SESSION_SIZES,
+  ensureModelVersion as ensureModelVersionUtil,
+} from "@/util/validators/annotationGet";
 
 /**
  * POST /api/annotationGet — gives the annotate page a batch of images to work
@@ -24,28 +29,8 @@ import { ObjectId } from "mongodb";
  * session survives signing out or moving to another computer.
  */
 
-// Session sizes the UI actually offers. Anything outside this set is either a
-// typo or someone probing, and since the value drives a Mongo $limit we don't
-// want to hand it straight to the database.
-const ALLOWED_SESSION_SIZES = [5, 10, 20, 40];
-
-// Annotators work through reference images, which are a fixed pool (~150).
-// Larger minimum and maximum so they can cover more ground per session.
-const ANNOTATOR_SESSION_SIZES = [10, 20, 40, 80];
-
-/**
- * Applies a contributor's saved work back onto the raw image records.
- *
- * Image records carry the model's suggested boxes. Once someone has worked on
- * an image, their judgements on those suggestions and any boxes they drew
- * themselves live separately, in the annotations collection.
- *
- * Merging the two is what makes a resumed session look exactly as they left it.
- */
 function ensureModelVersion(imgRecords) {
-  for (const img of imgRecords) {
-    if (!img.modelVersion) img.modelVersion = "v0-mapillary";
-  }
+  ensureModelVersionUtil(imgRecords);
 }
 
 async function mergeUserAnnotations(db, userId, imgRecords) {
@@ -132,7 +117,9 @@ const handler = async (req, res) => {
 
       if (isAnnotator) {
         for (const img of sortedImgRecords) {
-          img.annotationList = [];
+          if (img.isReference) {
+            img.annotationList = [];
+          }
         }
       }
 
@@ -180,20 +167,128 @@ const handler = async (req, res) => {
     let imgRecords;
 
     if (isAnnotator) {
-      // Annotators see reference images in random order, regardless of city.
-      // They produce ground-truth labels, so they never see model suggestions.
-      imgRecords = await db
+      // Annotators complete all 150 reference images before moving on to
+      // model-dev images.  Reference images are served with no model
+      // suggestions so annotators produce unbiased ground truth; model-dev
+      // images keep their pre-populated annotations for HITL verification.
+
+      // 1. Draw incomplete reference images first
+      const refImages = await db
         .collection("Image")
         .aggregate([
-          { $match: { isReference: true, imageID: { $nin: completedImageIDs } } },
-          { $addFields: { rand: { $rand: {} } } },
-          { $sort: { rand: 1 } },
+          {
+            $match: {
+              isReference: true,
+              poolStatus: "served",
+              imageID: { $nin: completedImageIDs },
+            },
+          },
+          {
+            $addFields: {
+              annotationCount: { $ifNull: ["$annotationCount", 0] },
+              rand: { $rand: {} },
+            },
+          },
+          { $sort: { annotationCount: 1, rand: 1 } },
           { $limit: annotationTotalCount },
         ])
         .toArray();
 
+      if (refImages.length >= annotationTotalCount) {
+        // Enough reference images to fill the entire session
+        imgRecords = refImages;
+      } else {
+        // 2. Fill the remainder with model-dev images, city-proportional
+        const remaining = annotationTotalCount - refImages.length;
+
+        const cityDist = await db
+          .collection("Image")
+          .aggregate([
+            {
+              $match: {
+                isReference: { $ne: true },
+                poolStatus: "served",
+                imageID: { $nin: completedImageIDs },
+              },
+            },
+            { $group: { _id: "$city", count: { $sum: 1 } } },
+          ])
+          .toArray();
+
+        const totalAvailable = cityDist.reduce((s, c) => s + c.count, 0);
+
+        let modelDevImages = [];
+        if (totalAvailable > 0) {
+          const requested = Math.min(remaining, totalAvailable);
+
+          const allocations = cityDist.map((c) => ({
+            city: c._id,
+            available: c.count,
+            target: Math.min(
+              c.count,
+              Math.max(1, Math.round((c.count / totalAvailable) * requested))
+            ),
+          }));
+
+          let total = allocations.reduce((s, a) => s + a.target, 0);
+          while (total > requested) {
+            allocations.sort((a, b) => b.target - a.target);
+            allocations[0].target--;
+            total--;
+          }
+          while (total < requested) {
+            const expandable = allocations.filter((a) => a.target < a.available);
+            if (expandable.length === 0) break;
+            expandable.sort((a, b) => a.target - b.target);
+            expandable[0].target++;
+            total++;
+          }
+
+          const cityBatches = await Promise.all(
+            allocations
+              .filter((a) => a.target > 0)
+              .map((a) =>
+                db
+                  .collection("Image")
+                  .aggregate([
+                    {
+                      $match: {
+                        city: a.city,
+                        isReference: { $ne: true },
+                        poolStatus: "served",
+                        imageID: { $nin: completedImageIDs },
+                      },
+                    },
+                    {
+                      $addFields: {
+                        annotationCount: { $ifNull: ["$annotationCount", 0] },
+                        rand: { $rand: {} },
+                      },
+                    },
+                    { $sort: { annotationCount: 1, rand: 1 } },
+                    { $limit: a.target },
+                  ])
+                  .toArray()
+              )
+          );
+
+          modelDevImages = cityBatches.flat();
+        }
+
+        imgRecords = [...refImages, ...modelDevImages];
+      }
+
+      // Shuffle so reference images are not clustered
+      for (let i = imgRecords.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [imgRecords[i], imgRecords[j]] = [imgRecords[j], imgRecords[i]];
+      }
+
+      // Clear annotations only for reference images (ground truth)
       for (const img of imgRecords) {
-        img.annotationList = [];
+        if (img.isReference) {
+          img.annotationList = [];
+        }
       }
     } else {
       // Mix ~1 in 8 reference images into each contributor session. These are
@@ -206,8 +301,8 @@ const handler = async (req, res) => {
         .collection("Image")
         .aggregate([
           { $match: { isReference: true, poolStatus: "served", imageID: { $nin: completedImageIDs } } },
-          { $addFields: { rand: { $rand: {} } } },
-          { $sort: { rand: 1 } },
+          { $addFields: { annotationCount: { $ifNull: ["$annotationCount", 0] }, rand: { $rand: {} } } },
+          { $sort: { annotationCount: 1, rand: 1 } },
           { $limit: refCount },
         ])
         .toArray();
@@ -230,8 +325,8 @@ const handler = async (req, res) => {
               imageID: { $nin: completedImageIDs },
             },
           },
-          { $addFields: { rand: { $rand: {} } } },
-          { $sort: { rand: 1 } },
+          { $addFields: { annotationCount: { $ifNull: ["$annotationCount", 0] }, rand: { $rand: {} } } },
+          { $sort: { annotationCount: 1, rand: 1 } },
           { $limit: needed },
         ])
         .toArray();
@@ -249,8 +344,8 @@ const handler = async (req, res) => {
                 imageID: { $nin: completedImageIDs },
               },
             },
-            { $addFields: { rand: { $rand: {} } } },
-            { $sort: { rand: 1 } },
+            { $addFields: { annotationCount: { $ifNull: ["$annotationCount", 0] }, rand: { $rand: {} } } },
+            { $sort: { annotationCount: 1, rand: 1 } },
             { $limit: remaining },
           ])
           .toArray();
@@ -265,6 +360,21 @@ const handler = async (req, res) => {
         const j = Math.floor(Math.random() * (i + 1));
         [imgRecords[i], imgRecords[j]] = [imgRecords[j], imgRecords[i]];
       }
+    }
+
+    if (imgRecords.length === 0) {
+      await logTelemetryEvent({
+        event: "POOL_EXHAUSTION",
+        userId,
+        username,
+        requestedCount: annotationTotalCount,
+        availableImages: 0,
+      });
+      return res.json({
+        imgRecords: [],
+        poolExhausted: true,
+        message: "You have annotated every available image. Thank you for your incredible contributions!",
+      });
     }
 
     const imageIDs = imgRecords.map((img) => img._id);
@@ -283,11 +393,37 @@ const handler = async (req, res) => {
       createdAt: new Date(),
     });
 
+    const cumulativeSessionsToDate = await db
+      .collection("sessions")
+      .countDocuments({ userId, status: "completed" });
+
+    const lastSessionEnd = await db
+      .collection("telemetry_logs")
+      .findOne(
+        { userId, event: "SESSION_END" },
+        { sort: { timestamp: -1 }, projection: { timestamp: 1 } }
+      );
+
+    const distinctActiveDaysResult = await db
+      .collection("telemetry_logs")
+      .aggregate([
+        { $match: { userId, event: "IMAGE_SUBMITTED" } },
+        { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Manila" } } } },
+        { $count: "count" },
+      ])
+      .toArray();
+
     await logTelemetryEvent({
       event: "SESSION_START",
       userId: userId,
       username: username,
       sessionTotalCount: annotationTotalCount,
+      cumulativeSessionsToDate,
+      sessionPositionInHistory: cumulativeSessionsToDate + 1,
+      distinctActiveDays: distinctActiveDaysResult[0]?.count ?? 0,
+      intervalSincePreviousSessionMs: lastSessionEnd
+        ? Date.now() - new Date(lastSessionEnd.timestamp).getTime()
+        : null,
     });
 
     res.json({

@@ -31,6 +31,8 @@ const handler = async (req, res) => {
       username,
       password,
       email,
+      consentAgreed,
+      ageConfirmed,
     } = req.body;
 
     // --- SECURITY VALIDATION ---
@@ -58,6 +60,13 @@ const handler = async (req, res) => {
       return res.status(422).json({
         message: "Username must be 3-30 characters, using letters, numbers, dots, underscores, or hyphens.",
       });
+    }
+
+    if (consentAgreed !== true) {
+      return res.status(422).json({ message: "You must agree to the Informed Consent Form." });
+    }
+    if (ageConfirmed !== true) {
+      return res.status(422).json({ message: "You must confirm that you are at least 18 years old." });
     }
 
     // ---------------------------
@@ -98,6 +107,8 @@ const handler = async (req, res) => {
       totalAnnotations: 0,
       hasCompletedTutorial: false,
       role: "user",
+      consentAgreedAt: dateRegistered,
+      ageConfirmedAt: dateRegistered,
       createdAt: dateRegistered,
       updatedAt: dateRegistered,
     });

@@ -31,6 +31,20 @@ export default function Register() {
   }, [session, loading, router]);
 
   const [serverError, setServerError] = useState("");
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [ageChecked, setAgeChecked] = useState(false);
+
+  function handleGoogleSignIn() {
+    if (!consentChecked) {
+      setServerError("Please agree to the Informed Consent Form before continuing.");
+      return;
+    }
+    if (!ageChecked) {
+      setServerError("Please confirm that you are at least 18 years old.");
+      return;
+    }
+    signIn("google", { callbackUrl: `${window.location.origin}/contribute` });
+  }
 
 
   async function onSubmit(e) {
@@ -42,12 +56,16 @@ export default function Register() {
     const email = e.currentTarget.email.value;
     const password = e.currentTarget.password.value;
     const confirmPassword = e.currentTarget.confirmPassword.value;
+    const consentAgreed = e.currentTarget["consent-agree"].checked;
+    const ageConfirmed = e.currentTarget["consent-age"].checked;
 
     const body = {
       username,
       email,
       password,
       confirmPassword,
+      consentAgreed,
+      ageConfirmed,
     };
 
     const confirmInput = e.currentTarget.confirmPassword;
@@ -135,7 +153,7 @@ export default function Register() {
               variant="neutral"
               fullWidth
               className="mb-6"
-              onClick={() => signIn("google", { callbackUrl: `${window.location.origin}/contribute` })}
+              onClick={handleGoogleSignIn}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -187,24 +205,42 @@ export default function Register() {
               />
             </div>
 
-            <div className="flex items-center mt-8">
-              <input
-                id="remember-me"
-                type="checkbox"
-                className="mr-3 w-5 h-5 text-primary bg-surface-subtle border-line rounded focus:ring-primary focus:ring-2"
-                required
-              />
-              <label htmlFor="remember-me" className="text-body font-medium text-sm">
-                I have read the{" "}
-                <Link
-                  href="/terms-of-use"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="cursor-pointer text-primary font-bold hover:underline"
-                >
-                  Terms of Use
-                </Link>
-              </label>
+            <div className="space-y-3 mt-8">
+              <div className="flex items-start">
+                <input
+                  id="consent-agree"
+                  type="checkbox"
+                  className="mr-3 mt-0.5 w-5 h-5 text-primary bg-surface-subtle border-line rounded focus:ring-primary focus:ring-2"
+                  checked={consentChecked}
+                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  required
+                />
+                <label htmlFor="consent-agree" className="text-body font-medium text-sm">
+                  I have read and understood the{" "}
+                  <Link
+                    href="/terms-of-use"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="cursor-pointer text-primary font-bold hover:underline"
+                  >
+                    Informed Consent Form
+                  </Link>
+                  {" "}and agree to participate
+                </label>
+              </div>
+              <div className="flex items-start">
+                <input
+                  id="consent-age"
+                  type="checkbox"
+                  className="mr-3 mt-0.5 w-5 h-5 text-primary bg-surface-subtle border-line rounded focus:ring-primary focus:ring-2"
+                  checked={ageChecked}
+                  onChange={(e) => setAgeChecked(e.target.checked)}
+                  required
+                />
+                <label htmlFor="consent-age" className="text-body font-medium text-sm">
+                  I confirm that I am at least 18 years old
+                </label>
+              </div>
             </div>
 
             <Button submit fullWidth className="mt-6" disabled={loadingForm}>

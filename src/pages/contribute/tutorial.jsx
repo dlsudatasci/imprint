@@ -1,13 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Joyride } from "react-joyride";
 import { useSession } from "next-auth/react";
-import { getServerSession } from "next-auth/next";
 
 import Page from "@/ui/page";
 import AnnotateForm from "@/features/annotate/form";
-import { connectToDatabase } from "@/util/mongodb";
-import { clearSession, writeSession, readSessionData, readCurrentCount } from "@/util/sessionCache";
-import { authOptions } from "@/pages/api/auth/[...nextauth]";
+import TUTORIAL_IMAGES from "@/data/tutorialImages";
+import { clearSession, writeSession, writeTutorialFlag, readSessionData, readCurrentCount } from "@/util/sessionCache";
 import ContentSkeleton from "@/features/layout/contentSkeleton";
 import DesktopOnly from "@/features/annotate/desktopOnly";
 import { useCanAnnotate } from "@/hooks/useCanAnnotate";
@@ -24,9 +22,9 @@ const MOCKED_ENDPOINTS = [
   "/api/annotationAbandon",
 ];
 
-// The four things the tour points at, in order. Kept next to TUTORIAL_STEPS
+// The five things the tour points at, in order. Kept next to buildSteps()
 // below so the "Step n of N" counter can't drift from the actual step list.
-const TOUR_STEP_COUNT = 4;
+const TOUR_STEP_COUNT = 5;
 
 /**
  * The guided walkthrough new contributors complete before their first real
@@ -50,7 +48,7 @@ const TOUR_STEP_COUNT = 4;
  * annotating in the navbar and on the dashboard.
  */
 /* eslint-disable react/forbid-elements -- react-joyride tooltip and beacon controls: the tour library owns these elements' props and behaviour */
-export default function TutorialPage({ initialData }) {
+export default function TutorialPage() {
   const { status, update } = useSession();
   const loading = status === "loading";
   // The tutorial renders the real annotation form, so it needs the same device
@@ -60,6 +58,7 @@ export default function TutorialPage({ initialData }) {
 
   const [current, setCurrent] = useState(null);
   const [data, setData] = useState(null);
+  const completingRef = useRef(false);
 
   // "touring" = auto-open tooltip (disableBeacon: true on all steps)
   // "beacons" = show pulsing dots (disableBeacon: false on all steps)
@@ -165,37 +164,48 @@ export default function TutorialPage({ initialData }) {
     </div>
   );
 
-  // Build steps. "touring" = all beacons skipped. overlayClickAction="none" because we use native mousedown to avoid Joyride bugs.
   const buildSteps = useCallback(() => {
     return [
       {
         target: ".rp-stage",
-        content: "This is the image annotation area. Click 'Yes' or 'No' on existing dashed boxes, or draw your own by clicking and dragging if you spot an obstruction.",
+        title: "Annotation Canvas",
+        content: "Dashed yellow boxes are model suggestions. Click each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, choose 'Not an object' from the list. You can also draw your own boxes by clicking and dragging to label objects the model missed.",
         skipBeacon: true,
         overlayClickAction: "none",
         placement: "bottom",
       },
       {
-        target: "#accessibilityScore",
-        content: "Rate the overall accessibility from 1 to 10 using this slider. 1 is very inaccessible, 10 is very safe.",
+        target: "#box-review-section",
+        title: "Box vs. Obstruction",
+        content: "Drawing a box records that an object is on or beside the walking space. The obstruction question is separate: for each box, decide whether it blocks the sidewalk for you, traveling as you normally do. Answering 'No' is just as valuable as answering 'Yes' — it tells us the object is there but does not get in the way.",
         skipBeacon: true,
         overlayClickAction: "none",
         placement: "top",
       },
       {
-        target: "fieldset",
-        content: "Select the surface type that best matches the sidewalk in the image.",
+        target: "#box-review-section",
+        title: "Severity",
+        content: "When an object does obstruct, rate how severely it blocks passage on a 1 to 5 scale. A score of 1 means it is a minor inconvenience; 5 means it completely blocks the path.",
+        skipBeacon: true,
+        overlayClickAction: "none",
+        placement: "top",
+      },
+      {
+        target: "#scene-level-section",
+        title: "Scene-Level Assessment",
+        content: "Answer four questions about the sidewalk as a whole: whether a sidewalk is present, its surface condition, how walkable it is, and its overall accessibility. These describe the scene, not individual objects.",
         skipBeacon: true,
         overlayClickAction: "none",
         placement: "top",
       },
       {
         target: "button[type='submit']",
-        content: "Click here to proceed to the next image or finish the tutorial.",
+        title: "Submit",
+        content: "Submit when every box has been decided (accepted or rejected) and all four scene-level questions are answered. The button stays disabled until everything is complete.",
         skipBeacon: true,
         overlayClickAction: "none",
-        placement: "bottom",
-      }
+        placement: "top",
+      },
     ];
   }, []);
 
@@ -229,6 +239,11 @@ export default function TutorialPage({ initialData }) {
   useEffect(() => {
     if (status !== "authenticated") return;
 
+    // The update() call in the completion path triggers a re-render that
+    // re-runs this effect. Without this guard the re-run would re-write
+    // the session and tutorial flag after clearSession() already removed them.
+    if (completingRef.current) return;
+
     // The tutorial deliberately reuses the real annotate form rather than a
     // parallel copy, so the two can't drift apart. The catch is that the form
     // posts to the live endpoints, so we shim fetch for the duration of the
@@ -258,10 +273,11 @@ export default function TutorialPage({ initialData }) {
 
     const isNavigating = sessionStorage.getItem("isNavigatingImages") === "true";
     let currentCount = 1;
-    let currentData = { imgRecords: initialData };
+    let currentData = { imgRecords: TUTORIAL_IMAGES };
 
     if (!isNavigating) {
       writeSession({ current: 1, total: TUTORIAL_IMAGE_COUNT, data: currentData });
+      writeTutorialFlag(true);
     } else {
       sessionStorage.removeItem("isNavigatingImages");
       const savedCount = readCurrentCount();
@@ -274,9 +290,8 @@ export default function TutorialPage({ initialData }) {
 
     const handleState = async () => {
       if (currentCount > TUTORIAL_IMAGE_COUNT) {
+        completingRef.current = true;
         try {
-          // Persist first, then refresh the JWT, so the dashboard and navbar
-          // both see the completed flag without a hard refresh
           await originalFetch("/api/user/completeTutorial", { method: "POST" });
           await update({ tutorialCompleted: true });
         } catch (error) {
@@ -297,7 +312,7 @@ export default function TutorialPage({ initialData }) {
     return () => {
       window.fetch = originalFetch;
     };
-  }, [status, initialData, update]);
+  }, [status, update]);
 
   // No `typeof window` branch here: rendering different trees on the server and
   // on the client is precisely what breaks hydration. `loading` is true on both
@@ -324,6 +339,8 @@ export default function TutorialPage({ initialData }) {
         data={singleImage}
         current={current}
         total={TUTORIAL_IMAGE_COUNT}
+        allImages={data.imgRecords}
+        isTutorial
       />
 
       {/* Custom pulsing beacons on all 4 targets — shown when not in active tour */}
@@ -372,42 +389,29 @@ export default function TutorialPage({ initialData }) {
 function TutorialBeacons({ onBeaconClick }) {
   const targets = [
     { sel: ".rp-stage", placement: "bottom", offset: 15 },
-    { sel: "#accessibilityScore", placement: "bottom", offset: 50 }, // more below
-    { sel: "fieldset", placement: "center", offset: 0 },
-    { sel: "button[type='submit']", placement: "bottom", offset: 15 } // changed to bottom
+    { sel: "#box-review-section", placement: "top", offset: 15 },
+    { sel: "#box-review-section", placement: "bottom", offset: 15 },
+    { sel: "#scene-level-section", placement: "top", offset: 15 },
+    { sel: "button[type='submit']", placement: "top", offset: 15 },
   ];
   const [positions, setPositions] = useState([]);
 
   useEffect(() => {
     const calcPositions = () => {
-      // Find right column center using fieldset
-      const fieldsetEl = document.querySelector("fieldset");
-      let columnCenterX = null;
-      if (fieldsetEl) {
-        const rect = fieldsetEl.getBoundingClientRect();
-        columnCenterX = rect.left + window.scrollX + rect.width / 2;
-      }
-
       const pos = targets.map((t, index) => {
         const el = document.querySelector(t.sel);
         if (!el) return null;
         const rect = el.getBoundingClientRect();
-        
+
         let top;
-        if (t.placement === "center") {
-          top = rect.top + rect.height / 2;
-        } else if (t.placement === "bottom") {
+        if (t.placement === "bottom") {
           top = rect.bottom + t.offset;
         } else {
           top = rect.top - t.offset;
         }
-        
-        let left = rect.left + window.scrollX + rect.width / 2;
-        // Align all right-column beacons to perfect vertical line
-        if (t.sel !== ".rp-stage" && columnCenterX !== null) {
-          left = columnCenterX;
-        }
-        
+
+        const left = rect.left + window.scrollX + rect.width / 2;
+
         return {
           top: top + window.scrollY,
           left,
@@ -448,43 +452,3 @@ function TutorialBeacons({ onBeaconClick }) {
   );
 }
 
-export async function getServerSideProps(context) {
-  const session = await getServerSession(context.req, context.res, authOptions);
-
-  if (!session?.user?._id) {
-    return { redirect: { destination: "/login", permanent: false } };
-  }
-
-  try {
-    const { db } = await connectToDatabase();
-
-    // $sample, not $limit — a bare $limit returns the same three documents to
-    // every user forever, which makes the walkthrough feel canned and means
-    // nobody ever practices on a different kind of street.
-    const imgRecords = await db
-      .collection("Image")
-      .aggregate([
-        { $sample: { size: TUTORIAL_IMAGE_COUNT } }
-      ])
-      .toArray();
-
-    const sanitizedRecords = imgRecords.map(record => {
-      const sanitized = { ...record };
-      sanitized._id = sanitized._id.toString();
-      return sanitized;
-    });
-
-    return {
-      props: {
-        initialData: sanitizedRecords,
-      },
-    };
-  } catch (error) {
-    console.error("Error fetching random images for tutorial:", error);
-    return {
-      props: {
-        initialData: [],
-      },
-    };
-  }
-}

@@ -37,7 +37,7 @@ export default function CompleteProfile() {
     const [priorAnnotationExperience, setPriorAnnotationExperience] = useState(null);
 
     const ageOptions = [
-        { value: "16-19", label: "16-19 years" },
+        { value: "18-19", label: "18-19 years" },
         { value: "20-24", label: "20-24 years" },
         { value: "25-29", label: "25-29 years" },
         { value: "30-34", label: "30-34 years" },
@@ -305,7 +305,7 @@ export default function CompleteProfile() {
 
                         <fieldset className="border-0 mb-4">
                             <legend className="block text-sm font-semibold text-ink mb-2">
-                                How often do you walk outdoors in a typical week?
+                                How often do you commute (by any mode of transportation) in a typical week?
                             </legend>
                             {["Daily", "A few times a week", "Once a week", "Rarely", "Never"].map(freq => (
                                 <label key={freq} className="block text-body font-medium mb-2 cursor-pointer">

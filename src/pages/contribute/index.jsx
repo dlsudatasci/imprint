@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { useSession } from "next-auth/react";
 import { connectToDatabase } from "@/util/mongodb";
 import { ObjectId } from "mongodb";
-import { readTotalCount, readCurrentCount } from "@/util/sessionCache";
+import { readTotalCount, readCurrentCount, readTutorialFlag, clearSession } from "@/util/sessionCache";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
 
 import Page from "@/ui/page";
@@ -46,11 +46,13 @@ export default function ContributePage({ session }) {
     current: 0,
     total: 0,
   });
+  const [isTutorialSession, setIsTutorialSession] = useState(false);
   const [randomFact, setRandomFact] = useState("");
 
   // Prioritize the server-side session because it contains our live DB stats
   const activeSession = session || clientSession;
   const username = activeSession?.user?.username || "";
+  const userRole = activeSession?.user?.role || "contributor";
   const userId = activeSession?.user?._id || "";
 
   // getServerSideProps reads this straight from the database on every request,
@@ -89,11 +91,17 @@ export default function ContributePage({ session }) {
       const localCurrent = readCurrentCount();
 
       if (localTotal !== null && localCurrent !== null) {
-        setSessionState({
-          status: "active",
-          current: localCurrent,
-          total: localTotal,
-        });
+        if (readTutorialFlag()) {
+          setIsTutorialSession(true);
+          setSessionState({ status: "none", current: 0, total: 0 });
+        } else {
+          setIsTutorialSession(false);
+          setSessionState({
+            status: "active",
+            current: localCurrent,
+            total: localTotal,
+          });
+        }
         return;
       }
 
@@ -159,26 +167,40 @@ export default function ContributePage({ session }) {
               <h1 className="font-display text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight text-primary">
                 {username}.
               </h1>
+              {userRole === "annotator" && (
+                <Badge tone="success">Annotator</Badge>
+              )}
             </div>
 
             {/* Right Side: Fun Fact & Action Buttons */}
             <div className="flex flex-col items-start md:items-end w-full md:w-auto mt-4 md:mt-0 gap-3">
               {/* Fun Fact Pill */}
-              {!hasSession && randomFact && (
+              {!hasSession && !isTutorialSession && randomFact && (
                 <Badge tone="warning">
                   <span>{randomFact}</span>
                 </Badge>
               )}
 
               <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 w-full md:w-auto">
-              {!hasSession && (
+              {isTutorialSession ? (
                 <>
-                  {hasCompletedDemo && (
-                     <Link href="/contribute/tutorial" className="flex-1 md:flex-none flex">
-                        <Button variant="neutral" fullWidth>Replay Tutorial</Button>
-                     </Link>
-                  )}
-
+                  <Link href="/contribute/tutorial" className="flex-1 md:flex-none flex">
+                    <Button fullWidth>Resume Tutorial</Button>
+                  </Link>
+                  {/* eslint-disable-next-line react/forbid-elements -- dashboard action button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearSession();
+                      setIsTutorialSession(false);
+                    }}
+                    className="flex-1 md:flex-none"
+                  >
+                    <Button variant="neutral" fullWidth>Stop Tutorial</Button>
+                  </button>
+                </>
+              ) : !hasSession ? (
+                <>
                   {!hasCompletedDemo ? (
                     <Link
                       href={isLoadingSession ? "" : "/contribute/tutorial"}
@@ -189,14 +211,9 @@ export default function ContributePage({ session }) {
                       </Button>
                     </Link>
                   ) : activeSession?.user?.isProfileIncomplete ? (
-                    <div className="flex-1 md:flex-none flex relative group cursor-not-allowed">
-                      <Button disabled fullWidth>Start Annotating</Button>
-                      {/* Custom Tooltip */}
-                      <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-ink text-white text-sm font-semibold rounded-control py-2 px-4 whitespace-nowrap pointer-events-none z-50 shadow-md">
-                        Complete your profile to continue mapping
-                        <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-ink rotate-45"></div>
-                      </div>
-                    </div>
+                    <Link href="/complete-profile" className="flex-1 md:flex-none flex">
+                      <Button fullWidth>Complete Profile to Start</Button>
+                    </Link>
                   ) : (
                     <Link
                       href={isLoadingSession ? "" : "/contribute/annotate"}
@@ -207,8 +224,36 @@ export default function ContributePage({ session }) {
                       </Button>
                     </Link>
                   )}
+
+                  {hasCompletedDemo && (
+                     <Link href="/contribute/tutorial" className="flex-1 md:flex-none flex">
+                        <Button variant="neutral" fullWidth>Replay Tutorial</Button>
+                     </Link>
+                  )}
                 </>
-              )}
+              ) : hasSession ? (
+                <>
+                  <Link href="/contribute/annotate" className="flex-1 md:flex-none flex">
+                    <Button fullWidth>Resume Session</Button>
+                  </Link>
+                  {/* eslint-disable-next-line react/forbid-elements -- dashboard action button */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await fetch("/api/annotationAbandon", { method: "POST" });
+                        clearSession();
+                        setSessionState({ status: "none", current: 0, total: 0 });
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    }}
+                    className="flex-1 md:flex-none"
+                  >
+                    <Button variant="neutral" fullWidth>Stop Session</Button>
+                  </button>
+                </>
+              ) : null}
               </div>
             </div>
           </div>
@@ -240,6 +285,7 @@ export async function getServerSideProps(context) {
     if (dbUser) {
       session.user.totalAnnotations = dbUser.totalAnnotations || 0;
       session.user.hasCompletedTutorial = dbUser.hasCompletedTutorial || false;
+      session.user.role = dbUser.role || "contributor";
 
       if (dbUser.age) {
         session.user.isProfileIncomplete = false;

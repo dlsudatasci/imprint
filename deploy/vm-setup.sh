@@ -3,7 +3,7 @@
 # One-time provisioning of the university VM. Run from your LAPTOP, not the VM,
 # the same way deploy.sh works.
 #
-#   ./deploy/vm-setup.sh user@vm-host
+#   ./deploy/vm-setup.sh user@vm-host [--port PORT]
 #
 # Installs Node 22, nginx and MongoDB, creates the service user and /srv/imprint,
 # and installs the systemd unit and nginx site from this repo. Idempotent, so
@@ -13,26 +13,43 @@
 # NEXTAUTH_SECRET already generated, and you fill in the rest by hand.
 #
 # Optional flags:
+#   --port N  use a non-standard SSH port (passed to ssh/scp)
 #   --ufw     also enable the firewall (see the warning below before using)
 
 set -euo pipefail
 
 TARGET="${1:-}"
 WITH_UFW=false
-for arg in "$@"; do [[ "$arg" == "--ufw" ]] && WITH_UFW=true; done
+SSH_PORT=""
+shift || true
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --ufw)  WITH_UFW=true; shift ;;
+    --port) SSH_PORT="${2:-}"; shift 2 ;;
+    *)      shift ;;
+  esac
+done
 
 if [[ -z "$TARGET" || "$TARGET" == --* ]]; then
-  echo "usage: $0 user@vm-host [--ufw]" >&2
+  echo "usage: $0 user@vm-host [--port PORT] [--ufw]" >&2
   exit 1
+fi
+
+# Build SSH/SCP port flags (empty when default port 22)
+SSH_PORT_FLAG=""
+SCP_PORT_FLAG=""
+if [[ -n "$SSH_PORT" ]]; then
+  SSH_PORT_FLAG="-p $SSH_PORT"
+  SCP_PORT_FLAG="-P $SSH_PORT"
 fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "==> Copying nginx site and systemd unit to $TARGET"
-scp -q "$HERE/nginx.conf" "$HERE/imprint.service" "$TARGET:/tmp/"
+scp -q $SCP_PORT_FLAG "$HERE/nginx.conf" "$HERE/imprint.service" "$TARGET:/tmp/"
 
 echo "==> Provisioning (this takes a few minutes)"
-ssh "$TARGET" WITH_UFW="$WITH_UFW" 'bash -s' <<'REMOTE'
+ssh $SSH_PORT_FLAG "$TARGET" WITH_UFW="$WITH_UFW" 'bash -s' <<'REMOTE'
 set -euo pipefail
 echo "--- OS ---"; . /etc/os-release; echo "$PRETTY_NAME"
 if [[ "${VERSION_CODENAME:-}" != "noble" ]]; then
@@ -139,7 +156,7 @@ cat <<EOF
 
 1. Fill in the secrets on the VM:
 
-     ssh $TARGET
+     ssh ${SSH_PORT_FLAG:+$SSH_PORT_FLAG }$TARGET
      sudo -u imprint nano /srv/imprint/.env
 
    NEXTAUTH_URL is the one that matters most. Use exactly what a participant
@@ -155,7 +172,7 @@ cat <<EOF
 
 3. Deploy:
 
-     ./deploy/deploy.sh $TARGET
+     ./deploy/deploy.sh $TARGET${SSH_PORT:+ --port $SSH_PORT}
 
 4. Create the database indexes, once, against production:
 

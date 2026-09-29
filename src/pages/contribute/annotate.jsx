@@ -169,6 +169,7 @@ export default function AnnotatePage() {
           data={singleImage}
           current={state.annotationCurrentCount}
           total={state.annotationTotalCount}
+          allImages={data.imgRecords}
         />
       );
     }

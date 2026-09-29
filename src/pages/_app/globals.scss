@@ -107,10 +107,6 @@ h1, h2, h3 {
 
 .rp-stage {
   position: relative;
-  min-width: 960px;
-  min-height: 600px;
-  width: 960px !important;
-  height: 600px !important;
 }
 
 .rp-image {
@@ -433,4 +429,8 @@ h1, h2, h3 {
   [style*="crayon-boil"] {
     animation: none !important;
   }
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

@@ -1,7 +1,7 @@
 /**
  * Route for /privacy — how Imprint collects and handles contributor data.
  *
- * Shares its layout with /terms-of-use through LegalShell, so the two read as
+ * Shares its layout with /terms-of-use (informed consent) through LegalShell, so the two read as
  * a pair. Section content is written inline here rather than fetched.
  */
 import Page from '@/ui/page';
@@ -24,9 +24,9 @@ export default function PrivacyPolicy() {
                             Human-X Interactions Lab
                         </Link>{' '}
                         and its student researchers use and protect the data you provide when you visit and
-                        use Imprint. For what participation involves, see the{' '}
+                        use Imprint. For what participation involves, see the study{' '}
                         <Link href="/terms-of-use" className="font-bold text-primary hover:underline">
-                            Terms of Use
+                            Informed Consent Form
                         </Link>.
                     </p>
                 }

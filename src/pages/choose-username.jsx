@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 
 import Page from "@/ui/page";
 import { AuthCard, Button, Input, Container } from "@/ui";
@@ -39,7 +40,9 @@ export default function ChooseUsername() {
 
         const usernameInput = e.currentTarget.username;
         const username = usernameInput.value;
-        const body = { username };
+        const consentAgreed = e.currentTarget["consent-agree"].checked;
+        const ageConfirmed = e.currentTarget["consent-age"].checked;
+        const body = { username, consentAgreed, ageConfirmed };
 
         try {
             const res = await fetch("/api/auth/choose-username", {
@@ -92,8 +95,41 @@ export default function ChooseUsername() {
                             required
                             onInput={(e) => e.target.setCustomValidity("")}
                             error={serverError || null}
-                            className="mb-8"
                         />
+
+                        <div className="space-y-3 mt-6 mb-8">
+                          <div className="flex items-start">
+                            <input
+                              id="consent-agree"
+                              type="checkbox"
+                              className="mr-3 mt-0.5 w-5 h-5 text-primary bg-surface-subtle border-line rounded focus:ring-primary focus:ring-2"
+                              required
+                            />
+                            <label htmlFor="consent-agree" className="text-body font-medium text-sm">
+                              I have read and understood the{" "}
+                              <Link
+                                href="/terms-of-use"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="cursor-pointer text-primary font-bold hover:underline"
+                              >
+                                Informed Consent Form
+                              </Link>
+                              {" "}and agree to participate
+                            </label>
+                          </div>
+                          <div className="flex items-start">
+                            <input
+                              id="consent-age"
+                              type="checkbox"
+                              className="mr-3 mt-0.5 w-5 h-5 text-primary bg-surface-subtle border-line rounded focus:ring-primary focus:ring-2"
+                              required
+                            />
+                            <label htmlFor="consent-age" className="text-body font-medium text-sm">
+                              I confirm that I am at least 18 years old
+                            </label>
+                          </div>
+                        </div>
 
                         <Button submit fullWidth disabled={loadingForm}>
                             {loadingForm ? "Saving..." : "Continue to Dashboard"}

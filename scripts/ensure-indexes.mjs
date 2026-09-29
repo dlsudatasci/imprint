@@ -67,10 +67,19 @@ const INDEXES = [
     'annotationGet filters served non-reference and reference images'],
   ['Image', { isReference: 1 }, { name: 'isReference' },
     'annotator mode draws only reference images'],
+  ['Image', { annotationCount: 1, city: 1 }, { name: 'annotationCount_city' },
+    'prioritization sort — least-annotated images served first'],
 
   // telemetry_logs grows without bound; the streak aggregation scans it.
   ['telemetry_logs', { userId: 1, event: 1, timestamp: -1 }, { name: 'user_event_time' },
     'the dashboard streak and average-time stats'],
+
+  // NASA-TLX: one response per user per session.
+  ['nasa_tlx', { userId: 1, sessionId: 1 }, { unique: true, name: 'uniq_user_session' },
+    'one NASA-TLX response per user per session'],
+
+  ['exit_surveys', { userId: 1 }, { unique: true, name: 'uniq_user' },
+    'one exit survey per user'],
 ];
 
 const client = new MongoClient(uri);

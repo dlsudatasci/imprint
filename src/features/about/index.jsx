@@ -147,7 +147,7 @@ export default function AboutSection() {
               <P className="text-body text-lg">
                 Interested in the research? Read our{' '}
                 <Link href="/terms-of-use" className="text-primary hover:underline font-bold">
-                  Terms of Use
+                  Informed Consent Form
                 </Link>{' '}
                 and{' '}
                 <Link href="/privacy" className="text-primary hover:underline font-bold">

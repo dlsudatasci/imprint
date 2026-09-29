@@ -17,6 +17,8 @@ import { cn } from './cn';
 export interface LoadingScreenProps {
   /** Fires when the walk reaches its greeting and the loader may be dismissed. */
   onLoopComplete?: () => void;
+  /** Fires when the user clicks "skip". Falls back to onLoopComplete. */
+  onSkip?: () => void;
   /** Cover the viewport rather than filling the parent. */
   fullscreen?: boolean;
   /** Fade out. Keep mounted for the transition duration, then unmount. */
@@ -26,6 +28,7 @@ export interface LoadingScreenProps {
 
 export default function LoadingScreen({
   onLoopComplete,
+  onSkip,
   fullscreen,
   exiting,
   className,
@@ -40,10 +43,10 @@ export default function LoadingScreen({
         className,
       )}
     >
-      {onLoopComplete && (
+      {(onSkip || onLoopComplete) && (
         <button
           type="button"
-          onClick={onLoopComplete}
+          onClick={onSkip || onLoopComplete}
           className="absolute top-4 right-4 z-10 font-sans text-sm font-medium tracking-wide"
           style={{ color: '#8a7a5c', animation: 'imprint-linein .35s ease-out' }}
         >

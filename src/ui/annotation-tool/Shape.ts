@@ -63,7 +63,8 @@ export interface IShape {
   paint: (
     canvas2D: CanvasRenderingContext2D,
     calculateTruePosition: (shapeData: IShapeBase) => IShapeBase,
-    selected: boolean
+    selected: boolean,
+    displayLabel?: string
   ) => IShapeBase;
   getAnnotationData: () => IAnnotation;
   adjustMark: (adjustBase: IShapeAdjustBase) => void;
@@ -153,9 +154,9 @@ export class RectShape implements IShape {
    *
    *   yellow dashed  a suggestion nobody has ruled on yet — the only state the
    *                  form refuses to submit on
-   *   blue solid     confirmed as an obstruction
+   *   green solid    confirmed as an obstruction
    *   yellow solid   rejected; kept visible so it's clear it was considered
-   *   indigo         drawn by the user (dashed until they pick a label)
+   *   blue           drawn by the user (dashed until they pick a label)
    *
    * `selectedAnnotation` means "currently clicked", which is different from the
    * annotation's own `selected` flag — that one is the user's verdict. When a
@@ -165,7 +166,8 @@ export class RectShape implements IShape {
   public paint = (
     canvas2D: CanvasRenderingContext2D,
     calculateTruePosition: (shapeData: IShapeBase) => IShapeBase,
-    selectedAnnotation: boolean
+    selectedAnnotation: boolean,
+    displayLabel?: string
   ) => {
     const { x, y, width, height } = calculateTruePosition(
       this.annotationData.mark
@@ -194,12 +196,12 @@ export class RectShape implements IShape {
     let isSolid = false;
 
     if (editable) {
-      strokeColor = "#16a34a"; // success — user-drawn box
+      strokeColor = "#004aad"; // blue — user-drawn box
       if (comment) {
         isSolid = true;
       }
     } else if (selected) {
-      strokeColor = "#004aad"; // Primary Blue
+      strokeColor = "#16a34a"; // green — confirmed
       isSolid = true;
     } else if (isRejected) {
       strokeColor = "#d97706"; // warning — rejected
@@ -227,18 +229,18 @@ export class RectShape implements IShape {
       canvas2D.fillRect(x, y, width, height);
     } else {
       if (comment) {
-        const formattedComment = comment.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        const labelText = displayLabel ?? comment.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         canvas2D.font = `bold ${fontSize}px ${fontFamily}`;
-        const metrics = canvas2D.measureText(formattedComment);
+        const metrics = canvas2D.measureText(labelText);
 
         let labelBgColor = "#d97706";
         let labelTextColor = "#111827";
 
         if (editable) {
-          labelBgColor = "#16a34a"; // success
+          labelBgColor = "#004aad"; // blue — user-drawn
           labelTextColor = "white";
         } else if (selected) {
-          labelBgColor = "#004aad"; // Primary Blue
+          labelBgColor = "#16a34a"; // green — confirmed
           labelTextColor = "white";
         } else if (isRejected) {
           labelBgColor = "#d97706"; // warning
@@ -270,7 +272,7 @@ export class RectShape implements IShape {
         canvas2D.textBaseline = "middle";
         canvas2D.fillStyle = labelTextColor;
 
-        canvas2D.fillText(formattedComment, x + paddingX, y + rectH / 2);
+        canvas2D.fillText(labelText, x + paddingX, y + rectH / 2);
       }
     }
     canvas2D.restore();

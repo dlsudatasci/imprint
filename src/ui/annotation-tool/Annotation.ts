@@ -33,5 +33,6 @@ export interface IAnnotation<T = IShapeData> {
   isRejected?: boolean;
   obstructs?: boolean;
   severity?: 1 | 2 | 3 | 4 | 5 | null;
+  confidence?: number | null;
   initialState?: { comment?: string; mark: T };
 }

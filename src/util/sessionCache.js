@@ -16,6 +16,7 @@
 const TOTAL_KEY = "annotationTotalCount";
 const CURRENT_KEY = "annotationCurrentCount";
 const DATA_KEY = "annotationSetData";
+const TUTORIAL_KEY = "annotationIsTutorial";
 
 const hasStorage = () => typeof window !== "undefined" && !!window.localStorage;
 
@@ -65,6 +66,7 @@ export function clearSession() {
   window.localStorage.removeItem(TOTAL_KEY);
   window.localStorage.removeItem(CURRENT_KEY);
   window.localStorage.removeItem(DATA_KEY);
+  window.localStorage.removeItem(TUTORIAL_KEY);
 }
 
 /** True when a usable batch is cached locally. */
@@ -72,4 +74,18 @@ export function hasCachedSession() {
   return readTotalCount() !== null && readCurrentCount() !== null && !!readSessionData();
 }
 
-export const SESSION_KEYS = { TOTAL_KEY, CURRENT_KEY, DATA_KEY };
+export function writeTutorialFlag(isTutorial) {
+  if (!hasStorage()) return;
+  if (isTutorial) {
+    window.localStorage.setItem(TUTORIAL_KEY, "true");
+  } else {
+    window.localStorage.removeItem(TUTORIAL_KEY);
+  }
+}
+
+export function readTutorialFlag() {
+  if (!hasStorage()) return false;
+  return window.localStorage.getItem(TUTORIAL_KEY) === "true";
+}
+
+export const SESSION_KEYS = { TOTAL_KEY, CURRENT_KEY, DATA_KEY, TUTORIAL_KEY };

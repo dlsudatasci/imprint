@@ -2,6 +2,17 @@
 import Button from '../Button';
 import React, { MouseEventHandler } from "react";
 import Router from "next/router";
+import { validateAnnotationForSubmit } from "@/util/validators/clientAnnotation";
+import {
+  TAU_THRESHOLD,
+  filterAnnotationsByTau,
+  computeStepTimings,
+  buildSuggestionConfidences,
+  buildGeometryChanges,
+  buildLabelChanges,
+  buildSubmissionCounts,
+} from "@/util/validators/telemetryPayload";
+import { NOT_AN_OBJECT, notAnObjectPatch } from "@/util/suggestionJudgment";
 
 import { IAnnotation } from "./Annotation";
 import { IAnnotationState } from "./annotation/AnnotationState";
@@ -25,6 +36,7 @@ import { P } from "../Typography";
 import { H2 } from "../Typography";
 import { H3 } from "../Typography";
 import Container from '../Container';
+import { buildDisplayLabels, formatLabel } from "@/util/buildDisplayLabels";
 
 interface IReactPictureAnnotationProps {
   annotationData?: IAnnotation[];
@@ -42,6 +54,7 @@ interface IReactPictureAnnotationProps {
   imageID: string;
   city: string;
   servedModelVersion?: string;
+  isReference?: boolean;
   currentAnnotationCount: number;
   inputElement: (
     value: string,
@@ -57,6 +70,7 @@ interface IReactPictureAnnotationProps {
     onSetObstructs: (obstructs: boolean) => void,
     obstructs: boolean | undefined,
     severity: number | null | undefined,
+    onMarkNotAnObject: () => void,
   ) => React.ReactElement;
   totalAnnotationCount?: number;
 }
@@ -96,6 +110,64 @@ const defaultState: IStageState = {
  * Note that the canvas is driven by mouse events with no touch equivalent, so
  * annotating requires a mouse or trackpad. See hooks/useCanAnnotate.
  */
+function SidewalkWidthIcon({ type }: { type: string }) {
+  const walkingFigure = (cx: number) => (
+    <g>
+      <ellipse cx={cx} cy={22} rx={5} ry={6} fill="currentColor" />
+      <line x1={cx} y1={28} x2={cx - 1} y2={46} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
+      <line x1={cx - 1} y1={33} x2={cx - 10} y2={38} stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+      <line x1={cx - 1} y1={33} x2={cx + 8} y2={40} stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+      <line x1={cx - 1} y1={46} x2={cx - 8} y2={62} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
+      <line x1={cx - 1} y1={46} x2={cx + 7} y2={61} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
+    </g>
+  );
+
+  const sidewalkEdges = (leftTop: number, leftBot: number, rightTop: number, rightBot: number) => (
+    <g>
+      <line x1={leftTop} y1={5} x2={leftBot} y2={75} stroke="currentColor" strokeWidth={2} opacity={0.35} />
+      <line x1={rightTop} y1={5} x2={rightBot} y2={75} stroke="currentColor" strokeWidth={2} opacity={0.35} />
+    </g>
+  );
+
+  switch (type) {
+    case "noSidewalk":
+      return (
+        <svg viewBox="0 0 80 80" className="w-full h-full text-muted" aria-label="No sidewalk">
+          <line x1={35} y1={5} x2={15} y2={75} stroke="currentColor" strokeWidth={2} strokeDasharray="6 4" opacity={0.25} />
+          <line x1={45} y1={5} x2={65} y2={75} stroke="currentColor" strokeWidth={2} strokeDasharray="6 4" opacity={0.25} />
+          <line x1={28} y1={30} x2={52} y2={54} stroke="currentColor" strokeWidth={2.5} opacity={0.4} />
+          <line x1={52} y1={30} x2={28} y2={54} stroke="currentColor" strokeWidth={2.5} opacity={0.4} />
+        </svg>
+      );
+    case "onePerson":
+      return (
+        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="One person width">
+          {sidewalkEdges(33, 18, 47, 62)}
+          {walkingFigure(40)}
+        </svg>
+      );
+    case "twoPeople":
+      return (
+        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="Two people width">
+          {sidewalkEdges(28, 8, 52, 72)}
+          {walkingFigure(32)}
+          {walkingFigure(50)}
+        </svg>
+      );
+    case "threePlus":
+      return (
+        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="Three people width">
+          {sidewalkEdges(24, 2, 56, 78)}
+          {walkingFigure(22)}
+          {walkingFigure(40)}
+          {walkingFigure(58)}
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
 export default class ReactPictureAnnotation extends React.Component<IReactPictureAnnotationProps> {
   public static defaultProps = {
     marginWithInput: 10,
@@ -115,6 +187,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       onSetObstructs: (obstructs: boolean) => void,
       obstructs: boolean | undefined,
       severity: number | null | undefined,
+      onMarkNotAnObject: () => void,
     ) => (
       <DefaultInputSection
         key={id}
@@ -123,6 +196,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         onDelete={onDelete}
         onSelectObstruction={onSelectObstruction}
         onUnselectObstruction={onUnselectObstruction}
+        onMarkNotAnObject={onMarkNotAnObject}
         onSetSeverity={onSetSeverity}
         onSetObstructs={onSetObstructs}
         editable={editable}
@@ -146,7 +220,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     sliderValue: 5,
     pavementType: "",
     sceneLevel: {
-      sidewalkPresent: null as string | null,
+      sidewalkWidth: null as string | null,
       surfaceCondition: null as number | null,
       walkability: null as number | null,
       overallAccessibility: null as number | null,
@@ -155,6 +229,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     isRejected: false,
     obstructs: undefined as boolean | undefined,
     severity: undefined as number | null | undefined,
+    canvasScale: 1,
   };
 
   set selectedId(value: string | null) {
@@ -183,11 +258,14 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   // `shapes` is the live source of truth the canvas paints from;
   // currentAnnotationData is the plain data mirrored out of it for submission.
   private currentAnnotationData: IAnnotation[] = [];
+  private hiddenSuggestions: IAnnotation[] = [];
   private selectedIdTrueValue: string | null;
   private canvasRef = React.createRef<HTMLCanvasElement>();
   private canvas2D?: CanvasRenderingContext2D | null;
   private imageCanvasRef = React.createRef<HTMLCanvasElement>();
   private imageCanvas2D?: CanvasRenderingContext2D | null;
+  private canvasWrapperRef = React.createRef<HTMLDivElement>();
+  private resizeObserver: ResizeObserver | null = null;
   private currentImageElement?: HTMLImageElement;
   private currentAnnotationState: IAnnotationState = new DefaultAnnotationState(
     this
@@ -196,6 +274,13 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   // Reset in componentDidUpdate when the image changes, so it measures time on
   // the current photo rather than since the component first mounted.
   private mountTime: number = Date.now();
+  private sceneStepStartMs: number | null = null;
+
+  private markSceneStepStart = () => {
+    if (this.sceneStepStartMs === null) {
+      this.sceneStepStartMs = Date.now();
+    }
+  };
 
   public componentDidMount = () => {
     const currentCanvas = this.canvasRef.current;
@@ -229,6 +314,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     this.syncAnnotationData();
     this.syncSelectedId();
+    this.setupCanvasScaling();
   };
 
   public componentDidUpdate = (preProps: IReactPictureAnnotationProps) => {
@@ -240,6 +326,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     if (preProps.image !== image) {
       this.mountTime = Date.now();
+      this.sceneStepStartMs = null;
       this.cleanImage();
       if (this.currentImageElement) {
         this.currentImageElement.src = image;
@@ -250,6 +337,25 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     // this.syncAnnotationData();
     this.syncSelectedId();
+  };
+
+  public componentWillUnmount = () => {
+    this.resizeObserver?.disconnect();
+  };
+
+  private setupCanvasScaling = () => {
+    const el = this.canvasWrapperRef.current;
+    if (!el) return;
+    this.resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const available = entry.contentRect.width;
+      const scale = Math.min(1, available / this.props.width);
+      if (Math.abs(scale - this.state.canvasScale) > 0.001) {
+        this.setState({ canvasScale: scale });
+      }
+    });
+    this.resizeObserver.observe(el);
   };
 
   public calculateMousePosition = (positionX: number, positionY: number) => {
@@ -269,59 +375,6 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       width: width * scale,
       height: height * scale,
     };
-  };
-
-  /**
-   * Thumbnail of one box, for the summary lists below the canvas.
-   *
-   * Crops with CSS rather than a second canvas: the full image is blown up and
-   * offset inside an overflow-hidden window so only the box's region shows.
-   * Percentages relative to the box size mean the same markup works at any
-   * thumbnail size, and the browser reuses the already-decoded image.
-   *
-   * Negative width/height are normalized first — a box dragged up-and-left has
-   * them, and they'd otherwise produce a crop offset the wrong way.
-   */
-  private renderImageCrop = (data: IAnnotation) => {
-    const img = this.currentImageElement;
-    if (!img || !img.naturalWidth || data.mark.width === 0 || data.mark.height === 0) {
-      return <div className="w-full h-full bg-surface-subtle animate-pulse"></div>;
-    }
-
-    let { x, y, width, height } = data.mark;
-    if (width < 0) {
-      x += width;
-      width = Math.abs(width);
-    }
-    if (height < 0) {
-      y += height;
-      height = Math.abs(height);
-    }
-
-    const imgWidthPct = (img.naturalWidth / width) * 100;
-    const imgHeightPct = (img.naturalHeight / height) * 100;
-    const leftPct = -(x / width) * 100;
-    const topPct = -(y / height) * 100;
-
-    return (
-      <div className="w-full h-full overflow-hidden relative">
-        {/* eslint-disable-next-line @next/next/no-img-element -- this reuses
-            the already-decoded canvas image element, so next/image would only
-            add a second network fetch */}
-        <img
-          src={img.src}
-          style={{
-            position: 'absolute',
-            width: `${imgWidthPct}%`,
-            height: `${imgHeightPct}%`,
-            left: `${leftPct}%`,
-            top: `${topPct}%`,
-            maxWidth: 'none'
-          }}
-          alt="Annotation Crop"
-        />
-      </div>
-    );
   };
 
   public render() {
@@ -344,309 +397,317 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       a.id.localeCompare(b.id)
     );
 
+    const displayLabels = buildDisplayLabels(sortedAnnotations);
+
+    const { canvasScale } = this.state;
+
     return (
-      <Container as="section" className="annotation-container">
-        <div className="mb-6">
-          <H2 className="text-2xl font-bold text-ink mb-2">Step 1: Identify Objects</H2>
-          <P className="text-body text-lg">
-            Review objects <span className="font-semibold text-ink">on or beside the sidewalk</span>.
-            For each dashed yellow box, decide whether it obstructs the path for <strong>you</strong>, traveling as you normally do.
-            Draw new boxes to label any missed objects. Rate how severely each obstruction affects passage.
-          </P>
-        </div>
+      <Container as="section" width="wide" className="annotation-container">
+        <div className="flex flex-row gap-6">
 
-        {/* Annotation Tool */}
-        <div className="flex flex-col gap-8 mb-12">
-          <div className="w-full overflow-x-auto bg-surface-subtle rounded-card border border-line shadow-sm flex items-center justify-center p-4">
-            <div className="rp-stage relative" style={{ width, height }}>
-              <canvas
-                style={{ width, height }}
-                className="rp-image"
-                ref={this.imageCanvasRef}
-                width={width * 2}
-                height={height * 2}
-              />
-              <canvas
-                className="rp-shapes"
-                style={{ width, height }}
-                ref={this.canvasRef}
-                width={width * 2}
-                height={height * 2}
-                onMouseDown={this.onMouseDown}
-                onMouseMove={this.onMouseMove}
-                onMouseUp={this.onMouseUp}
-                onMouseLeave={this.onMouseLeave}
-              />
-              {showInput && (
-                <div
-                  className="rp-selected-input"
-                  style={inputPosition}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onMouseUp={(e) => e.stopPropagation()}
-                  onMouseMove={(e) => e.stopPropagation()}
-                >
-                  {inputElement(
-                    inputComment,
-                    this.onInputCommentChange,
-                    this.onDelete,
-                    this.onSelectObstruction,
-                    this.onUnselectObstruction,
-                    editable,
-                    selected,
-                    isRejected,
-                    this.selectedId || "",
-                    this.onSetSeverity,
-                    this.onSetObstructs,
-                    obstructs,
-                    severity,
-                  )}
+          {/* ── Left: Step 1 (65%) ── */}
+          <div style={{ flex: '65 1 0%' }} className="min-w-0">
+            <div className="mb-3">
+              <H2 className="text-lg font-bold text-ink mb-1">Step 1: Identify Objects</H2>
+              <P className="text-body text-sm">
+                Review objects <span className="font-semibold text-ink">on or beside the sidewalk</span>.
+                For each dashed yellow box, decide whether it obstructs the path for <strong>you</strong>, traveling as you normally do.
+                Draw new boxes to label any missed objects.
+              </P>
+            </div>
+
+            <div className="flex flex-col gap-4 mb-6">
+              <div className="w-full bg-surface-subtle rounded-card border border-line shadow-sm p-2">
+                <div ref={this.canvasWrapperRef} className="w-full overflow-hidden">
+                  <div style={{
+                    width: width * canvasScale,
+                    height: height * canvasScale,
+                    margin: '0 auto',
+                  }}>
+                    <div className="rp-stage relative" style={{
+                      width, height,
+                      transform: `scale(${canvasScale})`,
+                      transformOrigin: 'top left',
+                    }}>
+                      <canvas
+                        style={{ width, height }}
+                        className="rp-image"
+                        ref={this.imageCanvasRef}
+                        width={width * 2}
+                        height={height * 2}
+                      />
+                      <canvas
+                        className="rp-shapes"
+                        style={{ width, height }}
+                        ref={this.canvasRef}
+                        width={width * 2}
+                        height={height * 2}
+                        onMouseDown={this.onMouseDown}
+                        onMouseMove={this.onMouseMove}
+                        onMouseUp={this.onMouseUp}
+                        onMouseLeave={this.onMouseLeave}
+                      />
+                      {showInput && (
+                        <div
+                          className="rp-selected-input"
+                          style={inputPosition}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onMouseUp={(e) => e.stopPropagation()}
+                          onMouseMove={(e) => e.stopPropagation()}
+                        >
+                          {inputElement(
+                            inputComment,
+                            this.onInputCommentChange,
+                            this.onDelete,
+                            this.onSelectObstruction,
+                            this.onUnselectObstruction,
+                            editable,
+                            selected,
+                            isRejected,
+                            this.selectedId || "",
+                            this.onSetSeverity,
+                            this.onSetObstructs,
+                            obstructs,
+                            severity,
+                            this.onMarkNotAnObject,
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-5xl mx-auto">
-            <div className="bg-surface rounded-card border border-line shadow-sm p-6">
-              <H3><span className="text-lg font-bold text-ink">Confirmed Objects</span></H3>
-              <p className="text-sm text-muted mb-4">Model suggestions you reviewed.</p>
-              <ul className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {sortedAnnotations
-                  .map((data) => {
-                    if (!data.editable && data.selected) {
-                      return (
-                        <li
-                          className="relative group border border-line rounded-control overflow-hidden bg-surface hover:border-primary hover:shadow-md transition-all cursor-pointer flex flex-col"
-                          key={data.id}
-                          onClick={() => {
-                            this.currentAnnotationState.onMouseDown(data.mark.x + 1, data.mark.y + 1);
-                            this.currentAnnotationState.onMouseUp();
-                          }}
-                        >
-                          <button
-                            className="absolute top-1 right-1 bg-surface border border-line hover:bg-danger-soft hover:text-danger text-muted rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold transition-colors duration-300 z-10"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              this.selectedId = data.id;
-                              this.onUnselectObstruction();
-                            }}
-                          >
-                            ×
-                          </button>
-                          <div className="w-full h-24 bg-surface-subtle flex items-center justify-center relative border-b border-line-card">
-                            {this.renderImageCrop(data)}
-                          </div>
-                          <div className="p-2 text-center">
-                            <span className="text-xs font-semibold text-ink truncate block">
-                              {data.comment.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                            </span>
-                            {data.severity != null && (
-                              <span className="text-[10px] text-muted">Severity: {data.severity}/5</span>
-                            )}
-                          </div>
-                        </li>
-                      );
-                    } else {
-                      return <div key={data.id} className="hidden" />;
-                    }
-                  })}
-              </ul>
-            </div>
-            <div className="bg-surface rounded-card border border-line shadow-sm p-6">
-              <H3><span className="text-lg font-bold text-ink">Your Drawn Objects</span></H3>
-              <p className="text-sm text-muted mb-4">Objects that you have drawn yourself.</p>
-              <ul className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {sortedAnnotations
-                  .map((data) => {
-                    if (data.editable) {
-                      return (
-                        <li 
-                          className="relative group border border-line rounded-control overflow-hidden bg-surface hover:border-primary hover:shadow-md transition-all cursor-pointer flex flex-col" 
-                          key={data.id}
-                          onClick={() => {
-                            this.currentAnnotationState.onMouseDown(data.mark.x + 1, data.mark.y + 1);
-                            this.currentAnnotationState.onMouseUp();
-                          }}
-                        >
-                          <button
-                            className="absolute top-1 right-1 bg-surface border border-line hover:bg-danger-soft hover:text-danger text-muted rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold transition-colors duration-300 z-10"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              this.selectedId = data.id;
-                              this.onDelete();
-                            }}
-                          >
-                            ×
-                          </button>
-                          <div className="w-full h-24 bg-surface-subtle flex items-center justify-center relative border-b border-line-card">
-                            {this.renderImageCrop(data)}
-                          </div>
-                          <div className="p-2 text-center">
-                            <span className="text-xs font-semibold text-ink truncate block">
-                              {data.comment !== undefined && data.comment !== "" && data.comment !== "---"
-                                ? data.comment.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-                                : "Select Option"}
-                            </span>
-                            {data.obstructs === true && data.severity != null && (
-                              <span className="text-[10px] text-muted">Severity: {data.severity}/5</span>
-                            )}
-                            {data.obstructs === false && (
-                              <span className="text-[10px] text-muted">Not obstructing</span>
-                            )}
-                          </div>
-                        </li>
-                      );
-                    } else {
-                      return <div key={data.id} className="hidden" />;
-                    }
-                  })}
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        {/* Step 2: Scene-Level Assessment */}
-        <div className="border-t border-line pt-10 mb-10">
-          <H2 className="text-2xl font-bold text-ink mb-2">Step 2: Rate the Sidewalk</H2>
-          <P className="text-body text-lg mb-8">
-            Rate the following aspects of the sidewalk scene based on what you see in the image.
-          </P>
-          <div className="max-w-4xl mx-auto space-y-6">
-            {/* Item 1 — Sidewalk Presence */}
-            <div className="bg-surface-subtle p-6 rounded-card border border-line">
-              <p className="font-semibold text-ink mb-1">Sidewalk Presence</p>
-              <p className="text-sm text-muted mb-4">Is there a sidewalk or designated pedestrian path in this image?</p>
-              <div className="flex gap-3">
-                {[
-                  { value: "yes", label: "Yes, along the route" },
-                  { value: "partial", label: "Partly / interrupted" },
-                  { value: "no", label: "No sidewalk" },
-                ].map((opt) => (
-                  <button
-                    key={opt.value}
-                    className={`flex-1 py-3 rounded-control text-sm font-semibold transition-all border ${
-                      this.state.sceneLevel.sidewalkPresent === opt.value
-                        ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                        : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
-                    }`}
-                    onClick={() => {
-                      const updates: Record<string, unknown> = { sidewalkPresent: opt.value };
-                      if (opt.value === "no") updates.surfaceCondition = null;
-                      this.setState({
-                        sceneLevel: { ...this.state.sceneLevel, ...updates },
-                      });
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+              </div>
+              <div id="box-review-section" className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                <div className="bg-surface rounded-card border border-line shadow-sm p-4">
+                  <H3><span className="text-lg font-bold text-ink">Confirmed Obstructions</span></H3>
+                  <p className="text-xs text-muted mb-2">Suggestions you confirmed as present.</p>
+                  <ul className="flex flex-wrap gap-2">
+                    {sortedAnnotations
+                      .map((data) => {
+                        if (!data.editable && data.selected) {
+                          return (
+                            <li
+                              className="group border border-line rounded-control bg-surface hover:border-primary hover:shadow-md transition-all cursor-pointer flex items-center gap-1 pl-2 pr-1 py-1"
+                              key={data.id}
+                              onClick={() => {
+                                this.currentAnnotationState.onMouseDown(data.mark.x + 1, data.mark.y + 1);
+                                this.currentAnnotationState.onMouseUp();
+                              }}
+                            >
+                              <span className="text-xs font-semibold text-ink whitespace-nowrap">
+                                {displayLabels.get(data.id) ?? formatLabel(data.comment) ?? ""}
+                              </span>
+                              <button
+                                className="shrink-0 bg-surface border border-line hover:bg-danger-soft hover:text-danger text-muted rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  this.selectedId = data.id;
+                                  this.onUnselectObstruction();
+                                }}
+                              >
+                                ×
+                              </button>
+                            </li>
+                          );
+                        } else {
+                          return <div key={data.id} className="hidden" />;
+                        }
+                      })}
+                  </ul>
+                </div>
+                <div className="bg-surface rounded-card border border-line shadow-sm p-4">
+                  <H3><span className="text-lg font-bold text-ink">Your Drawn Obstructions</span></H3>
+                  <p className="text-xs text-muted mb-2">Objects you identified that the model missed.</p>
+                  <ul className="flex flex-wrap gap-2">
+                    {sortedAnnotations
+                      .map((data) => {
+                        if (data.editable) {
+                          return (
+                            <li
+                              className="group border border-line rounded-control bg-surface hover:border-primary hover:shadow-md transition-all cursor-pointer flex items-center gap-1 pl-2 pr-1 py-1"
+                              key={data.id}
+                              onClick={() => {
+                                this.currentAnnotationState.onMouseDown(data.mark.x + 1, data.mark.y + 1);
+                                this.currentAnnotationState.onMouseUp();
+                              }}
+                            >
+                              <span className="text-xs font-semibold text-ink whitespace-nowrap">
+                                {displayLabels.get(data.id) ?? "Select Option"}
+                              </span>
+                              <button
+                                className="shrink-0 bg-surface border border-line hover:bg-danger-soft hover:text-danger text-muted rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  this.selectedId = data.id;
+                                  this.onDelete();
+                                }}
+                              >
+                                ×
+                              </button>
+                            </li>
+                          );
+                        } else {
+                          return <div key={data.id} className="hidden" />;
+                        }
+                      })}
+                  </ul>
+                </div>
               </div>
             </div>
+          </div>
 
-            {/* Item 2 — Surface Condition (disabled when no sidewalk) */}
-            {(() => {
-              const disabled = this.state.sceneLevel.sidewalkPresent === "no";
-              return (
-                <div className={`bg-surface-subtle p-6 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
-                  <p className="font-semibold text-ink mb-1">Surface Condition</p>
-                  <p className="text-sm text-muted mb-4">
-                    {disabled ? "Not applicable — no sidewalk present" : "How would you describe the condition of the walking surface?"}
-                  </p>
-                  <div className="flex gap-2">
-                    {([
-                      { value: 1, label: "Even & well maintained" },
-                      { value: 2, label: "Mostly even, minor defects" },
-                      { value: 3, label: "Noticeably uneven or cracked" },
-                      { value: 4, label: "Severely damaged or broken" },
-                    ]).map((option) => (
+          {/* ── Right: Step 2 (35%) ── */}
+          <div style={{ flex: '35 1 0%' }} className="min-w-0 overflow-y-auto">
+            <div id="scene-level-section" className="mb-6">
+              <H2 className="text-lg font-bold text-ink mb-1">Step 2: Rate the Sidewalk</H2>
+              <P className="text-body text-sm mb-4">
+                Rate the following aspects of the sidewalk scene based on what you see in the image.
+              </P>
+              <div className="space-y-3">
+                {/* Item 1 — Sidewalk Width */}
+                <div className="bg-surface-subtle p-4 rounded-card border border-line">
+                  <p className="text-base font-semibold text-ink mb-0.5">Sidewalk Width</p>
+                  <p className="text-[11px] text-muted mb-2">How many people can comfortably walk side by side on the sidewalk?</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { value: "no_sidewalk", label: "No Sidewalk", icon: "noSidewalk" as const },
+                      { value: "one_person", label: "One Person", icon: "onePerson" as const },
+                      { value: "two_people", label: "Two People", icon: "twoPeople" as const },
+                      { value: "three_or_more", label: "Three+", icon: "threePlus" as const },
+                    ].map((opt) => (
                       <button
-                        key={option.value}
-                        disabled={disabled}
-                        className={`flex-1 py-3 rounded-control text-sm font-semibold transition-all border ${
-                          !disabled && this.state.sceneLevel.surfaceCondition === option.value
+                        key={opt.value}
+                        className={`flex flex-col items-center p-3 rounded-card text-center transition-all border ${this.state.sceneLevel.sidewalkWidth === opt.value
                             ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                            : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
-                        }`}
+                            : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
+                          }`}
                         onClick={() => {
-                          if (!disabled) {
-                            this.setState({
-                              sceneLevel: { ...this.state.sceneLevel, surfaceCondition: option.value },
-                            });
-                          }
+                          this.markSceneStepStart();
+                          const updates: Record<string, unknown> = { sidewalkWidth: opt.value };
+                          if (opt.value === "no_sidewalk") updates.surfaceCondition = null;
+                          this.setState({
+                            sceneLevel: { ...this.state.sceneLevel, ...updates },
+                          });
                         }}
                       >
-                        <span className="block text-lg font-bold">{option.value}</span>
-                        <span className="block text-xs mt-0.5">{option.label}</span>
+                        <div className="w-16 h-16 mb-1.5 flex items-end justify-center">
+                          <SidewalkWidthIcon type={opt.icon} />
+                        </div>
+                        <span className="text-xs font-semibold leading-tight">{opt.label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
-              );
-            })()}
 
-            {/* Item 3 — Perceived Walkability */}
-            <div className="bg-surface-subtle p-6 rounded-card border border-line">
-              <p className="font-semibold text-ink mb-1">Perceived Walkability</p>
-              <p className="text-sm text-muted mb-4">Thinking about how you normally travel, how easy would this stretch be to walk?</p>
-              <div className="flex gap-2">
-                {([
-                  { value: 1, label: "Very difficult" },
-                  { value: 2, label: "Difficult" },
-                  { value: 3, label: "Manageable" },
-                  { value: 4, label: "Easy" },
-                  { value: 5, label: "Very easy" },
-                ]).map((option) => (
-                  <button
-                    key={option.value}
-                    className={`flex-1 py-3 rounded-control text-sm font-semibold transition-all border ${
-                      this.state.sceneLevel.walkability === option.value
-                        ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                        : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
-                    }`}
-                    onClick={() => {
-                      this.setState({
-                        sceneLevel: { ...this.state.sceneLevel, walkability: option.value },
-                      });
-                    }}
-                  >
-                    <span className="block text-lg font-bold">{option.value}</span>
-                    <span className="block text-xs mt-0.5">{option.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+                {/* Item 2 — Surface Condition (disabled when no sidewalk) */}
+                {(() => {
+                  const disabled = this.state.sceneLevel.sidewalkWidth === "no_sidewalk";
+                  return (
+                    <div className={`bg-surface-subtle p-4 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
+                      <p className="text-base font-semibold text-ink mb-0.5">Surface Condition</p>
+                      <p className="text-[11px] text-muted mb-2">
+                        {disabled ? "Not applicable — no sidewalk present" : "How would you describe the condition of the walking surface?"}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {([
+                          { value: 1, label: "Even & well maintained" },
+                          { value: 2, label: "Mostly even, minor defects" },
+                          { value: 3, label: "Noticeably uneven or cracked" },
+                          { value: 4, label: "Severely damaged or broken" },
+                        ]).map((option) => (
+                          <button
+                            key={option.value}
+                            disabled={disabled}
+                            className={`flex-1 py-2 rounded-control text-xs font-semibold transition-all border ${!disabled && this.state.sceneLevel.surfaceCondition === option.value
+                                ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
+                                : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
+                              }`}
+                            onClick={() => {
+                              if (!disabled) {
+                                this.markSceneStepStart();
+                                this.setState({
+                                  sceneLevel: { ...this.state.sceneLevel, surfaceCondition: option.value },
+                                });
+                              }
+                            }}
+                          >
+                            <span className="block text-sm font-bold">{option.value}</span>
+                            <span className="block text-[10px] mt-0.5">{option.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
-            {/* Item 4 — Overall Accessibility */}
-            <div className="bg-surface-subtle p-6 rounded-card border border-line">
-              <p className="font-semibold text-ink mb-1">Overall Accessibility</p>
-              <p className="text-sm text-muted mb-4">Overall, how accessible is this sidewalk for people with mobility needs?</p>
-              <div className="flex gap-2">
-                {([
-                  { value: 1, label: "Not accessible" },
-                  { value: 2, label: "Slightly" },
-                  { value: 3, label: "Moderately" },
-                  { value: 4, label: "Mostly" },
-                  { value: 5, label: "Fully accessible" },
-                ]).map((option) => (
-                  <button
-                    key={option.value}
-                    className={`flex-1 py-3 rounded-control text-sm font-semibold transition-all border ${
-                      this.state.sceneLevel.overallAccessibility === option.value
-                        ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                        : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
-                    }`}
-                    onClick={() => {
-                      this.setState({
-                        sceneLevel: { ...this.state.sceneLevel, overallAccessibility: option.value },
-                      });
-                    }}
-                  >
-                    <span className="block text-lg font-bold">{option.value}</span>
-                    <span className="block text-xs mt-0.5">{option.label}</span>
-                  </button>
-                ))}
+                {/* Item 3 — Perceived Walkability */}
+                <div className="bg-surface-subtle p-4 rounded-card border border-line">
+                  <p className="text-base font-semibold text-ink mb-0.5">Perceived Walkability</p>
+                  <p className="text-[11px] text-muted mb-2">How easy would this stretch be to walk?</p>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { value: 1, label: "Very difficult" },
+                      { value: 2, label: "Difficult" },
+                      { value: 3, label: "Manageable" },
+                      { value: 4, label: "Easy" },
+                      { value: 5, label: "Very easy" },
+                    ]).map((option) => (
+                      <button
+                        key={option.value}
+                        className={`flex-1 py-2 rounded-control text-xs font-semibold transition-all border ${this.state.sceneLevel.walkability === option.value
+                            ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
+                            : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
+                          }`}
+                        onClick={() => {
+                          this.markSceneStepStart();
+                          this.setState({
+                            sceneLevel: { ...this.state.sceneLevel, walkability: option.value },
+                          });
+                        }}
+                      >
+                        <span className="block text-sm font-bold">{option.value}</span>
+                        <span className="block text-[10px] mt-0.5">{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Item 4 — Overall Accessibility */}
+                <div className="bg-surface-subtle p-4 rounded-card border border-line">
+                  <p className="text-base font-semibold text-ink mb-0.5">Overall Accessibility</p>
+                  <p className="text-[11px] text-muted mb-2">How accessible is this sidewalk for people with mobility needs?</p>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { value: 1, label: "Not accessible" },
+                      { value: 2, label: "Slightly" },
+                      { value: 3, label: "Moderately" },
+                      { value: 4, label: "Mostly" },
+                      { value: 5, label: "Fully accessible" },
+                    ]).map((option) => (
+                      <button
+                        key={option.value}
+                        className={`flex-1 py-2 rounded-control text-xs font-semibold transition-all border ${this.state.sceneLevel.overallAccessibility === option.value
+                            ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
+                            : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
+                          }`}
+                        onClick={() => {
+                          this.markSceneStepStart();
+                          this.setState({
+                            sceneLevel: { ...this.state.sceneLevel, overallAccessibility: option.value },
+                          });
+                        }}
+                      >
+                        <span className="block text-sm font-bold">{option.value}</span>
+                        <span className="block text-[10px] mt-0.5">{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+
+        </div>{/* end flex row */}
 
         {/* Error Message Display */}
         {this.state.error && (
@@ -720,131 +781,60 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       (element) => element.editable
     );
 
-    let manualBoxCount = 0;
-    let acceptedSuggestionCount = 0;
-    let modifiedSuggestionCount = 0;
-    let deletedSuggestionCount = 0;
-
-    // Model scorecard. Splitting confirmations into "accepted as-is" versus
-    // "had to be corrected" is the useful signal — a suggestion the user
-    // nudged into place was nearly right, one they redrew was not, and a flat
-    // acceptance rate hides the difference.
-    for (const obj of this.currentAnnotationData) {
-      if (obj.editable) {
-        manualBoxCount++;
-      } else {
-        if (obj.isRejected) {
-          deletedSuggestionCount++;
-        } else if (obj.selected) {
-          const init = obj.initialState;
-          let isModified = false;
-          if (init) {
-            // Compare labels loosely: "parked_car" and "Parked Car" are the
-            // same answer typed two ways, not a correction
-            const normalizedInit = init.comment ? init.comment.toLowerCase().replace(/_/g, " ") : "";
-            const normalizedObj = obj.comment ? obj.comment.toLowerCase().replace(/_/g, " ") : "";
-
-            if (normalizedInit !== normalizedObj) isModified = true;
-
-            // 3px of slack: clicking a box to confirm it often drags it a pixel
-            // or two, and counting that as "the model was wrong" would quietly
-            // understate how well it's doing
-            if (
-              Math.abs(init.mark.x - obj.mark.x) > 3 ||
-              Math.abs(init.mark.y - obj.mark.y) > 3 ||
-              Math.abs(init.mark.width - obj.mark.width) > 3 ||
-              Math.abs(init.mark.height - obj.mark.height) > 3
-            ) {
-              isModified = true;
-            }
-          }
-          if (isModified) {
-            modifiedSuggestionCount++;
-          } else {
-            acceptedSuggestionCount++;
-          }
-        }
-      }
-    }
-
-    let obstructionCount = 0;
-    let nonObstructionCount = 0;
-    for (const obj of this.currentAnnotationData) {
-      if (obj.isRejected) continue;
-      if (obj.obstructs === true) obstructionCount++;
-      else if (obj.obstructs === false) nonObstructionCount++;
-    }
-
-    const telemetryPayload = {
-      imageDurationMs: durationMs,
+    const counts = buildSubmissionCounts(this.currentAnnotationData);
+    const {
       manualBoxCount,
       acceptedSuggestionCount,
       modifiedSuggestionCount,
       deletedSuggestionCount,
+      notAnObjectSuggestionCount,
+      obstructionCount,
+      nonObstructionCount,
+    } = counts;
+
+    const submitTime = Date.now();
+    const stepTimings = computeStepTimings(this.mountTime, this.sceneStepStartMs, submitTime);
+    const suggestionConfidences = buildSuggestionConfidences(this.currentAnnotationData);
+    const hiddenConfidences = this.hiddenSuggestions.map((s) => ({
+      id: s.id,
+      confidence: s.confidence ?? null,
+      action: "hidden_below_tau",
+    }));
+    const geometryChanges = buildGeometryChanges(this.currentAnnotationData);
+    const labelChanges = buildLabelChanges(this.currentAnnotationData);
+
+    const telemetryPayload = {
+      imageDurationMs: durationMs,
+      ...stepTimings,
+      imagePositionInSession: this.props.currentAnnotationCount,
+      isReferenceImage: this.props.isReference ?? false,
+      manualBoxCount,
+      acceptedSuggestionCount,
+      modifiedSuggestionCount,
+      deletedSuggestionCount,
+      notAnObjectSuggestionCount,
       totalBoxesSubmitted: manualBoxCount + acceptedSuggestionCount + modifiedSuggestionCount,
       obstructionCount,
       nonObstructionCount,
+      tauThreshold: TAU_THRESHOLD,
+      hiddenSuggestionCount: this.hiddenSuggestions.length,
+      suggestionConfidences: [...suggestionConfidences, ...hiddenConfidences],
+      geometryChanges,
+      labelChanges,
     };
 
     this.setState({ error: null });
 
-    // Every suggestion needs an explicit yes or no. Silence isn't the same as
-    // "no" — an unanswered box means we don't know whether the model was right,
-    // which is exactly what this exercise is trying to find out.
-    const unconfirmedExistingAnnotations = this.currentAnnotationData.filter(
-      (element) => !element.editable && !element.selected && !element.isRejected
-    );
-
-    if (unconfirmedExistingAnnotations.length > 0) {
-      this.setState({
-        error: "Please click Yes or No on all existing annotations before submitting.",
-      });
-      return;
-    }
-
-    const objectsToValidate = [...newObjects, ...selectedObjects];
-    for (const object of objectsToValidate) {
-      if (!object.comment || object.comment === "---") {
-        this.setState({
-          error:
-            "You have an unlabeled object. Please select a label for all the boxes.",
-        });
-        return;
-      }
-    }
-
-    // Every box needs an explicit obstruction judgment
-    const allBoxes = [...this.currentAnnotationData.filter(e => !e.editable && !e.isRejected), ...newObjects];
-    for (const object of allBoxes) {
-      if (object.obstructs === undefined || object.obstructs === null) {
-        this.setState({
-          error: "Please indicate whether each object obstructs the sidewalk.",
-        });
-        return;
-      }
-      if (object.obstructs === true && (object.severity === undefined || object.severity === null)) {
-        this.setState({
-          error: "Please rate the severity of each obstruction (1–5).",
-        });
-        return;
-      }
-    }
-
     const { sceneLevel } = this.state;
-    if (!sceneLevel.sidewalkPresent) {
-      this.setState({ error: "Please indicate whether a sidewalk is present." });
-      return;
-    }
-    if (sceneLevel.sidewalkPresent !== "no" && sceneLevel.surfaceCondition === null) {
-      this.setState({ error: "Please rate the surface condition." });
-      return;
-    }
-    if (sceneLevel.walkability === null) {
-      this.setState({ error: "Please rate the walkability." });
-      return;
-    }
-    if (sceneLevel.overallAccessibility === null) {
-      this.setState({ error: "Please rate the overall accessibility." });
+    const validationResult = validateAnnotationForSubmit({
+      existingAnnotations: this.currentAnnotationData,
+      newObjects,
+      selectedObjects,
+      sceneLevel,
+    });
+
+    if (!validationResult.valid) {
+      this.setState({ error: validationResult.error });
       return;
     }
 
@@ -907,12 +897,14 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   public selectAnnotation = (data) => {
+    const labels = buildDisplayLabels(this.currentAnnotationData);
     for (const item of this.shapes) {
       const isSelected = item.getAnnotationData().id === data.id;
       const { x, y, width: boxW } = item.paint(
         this.canvas2D,
         this.calculateShapePosition,
-        isSelected
+        isSelected,
+        labels.get(item.getAnnotationData().id)
       );
 
       if (isSelected) {
@@ -966,13 +958,15 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       );
 
       let hasSelectedItem = false;
+      const labels = buildDisplayLabels(this.currentAnnotationData);
 
       for (const item of this.shapes) {
         const isSelected = item.getAnnotationData().id === this.selectedId;
         const { x, y, width: boxW } = item.paint(
           this.canvas2D,
           this.calculateShapePosition,
-          isSelected
+          isSelected,
+          labels.get(item.getAnnotationData().id)
         );
 
         if (isSelected) {
@@ -1036,21 +1030,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    */
   private syncAnnotationData = () => {
     const { annotationData } = this.props;
+    const { visible, hidden } = filterAnnotationsByTau(annotationData, TAU_THRESHOLD);
+    this.hiddenSuggestions = hidden;
 
     const refreshShapesWithAnnotationData = () => {
       this.selectedId = null;
-      this.shapes = annotationData.map(
+      this.shapes = visible.map(
         (eachAnnotationData) => {
           if (!eachAnnotationData.editable && !eachAnnotationData.initialState) {
-            // Snapshot the model's version before the user can touch it —
-            // submit() diffs against this to tell "accepted" from "corrected".
-            // The mark is copied, not referenced, since dragging mutates it.
             eachAnnotationData.initialState = {
               comment: eachAnnotationData.comment,
               mark: { ...eachAnnotationData.mark }
             };
-            // Start every suggestion unanswered, so the user has to actively
-            // rule on it rather than inheriting a default
             eachAnnotationData.selected = false;
             eachAnnotationData.isRejected = false;
           }
@@ -1064,7 +1055,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.onShapeChange();
     };
 
-    for (const annotationDataItem of annotationData) {
+    for (const annotationDataItem of visible) {
       const targetShape = this.shapes.find(
         (item) => item.getAnnotationData().id === annotationDataItem.id
       );
@@ -1147,6 +1138,24 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         this.setState({ selected: false, isRejected: true, obstructs: false, severity: null });
         this.onShapeChange();
       }
+    }
+
+    this.currentAnnotationState.onMouseDown(-1, -1);
+    this.currentAnnotationState.onMouseUp();
+  };
+
+  private onMarkNotAnObject = () => {
+    const selectTarget = this.shapes.findIndex(
+      (shape) => shape.getAnnotationData().id === this.selectedId
+    );
+
+    if (selectTarget >= 0) {
+      const data = this.shapes[selectTarget].getAnnotationData();
+      if (data.editable) return;
+      const patch = notAnObjectPatch();
+      Object.assign(data, patch);
+      this.setState({ selected: false, isRejected: true, obstructs: false, severity: null, inputComment: NOT_AN_OBJECT });
+      this.onShapeChange();
     }
 
     this.currentAnnotationState.onMouseDown(-1, -1);

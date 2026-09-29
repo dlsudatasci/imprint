@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useRef } from "react";
+import { NOT_AN_OBJECT, getSuggestionPanelMode } from "@/util/suggestionJudgment";
 
 const OBSTRUCTION_OPTIONS = [
   { value: "bench", label: "Bench" },
+  { value: "bicycle", label: "Bicycle" },
+  { value: "bollard", label: "Bollard" },
   { value: "car", label: "Car" },
   { value: "construction_materials", label: "Construction Materials" },
-  { value: "cracked_pavement", label: "Cracked Pavement" },
+  { value: "electrical_box", label: "Electrical Box" },
+  { value: "fire_hydrant", label: "Fire Hydrant" },
   { value: "garbage", label: "Garbage" },
   { value: "lamp_post", label: "Lamp Post" },
   { value: "motorcycle", label: "Motorcycle" },
+  { value: "movable_signage", label: "Movable Signage" },
   { value: "potted_plant", label: "Potted Plant" },
   { value: "street_sign", label: "Street Sign" },
   { value: "street_vendor_cart", label: "Street Vendor Cart" },
+  { value: "trash_bin", label: "Trash Bin" },
   { value: "tree", label: "Tree" },
   { value: "tricycle", label: "Tricycle" },
   { value: "utility_post", label: "Utility Post" },
@@ -31,6 +37,7 @@ export interface IDefaultInputSection {
   onDelete: () => void;
   onSelectObstruction: () => void;
   onUnselectObstruction: () => void;
+  onMarkNotAnObject: () => void;
   onSetSeverity: (severity: number) => void;
   onSetObstructs: (obstructs: boolean) => void;
   editable: boolean;
@@ -118,12 +125,83 @@ function SeverityPicker({ initialValue, onConfirm, onBack }: {
   );
 }
 
+function CategoryDropdown({
+  value,
+  isCustom,
+  setIsCustom,
+  onChange,
+  showNotAnObject,
+}: {
+  value: string;
+  isCustom: boolean;
+  setIsCustom: (v: boolean) => void;
+  onChange: (v: string) => void;
+  showNotAnObject: boolean;
+}) {
+  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedVal = e.target.value;
+    if (selectedVal === "OTHER_CUSTOM") {
+      setIsCustom(true);
+      onChange("");
+    } else if (selectedVal === NOT_AN_OBJECT) {
+      setIsCustom(false);
+      onChange(NOT_AN_OBJECT);
+    } else {
+      setIsCustom(false);
+      onChange(selectedVal);
+    }
+  };
+
+  if (isCustom) {
+    return (
+      <input
+        autoFocus
+        className="w-full bg-surface-subtle border border-line rounded-control px-3 py-2 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder-gray-400"
+        placeholder="Type label name..."
+        value={value === "---" ? "" : value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+
+  return (
+    <div className="relative w-full">
+      <select
+        className="w-full bg-surface-subtle border border-line rounded-control px-3 py-2 pr-8 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
+        value={value === NOT_AN_OBJECT ? NOT_AN_OBJECT : (value || "---")}
+        onChange={handleSelectChange}
+      >
+        <option value="---" disabled>
+          Select your option
+        </option>
+        {OBSTRUCTION_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+        <option value="OTHER_CUSTOM" style={{ fontWeight: "bold" }}>
+          Other...
+        </option>
+        {showNotAnObject && (
+          <option value={NOT_AN_OBJECT} style={{ fontWeight: "bold" }}>
+            Not an object (wrong box)
+          </option>
+        )}
+      </select>
+      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-muted">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+      </div>
+    </div>
+  );
+}
+
 const DefaultInputSection = ({
   value,
   onChange,
   onDelete,
   onSelectObstruction,
   onUnselectObstruction,
+  onMarkNotAnObject,
   onSetSeverity,
   editable,
   selected,
@@ -133,6 +211,11 @@ const DefaultInputSection = ({
   const [isCustom, setIsCustom] = useState(false);
 
   useEffect(() => {
+    if (value === NOT_AN_OBJECT) {
+      setIsCustom(false);
+      return;
+    }
+
     const exactMatch = OBSTRUCTION_OPTIONS.find((opt) => opt.value === value);
 
     if (exactMatch) {
@@ -172,11 +255,9 @@ const DefaultInputSection = ({
     }
   };
 
-  const showInputSection = editable || selected;
-  const deleteAction = editable ? onDelete : onUnselectObstruction;
+  const mode = getSuggestionPanelMode({ editable, selected, obstructs, severity, comment: value });
 
-  // Model suggestion just confirmed — needs severity before dismissing
-  if (!editable && selected && obstructs === true && (severity === null || severity === undefined)) {
+  if (mode === "severity") {
     return (
       <SeverityPicker
         initialValue={severity}
@@ -186,7 +267,38 @@ const DefaultInputSection = ({
     );
   }
 
-  if (showInputSection) {
+  if (mode === "not_an_object") {
+    return (
+      <div
+        className="bg-surface rounded-control shadow-2xl border border-line p-4 w-[260px] pointer-events-auto"
+        onMouseDown={(e) => e.stopPropagation()}
+        onMouseUp={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3">
+          <CategoryDropdown
+            value={value}
+            isCustom={isCustom}
+            setIsCustom={setIsCustom}
+            onChange={onChange}
+            showNotAnObject={true}
+          />
+        </div>
+        <p className="text-xs text-muted mb-3 text-center">
+          This box does not mark a real object. It will be left out of the data.
+        </p>
+        <button
+          className="w-full py-2 rounded-control font-bold text-sm transition-all shadow-sm border border-line bg-surface-subtle hover:bg-line text-body"
+          onClick={() => onMarkNotAnObject()}
+        >
+          Confirm: not an object
+        </button>
+      </div>
+    );
+  }
+
+  if (mode === "drawn" || mode === "confirmed") {
+    const deleteAction = editable ? onDelete : onUnselectObstruction;
+
     return (
       <div
         className="bg-surface rounded-control shadow-2xl border border-line p-2 w-[280px] pointer-events-auto"
@@ -265,13 +377,22 @@ const DefaultInputSection = ({
     );
   }
 
-  // Unjudged model suggestion — Yes / No
+  // "judge" mode — untouched suggestion or one answered No
   return (
     <div
       className="bg-surface rounded-control shadow-2xl border border-line p-4 w-[260px] pointer-events-auto"
       onMouseDown={(e) => e.stopPropagation()}
       onMouseUp={(e) => e.stopPropagation()}
     >
+      <div className="mb-3">
+        <CategoryDropdown
+          value={value}
+          isCustom={isCustom}
+          setIsCustom={setIsCustom}
+          onChange={onChange}
+          showNotAnObject={true}
+        />
+      </div>
       <p className="text-sm font-semibold text-ink mb-3 text-center">Does <span className="text-primary">{translateValue(value)}</span> obstruct the sidewalk?</p>
       <div className="flex gap-2">
         <button
@@ -292,6 +413,7 @@ const DefaultInputSection = ({
 };
 
 const translateValue = (value: string) => {
+  if (value === NOT_AN_OBJECT) return "Not an object";
   const standard = OBSTRUCTION_OPTIONS.find((opt) => opt.value === value);
   if (standard) return standard.label;
   if (value && value !== "---") return value;

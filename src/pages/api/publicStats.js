@@ -53,6 +53,7 @@ export default async function handler(req, res) {
       { $match: filter },
       { $project: { boxes: { $concatArrays: [{ $ifNull: ["$selectedObjectsID", []] }, { $ifNull: ["$newObjects", []] }] } } },
       { $unwind: "$boxes" },
+      { $match: { "boxes.comment": { $ne: "not_an_object" } } },
       { $match: { $or: [{ "boxes.comment": { $exists: true, $ne: "" } }, { "boxes.isObstruction": true }] } },
       { $group: { _id: { $ifNull: ["$boxes.comment", "Unknown"] }, count: { $sum: 1 } } },
       { $sort: { count: -1 } },
@@ -61,7 +62,10 @@ export default async function handler(req, res) {
 
     const [avgObs] = await db.collection("annotations").aggregate([
       { $match: filter },
-      { $project: { n: { $add: [{ $size: { $ifNull: ["$selectedObjectsID", []] } }, { $size: { $ifNull: ["$newObjects", []] } }] } } },
+      { $project: { n: { $add: [
+        { $size: { $filter: { input: { $ifNull: ["$selectedObjectsID", []] }, as: "b", cond: { $ne: ["$$b.comment", "not_an_object"] } } } },
+        { $size: { $filter: { input: { $ifNull: ["$newObjects", []] }, as: "b", cond: { $ne: ["$$b.comment", "not_an_object"] } } } },
+      ] } } },
       { $group: { _id: null, avg: { $avg: "$n" }, total: { $sum: "$n" } } },
     ]).toArray() || [null];
 

@@ -58,6 +58,25 @@ beforeEach(() => {
 });
 
 describe("POST /api/annotationAbandon", () => {
+  it("copies only annotators' answers onto reference images they finished (1 Oct 2026)", async () => {
+    const m = setupMocks({
+      activeSession: { _id: "session-1", userId: MOCK_USER_ID, status: "active", imageIDs: ["ref-oid"], completedImageIDs: [42] },
+    });
+    m.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: "ref-oid", imageID: 42 }]) });
+    const ann = { imageID: 42, source: "annotator", sceneLevel: {}, selectedObjectsID: [], newObjects: [{ id: "n1", obstructs: true, severity: 2 }] };
+    m.annotationsCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([ann]) });
+    m.imageCol.bulkWrite = vi.fn().mockResolvedValue({});
+
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+
+    expect(res._status).toBe(200);
+    const filter = m.annotationsCol.find.mock.calls[0][0];
+    expect(filter).toEqual({ userId: MOCK_USER_ID, imageID: { $in: [42] }, status: "completed", source: "annotator" });
+    const [op] = m.imageCol.bulkWrite.mock.calls[0][0];
+    expect(op.updateOne.update.$push.referenceGroundTruth).toMatchObject({ source: "annotator", newObjects: ann.newObjects });
+  });
+
   it("returns 200 when abandoning a session with completed images", async () => {
     setupMocks();
     const req = createMockReq({ body: {} });

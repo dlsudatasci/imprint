@@ -70,7 +70,8 @@ const handler = async (req, res) => {
                         if (completedRefIDs.length > 0) {
                             const refAnnotations = await db
                                 .collection("annotations")
-                                .find({ userId, imageID: { $in: completedRefIDs }, status: "completed" })
+                                // Only annotators' answers become reference answers (1 Oct 2026).
+                                .find({ userId, imageID: { $in: completedRefIDs }, status: "completed", source: "annotator" })
                                 .toArray();
 
                             const ops = refAnnotations.map((ann) => ({

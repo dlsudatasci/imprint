@@ -11,7 +11,7 @@ import handler from "./[id].js";
 
 const VALID_ID = "cccccccccccccccccccccccc";
 
-function setupMocks({ hasSession = true, annotation = undefined, image = undefined } = {}) {
+function setupMocks({ hasSession = true, annotation = undefined, image = undefined, role = "user" } = {}) {
   getServerSession.mockResolvedValue(
     hasSession ? mockAuthSession({ _id: MOCK_USER_ID }) : null
   );
@@ -40,9 +40,12 @@ function setupMocks({ hasSession = true, annotation = undefined, image = undefin
   const imageCol = createMockCollection({
     findOne: vi.fn().mockResolvedValue(image === undefined ? defaultImage : image),
   });
-  const db = createMockDb({ annotations: annotationsCol, Image: imageCol });
+  const usersCol = createMockCollection({
+    findOne: vi.fn().mockResolvedValue({ _id: MOCK_USER_ID, role }),
+  });
+  const db = createMockDb({ annotations: annotationsCol, Image: imageCol, users: usersCol });
   connectToDatabase.mockResolvedValue({ db });
-  return { db, annotationsCol, imageCol };
+  return { db, annotationsCol, imageCol, usersCol };
 }
 
 beforeEach(() => { vi.clearAllMocks(); });
@@ -96,6 +99,34 @@ describe("GET /api/getAnnotation/[id]", () => {
     const res = createMockRes();
     await handler(req, res);
     expect(res._status).toBe(404);
+  });
+
+  describe("suggestions on reference images", () => {
+    const suggestions = [{ id: "atlas-0", comment: "car" }];
+    const refImage = { imageID: 42, city: "makati", url: "/corpus-images/x.jpg", isReference: true, annotationList: suggestions };
+    const devImage = { imageID: 42, city: "makati", url: "/corpus-images/x.jpg", isReference: false, annotationList: suggestions };
+
+    it("keeps them for an annotator reopening a reference annotation (decided 1 Oct 2026)", async () => {
+      setupMocks({ image: refImage, role: "annotator" });
+      const res = createMockRes();
+      await handler(createMockReq({ method: "GET", query: { id: VALID_ID } }), res);
+      expect(res._json.detectedObjects).toEqual(suggestions);
+    });
+
+    it("keeps them for a contributor on a reference image", async () => {
+      setupMocks({ image: refImage, role: "user" });
+      const res = createMockRes();
+      await handler(createMockReq({ method: "GET", query: { id: VALID_ID } }), res);
+      expect(res._json.detectedObjects).toEqual(suggestions);
+    });
+
+    it("keeps them for an annotator on a model-dev image", async () => {
+      const mocks = setupMocks({ image: devImage, role: "annotator" });
+      const res = createMockRes();
+      await handler(createMockReq({ method: "GET", query: { id: VALID_ID } }), res);
+      expect(res._json.detectedObjects).toEqual(suggestions);
+      expect(mocks.usersCol.findOne).not.toHaveBeenCalled();
+    });
   });
 
   it("returns 405 for non-GET methods", async () => {

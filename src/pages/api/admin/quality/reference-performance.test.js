@@ -83,8 +83,8 @@ describe("GET /api/admin/quality/reference-performance", () => {
         referenceGroundTruth: [{
           userId: USER_B,
           source: "annotator",
-          sceneLevel: { sidewalkPresent: "yes", surfaceCondition: 2, walkability: 4, overallAccessibility: 3 },
-          selectedObjectsID: [{ mark: { x: 0, y: 0, width: 100, height: 100 }, obstructs: true, severity: 3 }],
+          sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+          selectedObjectsID: [{ mark: { x: 0, y: 0, width: 100, height: 100 }, comment: "tree", obstructs: true, severity: 3 }],
           newObjects: [],
         }],
       }],
@@ -93,8 +93,8 @@ describe("GET /api/admin/quality/reference-performance", () => {
         userId: USER_A,
         source: "contributor",
         status: "completed",
-        sceneLevel: { sidewalkPresent: "yes", surfaceCondition: 2, walkability: 4, overallAccessibility: 3 },
-        selectedObjectsID: [{ mark: { x: 0, y: 0, width: 100, height: 100 }, obstructs: true, severity: 4 }],
+        sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+        selectedObjectsID: [{ mark: { x: 0, y: 0, width: 100, height: 100 }, comment: "tree", obstructs: true, severity: 4 }],
         newObjects: [],
       }],
       userDocs: [{ _id: new ObjectId(USER_A), username: "alice" }],
@@ -108,7 +108,37 @@ describe("GET /api/admin/quality/reference-performance", () => {
     expect(res._json.contributors).toHaveLength(1);
     expect(res._json.contributors[0].avgF1).toBe(1);
     expect(res._json.contributors[0].avgObstructionAgreement).toBe(1);
-    expect(res._json.contributors[0].avgSeverityMAE).toBe(1);
+    // Annotators record neither severity nor scene answers (3 Oct 2026)
+    expect(res._json.contributors[0]).not.toHaveProperty("avgSeverityMAE");
+    expect(res._json.contributors[0]).not.toHaveProperty("avgSceneAgreement");
+  });
+
+  it("scores against the answer key merged from every annotator, not the first annotator only (2 Oct 2026)", async () => {
+    const b = (x, comment) => ({ mark: { x, y: 0, width: 100, height: 100 }, comment, obstructs: false });
+    const entry = (userId, boxes, submittedAt = "2026-10-02T00:00:00Z") => ({
+      userId, source: "annotator", submittedAt, sceneLevel: null, selectedObjectsID: [], newObjects: boxes,
+    });
+    setupAdminMocks({
+      refImages: [{
+        imageID: "img1",
+        referenceGroundTruth: [
+          entry("ann1", []), // the first annotator missed the bench
+          entry("ann2", [b(0, "bench")]),
+          entry("ann3", [b(5, "bench")]),
+          { userId: USER_B, source: "contributor", sceneLevel: null, selectedObjectsID: [], newObjects: [] },
+        ],
+      }],
+      annotations: [{
+        imageID: "img1", userId: USER_A, source: "contributor", status: "completed",
+        sceneLevel: null, selectedObjectsID: [], newObjects: [b(0, "bench")],
+      }],
+      userDocs: [{ _id: new ObjectId(USER_A), username: "alice" }],
+    });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(res._status).toBe(200);
+    expect(res._json.contributors[0].avgF1).toBe(1);
+    expect(res._json.answerKey).toEqual({ objects: 1, uncertain: 0, categoryTies: 0, annotatorsPerImage: { min: 3, max: 3 } });
   });
 
   it("returns 403 for non-admin", async () => {

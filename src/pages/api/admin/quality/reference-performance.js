@@ -1,14 +1,28 @@
 /**
- * GET /api/admin/quality/reference-performance — per-contributor accuracy
- * against annotator ground truth on reference images.
+ * GET /api/admin/quality/reference-performance — per-contributor accuracy on
+ * reference images, scored against the whole annotation team (Option B,
+ * decided 2 Oct 2026, pipeline_methodology.md 7l).
  *
- * Compares each contributor's annotations on reference images to the
- * annotator's ground truth using IoU-based box matching. Returns precision,
- * recall, F1, obstruction agreement, severity MAE, and scene agreement.
+ * For each reference image the annotators' answers (Image.referenceGroundTruth,
+ * one entry per annotator, the latest if there are several) are merged into one
+ * answer key: an object counts when more than half of the annotators boxed it.
+ * Contributors' boxes and categories are scored against that key (precision,
+ * recall, F1). Their obstruction, severity and scene answers are compared with
+ * each annotator in turn and averaged. Until 2 Oct 2026 this compared every
+ * contributor with the first annotator's answers only.
  */
 import { requireAdmin } from "@/util/adminAuth";
 import { ObjectId } from "mongodb";
-import { computeReferencePerformance } from "@/util/validators/qualityMetrics";
+import {
+  buildReferenceStandard,
+  computeReferencePerformanceAgainstTeam,
+  latestAnnotatorEntries,
+} from "@/util/validators/qualityMetrics";
+
+const mean = (values) => {
+  const v = values.filter((x) => x != null);
+  return v.length === 0 ? null : +(v.reduce((a, b) => a + b, 0) / v.length).toFixed(4);
+};
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -30,15 +44,22 @@ export default async function handler(req, res) {
 
   const refImageIDs = refImages.map((img) => img.imageID);
   if (refImageIDs.length === 0) {
-    return res.status(200).json({ contributors: [], referenceImageCount: 0 });
+    return res.status(200).json({ contributors: [], referenceImageCount: 0, imagesWithGroundTruth: 0, answerKey: null });
   }
 
-  const groundTruthByImage = new Map();
+  // Answer key per image, built once from every annotator who annotated it.
+  const teamByImage = new Map();
+  let objects = 0, uncertain = 0, ties = 0, minAnnotators = Infinity, maxAnnotators = 0;
   for (const img of refImages) {
-    const annotatorEntry = img.referenceGroundTruth.find((e) => e.source === "annotator");
-    if (annotatorEntry) {
-      groundTruthByImage.set(img.imageID, annotatorEntry);
-    }
+    const entries = latestAnnotatorEntries(img.referenceGroundTruth);
+    if (entries.length === 0) continue;
+    const standard = buildReferenceStandard(entries);
+    teamByImage.set(img.imageID, { entries, standard });
+    objects += standard.objects.length;
+    uncertain += standard.uncertain.length;
+    ties += standard.ties;
+    minAnnotators = Math.min(minAnnotators, entries.length);
+    maxAnnotators = Math.max(maxAnnotators, entries.length);
   }
 
   const contributorAnnotations = await db
@@ -68,60 +89,38 @@ export default async function handler(req, res) {
   for (const u of userDocs) usernameMap.set(String(u._id), u.username);
 
   const contributors = [];
-
   for (const [userId, annotations] of byContributor) {
-    const imageScores = [];
-
+    const scores = [];
     for (const ann of annotations) {
-      const gt = groundTruthByImage.get(ann.imageID);
-      if (!gt) continue;
-
-      const score = computeReferencePerformance(ann, gt);
-      imageScores.push({ imageID: ann.imageID, ...score });
+      const team = teamByImage.get(ann.imageID);
+      if (!team) continue;
+      scores.push(computeReferencePerformanceAgainstTeam(ann, team.entries, team.standard));
     }
-
-    if (imageScores.length === 0) continue;
-
-    const avgF1 = imageScores.reduce((s, r) => s + r.f1, 0) / imageScores.length;
-    const avgPrecision = imageScores.reduce((s, r) => s + r.precision, 0) / imageScores.length;
-    const avgRecall = imageScores.reduce((s, r) => s + r.recall, 0) / imageScores.length;
-
-    const obRates = imageScores
-      .map((r) => r.obstructionAgreement.rate)
-      .filter((r) => r !== null);
-    const avgObstructionAgreement =
-      obRates.length > 0 ? obRates.reduce((a, b) => a + b, 0) / obRates.length : null;
-
-    const sevMAEs = imageScores
-      .map((r) => r.severityMAE.mae)
-      .filter((m) => m !== null);
-    const avgSeverityMAE =
-      sevMAEs.length > 0 ? sevMAEs.reduce((a, b) => a + b, 0) / sevMAEs.length : null;
-
-    const sceneRates = imageScores
-      .map((r) => r.sceneLevelAgreement.overallRate)
-      .filter((r) => r !== null);
-    const avgSceneAgreement =
-      sceneRates.length > 0 ? sceneRates.reduce((a, b) => a + b, 0) / sceneRates.length : null;
+    if (scores.length === 0) continue;
 
     contributors.push({
       userId,
-      username: usernameMap.get(userId) || userId,
-      referenceImagesScored: imageScores.length,
-      avgPrecision: +avgPrecision.toFixed(4),
-      avgRecall: +avgRecall.toFixed(4),
-      avgF1: +avgF1.toFixed(4),
-      avgObstructionAgreement: avgObstructionAgreement !== null ? +avgObstructionAgreement.toFixed(4) : null,
-      avgSeverityMAE: avgSeverityMAE !== null ? +avgSeverityMAE.toFixed(4) : null,
-      avgSceneAgreement: avgSceneAgreement !== null ? +avgSceneAgreement.toFixed(4) : null,
+      username: usernameMap.get(String(userId)) || userId,
+      referenceImagesScored: scores.length,
+      avgPrecision: mean(scores.map((s) => s.precision)),
+      avgRecall: mean(scores.map((s) => s.recall)),
+      avgF1: mean(scores.map((s) => s.f1)),
+      avgObstructionAgreement: mean(scores.map((s) => s.obstructionAgreement)),
+      boxesOnUncertainObjects: scores.reduce((n, s) => n + s.ignoredOnUncertain, 0),
     });
   }
 
-  contributors.sort((a, b) => b.avgF1 - a.avgF1);
+  contributors.sort((a, b) => (b.avgF1 ?? -1) - (a.avgF1 ?? -1));
 
   return res.status(200).json({
     contributors,
     referenceImageCount: refImageIDs.length,
-    imagesWithGroundTruth: groundTruthByImage.size,
+    imagesWithGroundTruth: teamByImage.size,
+    answerKey: {
+      objects,
+      uncertain,
+      categoryTies: ties,
+      annotatorsPerImage: teamByImage.size ? { min: minAnnotators, max: maxAnnotators } : null,
+    },
   });
 }

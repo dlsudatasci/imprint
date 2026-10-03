@@ -9,6 +9,10 @@ import {
   computeReferencePerformance,
   detectDegenerateFlags,
   computePairwiseAgreement,
+  buildReferenceStandard,
+  scoreAgainstStandard,
+  computeReferencePerformanceAgainstTeam,
+  latestAnnotatorEntries,
 } from "./qualityMetrics";
 
 function box(x, y, w, h, extra = {}) {
@@ -165,18 +169,41 @@ describe("computeSceneLevelAgreement", () => {
   });
 
   it("computes perfect agreement", () => {
-    const scene = { sidewalkPresent: "yes", surfaceCondition: 2, walkability: 4, overallAccessibility: 3 };
+    const scene = { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 };
     const result = computeSceneLevelAgreement(scene, scene);
     expect(result.overallRate).toBe(1);
   });
 
   it("computes partial agreement", () => {
-    const a = { sidewalkPresent: "yes", surfaceCondition: 2, walkability: 4, overallAccessibility: 3 };
-    const b = { sidewalkPresent: "yes", surfaceCondition: 3, walkability: 4, overallAccessibility: 5 };
+    const a = { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 };
+    const b = { sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 3, overallAccessibility: 5 };
     const result = computeSceneLevelAgreement(a, b);
     expect(result.overallRate).toBe(0.5);
-    expect(result.fields.sidewalkPresent.match).toBe(true);
+    expect(result.fields.sidewalkWidth.match).toBe(true);
     expect(result.fields.surfaceCondition.match).toBe(false);
+  });
+
+  it("compares the sidewalk width answer (2 Oct 2026)", () => {
+    const a = { sidewalkWidth: "one_person", surfaceCondition: 2, walkability: 1, overallAccessibility: 1 };
+    const b = { ...a, sidewalkWidth: "three_or_more" };
+    const result = computeSceneLevelAgreement(a, b);
+    expect(result.fields.sidewalkWidth).toEqual({ a: "one_person", b: "three_or_more", match: false });
+    expect(result.overallRate).toBe(0.75);
+  });
+
+  it("counts None against a sidewalk once, and skips the questions only one of them answered", () => {
+    const none = { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null };
+    const narrow = { sidewalkWidth: "one_person", surfaceCondition: 2, walkability: 1, overallAccessibility: 1 };
+    const result = computeSceneLevelAgreement(none, narrow);
+    expect(Object.keys(result.fields)).toEqual(["sidewalkWidth"]);
+    expect(result.overallRate).toBe(0);
+  });
+
+  it("treats two None answers as full agreement", () => {
+    const none = { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null };
+    const result = computeSceneLevelAgreement(none, { ...none });
+    expect(result.overallRate).toBe(1);
+    expect(Object.keys(result.fields)).toEqual(["sidewalkWidth"]);
   });
 });
 
@@ -185,12 +212,12 @@ describe("computeReferencePerformance", () => {
     const contributor = {
       selectedObjectsID: [box(0, 0, 100, 100, { obstructs: true, severity: 3, comment: "tree" })],
       newObjects: [],
-      sceneLevel: { sidewalkPresent: "yes", surfaceCondition: 2, walkability: 4, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
     };
     const groundTruth = {
       selectedObjectsID: [box(0, 0, 100, 100, { obstructs: true, severity: 4, comment: "tree" })],
       newObjects: [],
-      sceneLevel: { sidewalkPresent: "yes", surfaceCondition: 2, walkability: 4, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
     };
 
     const result = computeReferencePerformance(contributor, groundTruth);
@@ -219,7 +246,7 @@ describe("detectDegenerateFlags", () => {
     return Array.from({ length: count }, () => ({
       selectedObjectsID: [{ obstructs: true, severity: 3, ...boxOverrides }],
       newObjects: [],
-      sceneLevel: { sidewalkPresent: "yes", surfaceCondition: 2, walkability: 4, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
     }));
   }
 
@@ -248,6 +275,17 @@ describe("detectDegenerateFlags", () => {
     expect(flags.some((f) => f.type === "identical_scene_ratings")).toBe(true);
   });
 
+  it("does not flag identical scene ratings when only the sidewalk width varies (2 Oct 2026)", () => {
+    const widths = ["one_person", "two_people", "three_or_more"];
+    const annotations = makeAnnotations(12).map((a, i) => ({
+      ...a,
+      selectedObjectsID: [{ obstructs: i % 2 === 0, severity: (i % 5) + 1 }],
+      sceneLevel: { ...a.sceneLevel, sidewalkWidth: widths[i % 3] },
+    }));
+    const flags = detectDegenerateFlags(annotations, []);
+    expect(flags.some((f) => f.type === "identical_scene_ratings")).toBe(false);
+  });
+
   it("flags impossibly fast submissions", () => {
     const events = Array.from({ length: 12 }, () => ({ imageDurationMs: 2000 }));
     const flags = detectDegenerateFlags(makeAnnotations(12), events);
@@ -259,10 +297,10 @@ describe("detectDegenerateFlags", () => {
       selectedObjectsID: [{ obstructs: i % 2 === 0, severity: (i % 5) + 1 }],
       newObjects: [],
       sceneLevel: {
-        sidewalkPresent: i % 3 === 0 ? "no" : "yes",
-        surfaceCondition: i % 3 === 0 ? null : (i % 4) + 1,
-        walkability: (i % 5) + 1,
-        overallAccessibility: (i % 5) + 1,
+        sidewalkWidth: i % 3 === 0 ? "no_sidewalk" : "two_people",
+        surfaceCondition: i % 3 === 0 ? null : (i % 3) + 1,
+        walkability: i % 3 === 0 ? null : (i % 2) + 1,
+        overallAccessibility: i % 3 === 0 ? null : (i % 2) + 2,
       },
     }));
     const events = Array.from({ length: 12 }, () => ({ imageDurationMs: 30000 }));
@@ -306,10 +344,10 @@ describe("not-an-object exclusion", () => {
       ],
       newObjects: [],
       sceneLevel: {
-        sidewalkPresent: i % 3 === 0 ? "no" : "yes",
-        surfaceCondition: i % 3 === 0 ? null : (i % 4) + 1,
-        walkability: (i % 5) + 1,
-        overallAccessibility: (i % 5) + 1,
+        sidewalkWidth: i % 3 === 0 ? "no_sidewalk" : "two_people",
+        surfaceCondition: i % 3 === 0 ? null : (i % 3) + 1,
+        walkability: i % 3 === 0 ? null : (i % 2) + 1,
+        overallAccessibility: i % 3 === 0 ? null : (i % 2) + 2,
       },
     }));
     const flags = detectDegenerateFlags(annotations, []);
@@ -340,16 +378,147 @@ describe("computePairwiseAgreement", () => {
     const a = {
       selectedObjectsID: [box(0, 0, 100, 100, { obstructs: true })],
       newObjects: [],
-      sceneLevel: { sidewalkPresent: "yes", surfaceCondition: 2, walkability: 4, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
     };
     const b = {
       selectedObjectsID: [box(5, 5, 100, 100, { obstructs: true })],
       newObjects: [],
-      sceneLevel: { sidewalkPresent: "yes", surfaceCondition: 2, walkability: 4, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
     };
     const result = computePairwiseAgreement(a, b);
     expect(result.f1).toBeGreaterThan(0);
     expect(result.obstructionAgreement.rate).toBe(1);
     expect(result.sceneLevelAgreement.overallRate).toBe(1);
+  });
+});
+
+/* Option B answer key (2 Oct 2026, pipeline_methodology.md 7l). */
+const ann = (boxes, sceneLevel = null) => ({ selectedObjectsID: [], newObjects: boxes, sceneLevel });
+const tree = (x, extra = {}) => box(x, 0, 100, 100, { comment: "tree", obstructs: false, ...extra });
+const car = (x, extra = {}) => box(x, 0, 100, 100, { comment: "car", obstructs: false, ...extra });
+
+describe("buildReferenceStandard", () => {
+  it("keeps an object boxed by more than half of the annotators, with median edges and majority category", () => {
+    const std = buildReferenceStandard([
+      ann([box(0, 0, 100, 100, { comment: "tree" })]),
+      ann([box(10, 0, 100, 100, { comment: "tree" })]),
+      ann([box(20, 0, 100, 100, { comment: "car" })]),
+    ]);
+    expect(std.annotatorCount).toBe(3);
+    expect(std.objects).toHaveLength(1);
+    expect(std.objects[0]).toEqual({ mark: { x: 10, y: 0, width: 100, height: 100 }, comment: "tree", votes: 3 });
+    expect(std.uncertain).toHaveLength(0);
+  });
+
+  it("sets aside an object boxed by half or fewer as uncertain", () => {
+    const std = buildReferenceStandard([ann([tree(0)]), ann([tree(5)]), ann([]), ann([])]);
+    expect(std.objects).toHaveLength(0);
+    expect(std.uncertain).toEqual([expect.objectContaining({ votes: 2, reason: "minority" })]);
+  });
+
+  it("sets aside a majority object whose category is tied, and counts the tie", () => {
+    const std = buildReferenceStandard([ann([tree(0)]), ann([car(0)]), ann([tree(0)]), ann([car(0)])]);
+    expect(std.objects).toHaveLength(0);
+    expect(std.ties).toBe(1);
+    expect(std.uncertain[0].reason).toBe("category_tie");
+  });
+
+  it("takes at most one box from each annotator per object", () => {
+    // Annotator 1 drew two overlapping boxes. Only one can join annotator 2's object.
+    const std = buildReferenceStandard([ann([tree(0), tree(10)]), ann([tree(5)])]);
+    expect(std.objects).toHaveLength(1);
+    expect(std.objects[0].votes).toBe(2);
+    expect(std.uncertain).toEqual([expect.objectContaining({ votes: 1, reason: "minority" })]);
+  });
+
+  it("leaves out Not an object boxes", () => {
+    const std = buildReferenceStandard([
+      ann([box(0, 0, 100, 100, { comment: "not_an_object", obstructs: false })]),
+      ann([box(0, 0, 100, 100, { comment: "not_an_object", obstructs: false })]),
+    ]);
+    expect(std.objects).toHaveLength(0);
+    expect(std.uncertain).toHaveLength(0);
+  });
+
+  it("treats spaces and underscores in categories alike", () => {
+    const std = buildReferenceStandard([
+      ann([box(0, 0, 100, 100, { comment: "lamp post" })]),
+      ann([box(0, 0, 100, 100, { comment: "lamp_post" })]),
+    ]);
+    expect(std.objects[0].comment).toBe("lamp_post");
+  });
+});
+
+describe("scoreAgainstStandard", () => {
+  const std = buildReferenceStandard([
+    ann([tree(0), car(300), tree(600)]),
+    ann([tree(0), car(300)]),
+    ann([tree(5), car(305)]),
+  ]); // tree(0) and car(300) are in the key, tree(600) is uncertain
+
+  it("counts a box as correct only when it overlaps and has the same category", () => {
+    const r = scoreAgainstStandard(ann([tree(0), tree(300)]), std);
+    expect(r).toMatchObject({ truePositives: 1, falsePositives: 1, falseNegatives: 1, ignoredOnUncertain: 0 });
+    expect(r.precision).toBe(0.5);
+    expect(r.recall).toBe(0.5);
+  });
+
+  it("neither rewards nor penalizes a box on an uncertain object", () => {
+    const r = scoreAgainstStandard(ann([tree(0), car(300), tree(600)]), std);
+    expect(r).toMatchObject({ truePositives: 2, falsePositives: 0, falseNegatives: 0, ignoredOnUncertain: 1 });
+    expect(r.f1).toBe(1);
+  });
+
+  it("credits a contributor who boxed what most annotators boxed but the first one missed", () => {
+    const key = buildReferenceStandard([ann([]), ann([tree(0)]), ann([tree(0)])]);
+    expect(scoreAgainstStandard(ann([tree(0)]), key).f1).toBe(1);
+  });
+
+  it("returns null scores when neither side has anything to score", () => {
+    const empty = buildReferenceStandard([ann([]), ann([])]);
+    const r = scoreAgainstStandard(ann([]), empty);
+    expect(r).toMatchObject({ precision: null, recall: null, f1: null });
+  });
+});
+
+describe("computeReferencePerformanceAgainstTeam", () => {
+  const scene = (w) => ({ sidewalkWidth: "two_people", surfaceCondition: 1, walkability: w, overallAccessibility: 1 });
+
+  it("averages obstruction agreement across annotators, pairing objects regardless of category", () => {
+    const team = [
+      ann([tree(0, { obstructs: true, severity: 3 })], scene(1)),
+      ann([tree(0, { obstructs: false })], scene(2)),
+    ];
+    const contributor = ann([car(0, { obstructs: true, severity: 5 })], scene(1));
+    const r = computeReferencePerformanceAgainstTeam(contributor, team);
+    expect(r.obstructionAgreement).toBe(0.5); // agrees with the first annotator, not the second
+    expect(r.f1).toBe(0); // the category does not match the answer key
+    expect(r.annotatorCount).toBe(2);
+  });
+
+  it("returns no severity or scene comparison, since annotators record neither (3 Oct 2026)", () => {
+    // Annotator entries as stored from 3 Oct 2026: sceneLevel null, severity null
+    const team = [
+      ann([tree(0, { obstructs: true, severity: null })], null),
+      ann([tree(0, { obstructs: true, severity: null })], null),
+    ];
+    const contributor = ann([tree(0, { obstructs: true, severity: 4 })], scene(1));
+    const r = computeReferencePerformanceAgainstTeam(contributor, team);
+    expect(r.obstructionAgreement).toBe(1);
+    expect(r).not.toHaveProperty("severityMAE");
+    expect(r).not.toHaveProperty("sceneAgreement");
+    expect(r.f1).toBe(1);
+  });
+});
+
+describe("latestAnnotatorEntries", () => {
+  it("keeps one entry per annotator, the latest, and ignores contributor entries", () => {
+    const rows = [
+      { userId: "a", source: "annotator", submittedAt: "2026-10-01T00:00:00Z", tag: "old" },
+      { userId: "a", source: "annotator", submittedAt: "2026-10-02T00:00:00Z", tag: "new" },
+      { userId: "b", source: "annotator", submittedAt: "2026-10-01T00:00:00Z", tag: "b" },
+      { userId: "c", source: "contributor", submittedAt: "2026-10-01T00:00:00Z", tag: "c" },
+    ];
+    expect(latestAnnotatorEntries(rows).map((e) => e.tag).sort()).toEqual(["b", "new"]);
   });
 });

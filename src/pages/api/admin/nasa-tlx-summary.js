@@ -2,7 +2,9 @@
  * GET /api/admin/nasa-tlx-summary — aggregated NASA-TLX workload scores.
  *
  * Returns submitted/dismissed counts, dismissal rate, and average score
- * for each of the six NASA-TLX scales across all submissions.
+ * for each of the six NASA-TLX scales across all contributor submissions.
+ * Rows written by annotator accounts are left out, since annotators are not
+ * prompted (decided 3 Oct 2026) and any existing rows predate that.
  */
 import { requireAdmin } from "@/util/adminAuth";
 import { NASA_TLX_SCALES } from "@/util/validators/nasaTlx";
@@ -17,12 +19,21 @@ export default async function handler(req, res) {
   if (!auth) return;
   const { db } = auth;
 
+  // nasa_tlx.userId is written from the session id, so match both the string
+  // and the ObjectId form, as accounts.js does
+  const annotators = await db
+    .collection("users")
+    .find({ role: "annotator" }, { projection: { _id: 1 } })
+    .toArray();
+  const annotatorIds = annotators.flatMap(({ _id }) => [_id.toString(), _id]);
+  const notAnnotator = { userId: { $nin: annotatorIds } };
+
   const [totalSubmitted, totalDismissed, scaleAverages] = await Promise.all([
-    db.collection("nasa_tlx").countDocuments({ dismissed: false }),
-    db.collection("nasa_tlx").countDocuments({ dismissed: true }),
+    db.collection("nasa_tlx").countDocuments({ dismissed: false, ...notAnnotator }),
+    db.collection("nasa_tlx").countDocuments({ dismissed: true, ...notAnnotator }),
 
     db.collection("nasa_tlx").aggregate([
-      { $match: { dismissed: false } },
+      { $match: { dismissed: false, ...notAnnotator } },
       {
         $group: {
           _id: null,

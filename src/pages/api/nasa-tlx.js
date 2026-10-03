@@ -3,12 +3,18 @@
  *
  * Accepts either a full submission (6 scales, 0-100 each) or a dismissal.
  * Upserts to the nasa_tlx collection keyed on userId + sessionId.
+ * Annotators get 403 and nothing is saved (decided 3 Oct 2026).
  */
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
+import { ObjectId } from "mongodb";
 import { validateNasaTlxPayload } from "@/util/validators/nasaTlx";
+import {
+  takesContributorInstruments,
+  CONTRIBUTOR_ONLY_MESSAGE,
+} from "@/util/validators/contributorInstruments";
 
 const handler = async (req, res) => {
   if (req.method !== "POST") {
@@ -21,13 +27,31 @@ const handler = async (req, res) => {
     return res.status(401).json({ message: "Unauthorized: Please log in." });
   }
 
+  const { db } = await connectToDatabase();
+  const userId = session.user._id;
+
+  // Read the role from the database, not the session, since an admin can
+  // change it after sign-in
+  let role;
+  try {
+    const userRecord = await db
+      .collection("users")
+      .findOne({ _id: new ObjectId(userId) }, { projection: { role: 1 } });
+    role = userRecord?.role;
+  } catch (error) {
+    console.error("NASA-TLX role lookup error:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+
+  if (!takesContributorInstruments(role)) {
+    return res.status(403).json({ message: CONTRIBUTOR_ONLY_MESSAGE });
+  }
+
   const result = validateNasaTlxPayload(req.body);
   if (!result.valid) {
     return res.status(422).json({ message: result.reason });
   }
 
-  const { db } = await connectToDatabase();
-  const userId = session.user._id;
   const { sessionId, sessionNumber, dismissed, responses } = result.data;
   const now = new Date();
 

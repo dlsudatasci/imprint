@@ -17,6 +17,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import handler from "./exit-survey.js";
+import { CONTRIBUTOR_ONLY_MESSAGE } from "@/util/validators/contributorInstruments";
 
 function validBody() {
   return {
@@ -34,7 +35,7 @@ function validBody() {
   };
 }
 
-function setupMocks({ hasSession = true, existingSurvey = null } = {}) {
+function setupMocks({ hasSession = true, existingSurvey = null, userRole = "user" } = {}) {
   getServerSession.mockResolvedValue(
     hasSession ? mockAuthSession() : null
   );
@@ -42,9 +43,12 @@ function setupMocks({ hasSession = true, existingSurvey = null } = {}) {
   const exitSurveysCol = createMockCollection({
     findOne: vi.fn().mockResolvedValue(existingSurvey),
   });
-  const db = createMockDb({ exit_surveys: exitSurveysCol });
+  const usersCol = createMockCollection({
+    findOne: vi.fn().mockResolvedValue({ role: userRole }),
+  });
+  const db = createMockDb({ exit_surveys: exitSurveysCol, users: usersCol });
   connectToDatabase.mockResolvedValue({ db });
-  return { db, exitSurveysCol };
+  return { db, exitSurveysCol, usersCol };
 }
 
 beforeEach(() => {
@@ -160,5 +164,54 @@ describe("Method guard", () => {
 
     expect(res._status).toBe(405);
     expect(res._headers.Allow).toEqual(["GET", "POST"]);
+  });
+});
+
+// Annotators cannot open or submit the exit survey (3 Oct 2026)
+describe("annotators", () => {
+  it("refuses GET with 403 without reading exit_surveys", async () => {
+    const { exitSurveysCol } = setupMocks({ userRole: "annotator" });
+    const res = createMockRes();
+
+    await handler(createMockReq({ method: "GET" }), res);
+
+    expect(res._status).toBe(403);
+    expect(res._json.message).toBe(CONTRIBUTOR_ONLY_MESSAGE);
+    expect(exitSurveysCol.findOne).not.toHaveBeenCalled();
+  });
+
+  it("refuses POST with 403, writes nothing and logs no telemetry", async () => {
+    const { exitSurveysCol } = setupMocks({ userRole: "annotator" });
+    const res = createMockRes();
+
+    await handler(createMockReq({ method: "POST", body: validBody() }), res);
+
+    expect(res._status).toBe(403);
+    expect(res._json.message).toBe(CONTRIBUTOR_ONLY_MESSAGE);
+    expect(exitSurveysCol.updateOne).not.toHaveBeenCalled();
+    expect(logTelemetryEvent).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 when the role lookup throws", async () => {
+    const { usersCol, exitSurveysCol } = setupMocks();
+    usersCol.findOne.mockRejectedValue(new Error("db down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = createMockRes();
+
+    await handler(createMockReq({ method: "GET" }), res);
+    errorSpy.mockRestore();
+
+    expect(res._status).toBe(500);
+    expect(exitSurveysCol.findOne).not.toHaveBeenCalled();
+  });
+
+  it("still answers PUT with 405 before reading the role", async () => {
+    const { usersCol } = setupMocks({ userRole: "annotator" });
+    const res = createMockRes();
+
+    await handler(createMockReq({ method: "PUT" }), res);
+
+    expect(res._status).toBe(405);
+    expect(usersCol.findOne).not.toHaveBeenCalled();
   });
 });

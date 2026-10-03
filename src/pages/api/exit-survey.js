@@ -3,12 +3,18 @@
  *
  * GET returns the existing survey for the authenticated user (or null).
  * POST validates and upserts the survey, logging EXIT_SURVEY_SUBMITTED.
+ * Annotators get 403 for both methods (decided 3 Oct 2026).
  */
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
+import { ObjectId } from "mongodb";
 import { validateExitSurveyPayload } from "@/util/validators/exitSurvey";
+import {
+  takesContributorInstruments,
+  CONTRIBUTOR_ONLY_MESSAGE,
+} from "@/util/validators/contributorInstruments";
 
 const handler = async (req, res) => {
   if (req.method !== "GET" && req.method !== "POST") {
@@ -23,6 +29,23 @@ const handler = async (req, res) => {
 
   const { db } = await connectToDatabase();
   const userId = session.user._id;
+
+  // Read the role from the database, not the session, since an admin can
+  // change it after sign-in
+  let role;
+  try {
+    const userRecord = await db
+      .collection("users")
+      .findOne({ _id: new ObjectId(userId) }, { projection: { role: 1 } });
+    role = userRecord?.role;
+  } catch (error) {
+    console.error("Exit survey role lookup error:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+
+  if (!takesContributorInstruments(role)) {
+    return res.status(403).json({ message: CONTRIBUTOR_ONLY_MESSAGE });
+  }
 
   if (req.method === "GET") {
     try {

@@ -6,6 +6,11 @@ import Page from "@/ui/page";
 import { Button, H1, H2, Card, Container } from "@/ui";
 import ContentSkeleton from "@/features/layout/contentSkeleton";
 import { EXIT_SURVEY_QUESTIONS, QUESTION_KEYS } from "@/util/validators/exitSurvey";
+import { takesContributorInstruments } from "@/util/validators/contributorInstruments";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
+import { connectToDatabase } from "@/util/mongodb";
+import { ObjectId } from "mongodb";
 
 export default function ExitSurveyPage() {
   const { status } = useSession();
@@ -175,4 +180,26 @@ export default function ExitSurveyPage() {
       </Container>
     </Page>
   );
+}
+
+// Annotators cannot take the exit survey (decided 3 Oct 2026), so they are
+// sent back to /contribute. The role is read from the database, since an
+// admin can change it after sign-in. /api/exit-survey refuses them as well.
+export async function getServerSideProps(context) {
+  const session = await getServerSession(context.req, context.res, authOptions);
+  if (session?.user?._id) {
+    try {
+      const { db } = await connectToDatabase();
+      const user = await db
+        .collection("users")
+        .findOne({ _id: new ObjectId(session.user._id) }, { projection: { role: 1 } });
+      if (!takesContributorInstruments(user?.role)) {
+        return { redirect: { destination: "/contribute", permanent: false } };
+      }
+    } catch (error) {
+      // Render the page as before. The API still refuses an annotator.
+      console.error("exit-survey getServerSideProps: role lookup failed:", error);
+    }
+  }
+  return { props: { session: session ?? null } };
 }

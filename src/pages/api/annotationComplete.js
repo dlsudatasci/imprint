@@ -5,6 +5,7 @@ import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
 import { sanitizeReportedTotal } from "@/util/validators/annotationComplete";
 import { shouldShowNasaTlx } from "@/util/validators/nasaTlx";
+import { takesContributorInstruments } from "@/util/validators/contributorInstruments";
 
 /**
  * POST /api/annotationComplete — called when a contributor finishes a full
@@ -69,8 +70,11 @@ const handler = async (req, res) => {
                 completedAt: date,
             });
 
-            // For reference images: append the contributor's judgments to the
-            // Image record so inter-rater agreement can be computed later.
+            // For reference images: append an annotator's judgments to the
+            // Image record (referenceGroundTruth), the annotation team's answers
+            // that contributors are later scored against (Chapter 5). Only
+            // annotators' answers are copied (1 Oct 2026). A contributor's
+            // answers stay in the annotations collection like any other.
             const sessionImageIDs = completedSession?.imageIDs || [];
             if (sessionImageIDs.length > 0) {
                 const refImages = await db
@@ -85,7 +89,7 @@ const handler = async (req, res) => {
                     const refImageIDs = refImages.map((img) => img.imageID);
                     const refAnnotations = await db
                         .collection("annotations")
-                        .find({ userId, imageID: { $in: refImageIDs } })
+                        .find({ userId, imageID: { $in: refImageIDs }, source: "annotator" })
                         .toArray();
 
                     const ops = refAnnotations.map((ann) => ({
@@ -148,12 +152,29 @@ const handler = async (req, res) => {
                 imagesCompleted: total,
             });
 
+            // Annotators are not prompted for the NASA-TLX (decided 3 Oct
+            // 2026). The session is already committed at this point, so a
+            // failed role lookup must not turn it into a 500. It skips the
+            // prompt instead: a missed questionnaire costs one response, while
+            // a prompt shown to an annotator would mix their answers into the
+            // contributor workload data.
+            let takesInstruments = false;
+            try {
+                const userRecord = await db.collection("users").findOne(
+                    { _id: new ObjectId(userId) },
+                    { projection: { role: 1 } }
+                );
+                takesInstruments = takesContributorInstruments(userRecord?.role);
+            } catch (roleError) {
+                console.error("Role lookup failed, skipping NASA-TLX prompt:", roleError);
+            }
+
             return res.status(200).json({
                 message: "Session and annotations finalized successfully.",
                 previousTotal: previousTotal,
                 newTotal: newTotal,
                 sessionNumber,
-                shouldShowNasaTlx: shouldShowNasaTlx(sessionNumber),
+                shouldShowNasaTlx: takesInstruments && shouldShowNasaTlx(sessionNumber),
                 sessionId: completedSession?._id?.toString() || null,
             });
 

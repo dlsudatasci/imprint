@@ -58,6 +58,52 @@ beforeEach(() => {
 });
 
 describe("POST /api/annotationComplete", () => {
+  it("copies only annotators' answers onto reference images (1 Oct 2026)", async () => {
+    const m = setupMocks();
+    m.sessionsCol.findOne.mockResolvedValue({
+      _id: new ObjectId("cccccccccccccccccccccccc"),
+      userId: MOCK_USER_ID,
+      completedAt: new Date(),
+      imageIDs: ["ref-oid"],
+      completedImageIDs: [7],
+    });
+    m.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: "ref-oid", imageID: 7 }]) });
+    const ann = { imageID: 7, source: "annotator", sceneLevel: { walkability: 3 }, selectedObjectsID: [{ id: "s1", obstructs: false }], newObjects: [] };
+    m.annotationsCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([ann]) });
+    m.imageCol.bulkWrite = vi.fn().mockResolvedValue({});
+
+    const res = createMockRes();
+    await handler(createMockReq({ body: { total: 10 } }), res);
+
+    expect(res._status).toBe(200);
+    expect(m.annotationsCol.find.mock.calls[0][0]).toEqual({ userId: MOCK_USER_ID, imageID: { $in: [7] }, source: "annotator" });
+    const [op] = m.imageCol.bulkWrite.mock.calls[0][0];
+    expect(op.updateOne.filter).toEqual({ imageID: 7 });
+    expect(op.updateOne.update.$push.referenceGroundTruth).toMatchObject({ userId: MOCK_USER_ID, source: "annotator", selectedObjectsID: ann.selectedObjectsID });
+  });
+
+  it("writes nothing onto a reference image when a contributor finishes a session", async () => {
+    const m = setupMocks();
+    m.sessionsCol.findOne.mockResolvedValue({
+      _id: new ObjectId("cccccccccccccccccccccccc"),
+      userId: MOCK_USER_ID,
+      completedAt: new Date(),
+      imageIDs: ["ref-oid"],
+      completedImageIDs: [7],
+    });
+    m.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: "ref-oid", imageID: 7 }]) });
+    // The source filter excludes the contributor's row, so the query returns nothing.
+    m.annotationsCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) });
+    m.imageCol.bulkWrite = vi.fn().mockResolvedValue({});
+
+    const res = createMockRes();
+    await handler(createMockReq({ body: { total: 10 } }), res);
+
+    expect(res._status).toBe(200);
+    expect(m.annotationsCol.find.mock.calls[0][0].source).toBe("annotator");
+    expect(m.imageCol.bulkWrite).not.toHaveBeenCalled();
+  });
+
   it("returns 200 with previousTotal and newTotal", async () => {
     setupMocks();
     const req = createMockReq({ body: { total: 10 } });
@@ -188,5 +234,65 @@ describe("POST /api/annotationComplete", () => {
     await handler(req, res);
 
     expect(res._json).toHaveProperty("sessionId", "cccccccccccccccccccccccc");
+  });
+
+  // Annotators are not prompted for the NASA-TLX (3 Oct 2026)
+  describe("NASA-TLX prompt by role", () => {
+    it("does not prompt an annotator after session 1, and still reports the session number", async () => {
+      const mocks = setupMocks();
+      mocks.sessionsCol.countDocuments.mockResolvedValue(1);
+      mocks.usersCol.findOne.mockResolvedValue({ role: "annotator" });
+      const res = createMockRes();
+
+      await handler(createMockReq({ body: { total: 10 } }), res);
+
+      expect(res._status).toBe(200);
+      expect(res._json.shouldShowNasaTlx).toBe(false);
+      expect(res._json.sessionNumber).toBe(1);
+      expect(res._json.sessionId).toBe("cccccccccccccccccccccccc");
+      expect(mocks.usersCol.findOne).toHaveBeenCalledWith(
+        { _id: new ObjectId(MOCK_USER_ID) },
+        { projection: { role: 1 } }
+      );
+    });
+
+    it("still prompts a contributor after session 1 and not after session 2", async () => {
+      const first = setupMocks();
+      first.sessionsCol.countDocuments.mockResolvedValue(1);
+      first.usersCol.findOne.mockResolvedValue({ role: "user" });
+      const res1 = createMockRes();
+      await handler(createMockReq({ body: { total: 10 } }), res1);
+      expect(res1._json.shouldShowNasaTlx).toBe(true);
+
+      const second = setupMocks();
+      second.sessionsCol.countDocuments.mockResolvedValue(2);
+      second.usersCol.findOne.mockResolvedValue({ role: "user" });
+      const res2 = createMockRes();
+      await handler(createMockReq({ body: { total: 10 } }), res2);
+      expect(res2._json.shouldShowNasaTlx).toBe(false);
+    });
+
+    it("keeps the committed session and skips the prompt when the role lookup throws", async () => {
+      const mocks = setupMocks();
+      mocks.sessionsCol.countDocuments.mockResolvedValue(1);
+      mocks.usersCol.findOne.mockRejectedValue(new Error("db down"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const res = createMockRes();
+
+      await handler(createMockReq({ body: { total: 10 } }), res);
+      errorSpy.mockRestore();
+
+      expect(res._status).toBe(200);
+      expect(res._json.shouldShowNasaTlx).toBe(false);
+      expect(res._json.sessionNumber).toBe(1);
+      expect(mocks.sessionsCol.updateOne).toHaveBeenCalledWith(
+        { userId: MOCK_USER_ID, status: "active" },
+        expect.objectContaining({ $set: expect.objectContaining({ status: "completed" }) })
+      );
+      expect(mocks.annotationsCol.updateMany).toHaveBeenCalledWith(
+        { userId: MOCK_USER_ID, status: "pending" },
+        { $set: { status: "completed" } }
+      );
+    });
   });
 });

@@ -17,6 +17,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import handler from "./nasa-tlx.js";
+import { CONTRIBUTOR_ONLY_MESSAGE } from "@/util/validators/contributorInstruments";
 
 const VALID_SESSION_ID = "bbbbbbbbbbbbbbbbbbbbbbbb";
 
@@ -37,15 +38,18 @@ function validBody(overrides = {}) {
   };
 }
 
-function setupMocks({ hasSession = true } = {}) {
+function setupMocks({ hasSession = true, userRole = "user" } = {}) {
   getServerSession.mockResolvedValue(
     hasSession ? mockAuthSession() : null
   );
 
   const nasaTlxCol = createMockCollection();
-  const db = createMockDb({ nasa_tlx: nasaTlxCol });
+  const usersCol = createMockCollection({
+    findOne: vi.fn().mockResolvedValue({ role: userRole }),
+  });
+  const db = createMockDb({ nasa_tlx: nasaTlxCol, users: usersCol });
   connectToDatabase.mockResolvedValue({ db });
-  return { db, nasaTlxCol };
+  return { db, nasaTlxCol, usersCol };
 }
 
 beforeEach(() => {
@@ -157,5 +161,66 @@ describe("POST /api/nasa-tlx", () => {
     await handler(req, res);
 
     expect(res._status).toBe(422);
+  });
+
+  // Annotators are never prompted and cannot submit (3 Oct 2026)
+  describe("annotators", () => {
+    it("refuses an annotator's submission with 403 and saves nothing", async () => {
+      const { nasaTlxCol } = setupMocks({ userRole: "annotator" });
+      const res = createMockRes();
+
+      await handler(createMockReq({ body: validBody() }), res);
+
+      expect(res._status).toBe(403);
+      expect(res._json.message).toBe(CONTRIBUTOR_ONLY_MESSAGE);
+      expect(nasaTlxCol.updateOne).not.toHaveBeenCalled();
+      expect(logTelemetryEvent).not.toHaveBeenCalled();
+    });
+
+    it("refuses an annotator's dismissal too", async () => {
+      const { nasaTlxCol } = setupMocks({ userRole: "annotator" });
+      const res = createMockRes();
+
+      await handler(createMockReq({ body: validBody({ dismissed: true, responses: null }) }), res);
+
+      expect(res._status).toBe(403);
+      expect(nasaTlxCol.updateOne).not.toHaveBeenCalled();
+    });
+
+    it("reads the role from the database, not the session", async () => {
+      const { usersCol } = setupMocks({ userRole: "annotator" });
+      getServerSession.mockResolvedValue(mockAuthSession({ role: "user" }));
+      const res = createMockRes();
+
+      await handler(createMockReq({ body: validBody() }), res);
+
+      expect(res._status).toBe(403);
+      expect(usersCol.findOne).toHaveBeenCalledWith(expect.anything(), { projection: { role: 1 } });
+    });
+
+    it("still saves a contributor's submission and dismissal", async () => {
+      setupMocks({ userRole: "user" });
+      const submitted = createMockRes();
+      await handler(createMockReq({ body: validBody() }), submitted);
+      expect(submitted._status).toBe(200);
+
+      setupMocks({ userRole: "user" });
+      const dismissed = createMockRes();
+      await handler(createMockReq({ body: validBody({ dismissed: true, responses: null }) }), dismissed);
+      expect(dismissed._status).toBe(200);
+    });
+
+    it("returns 500 when the role lookup throws", async () => {
+      const { usersCol, nasaTlxCol } = setupMocks();
+      usersCol.findOne.mockRejectedValue(new Error("db down"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const res = createMockRes();
+
+      await handler(createMockReq({ body: validBody() }), res);
+      errorSpy.mockRestore();
+
+      expect(res._status).toBe(500);
+      expect(nasaTlxCol.updateOne).not.toHaveBeenCalled();
+    });
   });
 });

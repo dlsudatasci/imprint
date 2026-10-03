@@ -102,6 +102,14 @@ describe("POST /api/annotationGet", () => {
     await handler(req, res);
 
     expect(res._json.imgRecords).toEqual([]);
+    expect(res._json.sessionSizes).toEqual([5, 10, 20, 40]);
+  });
+
+  it("tells an annotator their own session sizes when no session is active", async () => {
+    setupMocks({ userRole: "annotator" });
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._json.sessionSizes).toEqual([10, 25, 50]);
   });
 
   it("returns 400 for invalid session size", async () => {
@@ -148,7 +156,7 @@ describe("POST /api/annotationGet", () => {
 
   it("includes session-level stats in SESSION_START for a new session", async () => {
     const mocks = setupMocks();
-    const mockImages = [{ _id: "img-1", imageID: 1, annotationList: [] }];
+    const mockImages = [{ _id: "img-1", imageID: 1, isReference: false, poolStatus: "served", annotationList: [] }];
     mocks.imageCol.aggregate.mockReturnValue({
       toArray: vi.fn().mockResolvedValue(mockImages),
     });
@@ -235,7 +243,7 @@ describe("POST /api/annotationGet", () => {
 
   it("sets intervalSincePreviousSessionMs to null for first session", async () => {
     const mocks = setupMocks();
-    const mockImages = [{ _id: "img-1", imageID: 1, annotationList: [] }];
+    const mockImages = [{ _id: "img-1", imageID: 1, isReference: false, poolStatus: "served", annotationList: [] }];
     mocks.imageCol.aggregate.mockReturnValue({
       toArray: vi.fn().mockResolvedValue(mockImages),
     });
@@ -265,6 +273,7 @@ describe("POST /api/annotationGet", () => {
       _id: `ref-${i}`,
       imageID: i + 1,
       isReference: true,
+      poolStatus: "served",
       annotationList: [{ id: "box-1" }],
     }));
 
@@ -291,6 +300,7 @@ describe("POST /api/annotationGet", () => {
       _id: `ref-${i}`,
       imageID: i + 1,
       isReference: true,
+      poolStatus: "served",
       annotationList: [],
     }));
 
@@ -314,6 +324,7 @@ describe("POST /api/annotationGet", () => {
       _id: `ref-${i}`,
       imageID: i + 1,
       isReference: true,
+      poolStatus: "served",
       annotationList: [],
     }));
 
@@ -327,6 +338,7 @@ describe("POST /api/annotationGet", () => {
       imageID: 100 + i,
       city: "makati",
       isReference: false,
+      poolStatus: "model_dev",
       annotationList: [{ id: "pred-1" }],
     }));
 
@@ -335,6 +347,7 @@ describe("POST /api/annotationGet", () => {
       imageID: 200 + i,
       city: "manila",
       isReference: false,
+      poolStatus: "model_dev",
       annotationList: [{ id: "pred-2" }],
     }));
 
@@ -356,19 +369,27 @@ describe("POST /api/annotationGet", () => {
     const cityDistPipeline = mocks.imageCol.aggregate.mock.calls[1][0];
     const cityDistMatch = cityDistPipeline.find((s) => s.$match);
     expect(cityDistMatch.$match.isReference).toEqual({ $ne: true });
+    expect(cityDistMatch.$match.poolStatus).toBe("model_dev");
+
+    // So do the per-city batches
+    for (const call of mocks.imageCol.aggregate.mock.calls.slice(2)) {
+      const m = call[0].find((st) => st.$match).$match;
+      expect(m.poolStatus).toBe("model_dev");
+      expect(m.isReference).toEqual({ $ne: true });
+    }
 
     expect(res._json.imgRecords).toHaveLength(10);
   });
 
-  it("clears annotationList only for reference images in annotator sessions", async () => {
+  it("keeps the suggestions on reference and model-dev images in annotator sessions (decided 1 Oct 2026)", async () => {
     const mocks = setupMocks({ userRole: "annotator" });
 
     const refImages = [
-      { _id: "ref-0", imageID: 1, isReference: true, annotationList: [{ id: "pred-1" }] },
+      { _id: "ref-0", imageID: 1, isReference: true, poolStatus: "served", annotationList: [{ id: "pred-1" }] },
     ];
     const cityDist = [{ _id: "makati", count: 10 }];
     const modelDevImages = [
-      { _id: "dev-0", imageID: 2, isReference: false, city: "makati", annotationList: [{ id: "pred-2", comment: "tree" }] },
+      { _id: "dev-0", imageID: 2, isReference: false, poolStatus: "model_dev", city: "makati", annotationList: [{ id: "pred-2", comment: "tree" }] },
     ];
 
     mocks.imageCol.aggregate
@@ -384,8 +405,21 @@ describe("POST /api/annotationGet", () => {
     const refResult = res._json.imgRecords.find((img) => img.isReference);
     const devResult = res._json.imgRecords.find((img) => !img.isReference);
 
-    expect(refResult.annotationList).toEqual([]);
+    expect(refResult.annotationList).toEqual([{ id: "pred-1" }]);
     expect(devResult.annotationList).toEqual([{ id: "pred-2", comment: "tree" }]);
+  });
+
+  it("keeps the suggestions on reference images when an annotator resumes a session", async () => {
+    const ref = { _id: "ref-0", imageID: 1, isReference: true, poolStatus: "served", annotationList: [{ id: "pred-1", comment: "car" }] };
+    const mocks = setupMocks({
+      userRole: "annotator",
+      activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: ["ref-0"], completedImageIDs: [], totalCount: 10 },
+    });
+    mocks.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([ref]) });
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._json.isExistingSession).toBe(true);
+    expect(res._json.imgRecords[0].annotationList).toEqual([{ id: "pred-1", comment: "car" }]);
   });
 
   it("preserves pre-populated annotations for model-dev images in annotator sessions", async () => {
@@ -398,7 +432,7 @@ describe("POST /api/annotationGet", () => {
 
     const cityDist = [{ _id: "makati", count: 5 }];
     const modelDevImages = [
-      { _id: "dev-0", imageID: 1, isReference: false, city: "makati", annotationList: originalAnnotations },
+      { _id: "dev-0", imageID: 1, isReference: false, poolStatus: "model_dev", city: "makati", annotationList: originalAnnotations },
     ];
 
     mocks.imageCol.aggregate
@@ -415,4 +449,169 @@ describe("POST /api/annotationGet", () => {
     expect(devImg.annotationList).toEqual(originalAnnotations);
   });
 
+  describe("pool separation (Step 5)", () => {
+    const deploymentImg = (i) => ({ _id: `dep-${i}`, imageID: 500 + i, city: "makati", isReference: false, poolStatus: "served", annotationList: [] });
+    const modelDevImg = (i) => ({ _id: `dev-${i}`, imageID: 900 + i, city: "makati", isReference: false, poolStatus: "model_dev", annotationList: [] });
+    const reserveImg = (i) => ({ _id: `res-${i}`, imageID: 1200 + i, city: "makati", isReference: false, poolStatus: "reserve", annotationList: [] });
+    const refImg = (i) => ({ _id: `ref-${i}`, imageID: 1 + i, isReference: true, poolStatus: "served", annotationList: [] });
+
+    it("contributor queries match only served deployment images and served reference images", async () => {
+      const mocks = setupMocks();
+      await handler(createMockReq({ body: { annotationTotalCount: 10 } }), createMockRes());
+
+      const matches = mocks.imageCol.aggregate.mock.calls.map((c) => c[0].find((st) => st.$match).$match);
+      expect(matches.length).toBeGreaterThan(0);
+      for (const m of matches) {
+        expect(m.poolStatus).toBe("served");
+        expect([true, false]).toContain(m.isReference);
+      }
+    });
+
+    it("a contributor session never contains a model-dev or reserve image, even if a query returned one", async () => {
+      const mocks = setupMocks();
+      mocks.imageCol.aggregate
+        .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([refImg(0)]) })
+        .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([deploymentImg(0), modelDevImg(0), reserveImg(0), deploymentImg(1)]) });
+      const res = createMockRes();
+      await handler(createMockReq({ body: { annotationTotalCount: 5 } }), res);
+
+      const served = res._json.imgRecords;
+      expect(served.map((i) => i._id).sort()).toEqual(["dep-0", "dep-1", "ref-0"]);
+      expect(served.some((i) => i.poolStatus === "model_dev" || i.poolStatus === "reserve")).toBe(false);
+      const inserted = mocks.sessionsCol.insertOne.mock.calls[0][0].imageIDs;
+      expect(inserted).not.toContain("dev-0");
+      expect(inserted).not.toContain("res-0");
+    });
+
+    it("reports pool exhaustion rather than serving model-dev images to a contributor", async () => {
+      const mocks = setupMocks();
+      mocks.imageCol.aggregate.mockReturnValue({ toArray: vi.fn().mockResolvedValue([modelDevImg(0), modelDevImg(1)]) });
+      const res = createMockRes();
+      await handler(createMockReq({ body: { annotationTotalCount: 5 } }), res);
+
+      expect(res._json.poolExhausted).toBe(true);
+      expect(mocks.sessionsCol.insertOne).not.toHaveBeenCalled();
+    });
+
+    it("an annotator session never contains a deployment or reserve image, even if a query returned one", async () => {
+      const mocks = setupMocks({ userRole: "annotator" });
+      mocks.imageCol.aggregate
+        .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([refImg(0)]) })
+        .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([{ _id: "makati", count: 9 }]) })
+        .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([modelDevImg(0), deploymentImg(0), reserveImg(0), modelDevImg(1)]) });
+      const res = createMockRes();
+      await handler(createMockReq({ body: { annotationTotalCount: 10 } }), res);
+
+      const served = res._json.imgRecords;
+      expect(served.map((i) => i._id).sort()).toEqual(["dev-0", "dev-1", "ref-0"]);
+      expect(served.some((i) => i.poolStatus === "served" && i.isReference === false)).toBe(false);
+      expect(served.some((i) => i.poolStatus === "reserve")).toBe(false);
+    });
+  });
+
+  describe("reference rate (one in eight over the whole participation)", () => {
+    function refQueryLimit(mocks) {
+      const refCall = mocks.imageCol.aggregate.mock.calls.find(
+        (c) => c[0].find((st) => st.$match).$match.isReference === true
+      );
+      return refCall ? refCall[0].find((st) => st.$limit).$limit : 0;
+    }
+
+    it("asks for round(size / 8) reference images in a first session", async () => {
+      const mocks = setupMocks();
+      await handler(createMockReq({ body: { annotationTotalCount: 20 } }), createMockRes());
+      expect(refQueryLimit(mocks)).toBe(3);
+    });
+
+    it("counts every image served in earlier sessions", async () => {
+      const mocks = setupMocks();
+      mocks.sessionsCol.aggregate.mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: null, served: 20 }]) });
+      await handler(createMockReq({ body: { annotationTotalCount: 40 } }), createMockRes());
+      // round(60/8) - round(20/8) = 8 - 3 = 5
+      expect(refQueryLimit(mocks)).toBe(5);
+      const priorPipeline = mocks.sessionsCol.aggregate.mock.calls[0][0];
+      expect(priorPipeline[0]).toEqual({ $match: { userId: MOCK_USER_ID } });
+    });
+
+    it("skips the reference query when the session is owed none", async () => {
+      const mocks = setupMocks();
+      mocks.sessionsCol.aggregate.mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: null, served: 5 }]) });
+      mocks.imageCol.aggregate.mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([0, 1, 2, 3, 4].map((i) => ({ _id: `dep-${i}`, imageID: 500 + i, city: "makati", isReference: false, poolStatus: "served", annotationList: [] }))),
+      });
+      const res = createMockRes();
+      await handler(createMockReq({ body: { annotationTotalCount: 5 } }), res);
+
+      expect(refQueryLimit(mocks)).toBe(0);
+      for (const c of mocks.imageCol.aggregate.mock.calls) {
+        const limit = c[0].find((st) => st.$limit);
+        if (limit) expect(limit.$limit).toBeGreaterThan(0);
+      }
+      expect(res._json.imgRecords).toHaveLength(5);
+    });
+  });
+
+  // The annotation tool hides the scene step and severity for annotators
+  // (3 Oct 2026), so every successful response says which role this is
+  describe("isAnnotator in every successful response", () => {
+    const roles = [["annotator", true], ["user", false]];
+
+    it.each(roles)("existing session: role %s gives isAnnotator %s", async (role, expected) => {
+      setupMocks({
+        userRole: role,
+        activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: [], completedImageIDs: [], totalCount: 10 },
+      });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+
+      expect(res._json.isExistingSession).toBe(true);
+      expect(res._json.isAnnotator).toBe(expected);
+    });
+
+    it.each(roles)("no count given: role %s gives isAnnotator %s", async (role, expected) => {
+      setupMocks({ userRole: role });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+
+      expect(res._json.sessionSizes).toBeDefined();
+      expect(res._json.isAnnotator).toBe(expected);
+    });
+
+    it.each(roles)("pool exhausted: role %s gives isAnnotator %s", async (role, expected) => {
+      const mocks = setupMocks({ userRole: role });
+      mocks.imageCol.aggregate.mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) });
+      const res = createMockRes();
+      await handler(createMockReq({ body: { annotationTotalCount: role === "annotator" ? 10 : 5 } }), res);
+
+      expect(res._json.poolExhausted).toBe(true);
+      expect(res._json.isAnnotator).toBe(expected);
+    });
+
+    it("new session: an annotator gets isAnnotator true", async () => {
+      const mocks = setupMocks({ userRole: "annotator" });
+      const refImages = Array.from({ length: 10 }, (_, i) => ({
+        _id: `ref-${i}`, imageID: i + 1, isReference: true, poolStatus: "served", annotationList: [],
+      }));
+      mocks.imageCol.aggregate.mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue(refImages) });
+      const res = createMockRes();
+      await handler(createMockReq({ body: { annotationTotalCount: 10 } }), res);
+
+      expect(res._json.isExistingSession).toBe(false);
+      expect(res._json.imgRecords).toHaveLength(10);
+      expect(res._json.isAnnotator).toBe(true);
+    });
+
+    it("new session: a contributor gets isAnnotator false", async () => {
+      const mocks = setupMocks({ userRole: "user" });
+      mocks.imageCol.aggregate.mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([{ _id: "dep-0", imageID: 500, city: "makati", isReference: false, poolStatus: "served", annotationList: [] }]),
+      });
+      const res = createMockRes();
+      await handler(createMockReq({ body: { annotationTotalCount: 5 } }), res);
+
+      expect(res._json.isExistingSession).toBe(false);
+      expect(res._json.imgRecords.length).toBeGreaterThan(0);
+      expect(res._json.isAnnotator).toBe(false);
+    });
+  });
 });

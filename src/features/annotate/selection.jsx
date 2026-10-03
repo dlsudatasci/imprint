@@ -1,18 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { writeSession } from "@/util/sessionCache";
+import { CONTRIBUTOR_OPTIONS, sessionOptionsFor } from "./sessionOptions";
 
 import { Button, Card, Container } from "@/ui";
 
-// Must stay in sync with ALLOWED_SESSION_SIZES in /api/annotationGet — that
-// endpoint rejects any count not on its list.
-const SESSION_OPTIONS = [
-  { count: 5, label: "05", time: "2-3 minutes" },
-  { count: 10, label: "10", time: "4-7 minutes" },
-  { count: 20, label: "20", time: "8-10 minutes" },
-  { count: 40, label: "40", time: "12-15 minutes" },
-];
+// The sizes on offer come from /api/annotationGet (sessionSizes), which knows
+// whether this person is an annotator (10, 25, 50) or a contributor (5, 10, 20,
+// 40) and rejects any count not on their list.
 
 /**
  * The first screen of a new annotation session, asking how many images to take.
@@ -30,6 +26,25 @@ export default function AnnotationSessionSelection() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
   const [poolExhausted, setPoolExhausted] = useState(false);
+  const [options, setOptions] = useState(CONTRIBUTOR_OPTIONS);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/annotationGet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (cancelled || !json || !Array.isArray(json.sessionSizes)) return;
+        const annotator = json.sessionSizes.join() !== CONTRIBUTOR_OPTIONS.map((o) => o.count).join();
+        setOptions(sessionOptionsFor(json.sessionSizes, { annotator }));
+        setSelected((prev) => (json.sessionSizes.includes(prev) ? prev : null));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const startSession = async () => {
     if (!selected) return;
@@ -107,7 +122,7 @@ export default function AnnotationSessionSelection() {
 
                 {/* Selection Cards */}
                 <div className="flex flex-wrap justify-center gap-5 mt-2">
-                  {SESSION_OPTIONS.map((option) => {
+                  {options.map((option) => {
                     const isSelected = selected === option.count;
                     return (
                       // eslint-disable-next-line react/forbid-elements -- selectable card, not a Button variant: it carries its own selected state and sizing
@@ -129,9 +144,11 @@ export default function AnnotationSessionSelection() {
                         <span className={`text-4xl sm:text-5xl font-extrabold tracking-tight transition-colors duration-300 ${isSelected ? "text-primary" : "text-body group-hover:text-ink"}`}>
                           {option.label}
                         </span>
-                        <span className={`text-sm font-semibold mt-2 transition-colors duration-300 ${isSelected ? "text-primary/70" : "text-subtle"}`}>
-                          {option.time}
-                        </span>
+                        {option.time && (
+                          <span className={`text-sm font-semibold mt-2 transition-colors duration-300 ${isSelected ? "text-primary/70" : "text-subtle"}`}>
+                            {option.time}
+                          </span>
+                        )}
                       </button>
                     );
                   })}

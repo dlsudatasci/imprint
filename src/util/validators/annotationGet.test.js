@@ -4,6 +4,11 @@ import {
   ANNOTATOR_SESSION_SIZES,
   ensureModelVersion,
   calculateReferenceCount,
+  canServeImage,
+  REFERENCE_RATE,
+  REFERENCE_MATCH,
+  ANNOTATOR_MODEL_DEV_MATCH,
+  CONTRIBUTOR_DEPLOYMENT_MATCH,
 } from "./annotationGet.js";
 
 describe("session size constants", () => {
@@ -58,28 +63,132 @@ describe("ensureModelVersion", () => {
 });
 
 describe("calculateReferenceCount", () => {
-  it("returns 1 for 5 images (Math.round(5/8) = 1)", () => {
-    expect(calculateReferenceCount(5)).toBe(1);
+  it("uses a rate of one in eight", () => {
+    expect(REFERENCE_RATE).toBe(8);
   });
 
-  it("returns 1 for 10 images (Math.round(10/8) = 1)", () => {
-    expect(calculateReferenceCount(10)).toBe(1);
+  it("gives a first session round(size / 8) reference images", () => {
+    expect(calculateReferenceCount(5, 0)).toBe(1);
+    expect(calculateReferenceCount(10, 0)).toBe(1);
+    expect(calculateReferenceCount(20, 0)).toBe(3);
+    expect(calculateReferenceCount(40, 0)).toBe(5);
   });
 
-  it("returns 3 for 20 images (Math.round(20/8) = 3)", () => {
-    expect(calculateReferenceCount(20)).toBe(3);
+  it("defaults priorServed to 0", () => {
+    expect(calculateReferenceCount(40)).toBe(calculateReferenceCount(40, 0));
   });
 
-  it("returns 5 for 40 images (Math.round(40/8) = 5)", () => {
-    expect(calculateReferenceCount(40)).toBe(5);
+  it("can give a short session none when earlier sessions already carried its share", () => {
+    // 5 served before: round(5/8) = 1 already given; round(10/8) = 1, so none now
+    expect(calculateReferenceCount(5, 5)).toBe(0);
+    // 20 served before: round(20/8) = 3; round(25/8) = 3
+    expect(calculateReferenceCount(5, 20)).toBe(0);
   });
 
-  it("returns at least 1 even for small counts", () => {
-    expect(calculateReferenceCount(1)).toBe(1);
-    expect(calculateReferenceCount(0)).toBe(1);
+  it("keeps the running total within half an image of one in eight for any mix of sizes", () => {
+    const sizes = [5, 10, 20, 40, 5, 5, 20, 10, 40, 5, 10, 5, 20, 40, 40, 5];
+    let served = 0;
+    let refs = 0;
+    for (const size of sizes) {
+      refs += calculateReferenceCount(size, served);
+      served += size;
+      expect(Math.abs(refs - served / 8)).toBeLessThanOrEqual(0.5);
+    }
   });
 
-  it("returns 10 for 80 images", () => {
-    expect(calculateReferenceCount(80)).toBe(10);
+  it("gives 1 in 8 exactly over a run of 5-image sessions", () => {
+    let served = 0;
+    let refs = 0;
+    for (let i = 0; i < 64; i++) {
+      refs += calculateReferenceCount(5, served);
+      served += 5;
+    }
+    expect(served).toBe(320);
+    expect(refs).toBe(40);
+  });
+
+  it("never returns a negative count or more than the session size", () => {
+    for (const size of [5, 10, 20, 40]) {
+      for (let prior = 0; prior < 200; prior++) {
+        const n = calculateReferenceCount(size, prior);
+        expect(n).toBeGreaterThanOrEqual(0);
+        expect(n).toBeLessThanOrEqual(size);
+      }
+    }
+  });
+
+  it("treats invalid inputs as zero", () => {
+    expect(calculateReferenceCount(0, 0)).toBe(0);
+    expect(calculateReferenceCount(-5, 0)).toBe(0);
+    expect(calculateReferenceCount(10, -3)).toBe(calculateReferenceCount(10, 0));
+    expect(calculateReferenceCount(10, 2.5)).toBe(calculateReferenceCount(10, 0));
+    expect(calculateReferenceCount("10", 0)).toBe(0);
+  });
+});
+
+describe("pool match filters", () => {
+  it("reference images are served reference images", () => {
+    expect(REFERENCE_MATCH).toEqual({ isReference: true, poolStatus: "served" });
+  });
+
+  it("annotators draw non-reference images only from the model-dev pool", () => {
+    expect(ANNOTATOR_MODEL_DEV_MATCH).toEqual({ isReference: { $ne: true }, poolStatus: "model_dev" });
+  });
+
+  it("contributors draw non-reference images only from the served pool", () => {
+    expect(CONTRIBUTOR_DEPLOYMENT_MATCH).toEqual({ isReference: false, poolStatus: "served" });
+  });
+
+  it("the annotator and contributor pools cannot overlap", () => {
+    expect(ANNOTATOR_MODEL_DEV_MATCH.poolStatus).not.toBe(CONTRIBUTOR_DEPLOYMENT_MATCH.poolStatus);
+  });
+});
+
+describe("canServeImage", () => {
+  const reference = { isReference: true, poolStatus: "served" };
+  const modelDev = { isReference: false, poolStatus: "model_dev" };
+  const deployment = { isReference: false, poolStatus: "served" };
+  const reserve = { isReference: false, poolStatus: "reserve" };
+  const unserved = { isReference: false, poolStatus: "unserved" };
+
+  it("serves reference images to both annotators and contributors", () => {
+    expect(canServeImage(reference, true)).toBe(true);
+    expect(canServeImage(reference, false)).toBe(true);
+  });
+
+  it("never serves a model-dev image to a contributor", () => {
+    expect(canServeImage(modelDev, false)).toBe(false);
+  });
+
+  it("serves model-dev images to annotators", () => {
+    expect(canServeImage(modelDev, true)).toBe(true);
+  });
+
+  it("never serves a deployment image to an annotator", () => {
+    expect(canServeImage(deployment, true)).toBe(false);
+  });
+
+  it("serves deployment images to contributors", () => {
+    expect(canServeImage(deployment, false)).toBe(true);
+  });
+
+  it("serves reserve and unserved images to nobody", () => {
+    for (const img of [reserve, unserved]) {
+      expect(canServeImage(img, true)).toBe(false);
+      expect(canServeImage(img, false)).toBe(false);
+    }
+  });
+
+  it("does not serve a reference image that is not in the served pool", () => {
+    expect(canServeImage({ isReference: true, poolStatus: "reserve" }, false)).toBe(false);
+    expect(canServeImage({ isReference: true, poolStatus: "model_dev" }, true)).toBe(false);
+  });
+
+  it("does not serve records with a missing status or reference flag", () => {
+    expect(canServeImage({ poolStatus: "served" }, false)).toBe(false);
+    expect(canServeImage({ isReference: false }, false)).toBe(false);
+    expect(canServeImage({ isReference: false }, true)).toBe(false);
+    expect(canServeImage(null, false)).toBe(false);
+    expect(canServeImage(undefined, true)).toBe(false);
   });
 });

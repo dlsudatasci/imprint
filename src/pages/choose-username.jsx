@@ -4,7 +4,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 
 import Page from "@/ui/page";
-import { AuthCard, Button, Input, Container } from "@/ui";
+import { AuthCard, Button, Input, Checkbox, Container } from "@/ui";
 
 /**
  * Asks someone who signed in with Google to choose a username.
@@ -98,37 +98,29 @@ export default function ChooseUsername() {
                         />
 
                         <div className="space-y-3 mt-6 mb-8">
-                          <div className="flex items-start">
-                            <input
-                              id="consent-agree"
-                              type="checkbox"
-                              className="mr-3 mt-0.5 w-5 h-5 text-primary bg-surface-subtle border-line rounded focus:ring-primary focus:ring-2"
-                              required
-                            />
-                            <label htmlFor="consent-agree" className="text-body font-medium text-sm">
-                              I have read and understood the{" "}
-                              <Link
-                                href="/terms-of-use"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="cursor-pointer text-primary font-bold hover:underline"
-                              >
-                                Informed Consent Form
-                              </Link>
-                              {" "}and agree to participate
-                            </label>
-                          </div>
-                          <div className="flex items-start">
-                            <input
-                              id="consent-age"
-                              type="checkbox"
-                              className="mr-3 mt-0.5 w-5 h-5 text-primary bg-surface-subtle border-line rounded focus:ring-primary focus:ring-2"
-                              required
-                            />
-                            <label htmlFor="consent-age" className="text-body font-medium text-sm">
-                              I confirm that I am at least 18 years old
-                            </label>
-                          </div>
+                          <Checkbox
+                            id="consent-agree"
+                            required
+                            label={
+                              <>
+                                I have read and understood the{" "}
+                                <Link
+                                  href="/terms-of-use"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="cursor-pointer text-primary font-bold hover:underline"
+                                >
+                                  Informed Consent Form
+                                </Link>
+                                {" "}and agree to participate
+                              </>
+                            }
+                          />
+                          <Checkbox
+                            id="consent-age"
+                            required
+                            label="I confirm that I am at least 18 years old"
+                          />
                         </div>
 
                         <Button submit fullWidth disabled={loadingForm}>

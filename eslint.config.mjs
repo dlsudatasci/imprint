@@ -103,6 +103,14 @@ export default [
                     message:
                         "Tailwind's `container` snaps between breakpoints. Use <Container> from @/ui.",
                 },
+                {
+                    // A raw checkbox or radio in a flex row shrinks when its label
+                    // wraps, so two boxes with the same classes render at different
+                    // sizes (the sign-up consent boxes, fixed 1 Oct 2026).
+                    selector: "JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value=/^(checkbox|radio)$/]",
+                    message:
+                        "Use <Checkbox> or <Radio> from @/ui instead of a raw checkbox or radio input. They keep a fixed size and never shrink — see docs/design-system/README.md §8a.",
+                },
             ],
         },
     },

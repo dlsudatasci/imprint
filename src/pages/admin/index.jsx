@@ -6,6 +6,7 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]";
 
 import Page from "@/ui/page";
 import { Card, Container, Badge, Skeleton } from "@/ui";
+import AccountsTab from "@/features/admin/AccountsTab";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -14,6 +15,7 @@ const TABS = [
   { key: "nasa-tlx", label: "NASA-TLX" },
   { key: "quality", label: "Quality" },
   { key: "retraining", label: "Retraining" },
+  { key: "accounts", label: "Accounts" },
 ];
 
 function StatCard({ label, value, sub }) {
@@ -406,6 +408,17 @@ function QualityTab() {
         <h3 className="font-display text-lg font-bold text-ink mb-1">Reference Performance</h3>
         <p className="text-muted text-sm mb-3">
           {refData?.imagesWithGroundTruth ?? 0} of {refData?.referenceImageCount ?? 0} reference images have annotator ground truth.
+          {refData?.answerKey && (
+            <>
+              {" "}Boxes are scored against an answer key merged from {refData.answerKey.annotatorsPerImage
+                ? refData.answerKey.annotatorsPerImage.min === refData.answerKey.annotatorsPerImage.max
+                  ? refData.answerKey.annotatorsPerImage.min
+                  : `${refData.answerKey.annotatorsPerImage.min} to ${refData.answerKey.annotatorsPerImage.max}`
+                : 0} annotators per image: {refData.answerKey.objects} objects boxed by more than half of them,
+              with {refData.answerKey.uncertain} uncertain objects set aside ({refData.answerKey.categoryTies} of them
+              category ties). Obstruction agreement is averaged across annotators.
+            </>
+          )}
         </p>
         {refData?.contributors?.length > 0 ? (
           <Card padding="none">
@@ -419,7 +432,6 @@ function QualityTab() {
                     <th className="px-4 py-3 font-semibold text-muted text-right">Recall</th>
                     <th className="px-4 py-3 font-semibold text-muted text-right">F1</th>
                     <th className="px-4 py-3 font-semibold text-muted text-right">Obstruction</th>
-                    <th className="px-4 py-3 font-semibold text-muted text-right">Scene</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -427,14 +439,11 @@ function QualityTab() {
                     <tr key={c.userId} className="border-b border-line-card last:border-0">
                       <td className="px-4 py-3 font-medium text-ink">{c.username}</td>
                       <td className="px-4 py-3 text-right text-body">{c.referenceImagesScored}</td>
-                      <td className="px-4 py-3 text-right text-body">{(c.avgPrecision * 100).toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-right text-body">{(c.avgRecall * 100).toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-right font-bold text-ink">{(c.avgF1 * 100).toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-right text-body">{c.avgPrecision != null ? `${(c.avgPrecision * 100).toFixed(1)}%` : "-"}</td>
+                      <td className="px-4 py-3 text-right text-body">{c.avgRecall != null ? `${(c.avgRecall * 100).toFixed(1)}%` : "-"}</td>
+                      <td className="px-4 py-3 text-right font-bold text-ink">{c.avgF1 != null ? `${(c.avgF1 * 100).toFixed(1)}%` : "-"}</td>
                       <td className="px-4 py-3 text-right text-body">
                         {c.avgObstructionAgreement != null ? `${(c.avgObstructionAgreement * 100).toFixed(1)}%` : "-"}
-                      </td>
-                      <td className="px-4 py-3 text-right text-body">
-                        {c.avgSceneAgreement != null ? `${(c.avgSceneAgreement * 100).toFixed(1)}%` : "-"}
                       </td>
                     </tr>
                   ))}
@@ -683,6 +692,7 @@ export default function AdminDashboard() {
           {activeTab === "nasa-tlx" && <NasaTlxTab />}
           {activeTab === "quality" && <QualityTab />}
           {activeTab === "retraining" && <RetrainingTab />}
+          {activeTab === "accounts" && <AccountsTab />}
         </Container>
       </section>
     </Page>

@@ -13,8 +13,9 @@ export function excludeNotAnObject(boxes) {
   return boxes.filter((box) => !isNotAnObject(box));
 }
 
-export function getSuggestionPanelMode({ editable, selected, obstructs, severity, comment }) {
-  if (!editable && selected && obstructs === true && severity == null) return "severity";
+// askSeverity is false for annotators, who record no severity (decided 3 Oct 2026).
+export function getSuggestionPanelMode({ editable, selected, obstructs, severity, comment, askSeverity = true }) {
+  if (askSeverity && !editable && selected && obstructs === true && severity == null) return "severity";
   if (editable) return "drawn";
   if (selected) return "confirmed";
   if (comment === NOT_AN_OBJECT) return "not_an_object";

@@ -71,8 +71,12 @@ interface IReactPictureAnnotationProps {
     obstructs: boolean | undefined,
     severity: number | null | undefined,
     onMarkNotAnObject: () => void,
+    askSeverity: boolean,
   ) => React.ReactElement;
   totalAnnotationCount?: number;
+  // Annotators give no severity and answer no scene-level questions (decided
+  // 3 Oct 2026). Comes from the database through annotationGet, never the session.
+  isAnnotator?: boolean;
 }
 
 interface IStageState {
@@ -110,7 +114,21 @@ const defaultState: IStageState = {
  * Note that the canvas is driven by mouse events with no touch equivalent, so
  * annotating requires a mouse or trackpad. See hooks/useCanAnnotate.
  */
+/**
+ * Sidewalk width card icons.
+ *
+ * Each card shows a person navigating past an obstruction (a bollard/post) on
+ * a perspective-drawn sidewalk. The three width levels differ in how much clear
+ * space surrounds the obstruction — narrow (squeeze past), moderate (comfortable
+ * clearance), wide (plenty of room). This framing avoids literal person-counting
+ * and instead captures the *effective clear width* concept from the manuscript
+ * (Ch. 1 line 27, Ch. 2 line 53).
+ *
+ * The same obstruction appears at a fixed size across all three cards — what
+ * changes is the sidewalk width around it.
+ */
 function SidewalkWidthIcon({ type }: { type: string }) {
+  /** Stick figure walking forward — head, body, arms, legs. */
   const walkingFigure = (cx: number) => (
     <g>
       <ellipse cx={cx} cy={22} rx={5} ry={6} fill="currentColor" />
@@ -122,6 +140,7 @@ function SidewalkWidthIcon({ type }: { type: string }) {
     </g>
   );
 
+  /** Two converging perspective lines representing sidewalk edges. */
   const sidewalkEdges = (leftTop: number, leftBot: number, rightTop: number, rightBot: number) => (
     <g>
       <line x1={leftTop} y1={5} x2={leftBot} y2={75} stroke="currentColor" strokeWidth={2} opacity={0.35} />
@@ -129,38 +148,254 @@ function SidewalkWidthIcon({ type }: { type: string }) {
     </g>
   );
 
+  /** A simple bollard/post obstruction — the obstacle the person navigates past. */
+  const bollard = (cx: number) => (
+    <g opacity={0.35}>
+      {/* Post shaft */}
+      <line x1={cx} y1={26} x2={cx} y2={56} stroke="currentColor" strokeWidth={4.5} strokeLinecap="round" />
+      {/* Cap / top */}
+      <circle cx={cx} cy={24} r={4} fill="currentColor" />
+    </g>
+  );
+
   switch (type) {
     case "noSidewalk":
       return (
-        <svg viewBox="0 0 80 80" className="w-full h-full text-muted" aria-label="No sidewalk">
+        <svg viewBox="0 0 80 80" className="w-full h-full text-muted" aria-label="None — person forced onto road, no sidewalk">
+          {/* Dashed sidewalk edges — where a sidewalk would be */}
           <line x1={35} y1={5} x2={15} y2={75} stroke="currentColor" strokeWidth={2} strokeDasharray="6 4" opacity={0.25} />
           <line x1={45} y1={5} x2={65} y2={75} stroke="currentColor" strokeWidth={2} strokeDasharray="6 4" opacity={0.25} />
-          <line x1={28} y1={30} x2={52} y2={54} stroke="currentColor" strokeWidth={2.5} opacity={0.4} />
-          <line x1={52} y1={30} x2={28} y2={54} stroke="currentColor" strokeWidth={2.5} opacity={0.4} />
+          {/* X mark over the sidewalk area */}
+          <line x1={30} y1={25} x2={50} y2={50} stroke="currentColor" strokeWidth={2.5} opacity={0.35} />
+          <line x1={50} y1={25} x2={30} y2={50} stroke="currentColor" strokeWidth={2.5} opacity={0.35} />
+          {/* Walking figure outside the sidewalk on the left — forced onto the road */}
+          <g opacity={0.7}>
+            <ellipse cx={14} cy={24} rx={4.5} ry={5.5} fill="currentColor" />
+            <line x1={14} y1={30} x2={15} y2={46} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
+            <line x1={15} y1={35} x2={7} y2={39} stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+            <line x1={15} y1={35} x2={23} y2={41} stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+            <line x1={15} y1={46} x2={8} y2={60} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
+            <line x1={15} y1={46} x2={22} y2={59} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
+          </g>
         </svg>
       );
     case "onePerson":
       return (
-        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="One person width">
+        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="Narrow — tight clearance past obstruction">
           {sidewalkEdges(33, 18, 47, 62)}
-          {walkingFigure(40)}
+          {walkingFigure(33)}
+          {bollard(47)}
         </svg>
       );
     case "twoPeople":
       return (
-        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="Two people width">
+        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="Moderate — comfortable clearance past obstruction">
           {sidewalkEdges(28, 8, 52, 72)}
-          {walkingFigure(32)}
-          {walkingFigure(50)}
+          {walkingFigure(33)}
+          {bollard(52)}
         </svg>
       );
     case "threePlus":
       return (
-        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="Three people width">
+        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="Wide — plenty of room past obstruction">
           {sidewalkEdges(24, 2, 56, 78)}
-          {walkingFigure(22)}
-          {walkingFigure(40)}
-          {walkingFigure(58)}
+          {walkingFigure(30)}
+          {bollard(56)}
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+/**
+ * Surface Condition Icon — ground cross-section profiles.
+ *
+ * Visual language: the ground itself, not a person. A flat line = easy,
+ * a bumpy line = some difficulty, a jagged broken line = dangerous.
+ * Uses a wheel/motion glyph for "easy" and a warning triangle for "dangerous"
+ * to reinforce the functional meaning.
+ */
+function SurfaceConditionIcon({ type }: { type: "easy" | "some" | "difficult" }) {
+  switch (type) {
+    case "easy":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Easy to traverse — smooth surface">
+          {/* Smooth ground line */}
+          <line x1={8} y1={44} x2={56} y2={44} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.7} />
+          {/* Surface texture marks */}
+          <line x1={14} y1={44} x2={14} y2={47} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
+          <line x1={26} y1={44} x2={26} y2={47} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
+          <line x1={38} y1={44} x2={38} y2={47} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
+          <line x1={50} y1={44} x2={50} y2={47} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
+          {/* Smooth rolling wheel above */}
+          <circle cx={32} cy={30} r={9} stroke="currentColor" strokeWidth={2} fill="none" opacity={0.5} />
+          <circle cx={32} cy={30} r={2} fill="currentColor" opacity={0.5} />
+          {/* Motion lines */}
+          <line x1={18} y1={26} x2={14} y2={26} stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" opacity={0.3} />
+          <line x1={18} y1={30} x2={12} y2={30} stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" opacity={0.3} />
+          <line x1={18} y1={34} x2={14} y2={34} stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" opacity={0.3} />
+        </svg>
+      );
+    case "some":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Some difficulty — uneven surface">
+          {/* Bumpy ground line */}
+          <polyline points="8,44 16,44 20,41 24,44 30,43 34,45 38,42 42,44 48,43 52,44 56,44" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" fill="none" opacity={0.7} />
+          {/* Depth lines */}
+          <line x1={14} y1={46} x2={14} y2={49} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
+          <line x1={32} y1={47} x2={32} y2={50} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
+          <line x1={50} y1={46} x2={50} y2={49} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
+          {/* Wobbling wheel */}
+          <circle cx={32} cy={28} r={9} stroke="currentColor" strokeWidth={2} fill="none" opacity={0.5} />
+          <circle cx={32} cy={28} r={2} fill="currentColor" opacity={0.5} />
+          {/* Wobble marks */}
+          <line x1={26} y1={17} x2={24} y2={15} stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" opacity={0.35} />
+          <line x1={38} y1={17} x2={40} y2={15} stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" opacity={0.35} />
+        </svg>
+      );
+    case "difficult":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Difficult or dangerous — broken surface">
+          {/* Jagged broken ground */}
+          <polyline points="8,44 14,44 17,40 19,46 22,42 26,44 28,48 30,41 34,44 36,39 40,46 42,43 46,44 48,40 50,45 54,42 56,44" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" fill="none" opacity={0.7} />
+          {/* Crack lines */}
+          <line x1={22} y1={44} x2={20} y2={52} stroke="currentColor" strokeWidth={1.8} opacity={0.4} />
+          <line x1={36} y1={44} x2={38} y2={54} stroke="currentColor" strokeWidth={1.8} opacity={0.4} />
+          <line x1={48} y1={44} x2={46} y2={51} stroke="currentColor" strokeWidth={1.8} opacity={0.4} />
+          {/* Warning triangle */}
+          <polygon points="32,14 22,32 42,32" stroke="currentColor" strokeWidth={2} fill="none" opacity={0.55} />
+          <line x1={32} y1={20} x2={32} y2={26} stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" opacity={0.55} />
+          <circle cx={32} cy={29} r={1.2} fill="currentColor" opacity={0.55} />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+/**
+ * Walking Comfort Icon — face expressions.
+ *
+ * Visual language: how the scene *feels*. Face-based scales (Wong-Baker FACES)
+ * are the most validated visual approach for subjective self-reports.
+ * Simple hand-drawn line faces — calm smile, uncertain flat, tense frown.
+ */
+function WalkingComfortIcon({ type }: { type: "comfortable" | "somewhat" | "uncomfortable" }) {
+  switch (type) {
+    case "comfortable":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Comfortable">
+          <circle cx={32} cy={32} r={20} stroke="currentColor" strokeWidth={2.2} fill="none" opacity={0.6} />
+          {/* Relaxed eyes */}
+          <ellipse cx={24} cy={27} rx={2.5} ry={3} fill="currentColor" opacity={0.6} />
+          <ellipse cx={40} cy={27} rx={2.5} ry={3} fill="currentColor" opacity={0.6} />
+          {/* Gentle smile */}
+          <path d="M23 37 Q28 43 32 43 Q36 43 41 37" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" fill="none" opacity={0.6} />
+        </svg>
+      );
+    case "somewhat":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Somewhat uncomfortable">
+          <circle cx={32} cy={32} r={20} stroke="currentColor" strokeWidth={2.2} fill="none" opacity={0.6} />
+          {/* Slightly concerned eyes */}
+          <ellipse cx={24} cy={27} rx={2.5} ry={3} fill="currentColor" opacity={0.6} />
+          <ellipse cx={40} cy={27} rx={2.5} ry={3} fill="currentColor" opacity={0.6} />
+          {/* Slight raised brow */}
+          <line x1={36} y1={20} x2={44} y2={21} stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" opacity={0.4} />
+          {/* Flat wavy mouth */}
+          <path d="M24 39 Q28 37 32 38 Q36 39 40 37" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" fill="none" opacity={0.6} />
+        </svg>
+      );
+    case "uncomfortable":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Uncomfortable">
+          <circle cx={32} cy={32} r={20} stroke="currentColor" strokeWidth={2.2} fill="none" opacity={0.6} />
+          {/* Tense eyes */}
+          <ellipse cx={24} cy={27} rx={2.5} ry={2.5} fill="currentColor" opacity={0.6} />
+          <ellipse cx={40} cy={27} rx={2.5} ry={2.5} fill="currentColor" opacity={0.6} />
+          {/* Furrowed brows */}
+          <line x1={20} y1={21} x2={27} y2={22} stroke="currentColor" strokeWidth={2} strokeLinecap="round" opacity={0.5} />
+          <line x1={44} y1={21} x2={37} y2={22} stroke="currentColor" strokeWidth={2} strokeLinecap="round" opacity={0.5} />
+          {/* Frown */}
+          <path d="M24 41 Q28 36 32 36 Q36 36 40 41" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" fill="none" opacity={0.6} />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+/**
+ * Accessible to Me Icon — gateway/path metaphor with 5-level colour gradient.
+ *
+ * Visual language: "can I get through?" The gateway progressively narrows from
+ * wide-open (green) to fully blocked (red), matching a 1–5 person-dependent
+ * accessibility scale (Preston & Colman 2000; Project Sidewalk 1–5 precedent).
+ */
+function AccessibleToMeIcon({ type }: { type: "easy" | "mostly" | "somewhat" | "very" | "not" }) {
+  switch (type) {
+    case "easy":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full" aria-label="Easily accessible" style={{ color: "#16a34a" }}>
+          {/* Wide-open gateway */}
+          <line x1={16} y1={12} x2={16} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={48} y1={12} x2={48} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={16} y1={12} x2={48} y2={12} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={10} y1={52} x2={54} y2={52} stroke="currentColor" strokeWidth={2} opacity={0.35} />
+          {/* Double checkmark */}
+          <polyline points="20,32 26,38 36,24" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.7} />
+          <polyline points="30,32 36,38 46,24" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.7} />
+        </svg>
+      );
+    case "mostly":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full" aria-label="Mostly accessible" style={{ color: "#22c55e" }}>
+          {/* Open gateway — walls slightly inward */}
+          <line x1={17} y1={12} x2={19} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={47} y1={12} x2={45} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={17} y1={12} x2={47} y2={12} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={10} y1={52} x2={54} y2={52} stroke="currentColor" strokeWidth={2} opacity={0.35} />
+          {/* Single checkmark */}
+          <polyline points="24,32 30,38 40,24" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.7} />
+        </svg>
+      );
+    case "somewhat":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full" aria-label="Somewhat difficult" style={{ color: "#d97706" }}>
+          {/* Narrowing gateway */}
+          <line x1={18} y1={12} x2={24} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={46} y1={12} x2={40} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={18} y1={12} x2={46} y2={12} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={10} y1={52} x2={54} y2={52} stroke="currentColor" strokeWidth={2} opacity={0.35} />
+          {/* Tilde / wavy line — uncertain */}
+          <path d="M25,31 Q29,26 32,31 Q35,36 39,31" stroke="currentColor" strokeWidth={3} strokeLinecap="round" fill="none" opacity={0.7} />
+        </svg>
+      );
+    case "very":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full" aria-label="Very difficult" style={{ color: "#ea580c" }}>
+          {/* More narrowing gateway */}
+          <line x1={14} y1={12} x2={26} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={50} y1={12} x2={38} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={14} y1={12} x2={50} y2={12} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={10} y1={52} x2={54} y2={52} stroke="currentColor" strokeWidth={2} opacity={0.35} />
+          {/* Exclamation */}
+          <line x1={32} y1={22} x2={32} y2={34} stroke="currentColor" strokeWidth={3} strokeLinecap="round" opacity={0.7} />
+          <circle cx={32} cy={40} r={2} fill="currentColor" opacity={0.7} />
+        </svg>
+      );
+    case "not":
+      return (
+        <svg viewBox="0 0 64 64" className="w-full h-full" aria-label="Not accessible to me" style={{ color: "#dc2626" }}>
+          {/* Blocked gateway — walls converge */}
+          <line x1={12} y1={12} x2={28} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={52} y1={12} x2={36} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={12} y1={12} x2={52} y2={12} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
+          <line x1={10} y1={52} x2={54} y2={52} stroke="currentColor" strokeWidth={2} opacity={0.35} />
+          {/* X mark */}
+          <line x1={25} y1={24} x2={39} y2={38} stroke="currentColor" strokeWidth={3} strokeLinecap="round" opacity={0.7} />
+          <line x1={39} y1={24} x2={25} y2={38} stroke="currentColor" strokeWidth={3} strokeLinecap="round" opacity={0.7} />
         </svg>
       );
     default:
@@ -188,6 +423,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       obstructs: boolean | undefined,
       severity: number | null | undefined,
       onMarkNotAnObject: () => void,
+      askSeverity: boolean,
     ) => (
       <DefaultInputSection
         key={id}
@@ -204,8 +440,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         isRejected={isRejected}
         obstructs={obstructs}
         severity={severity}
+        askSeverity={askSeverity}
       />
     ),
+    isAnnotator: false,
   };
 
   public state = {
@@ -276,6 +514,16 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private mountTime: number = Date.now();
   private sceneStepStartMs: number | null = null;
 
+  // Annotators record boxes, categories and Yes/No only (decided 3 Oct 2026).
+  // Every role-dependent part of the tool reads these two.
+  private get askSeverity() {
+    return !this.props.isAnnotator;
+  }
+
+  private get askScene() {
+    return !this.props.isAnnotator;
+  }
+
   private markSceneStepStart = () => {
     if (this.sceneStepStartMs === null) {
       this.sceneStepStartMs = Date.now();
@@ -305,8 +553,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           if (currentRecord.userPavementType !== undefined) {
             this.setState({ pavementType: currentRecord.userPavementType });
           }
-          if (currentRecord.userSceneLevel !== undefined) {
-            this.setState({ sceneLevel: currentRecord.userSceneLevel });
+          // annotationGet copies a stored sceneLevel into userSceneLevel, and
+          // that is null for annotators. Only restore a real answer object, or
+          // reads of this.state.sceneLevel.sidewalkWidth would throw.
+          const savedScene = currentRecord.userSceneLevel;
+          if (savedScene && typeof savedScene === "object") {
+            this.setState({ sceneLevel: savedScene });
           }
         }
       }
@@ -400,15 +652,16 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const displayLabels = buildDisplayLabels(sortedAnnotations);
 
     const { canvasScale } = this.state;
+    const { askScene, askSeverity } = this;
 
     return (
       <Container as="section" width="wide" className="annotation-container">
         <div className="flex flex-row gap-6">
 
-          {/* ── Left: Step 1 (65%) ── */}
+          {/* ── Left: Step 1 (65%, or the full width when there is no Step 2) ── */}
           <div style={{ flex: '65 1 0%' }} className="min-w-0">
             <div className="mb-3">
-              <H2 className="text-lg font-bold text-ink mb-1">Step 1: Identify Objects</H2>
+              <H2 className="text-lg font-bold text-ink mb-1">{askScene ? "Step 1: Identify Objects" : "Identify Objects"}</H2>
               <P className="text-body text-sm">
                 Review objects <span className="font-semibold text-ink">on or beside the sidewalk</span>.
                 For each dashed yellow box, decide whether it obstructs the path for <strong>you</strong>, traveling as you normally do.
@@ -470,6 +723,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                             obstructs,
                             severity,
                             this.onMarkNotAnObject,
+                            askSeverity,
                           )}
                         </div>
                       )}
@@ -480,7 +734,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               <div id="box-review-section" className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
                 <div className="bg-surface rounded-card border border-line shadow-sm p-4">
                   <H3><span className="text-lg font-bold text-ink">Confirmed Obstructions</span></H3>
-                  <p className="text-xs text-muted mb-2">Suggestions you confirmed as present.</p>
+                  <p className="text-xs text-muted mb-2">Suggestions you said obstruct the sidewalk.</p>
                   <ul className="flex flex-wrap gap-2">
                     {sortedAnnotations
                       .map((data) => {
@@ -517,7 +771,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                 </div>
                 <div className="bg-surface rounded-card border border-line shadow-sm p-4">
                   <H3><span className="text-lg font-bold text-ink">Your Drawn Obstructions</span></H3>
-                  <p className="text-xs text-muted mb-2">Objects you identified that the model missed.</p>
+                  <p className="text-xs text-muted mb-2">Objects you drew. Answer Yes or No for each.</p>
                   <ul className="flex flex-wrap gap-2">
                     {sortedAnnotations
                       .map((data) => {
@@ -533,6 +787,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                             >
                               <span className="text-xs font-semibold text-ink whitespace-nowrap">
                                 {displayLabels.get(data.id) ?? "Select Option"}
+                              </span>
+                              {/* The obstruction answer, so an unanswered box shows before submitting */}
+                              <span
+                                className={`text-[10px] font-bold rounded-control px-1 ${data.obstructs === true
+                                  ? "bg-primary text-white"
+                                  : data.obstructs === false
+                                    ? "bg-surface-subtle text-body border border-line"
+                                    : "bg-danger-soft text-danger"
+                                  }`}
+                                title={data.obstructs == null ? "Not answered yet" : "Obstructs the sidewalk?"}
+                              >
+                                {data.obstructs === true ? "Yes" : data.obstructs === false ? "No" : "?"}
                               </span>
                               <button
                                 className="shrink-0 bg-surface border border-line hover:bg-danger-soft hover:text-danger text-muted rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold transition-colors"
@@ -556,83 +822,94 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             </div>
           </div>
 
-          {/* ── Right: Step 2 (35%) ── */}
+          {/* ── Right: Step 2 (35%), contributors only ── */}
+          {askScene && (
           <div style={{ flex: '35 1 0%' }} className="min-w-0 overflow-y-auto">
             <div id="scene-level-section" className="mb-6">
               <H2 className="text-lg font-bold text-ink mb-1">Step 2: Rate the Sidewalk</H2>
               <P className="text-body text-sm mb-4">
                 Rate the following aspects of the sidewalk scene based on what you see in the image.
               </P>
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {/* Item 1 — Sidewalk Width */}
-                <div className="bg-surface-subtle p-4 rounded-card border border-line">
-                  <p className="text-base font-semibold text-ink mb-0.5">Sidewalk Width</p>
-                  <p className="text-[11px] text-muted mb-2">How many people can comfortably walk side by side on the sidewalk?</p>
-                  <div className="grid grid-cols-4 gap-2">
+                <div className="bg-surface-subtle p-3 rounded-card border border-line">
+                  <p className="text-sm font-semibold text-ink mb-0.5">Sidewalk Width</p>
+                  <p className="text-[11px] text-muted mb-1.5">How much usable walking space does this sidewalk have?</p>
+                  <div className="grid grid-cols-4 gap-1.5">
                     {[
-                      { value: "no_sidewalk", label: "No Sidewalk", icon: "noSidewalk" as const },
-                      { value: "one_person", label: "One Person", icon: "onePerson" as const },
-                      { value: "two_people", label: "Two People", icon: "twoPeople" as const },
-                      { value: "three_or_more", label: "Three+", icon: "threePlus" as const },
+                      { value: "three_or_more", label: "Wide", icon: "threePlus" as const },
+                      { value: "two_people", label: "Moderate", icon: "twoPeople" as const },
+                      { value: "one_person", label: "Narrow", icon: "onePerson" as const },
+                      { value: "no_sidewalk", label: "None", icon: "noSidewalk" as const },
                     ].map((opt) => (
                       <button
                         key={opt.value}
-                        className={`flex flex-col items-center p-3 rounded-card text-center transition-all border ${this.state.sceneLevel.sidewalkWidth === opt.value
-                            ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                            : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
+                        className={`flex flex-col items-center p-2 rounded-card text-center transition-all border ${this.state.sceneLevel.sidewalkWidth === opt.value
+                          ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
+                          : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
                           }`}
                         onClick={() => {
                           this.markSceneStepStart();
                           const updates: Record<string, unknown> = { sidewalkWidth: opt.value };
-                          if (opt.value === "no_sidewalk") updates.surfaceCondition = null;
+                          // No sidewalk: the other three questions are greyed out, so
+                          // clear any answers given before "None" was chosen.
+                          if (opt.value === "no_sidewalk") {
+                            updates.surfaceCondition = null;
+                            updates.walkability = null;
+                            updates.overallAccessibility = null;
+                          }
                           this.setState({
                             sceneLevel: { ...this.state.sceneLevel, ...updates },
                           });
                         }}
                       >
-                        <div className="w-16 h-16 mb-1.5 flex items-end justify-center">
+                        <div className="w-12 h-12 mb-1 flex items-end justify-center">
                           <SidewalkWidthIcon type={opt.icon} />
                         </div>
-                        <span className="text-xs font-semibold leading-tight">{opt.label}</span>
+                        <span className="text-[10px] font-semibold leading-tight">{opt.label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
                 {/* Item 2 — Surface Condition (disabled when no sidewalk) */}
+                {/* Ground cross-section profiles — visual language: the surface itself.
+                    3-level functional scale per Wolf et al. (2007) and Project Sidewalk reliability data. */}
                 {(() => {
                   const disabled = this.state.sceneLevel.sidewalkWidth === "no_sidewalk";
+                  const surfaceOptions: { value: number; label: string; icon: "easy" | "some" | "difficult" }[] = [
+                    { value: 1, label: "Easy to traverse", icon: "easy" },
+                    { value: 2, label: "Some difficulty", icon: "some" },
+                    { value: 3, label: "Difficult or dangerous", icon: "difficult" },
+                  ];
                   return (
-                    <div className={`bg-surface-subtle p-4 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
-                      <p className="text-base font-semibold text-ink mb-0.5">Surface Condition</p>
-                      <p className="text-[11px] text-muted mb-2">
-                        {disabled ? "Not applicable — no sidewalk present" : "How would you describe the condition of the walking surface?"}
+                    <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
+                      <p className="text-sm font-semibold text-ink mb-0.5">Surface Condition</p>
+                      <p className="text-[11px] text-muted mb-1.5">
+                        {disabled ? "Not applicable — no sidewalk present" : "How does the walking surface affect movement?"}
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        {([
-                          { value: 1, label: "Even & well maintained" },
-                          { value: 2, label: "Mostly even, minor defects" },
-                          { value: 3, label: "Noticeably uneven or cracked" },
-                          { value: 4, label: "Severely damaged or broken" },
-                        ]).map((option) => (
+                      <div className="flex gap-1.5">
+                        {surfaceOptions.map((opt) => (
                           <button
-                            key={option.value}
+                            key={opt.value}
                             disabled={disabled}
-                            className={`flex-1 py-2 rounded-control text-xs font-semibold transition-all border ${!disabled && this.state.sceneLevel.surfaceCondition === option.value
-                                ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                                : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
+                            className={`flex-1 flex flex-col items-center py-2 px-1 rounded-control transition-all border ${!disabled && this.state.sceneLevel.surfaceCondition === opt.value
+                              ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
+                              : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
                               }`}
                             onClick={() => {
                               if (!disabled) {
                                 this.markSceneStepStart();
                                 this.setState({
-                                  sceneLevel: { ...this.state.sceneLevel, surfaceCondition: option.value },
+                                  sceneLevel: { ...this.state.sceneLevel, surfaceCondition: opt.value },
                                 });
                               }
                             }}
                           >
-                            <span className="block text-sm font-bold">{option.value}</span>
-                            <span className="block text-[10px] mt-0.5">{option.label}</span>
+                            <div className="w-10 h-10 mb-1 flex items-center justify-center">
+                              <SurfaceConditionIcon type={opt.icon} />
+                            </div>
+                            <span className="text-[10px] font-semibold leading-tight text-center">{opt.label}</span>
                           </button>
                         ))}
                       </div>
@@ -640,72 +917,106 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   );
                 })()}
 
-                {/* Item 3 — Perceived Walkability */}
-                <div className="bg-surface-subtle p-4 rounded-card border border-line">
-                  <p className="text-base font-semibold text-ink mb-0.5">Perceived Walkability</p>
-                  <p className="text-[11px] text-muted mb-2">How easy would this stretch be to walk?</p>
-                  <div className="flex flex-wrap gap-2">
-                    {([
-                      { value: 1, label: "Very difficult" },
-                      { value: 2, label: "Difficult" },
-                      { value: 3, label: "Manageable" },
-                      { value: 4, label: "Easy" },
-                      { value: 5, label: "Very easy" },
-                    ]).map((option) => (
-                      <button
-                        key={option.value}
-                        className={`flex-1 py-2 rounded-control text-xs font-semibold transition-all border ${this.state.sceneLevel.walkability === option.value
-                            ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                            : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
-                          }`}
-                        onClick={() => {
-                          this.markSceneStepStart();
-                          this.setState({
-                            sceneLevel: { ...this.state.sceneLevel, walkability: option.value },
-                          });
-                        }}
-                      >
-                        <span className="block text-sm font-bold">{option.value}</span>
-                        <span className="block text-[10px] mt-0.5">{option.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {/* Item 3 — Walking Comfort (disabled when no sidewalk) */}
+                {/* Face expressions — visual language: how the scene *feels*.
+                    Reframed from undefined "walkability" to concrete "comfort" per Mehta (2008).
+                    3-level scale per Kim et al. (2025) stability findings. */}
+                {(() => {
+                  const disabled = this.state.sceneLevel.sidewalkWidth === "no_sidewalk";
+                  const comfortOptions: { value: number; label: string; icon: "comfortable" | "somewhat" | "uncomfortable" }[] = [
+                    { value: 1, label: "Comfortable", icon: "comfortable" },
+                    { value: 2, label: "Somewhat uncomfortable", icon: "somewhat" },
+                    { value: 3, label: "Uncomfortable", icon: "uncomfortable" },
+                  ];
+                  return (
+                    <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
+                      <p className="text-sm font-semibold text-ink mb-0.5">Walking Comfort</p>
+                      <p className="text-[11px] text-muted mb-1.5">
+                        {disabled ? "Not applicable — no sidewalk present" : "How comfortable does this sidewalk look for walking?"}
+                      </p>
+                      <div className="flex gap-1.5">
+                        {comfortOptions.map((opt) => (
+                          <button
+                            key={opt.value}
+                            disabled={disabled}
+                            className={`flex-1 flex flex-col items-center py-2 px-1 rounded-control transition-all border ${!disabled && this.state.sceneLevel.walkability === opt.value
+                              ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
+                              : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
+                              }`}
+                            onClick={() => {
+                              if (!disabled) {
+                                this.markSceneStepStart();
+                                this.setState({
+                                  sceneLevel: { ...this.state.sceneLevel, walkability: opt.value },
+                                });
+                              }
+                            }}
+                          >
+                            <div className="w-10 h-10 mb-1 flex items-center justify-center">
+                              <WalkingComfortIcon type={opt.icon} />
+                            </div>
+                            <span className="text-[10px] font-semibold leading-tight text-center">{opt.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
-                {/* Item 4 — Overall Accessibility */}
-                <div className="bg-surface-subtle p-4 rounded-card border border-line">
-                  <p className="text-base font-semibold text-ink mb-0.5">Overall Accessibility</p>
-                  <p className="text-[11px] text-muted mb-2">How accessible is this sidewalk for people with mobility needs?</p>
-                  <div className="flex flex-wrap gap-2">
-                    {([
-                      { value: 1, label: "Not accessible" },
-                      { value: 2, label: "Slightly" },
-                      { value: 3, label: "Moderately" },
-                      { value: 4, label: "Mostly" },
-                      { value: 5, label: "Fully accessible" },
-                    ]).map((option) => (
-                      <button
-                        key={option.value}
-                        className={`flex-1 py-2 rounded-control text-xs font-semibold transition-all border ${this.state.sceneLevel.overallAccessibility === option.value
-                            ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                            : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
-                          }`}
-                        onClick={() => {
-                          this.markSceneStepStart();
-                          this.setState({
-                            sceneLevel: { ...this.state.sceneLevel, overallAccessibility: option.value },
-                          });
-                        }}
-                      >
-                        <span className="block text-sm font-bold">{option.value}</span>
-                        <span className="block text-[10px] mt-0.5">{option.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {/* Item 4 — Accessible to Me (disabled when no sidewalk) */}
+                {/* Gateway/path metaphor with traffic-light colour gradient.
+                    Self-referential "to me" framing per Huang et al. (2025) and Li et al. (2025).
+                    5-point scale: Preston & Colman (2000) show 2-4 point scales have worst
+                    psychometric properties; Project Sidewalk uses 1-5 severity; finer scale
+                    captures person-dependent variation that IS the signal (thesis core argument).
+                    Can be collapsed to 3 levels for reporting if needed. */}
+                {(() => {
+                  const disabled = this.state.sceneLevel.sidewalkWidth === "no_sidewalk";
+                  const accessOptions: { value: number; label: string; icon: "easy" | "mostly" | "somewhat" | "very" | "not" }[] = [
+                    { value: 1, label: "Easily accessible", icon: "easy" },
+                    { value: 2, label: "Mostly accessible", icon: "mostly" },
+                    { value: 3, label: "Somewhat difficult", icon: "somewhat" },
+                    { value: 4, label: "Very difficult", icon: "very" },
+                    { value: 5, label: "Not accessible", icon: "not" },
+                  ];
+                  return (
+                    <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
+                      <p className="text-sm font-semibold text-ink mb-0.5">Accessible to Me</p>
+                      <p className="text-[11px] text-muted mb-1.5">
+                        {disabled ? "Not applicable — no sidewalk present" : "Could you personally navigate this sidewalk?"}
+                      </p>
+                      <div className="flex gap-1">
+                        {accessOptions.map((opt) => (
+                          <button
+                            key={opt.value}
+                            disabled={disabled}
+                            className={`flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-control transition-all border ${!disabled && this.state.sceneLevel.overallAccessibility === opt.value
+                              ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
+                              : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
+                              }`}
+                            onClick={() => {
+                              if (!disabled) {
+                                this.markSceneStepStart();
+                                this.setState({
+                                  sceneLevel: { ...this.state.sceneLevel, overallAccessibility: opt.value },
+                                });
+                              }
+                            }}
+                          >
+                            <div className="w-8 h-8 mb-0.5 flex items-center justify-center">
+                              <AccessibleToMeIcon type={opt.icon} />
+                            </div>
+                            <span className="text-[9px] font-semibold leading-tight text-center">{opt.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
+          )}
 
         </div>{/* end flex row */}
 
@@ -713,7 +1024,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         {this.state.error && (
           <div className="flex justify-center mt-6 mb-4">
             <div className="bg-danger-soft border border-danger-border text-danger px-6 py-3 rounded-control flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className="shrink-0 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
               <span className="font-medium">{this.state.error}</span>
@@ -793,7 +1104,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     } = counts;
 
     const submitTime = Date.now();
-    const stepTimings = computeStepTimings(this.mountTime, this.sceneStepStartMs, submitTime);
+    const stepTimings = computeStepTimings(this.mountTime, this.sceneStepStartMs, submitTime, {
+      hasSceneStep: this.askScene,
+    });
     const suggestionConfidences = buildSuggestionConfidences(this.currentAnnotationData);
     const hiddenConfidences = this.hiddenSuggestions.map((s) => ({
       id: s.id,
@@ -831,6 +1144,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       newObjects,
       selectedObjects,
       sceneLevel,
+      isAnnotator: !this.askScene,
     });
 
     if (!validationResult.valid) {
@@ -843,7 +1157,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       imageID: this.props.imageID,
       city: this.props.city,
       servedModelVersion: this.props.servedModelVersion,
-      sceneLevel,
+      sceneLevel: this.askScene ? sceneLevel : null,
       selectedObjectsID: selectedObjects,
       newObjects: newObjects,
       currentAnnotationCount: this.props.currentAnnotationCount + 1,
@@ -888,7 +1202,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     record.annotationList = this.currentAnnotationData;
     record.userSliderValue = this.state.sliderValue;
     record.userPavementType = this.state.pavementType;
-    record.userSceneLevel = this.state.sceneLevel;
+    record.userSceneLevel = this.askScene ? this.state.sceneLevel : null;
     writeSession({ data: localData });
   };
 
@@ -1099,22 +1413,27 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (selectTarget >= 0) {
       const data = this.shapes[selectTarget].getAnnotationData();
       if (!data.editable) {
-        if (!data.selected) {
+        // A contributor's first Yes keeps the panel open for the severity
+        // picker. Annotators give no severity, so Yes closes it like No.
+        if (!data.selected && this.askSeverity) {
           keepSelected = true;
+        }
+        if (!this.askSeverity) {
+          data.severity = null;
         }
         data.selected = true;
         data.isRejected = false;
         data.obstructs = true;
-        this.setState({ selected: true, isRejected: false, obstructs: true });
-        this.onShapeChange();
-      } else {
-        data.obstructs = true;
-        if (data.severity === undefined || data.severity === null) {
-          data.severity = 3;
-        }
-        this.setState({ obstructs: true, severity: data.severity });
+        this.setState({
+          selected: true,
+          isRejected: false,
+          obstructs: true,
+          ...(this.askSeverity ? {} : { severity: null }),
+        });
         this.onShapeChange();
       }
+      // A drawn box: the check button and Enter only confirm the category and
+      // close the panel. Yes or No is answered separately (onSetObstructs).
     }
 
     if (!keepSelected) {
@@ -1172,13 +1491,19 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       data.obstructs = obstructs;
       if (!obstructs) {
         data.severity = null;
+      } else if (this.askSeverity && (data.severity === undefined || data.severity === null)) {
+        // Contributors rate a drawn obstruction, starting the slider at 3
+        data.severity = 3;
       }
-      this.setState({ obstructs, severity: obstructs ? this.state.severity : null });
+      this.setState({ obstructs, severity: data.severity ?? null });
       this.onShapeChange();
     }
   };
 
   private onSetSeverity = (severity: number) => {
+    // The panel never shows severity to annotators, this is only a guard
+    if (!this.askSeverity) return;
+
     const selectTarget = this.shapes.findIndex(
       (shape) => shape.getAnnotationData().id === this.selectedId
     );
@@ -1356,39 +1681,6 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     return "";
   };
 
-  /* eslint-disable @typescript-eslint/no-unused-vars */
-  private sliderValueText = (sliderValue) => {
-    //   switch (sliderValue) {
-    //     case 1:
-    //       return "This sidewalk is completely unsafe and inaccessible for both abled pedestrians and PWPDs";
-    //     case 2:
-    //       return "This sidewalk is very unsafe for all pedestrians";
-    //     case 3:
-    //       return "This sidewalk is inconvenient for all pedestrians";
-    //     case 4:
-    //       return "This sidewalk is nearly acceptable for all pedestrians";
-    //     case 5:
-    //       return "This sidewalk is adequate for all pedestrians ";
-    //     case 6:
-    //       return "This sidewalk is unsafe for PWPDs ";
-    //     case 7:
-    //       return "This sidewalk is inconvenient for PWPDs";
-    //     case 8:
-    //       return "This sidewalk is accessible and safe for PWPDs";
-    //     case 9:
-    //       return "This sidewalk only has minor issues for PWPDs";
-    //     case 10:
-    //       return "This sidewalk has no accessibility nor safety issues for both abled pedestrians and PWPDs";
-    //     default:
-    //       return "Sidewalk Accessibility is inclusive to people with disabilities. ";
-    //   }
-    // };
-    // Rate the sidewalk found on the image based on your understanding of sidewalk accessibility.
-    // A score of 1 means that there is no sidewalk or the sidewalk in the image is completely unsafe
-    // and inaccessible for both abled pedestrians and persons with physical disabilities. On the other
-    // hand, a score of 10 means that the sidewalk has no accessibility nor safety issues for both abled pedestrians and PWPDs
-    const message =
-      "Rate the sidewalk found on the image based on your understanding of sidewalk accessibility. A score of 1 means that there is no sidewalk or the sidewalk in the image is completely unsafe and inaccessible for both abled pedestrians and persons with physical disabilities (PWPDs). On the other hand, a score of 10 means that the sidewalk has no accessibility nor safety issues for both abled pedestrians and PWPDs";
-    return message;
-  };
+  /* Legacy sliderValueText removed — the old 1-10 slider is replaced by the
+     5-level "Accessible to Me" card buttons (values 1-5). */
 }

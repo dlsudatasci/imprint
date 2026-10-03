@@ -3,9 +3,9 @@ import { validateAnnotationForSubmit } from "./clientAnnotation.js";
 
 const validSceneLevel = {
   sidewalkWidth: "two_people",
-  surfaceCondition: 3,
-  walkability: 4,
-  overallAccessibility: 3,
+  surfaceCondition: 2,
+  walkability: 2,
+  overallAccessibility: 1,
 };
 
 function makeInput(overrides = {}) {
@@ -107,13 +107,20 @@ describe("validateAnnotationForSubmit", () => {
     expect(result.error).toContain("surface condition");
   });
 
-  it("passes when surfaceCondition is null with no_sidewalk", () => {
+  it("passes with no sidewalk and the other three questions left empty (2 Oct 2026)", () => {
     const result = validateAnnotationForSubmit(
       makeInput({
-        sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: 2, overallAccessibility: 1 },
+        sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null },
       })
     );
     expect(result.valid).toBe(true);
+  });
+
+  it("asks for surface, walking comfort and accessibility once a sidewalk width is chosen", () => {
+    const empty = { sidewalkWidth: "one_person", surfaceCondition: 1, walkability: 1, overallAccessibility: 1 };
+    expect(validateAnnotationForSubmit(makeInput({ sceneLevel: { ...empty, surfaceCondition: undefined } })).error).toContain("surface condition");
+    expect(validateAnnotationForSubmit(makeInput({ sceneLevel: { ...empty, walkability: undefined } })).error).toContain("walking comfort");
+    expect(validateAnnotationForSubmit(makeInput({ sceneLevel: { ...empty, overallAccessibility: undefined } })).error).toContain("accessibility");
   });
 
   it("fails when walkability is null", () => {
@@ -121,7 +128,7 @@ describe("validateAnnotationForSubmit", () => {
       makeInput({ sceneLevel: { ...validSceneLevel, walkability: null } })
     );
     expect(result.valid).toBe(false);
-    expect(result.error).toContain("walkability");
+    expect(result.error).toContain("walking comfort");
   });
 
   it("fails when overallAccessibility is null", () => {
@@ -154,5 +161,95 @@ describe("validateAnnotationForSubmit", () => {
     );
     expect(result.valid).toBe(false);
     expect(result.error).toContain("unlabeled");
+  });
+});
+
+// Annotators answer no scene-level questions and give no severity (3 Oct 2026)
+describe("validateAnnotationForSubmit for annotators", () => {
+  const suggestionYes = { editable: false, selected: true, isRejected: false, comment: "tree", obstructs: true, severity: null };
+  const drawnNo = { editable: true, comment: "car", obstructs: false };
+
+  function annotatorInput(overrides = {}) {
+    return {
+      existingAnnotations: [suggestionYes, drawnNo],
+      newObjects: [drawnNo],
+      selectedObjects: [suggestionYes],
+      sceneLevel: null,
+      isAnnotator: true,
+      ...overrides,
+    };
+  }
+
+  it("passes with sceneLevel null and an obstructing box without severity", () => {
+    expect(validateAnnotationForSubmit(annotatorInput())).toEqual({ valid: true });
+  });
+
+  it("passes with an empty scene battery", () => {
+    const empty = { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null };
+    expect(validateAnnotationForSubmit(annotatorInput({ sceneLevel: empty }))).toEqual({ valid: true });
+  });
+
+  it("passes with a drawn box answered Yes and no severity", () => {
+    const drawnYes = { editable: true, comment: "bench", obstructs: true };
+    const result = validateAnnotationForSubmit(
+      annotatorInput({ existingAnnotations: [suggestionYes, drawnYes], newObjects: [drawnYes] })
+    );
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("still fails on an undecided suggestion", () => {
+    const undecided = { editable: false, selected: false, isRejected: false, comment: "tree" };
+    const result = validateAnnotationForSubmit(annotatorInput({ existingAnnotations: [undecided, drawnNo] }));
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Yes or No");
+  });
+
+  it("still fails on a box with no category", () => {
+    const unlabeled = { editable: true, comment: "---", obstructs: false };
+    const result = validateAnnotationForSubmit(
+      annotatorInput({ existingAnnotations: [suggestionYes, unlabeled], newObjects: [unlabeled] })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("unlabeled");
+  });
+
+  it("still fails on a drawn box with no Yes or No", () => {
+    const unanswered = { editable: true, comment: "car" };
+    const result = validateAnnotationForSubmit(
+      annotatorInput({ existingAnnotations: [suggestionYes, unanswered], newObjects: [unanswered] })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Please indicate whether each object obstructs the sidewalk.");
+  });
+});
+
+describe("validateAnnotationForSubmit for drawn boxes (both roles)", () => {
+  it("refuses a contributor's drawn box with no Yes or No", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ newObjects: [{ editable: true, comment: "pole" }] })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Please indicate whether each object obstructs the sidewalk.");
+  });
+
+  it("accepts a contributor's drawn box answered No without severity", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ newObjects: [{ editable: true, comment: "car", obstructs: false }] })
+    );
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("still asks a contributor to rate a drawn box answered Yes", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ newObjects: [{ editable: true, comment: "pole", obstructs: true }] })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("severity");
+  });
+
+  it("still requires the scene battery from a contributor (isAnnotator defaults to false)", () => {
+    const result = validateAnnotationForSubmit(makeInput({ sceneLevel: null }));
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("sidewalk width");
   });
 });

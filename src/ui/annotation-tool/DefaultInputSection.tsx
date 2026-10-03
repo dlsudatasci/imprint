@@ -45,6 +45,8 @@ export interface IDefaultInputSection {
   isRejected: boolean;
   obstructs?: boolean;
   severity?: number | null;
+  // False for annotators, who give no severity (decided 3 Oct 2026)
+  askSeverity?: boolean;
 }
 
 function SeveritySlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
@@ -203,10 +205,12 @@ const DefaultInputSection = ({
   onUnselectObstruction,
   onMarkNotAnObject,
   onSetSeverity,
+  onSetObstructs,
   editable,
   selected,
   obstructs,
   severity,
+  askSeverity = true,
 }: IDefaultInputSection) => {
   const [isCustom, setIsCustom] = useState(false);
 
@@ -255,7 +259,7 @@ const DefaultInputSection = ({
     }
   };
 
-  const mode = getSuggestionPanelMode({ editable, selected, obstructs, severity, comment: value });
+  const mode = getSuggestionPanelMode({ editable, selected, obstructs, severity, comment: value, askSeverity });
 
   if (mode === "severity") {
     return (
@@ -358,8 +362,44 @@ const DefaultInputSection = ({
           </button>
         </div>
 
-        {/* Severity for user-drawn boxes (always obstructions) */}
-        {editable && value && value !== "---" && (
+        {/* Obstruction question for a drawn box, asked of every box like the
+            suggestions (thesis Chapter 4). Waits for a category. */}
+        {editable && (() => {
+          const hasCategory = Boolean(value) && value !== "---";
+          const answerClass = (active: boolean) =>
+            `flex-1 py-1.5 rounded-control font-bold text-sm transition-all shadow-sm border disabled:opacity-50 disabled:cursor-not-allowed ${active
+              ? "border-primary bg-primary text-white"
+              : "border-line bg-surface-subtle hover:bg-line text-body"
+            }`;
+          return (
+            <div className="mt-2 pt-2 border-t border-line px-1">
+              <p className="text-sm font-semibold text-ink mb-2 text-center">
+                Does <span className="text-primary">{hasCategory ? translateValue(value) : "this object"}</span> obstruct the sidewalk?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  className={answerClass(obstructs === true)}
+                  disabled={!hasCategory}
+                  aria-pressed={obstructs === true}
+                  onClick={() => onSetObstructs(true)}
+                >
+                  Yes
+                </button>
+                <button
+                  className={answerClass(obstructs === false)}
+                  disabled={!hasCategory}
+                  aria-pressed={obstructs === false}
+                  onClick={() => onSetObstructs(false)}
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Severity for a drawn box answered Yes (contributors only) */}
+        {editable && askSeverity && obstructs === true && (
           <div className="mt-2 pt-2 border-t border-line px-1">
             <p className="text-xs text-muted mb-1.5 text-center">Severity:</p>
             <SeveritySlider value={severity ?? 3} onChange={onSetSeverity} />
@@ -367,7 +407,7 @@ const DefaultInputSection = ({
         )}
 
         {/* Editable severity for already-confirmed model suggestions */}
-        {!editable && severity != null && (
+        {!editable && askSeverity && severity != null && (
           <div className="mt-2 pt-2 border-t border-line px-1">
             <p className="text-xs text-muted mb-1.5 text-center">Severity:</p>
             <SeveritySlider value={severity} onChange={onSetSeverity} />

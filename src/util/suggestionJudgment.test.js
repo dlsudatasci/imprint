@@ -95,4 +95,22 @@ describe("getSuggestionPanelMode", () => {
   it("returns 'not_an_object' for suggestion with not_an_object comment", () => {
     expect(getSuggestionPanelMode({ editable: false, selected: false, obstructs: false, severity: null, comment: "not_an_object" })).toBe("not_an_object");
   });
+
+  it("never returns 'severity' for annotators: a suggestion answered Yes with no severity is 'confirmed' (3 Oct 2026)", () => {
+    const yesNoSeverity = { editable: false, selected: true, obstructs: true, severity: null, comment: "tree" };
+    expect(getSuggestionPanelMode({ ...yesNoSeverity, askSeverity: false })).toBe("confirmed");
+    expect(getSuggestionPanelMode({ ...yesNoSeverity, severity: undefined, askSeverity: false })).toBe("confirmed");
+  });
+
+  it("still returns 'severity' by default and with askSeverity true", () => {
+    const yesNoSeverity = { editable: false, selected: true, obstructs: true, severity: null, comment: "tree" };
+    expect(getSuggestionPanelMode(yesNoSeverity)).toBe("severity");
+    expect(getSuggestionPanelMode({ ...yesNoSeverity, askSeverity: true })).toBe("severity");
+  });
+
+  it("leaves every other mode unchanged for annotators", () => {
+    expect(getSuggestionPanelMode({ editable: true, selected: false, obstructs: undefined, severity: undefined, comment: "tree", askSeverity: false })).toBe("drawn");
+    expect(getSuggestionPanelMode({ editable: false, selected: false, obstructs: undefined, severity: undefined, comment: "tree", askSeverity: false })).toBe("judge");
+    expect(getSuggestionPanelMode({ editable: false, selected: false, obstructs: false, severity: null, comment: "not_an_object", askSeverity: false })).toBe("not_an_object");
+  });
 });

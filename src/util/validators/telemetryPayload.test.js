@@ -35,6 +35,17 @@ describe("computeStepTimings", () => {
     const result = computeStepTimings(1000, 1000, 1000);
     expect(result).toEqual({ msObjectStep: 0, msSceneStep: 0 });
   });
+
+  it("gives annotators the whole duration as the object step and a null scene step (3 Oct 2026)", () => {
+    expect(computeStepTimings(1000, null, 6000, { hasSceneStep: false })).toEqual({ msObjectStep: 5000, msSceneStep: null });
+    // A stray scene start is ignored when there is no scene step
+    expect(computeStepTimings(1000, 4000, 6000, { hasSceneStep: false })).toEqual({ msObjectStep: 5000, msSceneStep: null });
+  });
+
+  it("keeps the default split with hasSceneStep true", () => {
+    expect(computeStepTimings(1000, 4000, 6000, { hasSceneStep: true })).toEqual({ msObjectStep: 3000, msSceneStep: 2000 });
+    expect(computeStepTimings(1000, 4000, 6000, {})).toEqual({ msObjectStep: 3000, msSceneStep: 2000 });
+  });
 });
 
 const baseMark = { x: 10, y: 20, width: 100, height: 50 };

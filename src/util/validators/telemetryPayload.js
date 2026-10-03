@@ -18,7 +18,12 @@ function filterAnnotationsByTau(annotations, tau) {
   return { visible, hidden };
 }
 
-function computeStepTimings(mountTime, sceneStepStartMs, submitTime) {
+// Annotators have no scene step (decided 3 Oct 2026). Their scene time is
+// null rather than 0, so it does not read as a measured zero.
+function computeStepTimings(mountTime, sceneStepStartMs, submitTime, { hasSceneStep = true } = {}) {
+  if (!hasSceneStep) {
+    return { msObjectStep: submitTime - mountTime, msSceneStep: null };
+  }
   const sceneStart = sceneStepStartMs ?? submitTime;
   return {
     msObjectStep: sceneStart - mountTime,

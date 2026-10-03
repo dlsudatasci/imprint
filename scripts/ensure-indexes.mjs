@@ -61,8 +61,11 @@ const INDEXES = [
   // annotationGet matches on city, then sorts a random field.
   ['Image', { city: 1 }, { name: 'city' },
     'the city-first draw when starting a batch'],
-  ['Image', { imageID: 1 }, { name: 'imageID' },
-    'annotationSubmit and getAnnotation look images up by this'],
+  // Unique since Step 4 (30 Sep 2026): the old Atlas records reused frame
+  // numbers as imageIDs in two cities, so two images shared each ID and
+  // annotations (keyed by imageID + userId) could overwrite each other.
+  ['Image', { imageID: 1 }, { unique: true, name: 'uniq_imageID' },
+    'annotationSubmit and getAnnotation look images up by this, and it must be unique'],
   ['Image', { poolStatus: 1, isReference: 1 }, { name: 'pool_reference' },
     'annotationGet filters served non-reference and reference images'],
   ['Image', { isReference: 1 }, { name: 'isReference' },

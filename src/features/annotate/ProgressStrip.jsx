@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { writeCurrentCount } from "@/util/sessionCache";
+import { PauseIcon, StopIcon } from "@/ui/icons";
 
 /**
  * Netflix-style scrollable image strip showing annotation progress.
@@ -70,6 +71,11 @@ export default function ProgressStrip({ images, current, onPause, onStop, isTuto
 
   return (
     <div className="mb-6">
+      {/* Session controls — visually grouped with gray background. The panel
+          fits its contents (snug around a 5-image session or the 3-image
+          tutorial) and grows to the full width only when the thumbnails need
+          to scroll (2 Oct 2026). */}
+      <div className="w-fit max-w-full mx-auto bg-gray-300 border border-gray-400 rounded-card px-4 py-3">
       {/* Strip with arrows */}
       <div className="relative flex items-center gap-2">
         {/* Left arrow — hidden when few enough images to center */}
@@ -93,7 +99,9 @@ export default function ProgressStrip({ images, current, onPause, onStop, isTuto
           className={`flex-1 overflow-x-auto scrollbar-hide ${fewImages ? "" : ""}`}
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
         >
-          <div className={`flex gap-2 py-1 ${fewImages ? "justify-center" : ""}`}>
+          {/* Centred with auto margins rather than justify-center, which would
+              cut off the first thumbnails if they ever overflow. */}
+          <div className={`flex gap-2 py-1 ${fewImages ? "w-fit mx-auto" : ""}`}>
             {images.map((img, i) => {
               const isCompleted = i < current - 1;
               const isCurrent = i === current - 1;
@@ -172,21 +180,21 @@ export default function ProgressStrip({ images, current, onPause, onStop, isTuto
         {!isTutorial && (
           <button
             onClick={onPause}
-            className="text-xs text-muted hover:text-body transition-colors px-3 py-1.5 rounded-control border border-line hover:border-primary/30 bg-surface"
+            className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-body transition-colors px-3 py-1.5 rounded-control border border-line hover:border-primary/30 bg-surface"
           >
+            <PauseIcon size={14} />
             Pause Session
           </button>
         )}
         <button
           onClick={onStop}
-          className="text-xs text-muted hover:text-danger transition-colors px-3 py-1.5 rounded-control border border-line hover:border-danger/30 bg-surface"
+          className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-danger transition-colors px-3 py-1.5 rounded-control border border-line hover:border-danger/30 bg-surface"
         >
+          <StopIcon size={14} />
           {isTutorial ? "Stop Tutorial" : "Stop Session"}
         </button>
       </div>
-
-      {/* Divider between session controls and annotation content */}
-      <hr className="border-line mt-4" />
+      </div>{/* end session controls panel */}
     </div>
   );
 }

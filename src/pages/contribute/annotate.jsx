@@ -123,6 +123,49 @@ export default function AnnotatePage() {
     }
   }, [status, session]);
 
+  // Sessions cached before 3 Oct 2026 have no isAnnotator, and the tool needs
+  // it to hide the scene step and severity for annotators. Ask the server once
+  // (an empty body only reports the active session) and add the role to the
+  // cache. Only the role is merged in, so edits cached for the current image
+  // survive. If the request fails the form falls back to the contributor view
+  // without caching that, so the next load tries again. The server drops scene
+  // answers and severities from annotators either way.
+  const needsRole =
+    state.annotationSetData != null && typeof state.annotationSetData.isAnnotator !== "boolean";
+
+  React.useEffect(() => {
+    if (!needsRole) return;
+    let cancelled = false;
+
+    fetch("/api/annotationGet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    })
+      .then((res) => res.json())
+      .then((fresh) => {
+        if (cancelled) return;
+        const known = typeof fresh.isAnnotator === "boolean";
+        setState((prevState) => {
+          const data = { ...prevState.annotationSetData, isAnnotator: known ? fresh.isAnnotator : false };
+          if (known) writeSession({ data });
+          return { ...prevState, annotationSetData: data };
+        });
+      })
+      .catch((err) => {
+        console.error("Failed to read role for cached session:", err);
+        if (cancelled) return;
+        setState((prevState) => ({
+          ...prevState,
+          annotationSetData: { ...prevState.annotationSetData, isAnnotator: false },
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [needsRole]);
+
   // Hold the page until we know whether a session exists. `restoring` matters
   // as much as `loading`: without it the gap between "nothing cached" and the
   // server answering renders the batch-size picker, so someone resuming on a
@@ -160,6 +203,8 @@ export default function AnnotatePage() {
     if (
       state.annotationCurrentCount <= state.annotationTotalCount
     ) {
+      if (needsRole) return <ContentSkeleton />;
+
       const data = state.annotationSetData;
       const singleImage =
         data.imgRecords[state.annotationCurrentCount - 1];
@@ -170,6 +215,7 @@ export default function AnnotatePage() {
           current={state.annotationCurrentCount}
           total={state.annotationTotalCount}
           allImages={data.imgRecords}
+          isAnnotator={data.isAnnotator === true}
         />
       );
     }

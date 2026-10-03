@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { clearSession } from "@/util/sessionCache";
 import ProgressStrip from "@/features/annotate/ProgressStrip";
 
-export default function AnnotateForm({ data, current, total, allImages, isTutorial = false }) {
+export default function AnnotateForm({ data, current, total, allImages, isTutorial = false, isAnnotator = false }) {
   const onSelect = () => { };
   const onChange = () => { };
   const { data: session, status } = useSession();
@@ -90,6 +90,7 @@ export default function AnnotateForm({ data, current, total, allImages, isTutori
         currentAnnotationCount={current}
         totalAnnotationCount={total}
         username={session?.user?.username ?? ""}
+        isAnnotator={isAnnotator}
       />
     </Container>
   );

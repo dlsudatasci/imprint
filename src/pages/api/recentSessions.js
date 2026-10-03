@@ -96,7 +96,10 @@ export default async function handler(req, res) {
         location = "Mixed Locations";
       }
       
-      const averageScore = validScores > 0 ? (totalScore / validScores).toFixed(1) : 0;
+      // null when nothing in the session has an accessibility answer, as for
+      // annotators, who answer no scene-level questions (decided 3 Oct 2026).
+      // The dashboard hides the score then instead of showing "-".
+      const averageScore = validScores > 0 ? (totalScore / validScores).toFixed(1) : null;
 
       // Thumbnails. The three-way $or is legacy tolerance: completedImageIDs
       // has been written as ObjectIds, as ObjectId strings, and (currently, via

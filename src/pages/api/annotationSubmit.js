@@ -3,7 +3,11 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
-import { validateSceneLevel, validateBoxes } from "@/util/validators/annotationSubmit";
+import {
+  validateSceneLevel,
+  validateBoxes,
+  normalizeAnnotatorSubmission,
+} from "@/util/validators/annotationSubmit";
 
 /**
  * POST /api/annotationSubmit — saves the work done on one image.
@@ -36,34 +40,52 @@ const handler = async (req, res) => {
     const {
       imageID,
       servedModelVersion,
-      sceneLevel,
-      selectedObjectsID,
-      newObjects,
       currentAnnotationCount,
       telemetry,
     } = req.body;
+    let { sceneLevel, selectedObjectsID, newObjects } = req.body;
 
     if (imageID === undefined || imageID === null) {
       return res.status(400).json({ message: "Missing required field: imageID." });
     }
 
-    const sceneResult = validateSceneLevel(sceneLevel);
-    if (!sceneResult.valid) {
-      return res.status(422).json({ message: sceneResult.message });
-    }
-
-    const boxResult = validateBoxes(selectedObjectsID, newObjects);
-    if (!boxResult.valid) {
-      return res.status(422).json({ message: boxResult.message });
-    }
-
+    // The role decides what is validated and stored, so it is read before
+    // validation. It comes from the database, not the session, because an
+    // admin can change it after sign-in.
+    let isAnnotator;
     try {
       const userRecord = await db.collection("users").findOne(
         { _id: new ObjectId(userId) },
         { projection: { role: 1 } }
       );
-      const isAnnotator = userRecord?.role === "annotator";
+      isAnnotator = userRecord?.role === "annotator";
+    } catch (error) {
+      console.error("Database Error:", error);
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
 
+    // Annotators record boxes, categories and Yes/No only (decided 3 Oct
+    // 2026). Scene answers and severities from an old client are dropped here
+    // rather than refused, so the server stores none.
+    if (isAnnotator) {
+      ({ sceneLevel, selectedObjectsID, newObjects } = normalizeAnnotatorSubmission({
+        sceneLevel,
+        selectedObjectsID,
+        newObjects,
+      }));
+    } else {
+      const sceneResult = validateSceneLevel(sceneLevel);
+      if (!sceneResult.valid) {
+        return res.status(422).json({ message: sceneResult.message });
+      }
+    }
+
+    const boxResult = validateBoxes(selectedObjectsID, newObjects, { requireSeverity: !isAnnotator });
+    if (!boxResult.valid) {
+      return res.status(422).json({ message: boxResult.message });
+    }
+
+    try {
       // Only accept submissions for images actually handed out in this user's
       // active session, and read the city off the Image record rather than
       // trusting the body — otherwise anyone can attribute annotations to a

@@ -127,4 +127,43 @@ describe("GET /api/recentSessions", () => {
     await handler(req, res);
     expect(res._status).toBe(200);
   });
+
+  describe("averageScore", () => {
+    const completed = [{
+      _id: "session-1",
+      userId: MOCK_USER_ID,
+      status: "completed",
+      completedImageIDs: [1, 2],
+      completedAt: new Date(),
+      createdAt: new Date(),
+    }];
+
+    it("is null when no annotation in the session has an accessibility answer (annotators, 3 Oct 2026)", async () => {
+      const { annotationsCol } = setupMocks({ completedSessions: completed });
+      annotationsCol.find.mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([
+          { imageID: 1, source: "annotator", sceneLevel: null, selectedObjectsID: [], newObjects: [] },
+          { imageID: 2, source: "annotator", sceneLevel: null, selectedObjectsID: [], newObjects: [] },
+        ]),
+      });
+      const res = createMockRes();
+      await handler(createMockReq({ method: "GET" }), res);
+
+      expect(res._json.sessions[0].averageScore).toBeNull();
+    });
+
+    it("still averages contributors' accessibility answers", async () => {
+      const { annotationsCol } = setupMocks({ completedSessions: completed });
+      annotationsCol.find.mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([
+          { imageID: 1, sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 2 } },
+          { imageID: 2, sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 5 } },
+        ]),
+      });
+      const res = createMockRes();
+      await handler(createMockReq({ method: "GET" }), res);
+
+      expect(res._json.sessions[0].averageScore).toBe("3.5");
+    });
+  });
 });

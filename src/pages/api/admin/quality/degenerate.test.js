@@ -43,7 +43,7 @@ function setupAdminMocks({ contributors = [], annotations = [], telemetry = [], 
     telemetry_logs: telemetryCol,
   });
   connectToDatabase.mockResolvedValue({ db });
-  return { db };
+  return { db, annotationsCol };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -81,7 +81,7 @@ describe("GET /api/admin/quality/degenerate", () => {
       status: "completed",
       selectedObjectsID: [{ obstructs: true, severity: 3 }],
       newObjects: [],
-      sceneLevel: { sidewalkPresent: "yes", surfaceCondition: 2, walkability: 4, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
     }));
 
     setupAdminMocks({
@@ -117,5 +117,20 @@ describe("GET /api/admin/quality/degenerate", () => {
     const res = createMockRes();
     await handler(req, res);
     expect(res._status).toBe(403);
+  });
+
+  // These screens are contributor quality control, so annotators are left out
+  // of both queries (3 Oct 2026)
+  it("excludes annotator annotations from the aggregation and from the find", async () => {
+    const { annotationsCol } = setupAdminMocks({ contributors: [{ _id: FLAGGED_USER, count: 12 }] });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+
+    expect(res._status).toBe(200);
+    const [pipeline] = annotationsCol.aggregate.mock.calls[0];
+    expect(pipeline[0].$match).toEqual({ status: "completed", source: { $ne: "annotator" } });
+    const [filter] = annotationsCol.find.mock.calls[0];
+    expect(filter.source).toEqual({ $ne: "annotator" });
+    expect(filter.status).toBe("completed");
   });
 });

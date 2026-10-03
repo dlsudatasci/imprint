@@ -17,7 +17,7 @@ const validBody = {
     sidewalkWidth: "two_people",
     surfaceCondition: 2,
     walkability: 3,
-    overallAccessibility: 4,
+    overallAccessibility: 3,
   },
   selectedObjectsID: [{ obstructs: true, severity: 3 }],
   newObjects: [{ obstructs: false }],
@@ -236,5 +236,123 @@ describe("POST /api/annotationSubmit", () => {
     await handler(req, res);
 
     expect(res._status).toBe(422);
+  });
+
+  // Annotators record boxes, categories and Yes/No only (3 Oct 2026)
+  describe("annotators", () => {
+    const annotatorBody = {
+      imageID: 42,
+      selectedObjectsID: [{ comment: "tree", obstructs: true }],
+      newObjects: [{ comment: "car", obstructs: false }],
+      currentAnnotationCount: 1,
+    };
+
+    it("accepts a submission with no sceneLevel and no severity", async () => {
+      const mocks = setupMocks({ userRole: "annotator" });
+      const req = createMockReq({ body: annotatorBody });
+      const res = createMockRes();
+
+      await handler(req, res);
+
+      expect(res._status).toBe(200);
+      const $set = mocks.annotationsCol.updateOne.mock.calls[0][1].$set;
+      expect($set.sceneLevel).toBeNull();
+      expect($set.source).toBe("annotator");
+      for (const box of [...$set.selectedObjectsID, ...$set.newObjects]) expect(box.severity).toBeNull();
+    });
+
+    it("stores scene answers and severities sent by an old client as null", async () => {
+      const mocks = setupMocks({ userRole: "annotator" });
+      const req = createMockReq({
+        body: {
+          ...validBody,
+          selectedObjectsID: [{ comment: "tree", obstructs: true, severity: 4 }],
+          newObjects: [{ comment: "car", obstructs: false, severity: 2 }],
+        },
+      });
+      const res = createMockRes();
+
+      await handler(req, res);
+
+      expect(res._status).toBe(200);
+      const $set = mocks.annotationsCol.updateOne.mock.calls[0][1].$set;
+      expect($set.sceneLevel).toBeNull();
+      expect($set.selectedObjectsID).toEqual([{ comment: "tree", obstructs: true, severity: null }]);
+      expect($set.newObjects).toEqual([{ comment: "car", obstructs: false, severity: null }]);
+      expect($set.servedModelVersion).toBeNull();
+    });
+
+    it("still returns 422 when a box has no Yes or No", async () => {
+      const mocks = setupMocks({ userRole: "annotator" });
+      const req = createMockReq({ body: { ...annotatorBody, newObjects: [{ comment: "car" }] } });
+      const res = createMockRes();
+
+      await handler(req, res);
+
+      expect(res._status).toBe(422);
+      expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+    });
+
+    it("reads the role from the database before validating", async () => {
+      const mocks = setupMocks({ userRole: "annotator" });
+      const req = createMockReq({ body: { ...annotatorBody, newObjects: [{ comment: "car" }] } });
+      const res = createMockRes();
+
+      await handler(req, res);
+
+      // The users lookup ran even though validation then refused the body
+      expect(mocks.usersCol.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ _id: expect.anything() }),
+        { projection: { role: 1 } }
+      );
+      expect(mocks.sessionsCol.findOne).not.toHaveBeenCalled();
+    });
+  });
+
+  it("still returns 422 for a contributor with no sceneLevel", async () => {
+    const mocks = setupMocks({ userRole: "user" });
+    const req = createMockReq({ body: { ...validBody, sceneLevel: undefined } });
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    expect(res._status).toBe(422);
+    expect(mocks.usersCol.findOne).toHaveBeenCalled();
+  });
+
+  it("still requires a contributor's severity on an obstructing box", async () => {
+    setupMocks({ userRole: "user" });
+    const req = createMockReq({ body: { ...validBody, selectedObjectsID: [{ obstructs: true }] } });
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    expect(res._status).toBe(422);
+  });
+
+  it("stores a contributor's sceneLevel and severities unchanged", async () => {
+    const mocks = setupMocks({ userRole: "user" });
+    const req = createMockReq({ body: validBody });
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    const $set = mocks.annotationsCol.updateOne.mock.calls[0][1].$set;
+    expect($set.sceneLevel).toEqual(validBody.sceneLevel);
+    expect($set.selectedObjectsID).toEqual(validBody.selectedObjectsID);
+  });
+
+  it("returns 500 when the role lookup throws", async () => {
+    const mocks = setupMocks();
+    mocks.usersCol.findOne.mockRejectedValue(new Error("db down"));
+    const req = createMockReq({ body: validBody });
+    const res = createMockRes();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await handler(req, res);
+    errorSpy.mockRestore();
+
+    expect(res._status).toBe(500);
+    expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
   });
 });

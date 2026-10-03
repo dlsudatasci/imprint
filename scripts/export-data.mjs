@@ -9,6 +9,10 @@
  *   --quality      Paired reference/contributor annotations for agreement computation.
  *   --output <dir> Output directory (default: ./exports/)
  *
+ * Annotator rows (source "annotator") have sceneLevel: null and severity: null
+ * on every box from 3 Oct 2026, since annotators record boxes, categories and
+ * Yes/No only. Earlier annotator rows may still carry both.
+ *
  * Usage:
  *   node --env-file=.env scripts/export-data.mjs --retraining
  *   node --env-file=.env scripts/export-data.mjs --full --output ./my-exports

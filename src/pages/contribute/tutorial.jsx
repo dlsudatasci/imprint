@@ -9,6 +9,11 @@ import { clearSession, writeSession, writeTutorialFlag, readSessionData, readCur
 import ContentSkeleton from "@/features/layout/contentSkeleton";
 import DesktopOnly from "@/features/annotate/desktopOnly";
 import { useCanAnnotate } from "@/hooks/useCanAnnotate";
+import { buildTourSteps, tourTargets, tourStepCount } from "@/features/tutorial/tourSteps";
+import { getServerSession } from "next-auth/next";
+import { ObjectId } from "mongodb";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
+import { connectToDatabase } from "@/util/mongodb";
 
 // How many images the walkthrough runs through. Referenced by the step counter,
 // the progress bar, and the sampling query, so change it in one place.
@@ -22,9 +27,10 @@ const MOCKED_ENDPOINTS = [
   "/api/annotationAbandon",
 ];
 
-// The five things the tour points at, in order. Kept next to buildSteps()
-// below so the "Step n of N" counter can't drift from the actual step list.
-const TOUR_STEP_COUNT = 5;
+// The places the tour points at, in order, and the wording of each step
+// (annotator and contributor versions) live in src/features/tutorial/tourSteps.js,
+// so the "Step n of N" counter and the beacons can't drift from the step list.
+// Contributors have five steps and annotators three (decided 3 Oct 2026).
 
 /**
  * The guided walkthrough new contributors complete before their first real
@@ -48,13 +54,14 @@ const TOUR_STEP_COUNT = 5;
  * annotating in the navbar and on the dashboard.
  */
 /* eslint-disable react/forbid-elements -- react-joyride tooltip and beacon controls: the tour library owns these elements' props and behaviour */
-export default function TutorialPage() {
+export default function TutorialPage({ isAnnotator = false }) {
   const { status, update } = useSession();
   const loading = status === "loading";
   // The tutorial renders the real annotation form, so it needs the same device
   // check the live flow has. Without it a phone could reach the canvas here and
   // mark the tutorial complete on a tool it can't actually use.
   const canAnnotate = useCanAnnotate();
+  const stepCount = tourStepCount(isAnnotator);
 
   const [current, setCurrent] = useState(null);
   const [data, setData] = useState(null);
@@ -116,7 +123,7 @@ export default function TutorialPage() {
             setJoyrideKey((k) => k + 1);
           }}
           aria-label="Dismiss tour"
-          className="text-subtle hover:text-body transition-colors duration-300 bg-surface-subtle hover:bg-line-card rounded-full w-6 h-6 flex items-center justify-center -mr-2 -mt-2"
+          className="text-subtle hover:text-body transition-colors duration-300 bg-surface-subtle hover:bg-line-card rounded-full shrink-0 w-6 h-6 flex items-center justify-center -mr-2 -mt-2"
         >
           ×
         </button>
@@ -126,7 +133,7 @@ export default function TutorialPage() {
       </div>
       <div className="flex justify-between items-center mt-4">
         <span className="text-xs font-semibold text-subtle">
-          Step {index + stepOffset + 1} of {TOUR_STEP_COUNT}
+          Step {index + stepOffset + 1} of {stepCount}
         </span>
         <div className="flex gap-2">
           {(index > 0 || stepOffset > 0) && (
@@ -147,7 +154,7 @@ export default function TutorialPage() {
           )}
           <button
             onClick={(e) => {
-              if (index + stepOffset === TOUR_STEP_COUNT - 1) {
+              if (index + stepOffset === stepCount - 1) {
                 e.preventDefault();
                 setTourMode("beacons");
                 setJoyrideKey((k) => k + 1);
@@ -157,57 +164,14 @@ export default function TutorialPage() {
             }}
             className="px-4 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary/90 rounded-control transition-colors shadow-sm"
           >
-            {index + stepOffset === TOUR_STEP_COUNT - 1 ? "Finish" : "Next"}
+            {index + stepOffset === stepCount - 1 ? "Finish" : "Next"}
           </button>
         </div>
       </div>
     </div>
   );
 
-  const buildSteps = useCallback(() => {
-    return [
-      {
-        target: ".rp-stage",
-        title: "Annotation Canvas",
-        content: "Dashed yellow boxes are model suggestions. Click each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, choose 'Not an object' from the list. You can also draw your own boxes by clicking and dragging to label objects the model missed.",
-        skipBeacon: true,
-        overlayClickAction: "none",
-        placement: "bottom",
-      },
-      {
-        target: "#box-review-section",
-        title: "Box vs. Obstruction",
-        content: "Drawing a box records that an object is on or beside the walking space. The obstruction question is separate: for each box, decide whether it blocks the sidewalk for you, traveling as you normally do. Answering 'No' is just as valuable as answering 'Yes' — it tells us the object is there but does not get in the way.",
-        skipBeacon: true,
-        overlayClickAction: "none",
-        placement: "top",
-      },
-      {
-        target: "#box-review-section",
-        title: "Severity",
-        content: "When an object does obstruct, rate how severely it blocks passage on a 1 to 5 scale. A score of 1 means it is a minor inconvenience; 5 means it completely blocks the path.",
-        skipBeacon: true,
-        overlayClickAction: "none",
-        placement: "top",
-      },
-      {
-        target: "#scene-level-section",
-        title: "Scene-Level Assessment",
-        content: "Answer four questions about the sidewalk as a whole: whether a sidewalk is present, its surface condition, how walkable it is, and its overall accessibility. These describe the scene, not individual objects.",
-        skipBeacon: true,
-        overlayClickAction: "none",
-        placement: "top",
-      },
-      {
-        target: "button[type='submit']",
-        title: "Submit",
-        content: "Submit when every box has been decided (accepted or rejected) and all four scene-level questions are answered. The button stays disabled until everything is complete.",
-        skipBeacon: true,
-        overlayClickAction: "none",
-        placement: "top",
-      },
-    ];
-  }, []);
+  const buildSteps = useCallback(() => buildTourSteps(isAnnotator), [isAnnotator]);
 
   // Clicking the dark overlay should dismiss the tour. Joyride's own
   // overlayClickAction advances the step instead of closing in continuous mode,
@@ -341,11 +305,12 @@ export default function TutorialPage() {
         total={TUTORIAL_IMAGE_COUNT}
         allImages={data.imgRecords}
         isTutorial
+        isAnnotator={isAnnotator}
       />
 
-      {/* Custom pulsing beacons on all 4 targets — shown when not in active tour */}
+      {/* Custom pulsing beacons on every tour target, shown when not in active tour */}
       {domReady && tourMode === "beacons" && (
-        <TutorialBeacons onBeaconClick={(idx) => {
+        <TutorialBeacons isAnnotator={isAnnotator} onBeaconClick={(idx) => {
           setStepOffset(idx);
           setTourMode("touring");
           setJoyrideKey((k) => k + 1);
@@ -377,23 +342,24 @@ export default function TutorialPage() {
 }
 
 /**
- * Pulsing dots on all four targets at once, shown when the tour isn't running.
+ * Pulsing dots on every tour target at once, shown when the tour isn't running.
  *
- * Joyride's own beacons appear one at a time, in sequence. Showing all four
+ * Joyride's own beacons appear one at a time, in sequence. Showing them all
  * lets someone jump straight to the part they're unsure about instead of
  * stepping through the whole tour again.
  *
  * Positioned absolutely against the document (rect + scrollY) rather than
  * fixed to the viewport, so they scroll with the page without a scroll handler.
  */
-function TutorialBeacons({ onBeaconClick }) {
-  const targets = [
-    { sel: ".rp-stage", placement: "bottom", offset: 15 },
-    { sel: "#box-review-section", placement: "top", offset: 15 },
-    { sel: "#box-review-section", placement: "bottom", offset: 15 },
-    { sel: "#scene-level-section", placement: "top", offset: 15 },
-    { sel: "button[type='submit']", placement: "top", offset: 15 },
-  ];
+function TutorialBeacons({ isAnnotator = false, onBeaconClick }) {
+  // One beacon per tour step, so a beacon's index is its step. The canvas
+  // beacon sits below it, and when two steps share a target (the contributor
+  // box and severity steps) the second beacon sits below so they don't overlap.
+  const targets = tourTargets(isAnnotator).map((sel, i, all) => ({
+    sel,
+    placement: sel === ".rp-stage" || all.indexOf(sel) !== i ? "bottom" : "top",
+    offset: 15,
+  }));
   const [positions, setPositions] = useState([]);
 
   useEffect(() => {
@@ -452,3 +418,25 @@ function TutorialBeacons({ onBeaconClick }) {
   );
 }
 
+/**
+ * Looks up the person's role, so annotators get the annotator wording of the
+ * tour. Read from the database rather than the session token, which is only
+ * refreshed at sign-in and would miss a role set afterwards with set-role.mjs.
+ */
+export async function getServerSideProps(context) {
+  const session = await getServerSession(context.req, context.res, authOptions);
+  let isAnnotator = false;
+  if (session?.user?._id) {
+    try {
+      const { db } = await connectToDatabase();
+      const user = await db
+        .collection("users")
+        .findOne({ _id: new ObjectId(session.user._id) }, { projection: { role: 1 } });
+      isAnnotator = user?.role === "annotator";
+    } catch (error) {
+      // Fall back to the contributor wording; the tutorial itself still works.
+      console.error("tutorial getServerSideProps: role lookup failed:", error);
+    }
+  }
+  return { props: { session: session ?? null, isAnnotator } };
+}

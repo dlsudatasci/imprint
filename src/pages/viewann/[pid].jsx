@@ -8,6 +8,11 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { Container } from "@/ui";
 
 export default function ViewAnnotation({ data }) {
+  // Annotator records have no scene-level answers (decided 3 Oct 2026), so the
+  // Accessibility row is shown only when the record has one
+  const hasSceneAnswer =
+    data.sceneLevel != null || data.sceneRatings != null || data.accessibilityRating != null;
+
   return (
     <Page
       title="View Annotation - Imprint"
@@ -21,8 +26,12 @@ export default function ViewAnnotation({ data }) {
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 max-w-md mb-8 text-sm">
           <dt className="font-semibold text-muted">Annotated by</dt>
           <dd className="text-ink">{data.username}</dd>
-          <dt className="font-semibold text-muted">Accessibility</dt>
-          <dd className="text-ink">{data.sceneLevel?.overallAccessibility ?? data.sceneRatings?.accessibility ?? data.accessibilityRating ?? "—"} / 5</dd>
+          {hasSceneAnswer && (
+            <>
+              <dt className="font-semibold text-muted">Accessibility</dt>
+              <dd className="text-ink">{data.sceneLevel?.overallAccessibility != null ? `${data.sceneLevel.overallAccessibility} / 5` : data.sceneRatings?.accessibility ?? data.accessibilityRating ?? "—"}</dd>
+            </>
+          )}
           <dt className="font-semibold text-muted">Surface</dt>
           <dd className="text-ink">{data.pavementType}</dd>
           <dt className="font-semibold text-muted">Date</dt>
@@ -38,6 +47,7 @@ export default function ViewAnnotation({ data }) {
           url={data.url}
           id={data.imageID}
           city={data.city}
+          isAnnotator={data.source === "annotator"}
         />
       </Container>
     </Page>
@@ -97,6 +107,7 @@ export const getServerSideProps = async (context) => {
           sceneLevel: annotation.sceneLevel ?? null,
           pavementType: annotation.pavementType ?? null,
           username: annotation.username ?? null,
+          source: annotation.source ?? null,
           // Dates don't survive Next's props serialization
           date: annotation.date ? annotation.date.toISOString() : null,
         },

@@ -22,7 +22,10 @@ export default async function handler(req, res) {
   const contributors = await db
     .collection("annotations")
     .aggregate([
-      { $match: { status: "completed" } },
+      // These screens are contributor quality control (thesis Chapter 4,
+      // Quality Control). An annotator answering "No" to everything is not a
+      // degenerate contributor, so annotator rows are left out.
+      { $match: { status: "completed", source: { $ne: "annotator" } } },
       { $group: { _id: "$userId", count: { $sum: 1 } } },
       { $match: { count: { $gte: 10 } } },
     ])
@@ -35,7 +38,7 @@ export default async function handler(req, res) {
 
   const allAnnotations = await db
     .collection("annotations")
-    .find({ userId: { $in: userIds }, status: "completed" })
+    .find({ userId: { $in: userIds }, status: "completed", source: { $ne: "annotator" } })
     .toArray();
 
   const allTelemetry = await db

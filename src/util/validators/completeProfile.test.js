@@ -9,6 +9,8 @@ import {
   ACCESSIBILITY_FAMILIARITY,
   ANNOTATION_EXPERIENCE,
   TEMPORARY_MOBILITY_ANSWERS,
+  DEMOGRAPHIC_ALLOWLISTS,
+  DEMOGRAPHIC_FIELDS,
   validateDemographics,
   validateOccupation,
   validateCities,
@@ -188,5 +190,37 @@ describe("allowlist constants", () => {
 
   it("TEMPORARY_MOBILITY_ANSWERS has 3 entries", () => {
     expect(TEMPORARY_MOBILITY_ANSWERS).toHaveLength(3);
+  });
+});
+
+describe("DEMOGRAPHIC_FIELDS", () => {
+  it("lists the nine required demographic answers", () => {
+    expect([...DEMOGRAPHIC_FIELDS].sort()).toEqual([
+      "accessibilityFamiliarity", "age", "commuteFrequency", "disability", "educationalAttainment",
+      "gender", "priorAnnotationExperience", "temporaryMobility", "walkingFrequency",
+    ]);
+  });
+
+  it("matches exactly the fields validateDemographics requires", () => {
+    // Each listed field is required: removing it makes the answers invalid.
+    for (const field of DEMOGRAPHIC_FIELDS) {
+      const answers = { ...validDemographics };
+      delete answers[field];
+      expect(validateDemographics(answers).valid).toBe(false);
+    }
+    // And nothing else is required: the listed fields alone are valid.
+    const onlyListed = Object.fromEntries(DEMOGRAPHIC_FIELDS.map((f) => [f, DEMOGRAPHIC_ALLOWLISTS[f][0]]));
+    expect(validateDemographics(onlyListed).valid).toBe(true);
+  });
+
+  it("uses the exported allowlists", () => {
+    expect(DEMOGRAPHIC_ALLOWLISTS.temporaryMobility).toBe(TEMPORARY_MOBILITY_ANSWERS);
+    expect(DEMOGRAPHIC_ALLOWLISTS.walkingFrequency).toBe(WALKING_FREQUENCIES);
+    expect(DEMOGRAPHIC_ALLOWLISTS.age).toBe(AGE_GROUPS);
+  });
+
+  it("rejects missing or null answers objects", () => {
+    expect(validateDemographics().valid).toBe(false);
+    expect(validateDemographics(null).valid).toBe(false);
   });
 });

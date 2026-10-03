@@ -20,23 +20,30 @@ export const ACCESSIBILITY_FAMILIARITY = [
 export const ANNOTATION_EXPERIENCE = ["Yes", "No"];
 export const TEMPORARY_MOBILITY_ANSWERS = ["No", "Yes", "Prefer not to say"];
 
-export function validateDemographics({
-  age, gender, disability, commuteFrequency,
-  educationalAttainment, walkingFrequency,
-  accessibilityFamiliarity, priorAnnotationExperience,
-  temporaryMobility,
-} = {}) {
-  if (
-    !AGE_GROUPS.includes(age) ||
-    !GENDERS.includes(gender) ||
-    !DISABILITY_ANSWERS.includes(disability) ||
-    !COMMUTE_FREQUENCIES.includes(commuteFrequency) ||
-    !EDUCATION_LEVELS.includes(educationalAttainment) ||
-    !WALKING_FREQUENCIES.includes(walkingFrequency) ||
-    !ACCESSIBILITY_FAMILIARITY.includes(accessibilityFamiliarity) ||
-    !ANNOTATION_EXPERIENCE.includes(priorAnnotationExperience) ||
-    !TEMPORARY_MOBILITY_ANSWERS.includes(temporaryMobility)
-  ) {
+/**
+ * Every demographic answer validateDemographics requires, with its allowlist.
+ * The profile form (src/features/profile/profileFields.js) is built from this
+ * map and its tests check the form sends every key, so a field added here cannot
+ * be missing from the form. temporaryMobility was: the server required it from
+ * 29 Sep 2026 while the form never asked it, so no new profile could be saved
+ * (found and fixed 30 Sep 2026).
+ */
+export const DEMOGRAPHIC_ALLOWLISTS = Object.freeze({
+  age: AGE_GROUPS,
+  gender: GENDERS,
+  disability: DISABILITY_ANSWERS,
+  temporaryMobility: TEMPORARY_MOBILITY_ANSWERS,
+  commuteFrequency: COMMUTE_FREQUENCIES,
+  walkingFrequency: WALKING_FREQUENCIES,
+  educationalAttainment: EDUCATION_LEVELS,
+  accessibilityFamiliarity: ACCESSIBILITY_FAMILIARITY,
+  priorAnnotationExperience: ANNOTATION_EXPERIENCE,
+});
+export const DEMOGRAPHIC_FIELDS = Object.freeze(Object.keys(DEMOGRAPHIC_ALLOWLISTS));
+
+export function validateDemographics(answers = {}) {
+  const given = answers || {};
+  if (DEMOGRAPHIC_FIELDS.some((field) => !DEMOGRAPHIC_ALLOWLISTS[field].includes(given[field]))) {
     return { valid: false, message: "Please fill in all required demographic fields." };
   }
   return { valid: true };

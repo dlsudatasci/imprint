@@ -21,15 +21,19 @@ describe("tour steps", () => {
     ]);
   });
 
-  it("gives annotators three steps with no severity or scene step (3 Oct 2026)", () => {
-    expect(tourStepCount(true)).toBe(3);
-    expect([...tourTargets(true)]).toEqual([".rp-stage", "#box-review-section", "button[type='submit']"]);
+  it("gives annotators four Step 1 Objects steps (4 Oct 2026)", () => {
+    expect(tourStepCount(true)).toBe(4);
+    expect([...tourTargets(true)]).toEqual([".rp-stage", "#taxonomy-guide", "#box-review-section", "button[type='submit']"]);
     const steps = buildTourSteps(true);
-    expect(steps.map((s) => s.title)).toEqual(["Annotation Canvas", "Box vs. Obstruction", "Submit"]);
-    expect(steps.map((s) => s.placement)).toEqual(["bottom", "top", "top"]);
-    for (const s of steps) {
+    expect(steps.map((s) => s.title)).toEqual(["Annotation Canvas", "What to Box", "Objects in This Image", "Submit"]);
+    expect(steps.map((s) => s.placement)).toEqual(["bottom", "left", "top", "top"]);
+  });
+
+  it("never asks annotators for Yes/No, obstruction, severity or scene answers", () => {
+    for (const s of buildTourSteps(true)) {
       expect(s.target).not.toBe("#scene-level-section");
-      expect(s.content).not.toMatch(/severity|scene-level/i);
+      expect(s.content).not.toMatch(/severity|scene-level|obstruct/i);
+      expect(s.content).not.toMatch(/\bYes\b|'No'|answered/);
     }
   });
 
@@ -51,12 +55,13 @@ describe("tour steps", () => {
     expect(buildTourSteps()).toEqual(buildTourSteps(false));
   });
 
-  it("tells annotators to box every taxonomy object, on the sidewalk or not", () => {
-    const [canvas, boxVsObstruction] = buildTourSteps(true);
-    expect(canvas.content).toMatch(/every object from the 18 categories/);
-    expect(canvas.content).toMatch(/whether or not it is on the sidewalk/);
+  it("tells annotators to box every taxonomy object anywhere, with Keep or Not an object on suggestions", () => {
+    const [canvas, guide, objects] = buildTourSteps(true);
+    expect(canvas.content).toMatch(/every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not/);
+    expect(canvas.content).toMatch(/click Keep/);
     expect(canvas.content).toMatch(/Not an object/);
-    expect(boxVsObstruction.content).toMatch(/still get a box and are answered 'No'/);
+    expect(guide.content).toMatch(/18 categories and the rules/);
+    expect(objects.content).toMatch(/Next suggestion to decide/);
   });
 
   it("does not tell annotators that boxes only mark objects on or beside the walking space", () => {
@@ -80,14 +85,15 @@ describe("tour steps", () => {
     const annotatorSubmit = buildTourSteps(true).at(-1);
     for (const step of [contributorSubmit, annotatorSubmit]) {
       expect(step.title).toBe("Submit");
-      expect(step.content).toMatch(/\(Yes, No, or Not an object\)/);
       expect(step.content).toMatch(/a message tells you what to finish/);
       expect(step.content).not.toMatch(/disabled/i);
       expect(step.content).not.toMatch(/accepted or rejected/);
     }
+    expect(contributorSubmit.content).toMatch(/\(Yes, No, or Not an object\)/);
     expect(contributorSubmit.content).toMatch(/all four scene-level questions/);
-    expect(annotatorSubmit.content).toMatch(/every box, suggested or drawn, has a category and a Yes or No answer/);
-    expect(annotatorSubmit.content).not.toMatch(/scene-level/);
+    expect(annotatorSubmit.content).toMatch(/every suggested box is kept or marked Not an object/);
+    expect(annotatorSubmit.content).toMatch(/every box has a category/);
+    expect(annotatorSubmit.content).not.toMatch(/scene-level|Yes or No/);
   });
 
   it("describes the current scene questions to contributors", () => {

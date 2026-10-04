@@ -7,7 +7,11 @@ import {
   validateSceneLevel,
   validateBoxes,
   normalizeAnnotatorSubmission,
+  validateAnnotatorObjectBoxes,
+  normalizeSubmittedMarks,
+  hasEmptyBox,
 } from "@/util/validators/annotationSubmit";
+import { filterAnnotationsByTau, TAU_THRESHOLD } from "@/util/validators/telemetryPayload";
 
 /**
  * POST /api/annotationSubmit — saves the work done on one image.
@@ -64,23 +68,26 @@ const handler = async (req, res) => {
       return res.status(500).json({ message: "Internal Server Error" });
     }
 
-    // Annotators record boxes, categories and Yes/No only (decided 3 Oct
-    // 2026). Scene answers and severities from an old client are dropped here
-    // rather than refused, so the server stores none.
+    // Annotators do Step 1 Objects only (decided 4 Oct 2026): boxes and
+    // categories, with every suggestion kept or marked not an object. Scene
+    // answers, obstruction answers and severities from an old client are
+    // dropped here rather than refused, so the server stores none.
+    let boxResult;
     if (isAnnotator) {
       ({ sceneLevel, selectedObjectsID, newObjects } = normalizeAnnotatorSubmission({
         sceneLevel,
         selectedObjectsID,
         newObjects,
       }));
+      boxResult = validateAnnotatorObjectBoxes(selectedObjectsID, newObjects);
     } else {
       const sceneResult = validateSceneLevel(sceneLevel);
       if (!sceneResult.valid) {
         return res.status(422).json({ message: sceneResult.message });
       }
+      boxResult = validateBoxes(selectedObjectsID, newObjects, { requireSeverity: true });
     }
 
-    const boxResult = validateBoxes(selectedObjectsID, newObjects, { requireSeverity: !isAnnotator });
     if (!boxResult.valid) {
       return res.status(422).json({ message: boxResult.message });
     }
@@ -101,11 +108,37 @@ const handler = async (req, res) => {
 
       const imageRecord = await db.collection("Image").findOne(
         { imageID: imageID, _id: { $in: activeSession.imageIDs || [] } },
-        { projection: { city: 1 } }
+        { projection: { city: 1, width: 1, height: 1, annotationList: 1 } }
       );
 
       if (!imageRecord) {
         return res.status(403).json({ message: "That image is not part of your current session." });
+      }
+
+      // Both roles: a box drawn up or to the left, or resized past its
+      // opposite edge, arrives with a negative size. Store it normalized and
+      // clipped to the image. Marks are in the display copy's pixels, the same
+      // space as Image.width and Image.height.
+      selectedObjectsID = normalizeSubmittedMarks(selectedObjectsID, imageRecord.width, imageRecord.height);
+      newObjects = normalizeSubmittedMarks(newObjects, imageRecord.width, imageRecord.height);
+      if (hasEmptyBox(selectedObjectsID) || hasEmptyBox(newObjects)) {
+        return res.status(422).json({ message: "A box has no area inside the image." });
+      }
+
+      // Annotators: every suggestion the tool shows must be decided, and only
+      // this image's suggestions may be submitted. Suggestions hidden by the
+      // confidence threshold are never shown, so they may be missing.
+      if (isAnnotator) {
+        const suggestions = imageRecord.annotationList || [];
+        const knownIds = new Set(suggestions.map((a) => String(a.id)));
+        const submittedIds = new Set(selectedObjectsID.map((b) => String(b.id)));
+        if (selectedObjectsID.some((b) => !knownIds.has(String(b.id)))) {
+          return res.status(422).json({ message: "A suggested box does not belong to this image." });
+        }
+        const { visible } = filterAnnotationsByTau(suggestions, TAU_THRESHOLD);
+        if (visible.some((a) => !submittedIds.has(String(a.id)))) {
+          return res.status(422).json({ message: "Every suggested box must be kept or marked not an object." });
+        }
       }
 
       const city = imageRecord.city;

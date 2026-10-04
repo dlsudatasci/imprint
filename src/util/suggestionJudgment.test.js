@@ -6,6 +6,10 @@ import {
   notAnObjectPatch,
   excludeNotAnObject,
   getSuggestionPanelMode,
+  keepObjectPatch,
+  annotatorNotAnObjectPatch,
+  getObjectPanelMode,
+  isDecidedForObjects,
 } from "./suggestionJudgment";
 
 describe("NOT_AN_OBJECT", () => {
@@ -112,5 +116,67 @@ describe("getSuggestionPanelMode", () => {
     expect(getSuggestionPanelMode({ editable: true, selected: false, obstructs: undefined, severity: undefined, comment: "tree", askSeverity: false })).toBe("drawn");
     expect(getSuggestionPanelMode({ editable: false, selected: false, obstructs: undefined, severity: undefined, comment: "tree", askSeverity: false })).toBe("judge");
     expect(getSuggestionPanelMode({ editable: false, selected: false, obstructs: false, severity: null, comment: "not_an_object", askSeverity: false })).toBe("not_an_object");
+  });
+});
+
+// Annotators, Step 1 Objects (4 Oct 2026)
+describe("keepObjectPatch", () => {
+  it("keeps the suggestion with no obstruction answer", () => {
+    expect(keepObjectPatch()).toEqual({ selected: true, isRejected: false, obstructs: null, severity: null });
+  });
+});
+
+describe("annotatorNotAnObjectPatch", () => {
+  it("marks Not an object with obstructs null", () => {
+    expect(annotatorNotAnObjectPatch()).toEqual({
+      comment: "not_an_object",
+      selected: false,
+      isRejected: true,
+      obstructs: null,
+      severity: null,
+    });
+  });
+
+  it("leaves the contributor patch unchanged (obstructs false)", () => {
+    expect(notAnObjectPatch().obstructs).toBe(false);
+  });
+});
+
+describe("getObjectPanelMode", () => {
+  it("returns 'drawn' for a drawn box", () => {
+    expect(getObjectPanelMode({ editable: true, selected: false, comment: "tree" })).toBe("drawn");
+  });
+
+  it("returns 'kept' for a kept suggestion", () => {
+    expect(getObjectPanelMode({ editable: false, selected: true, comment: "tree" })).toBe("kept");
+  });
+
+  it("returns 'not_an_object' for a suggestion marked Not an object", () => {
+    expect(getObjectPanelMode({ editable: false, selected: false, comment: "not_an_object" })).toBe("not_an_object");
+  });
+
+  it("returns 'decide' for an untouched suggestion or one whose category was changed back", () => {
+    expect(getObjectPanelMode({ editable: false, selected: false, comment: "tree" })).toBe("decide");
+    expect(getObjectPanelMode({ editable: false, selected: false, comment: "" })).toBe("decide");
+  });
+});
+
+describe("isDecidedForObjects", () => {
+  it("is true for a drawn box, a kept suggestion and a Not an object suggestion", () => {
+    expect(isDecidedForObjects({ editable: true, comment: "tree" })).toBe(true);
+    expect(isDecidedForObjects({ editable: false, selected: true, comment: "tree" })).toBe(true);
+    expect(isDecidedForObjects({ editable: false, selected: false, isRejected: true, comment: "not_an_object" })).toBe(true);
+  });
+
+  it("is false for an untouched suggestion", () => {
+    expect(isDecidedForObjects({ editable: false, selected: false, comment: "tree" })).toBe(false);
+  });
+
+  it("is false for an old No answer (rejected with a taxonomy category)", () => {
+    expect(isDecidedForObjects({ editable: false, selected: false, isRejected: true, comment: "tree" })).toBe(false);
+  });
+
+  it("is false for a missing box", () => {
+    expect(isDecidedForObjects(undefined)).toBe(false);
   });
 });

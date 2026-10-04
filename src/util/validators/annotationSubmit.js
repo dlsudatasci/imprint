@@ -1,4 +1,6 @@
 import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
+import { isTaxonomyCategory } from "@/util/taxonomy";
+import { normalizeMark, clampMark, markArea } from "@/util/boxGeometry";
 
 export const MAX_BOXES_PER_IMAGE = 300;
 export const SIDEWALK_WIDTH_OPTIONS = ["no_sidewalk", "one_person", "two_people", "three_or_more"];
@@ -80,16 +82,84 @@ export function validateBoxes(selectedObjectsID, newObjects, { requireSeverity =
   return { valid: true };
 }
 
-// Annotators record boxes, categories and Yes/No only (decided 3 Oct 2026), so
-// the server drops any scene answers or severities an old client still sends.
-// Takes { sceneLevel, selectedObjectsID, newObjects }. The incoming sceneLevel
-// is discarded whatever it holds. The input is not mutated.
+// Annotators record boxes and categories only from 4 Oct 2026 (Step 1
+// Objects). Obstruction answers come in a later annotator step, so the server
+// drops any scene answers, obstruction answers or severities an old client
+// still sends. Takes { sceneLevel, selectedObjectsID, newObjects }. The
+// incoming sceneLevel is discarded whatever it holds. The input is not mutated.
 export function normalizeAnnotatorSubmission({ selectedObjectsID, newObjects }) {
-  const clearSeverity = (boxes) =>
-    Array.isArray(boxes) ? boxes.map((box) => ({ ...box, severity: null })) : boxes;
+  const clearJudgments = (boxes) =>
+    Array.isArray(boxes) ? boxes.map((box) => ({ ...box, obstructs: null, severity: null })) : boxes;
   return {
     sceneLevel: null,
-    selectedObjectsID: clearSeverity(selectedObjectsID),
-    newObjects: clearSeverity(newObjects),
+    selectedObjectsID: clearJudgments(selectedObjectsID),
+    newObjects: clearJudgments(newObjects),
   };
+}
+
+const hasNumericMark = (box) =>
+  box?.mark != null &&
+  typeof box.mark === "object" &&
+  ["x", "y", "width", "height"].every((k) => typeof box.mark[k] === "number" && Number.isFinite(box.mark[k]));
+
+/**
+ * The annotator's Step 1 rules (4 Oct 2026): every drawn box has one of the 18
+ * categories, every suggestion is kept with one of the 18 or marked not an
+ * object, and every box has a numeric mark. No free-text "Other" category,
+ * since an "other" box cannot train an 18-class detector (chapter_4.tex line 59).
+ */
+export function validateAnnotatorObjectBoxes(selectedObjectsID, newObjects) {
+  if (!Array.isArray(selectedObjectsID) || !Array.isArray(newObjects)) {
+    return { valid: false, message: "selectedObjectsID and newObjects must be arrays." };
+  }
+
+  if (selectedObjectsID.length + newObjects.length > MAX_BOXES_PER_IMAGE) {
+    return { valid: false, message: "Too many boxes for a single image." };
+  }
+
+  for (const box of newObjects) {
+    if (box?.comment === NOT_AN_OBJECT) {
+      return { valid: false, message: "Only model suggestions can be marked as not an object." };
+    }
+    if (!isTaxonomyCategory(box?.comment)) {
+      return { valid: false, message: "Every box must have a category from the list." };
+    }
+  }
+
+  for (const box of selectedObjectsID) {
+    if (box?.comment === NOT_AN_OBJECT) continue;
+    if (box?.selected !== true) {
+      return { valid: false, message: "Every suggested box must be kept or marked not an object." };
+    }
+    if (!isTaxonomyCategory(box.comment)) {
+      return { valid: false, message: "Every box must have a category from the list." };
+    }
+  }
+
+  if (![...selectedObjectsID, ...newObjects].every(hasNumericMark)) {
+    return { valid: false, message: "Every box must have a position (x, y, width and height)." };
+  }
+
+  return { valid: true };
+}
+
+const hasMarkObject = (box) => box?.mark != null && typeof box.mark === "object";
+
+/**
+ * Both roles: copies of the boxes with each mark normalized (positive width and
+ * height) and clipped to the image. initialState, the pipeline's own box, is
+ * left alone. Not an object boxes and boxes with no mark are passed through.
+ */
+export function normalizeSubmittedMarks(boxes, imageWidth, imageHeight) {
+  if (!Array.isArray(boxes)) return boxes;
+  return boxes.map((box) => {
+    if (!hasMarkObject(box) || box.comment === NOT_AN_OBJECT) return box;
+    return { ...box, mark: clampMark(normalizeMark(box.mark), imageWidth, imageHeight) };
+  });
+}
+
+/** Both roles: true when any real box with a mark has no area (inside the image, once clamped). */
+export function hasEmptyBox(boxes) {
+  if (!Array.isArray(boxes)) return false;
+  return boxes.some((box) => hasMarkObject(box) && box.comment !== NOT_AN_OBJECT && !(markArea(box.mark) > 0));
 }

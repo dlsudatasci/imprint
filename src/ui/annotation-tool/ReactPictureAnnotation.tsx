@@ -12,12 +12,25 @@ import {
   buildLabelChanges,
   buildSubmissionCounts,
 } from "@/util/validators/telemetryPayload";
-import { NOT_AN_OBJECT, notAnObjectPatch } from "@/util/suggestionJudgment";
+import {
+  NOT_AN_OBJECT,
+  notAnObjectPatch,
+  annotatorNotAnObjectPatch,
+  keepObjectPatch,
+  getObjectPanelMode,
+  isDecidedForObjects,
+} from "@/util/suggestionJudgment";
+import { isTaxonomyCategory } from "@/util/taxonomy";
+import { normalizeMark, isBelowMinimumSize } from "@/util/boxGeometry";
+import { normalizeSubmittedMarks } from "@/util/validators/annotationSubmit";
+import { summarizeObjectStep, findNearDuplicates } from "@/features/annotate/objectStep";
+import { TAXONOMY_GUIDE, TAXONOMY_RULES } from "@/features/annotate/taxonomyGuide";
 
 import { IAnnotation } from "./Annotation";
 import { IAnnotationState } from "./annotation/AnnotationState";
 import { DefaultAnnotationState } from "./annotation/DefaultAnnotationState";
 import DefaultInputSection from "./DefaultInputSection";
+import ObjectInputSection from "./ObjectInputSection";
 import {
   defaultShapeStyle,
   IShape,
@@ -514,14 +527,20 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private mountTime: number = Date.now();
   private sceneStepStartMs: number | null = null;
 
-  // Annotators record boxes, categories and Yes/No only (decided 3 Oct 2026).
-  // Every role-dependent part of the tool reads these two.
+  // Annotators give no severity and answer no scene-level questions (decided
+  // 3 Oct 2026). Every role-dependent part of the tool reads these getters.
   private get askSeverity() {
     return !this.props.isAnnotator;
   }
 
   private get askScene() {
     return !this.props.isAnnotator;
+  }
+
+  // From 4 Oct 2026 annotators do Step 1 Objects only: boxes and categories,
+  // with Keep or Not an object on every suggestion and no obstruction answer
+  private get annotatorObjectStep() {
+    return this.props.isAnnotator === true;
   }
 
   private markSceneStepStart = () => {
@@ -652,7 +671,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const displayLabels = buildDisplayLabels(sortedAnnotations);
 
     const { canvasScale } = this.state;
-    const { askScene, askSeverity } = this;
+    const { askScene, askSeverity, annotatorObjectStep } = this;
 
     return (
       <Container as="section" width="wide" className="annotation-container">
@@ -661,12 +680,25 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           {/* ── Left: Step 1 (65%, or the full width when there is no Step 2) ── */}
           <div style={{ flex: '65 1 0%' }} className="min-w-0">
             <div className="mb-3">
-              <H2 className="text-lg font-bold text-ink mb-1">{askScene ? "Step 1: Identify Objects" : "Identify Objects"}</H2>
-              <P className="text-body text-sm">
-                Review objects <span className="font-semibold text-ink">on or beside the sidewalk</span>.
-                For each dashed yellow box, decide whether it obstructs the path for <strong>you</strong>, traveling as you normally do.
-                Draw new boxes to label any missed objects.
-              </P>
+              {annotatorObjectStep ? (
+                <>
+                  <H2 className="text-lg font-bold text-ink mb-1">Step 1: Objects</H2>
+                  <P className="text-body text-sm">
+                    Box every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not.
+                    For each dashed yellow suggestion, check its category, fix the box if it is loose, then click Keep,
+                    or click Not an object if it marks nothing real. Draw a box for every object the suggestions missed.
+                  </P>
+                </>
+              ) : (
+                <>
+                  <H2 className="text-lg font-bold text-ink mb-1">Step 1: Identify Objects</H2>
+                  <P className="text-body text-sm">
+                    Review objects <span className="font-semibold text-ink">on or beside the sidewalk</span>.
+                    For each dashed yellow box, decide whether it obstructs the path for <strong>you</strong>, traveling as you normally do.
+                    Draw new boxes to label any missed objects.
+                  </P>
+                </>
+              )}
             </div>
 
             <div className="flex flex-col gap-4 mb-6">
@@ -708,7 +740,19 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                           onMouseUp={(e) => e.stopPropagation()}
                           onMouseMove={(e) => e.stopPropagation()}
                         >
-                          {inputElement(
+                          {annotatorObjectStep ? (
+                            <ObjectInputSection
+                              key={this.selectedId || ""}
+                              value={inputComment}
+                              mode={getObjectPanelMode({ editable, selected, comment: inputComment })}
+                              onChange={this.onInputCommentChange}
+                              onKeep={this.onKeep}
+                              onMarkNotAnObject={this.onMarkNotAnObject}
+                              onDelete={this.onDelete}
+                              onClose={this.onClose}
+                              belowMinimumSize={this.selectedBelowMinimumSize()}
+                            />
+                          ) : inputElement(
                             inputComment,
                             this.onInputCommentChange,
                             this.onDelete,
@@ -731,6 +775,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   </div>
                 </div>
               </div>
+              {annotatorObjectStep ? this.renderObjectsCard(sortedAnnotations, displayLabels) : (
               <div id="box-review-section" className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
                 <div className="bg-surface rounded-card border border-line shadow-sm p-4">
                   <H3><span className="text-lg font-bold text-ink">Confirmed Obstructions</span></H3>
@@ -819,11 +864,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   </ul>
                 </div>
               </div>
+              )}
             </div>
           </div>
 
-          {/* ── Right: Step 2 (35%), contributors only ── */}
-          {askScene && (
+          {/* ── Right: Step 2 (35%) for contributors, the "What to Box" list for annotators ── */}
+          {askScene ? (
           <div style={{ flex: '35 1 0%' }} className="min-w-0 overflow-y-auto">
             <div id="scene-level-section" className="mb-6">
               <H2 className="text-lg font-bold text-ink mb-1">Step 2: Rate the Sidewalk</H2>
@@ -1016,7 +1062,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               </div>
             </div>
           </div>
-          )}
+          ) : this.renderTaxonomyGuide()}
 
         </div>{/* end flex row */}
 
@@ -1044,6 +1090,121 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           </Button>
         </div>
       </Container>
+    );
+  }
+
+  /** The image's natural size. The element is never attached to the page. */
+  private imageSize() {
+    return {
+      width: this.currentImageElement?.width,
+      height: this.currentImageElement?.height,
+    };
+  }
+
+  /** Copies with marks normalized and clipped to the image, as the server stores them. */
+  private tidyMarks(boxes: IAnnotation[]) {
+    const { width, height } = this.imageSize();
+    return normalizeSubmittedMarks(boxes, width, height);
+  }
+
+  private selectedBelowMinimumSize() {
+    const box = this.currentAnnotationData.find((a) => a.id === this.selectedId);
+    if (!box?.mark) return false;
+    const { width, height } = this.imageSize();
+    return isBelowMinimumSize(box.mark, width, height);
+  }
+
+  /** Selects a box as if it had been clicked, which opens its panel. */
+  private selectBox = (box: IAnnotation) => {
+    const mark = normalizeMark(box.mark);
+    this.currentAnnotationState.onMouseDown(mark.x + 1, mark.y + 1);
+    this.currentAnnotationState.onMouseUp();
+  };
+
+  /**
+   * Annotators: the "Objects in This Image" card under the canvas. Keeps the
+   * box-review-section id, which the tutorial points at.
+   */
+  private renderObjectsCard(sortedAnnotations: IAnnotation[], displayLabels: Map<string, string>) {
+    const summary = summarizeObjectStep(sortedAnnotations);
+    const duplicates = findNearDuplicates(sortedAnnotations);
+    const labelOf = (box: IAnnotation) => displayLabels.get(box.id) ?? formatLabel(box.comment) ?? "Select a category";
+    const tagFor = (box: IAnnotation) => {
+      if (box.editable) return { text: "Drawn", className: "bg-blue-50 text-primary border border-blue-200" };
+      if (box.selected === true) return { text: "Kept", className: "bg-primary text-white" };
+      if (box.comment === NOT_AN_OBJECT) return { text: "Not an object", className: "bg-surface-subtle text-muted border border-line" };
+      return { text: "To decide", className: "bg-danger-soft text-danger" };
+    };
+    const nextId = summary.toDecideIds[0];
+    const nextBox = nextId != null ? sortedAnnotations.find((a) => a.id === nextId) : undefined;
+
+    return (
+      <div id="box-review-section" className="bg-surface rounded-card border border-line shadow-sm p-4 w-full">
+        <H3><span className="text-lg font-bold text-ink">Objects in This Image</span></H3>
+        <p className="text-xs text-muted mb-1">
+          Suggestions decided: {summary.decided} of {summary.suggestions}
+        </p>
+        <p className="text-xs text-muted mb-3">Boxes you drew: {summary.drawn}</p>
+        <ul className="flex flex-wrap gap-2">
+          {sortedAnnotations.map((box) => {
+            const tag = tagFor(box);
+            return (
+              <li
+                key={box.id}
+                className="group border border-line rounded-control bg-surface hover:border-primary hover:shadow-md transition-all cursor-pointer flex items-center gap-1.5 pl-2 pr-1 py-1"
+                onClick={() => this.selectBox(box)}
+              >
+                <span className="text-xs font-semibold text-ink whitespace-nowrap">{labelOf(box)}</span>
+                <span className={`text-[10px] font-bold rounded-control px-1 whitespace-nowrap ${tag.className}`}>{tag.text}</span>
+              </li>
+            );
+          })}
+        </ul>
+        {nextBox && (
+          <div className="mt-3">
+            <Button variant="neutral" size="sm" onClick={() => this.selectBox(nextBox)}>
+              Next suggestion to decide
+            </Button>
+          </div>
+        )}
+        {duplicates.map(({ a, b }) => (
+          <p key={`${a.id}-${b.id}`} className="text-xs text-muted mt-2">
+            Two boxes overlap almost completely ({labelOf(a)} and {labelOf(b)}). Check that each object has only one box.
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  /** Annotators: the "What to Box" list beside the canvas, in place of Step 2. */
+  private renderTaxonomyGuide() {
+    return (
+      <div style={{ flex: '35 1 0%' }} className="min-w-0">
+        <div
+          id="taxonomy-guide"
+          className="sticky top-4 bg-surface rounded-card border border-line shadow-sm p-4 max-h-[calc(100vh-2rem)] overflow-y-auto"
+        >
+          <H2 className="text-lg font-bold text-ink mb-3">What to Box</H2>
+          {TAXONOMY_GUIDE.map(({ group, items }) => (
+            <div key={group} className="mb-3">
+              <p className="text-xs font-bold text-subtle uppercase tracking-widest mb-1">{group}</p>
+              <ul className="space-y-1">
+                {items.map((item) => (
+                  <li key={item.value} className="text-sm leading-snug">
+                    <span className="font-semibold text-ink">{item.label}</span>
+                    <span className="text-muted">: {item.description}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          <ul className="mt-3 pt-3 border-t border-line space-y-1 list-disc pl-4">
+            {TAXONOMY_RULES.map((rule) => (
+              <li key={rule} className="text-xs text-body leading-snug">{rule}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
     );
   }
 
@@ -1081,16 +1242,21 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const durationMs = Date.now() - this.mountTime;
 
     const username = this.props.username;
-    const selectedObjects = this.currentAnnotationData.filter(
-      (element) => !element.editable && (element.selected || element.isRejected)
+    // Annotators (Step 1 Objects) send every decided suggestion, kept or Not an
+    // object, and no obstruction answer. Contributors send the suggestions
+    // they answered Yes or No.
+    const objectStep = this.annotatorObjectStep;
+    const noJudgment = (box: IAnnotation) => ({ ...box, obstructs: null, severity: null });
+    const decidedSuggestions = this.currentAnnotationData.filter((element) =>
+      !element.editable && (objectStep ? isDecidedForObjects(element) : (element.selected || element.isRejected))
     );
-    const selectedObjectsID = [];
-    for (let i = 0; i < selectedObjects.length; i++) {
-      selectedObjectsID.push(selectedObjects[i]);
-    }
-    const newObjects = this.currentAnnotationData.filter(
+    const drawnBoxes = this.currentAnnotationData.filter(
       (element) => element.editable
     );
+    // Both roles: marks normalized (positive width and height) and clipped to
+    // the image before sending. initialState is left alone.
+    const selectedObjects = this.tidyMarks(objectStep ? decidedSuggestions.map(noJudgment) : decidedSuggestions);
+    const newObjects = this.tidyMarks(objectStep ? drawnBoxes.map(noJudgment) : drawnBoxes);
 
     const counts = buildSubmissionCounts(this.currentAnnotationData);
     const {
@@ -1144,7 +1310,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       newObjects,
       selectedObjects,
       sceneLevel,
-      isAnnotator: !this.askScene,
+      isAnnotator: objectStep,
     });
 
     if (!validationResult.valid) {
@@ -1199,7 +1365,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const record = localData.imgRecords[currentIndex];
     if (!record) return;
 
-    record.annotationList = this.currentAnnotationData;
+    record.annotationList = this.tidyMarks(this.currentAnnotationData);
     record.userSliderValue = this.state.sliderValue;
     record.userPavementType = this.state.pavementType;
     record.userSceneLevel = this.askScene ? this.state.sceneLevel : null;
@@ -1404,7 +1570,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
   };
 
+  // The annotator panel never reaches the four obstruction handlers below. The
+  // guards make sure an annotator box can never get an obstruction answer
+  // through an old path.
   private onSelectObstruction = () => {
+    if (this.annotatorObjectStep) return;
     const selectTarget = this.shapes.findIndex(
       (shape) => shape.getAnnotationData().id === this.selectedId
     );
@@ -1443,6 +1613,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   private onUnselectObstruction = () => {
+    if (this.annotatorObjectStep) return;
     const selectTarget = this.shapes.findIndex(
       (shape) => shape.getAnnotationData().id === this.selectedId
     );
@@ -1471,9 +1642,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (selectTarget >= 0) {
       const data = this.shapes[selectTarget].getAnnotationData();
       if (data.editable) return;
-      const patch = notAnObjectPatch();
+      // Annotators give no obstruction answer, so their Not an object box keeps obstructs null
+      const patch = this.annotatorObjectStep ? annotatorNotAnObjectPatch() : notAnObjectPatch();
       Object.assign(data, patch);
-      this.setState({ selected: false, isRejected: true, obstructs: false, severity: null, inputComment: NOT_AN_OBJECT });
+      this.setState({ selected: false, isRejected: true, obstructs: patch.obstructs, severity: null, inputComment: NOT_AN_OBJECT });
       this.onShapeChange();
     }
 
@@ -1481,7 +1653,33 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.currentAnnotationState.onMouseUp();
   };
 
+  /**
+   * Annotators: keep the selected suggestion as a real object. Refused while
+   * its category is not one of the 18, and for drawn boxes, which are always
+   * kept. Closes the panel like the contributor's No does.
+   */
+  private onKeep = () => {
+    if (!this.annotatorObjectStep) return;
+    const target = this.shapes.find((shape) => shape.getAnnotationData().id === this.selectedId);
+    if (!target) return;
+    const data = target.getAnnotationData();
+    if (data.editable || !isTaxonomyCategory(data.comment)) return;
+    Object.assign(data, keepObjectPatch());
+    this.setState({ selected: true, isRejected: false, obstructs: null, severity: null });
+    this.onShapeChange();
+
+    this.currentAnnotationState.onMouseDown(-1, -1);
+    this.currentAnnotationState.onMouseUp();
+  };
+
+  /** Closes the panel without changing the box (the check button). */
+  private onClose = () => {
+    this.currentAnnotationState.onMouseDown(-1, -1);
+    this.currentAnnotationState.onMouseUp();
+  };
+
   private onSetObstructs = (obstructs: boolean) => {
+    if (this.annotatorObjectStep) return;
     const selectTarget = this.shapes.findIndex(
       (shape) => shape.getAnnotationData().id === this.selectedId
     );
@@ -1502,7 +1700,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   private onSetSeverity = (severity: number) => {
     // The panel never shows severity to annotators, this is only a guard
-    if (!this.askSeverity) return;
+    if (this.annotatorObjectStep || !this.askSeverity) return;
 
     const selectTarget = this.shapes.findIndex(
       (shape) => shape.getAnnotationData().id === this.selectedId

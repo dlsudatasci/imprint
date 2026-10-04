@@ -164,62 +164,57 @@ describe("validateAnnotationForSubmit", () => {
   });
 });
 
-// Annotators answer no scene-level questions and give no severity (3 Oct 2026)
-describe("validateAnnotationForSubmit for annotators", () => {
-  const suggestionYes = { editable: false, selected: true, isRejected: false, comment: "tree", obstructs: true, severity: null };
-  const drawnNo = { editable: true, comment: "car", obstructs: false };
+// Annotators do Step 1 Objects only (4 Oct 2026): every suggestion kept or
+// marked Not an object, every kept or drawn box one of the 18 categories
+describe("validateAnnotationForSubmit for annotators (Step 1 Objects)", () => {
+  const KEEP_MESSAGE = "Please click Keep or Not an object on every suggested box.";
+  const CATEGORY_MESSAGE = "Please choose a category from the list for every box.";
+  const kept = { id: "s1", editable: false, selected: true, isRejected: false, comment: "tree", obstructs: null, severity: null };
+  const notAnObject = { id: "s2", editable: false, selected: false, isRejected: true, comment: "not_an_object", obstructs: null, severity: null };
+  const drawn = { id: "d1", editable: true, comment: "car", obstructs: null, severity: null };
 
-  function annotatorInput(overrides = {}) {
-    return {
-      existingAnnotations: [suggestionYes, drawnNo],
-      newObjects: [drawnNo],
-      selectedObjects: [suggestionYes],
-      sceneLevel: null,
-      isAnnotator: true,
-      ...overrides,
-    };
-  }
-
-  it("passes with sceneLevel null and an obstructing box without severity", () => {
-    expect(validateAnnotationForSubmit(annotatorInput())).toEqual({ valid: true });
+  const annotatorInput = (existingAnnotations) => ({
+    existingAnnotations,
+    newObjects: existingAnnotations.filter((b) => b.editable),
+    selectedObjects: existingAnnotations.filter((b) => !b.editable),
+    sceneLevel: null,
+    isAnnotator: true,
   });
 
-  it("passes with an empty scene battery", () => {
-    const empty = { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null };
-    expect(validateAnnotationForSubmit(annotatorInput({ sceneLevel: empty }))).toEqual({ valid: true });
+  it("passes with kept and Not an object suggestions and drawn boxes, all with obstructs null", () => {
+    expect(validateAnnotationForSubmit(annotatorInput([kept, notAnObject, drawn]))).toEqual({ valid: true });
   });
 
-  it("passes with a drawn box answered Yes and no severity", () => {
-    const drawnYes = { editable: true, comment: "bench", obstructs: true };
-    const result = validateAnnotationForSubmit(
-      annotatorInput({ existingAnnotations: [suggestionYes, drawnYes], newObjects: [drawnYes] })
-    );
-    expect(result).toEqual({ valid: true });
+  it("passes with no boxes at all", () => {
+    expect(validateAnnotationForSubmit(annotatorInput([]))).toEqual({ valid: true });
   });
 
-  it("still fails on an undecided suggestion", () => {
-    const undecided = { editable: false, selected: false, isRejected: false, comment: "tree" };
-    const result = validateAnnotationForSubmit(annotatorInput({ existingAnnotations: [undecided, drawnNo] }));
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("Yes or No");
+  it("fails on an untouched suggestion with the Keep message", () => {
+    const untouched = { id: "s3", editable: false, selected: false, comment: "tree" };
+    expect(validateAnnotationForSubmit(annotatorInput([kept, untouched]))).toEqual({ valid: false, error: KEEP_MESSAGE });
   });
 
-  it("still fails on a box with no category", () => {
-    const unlabeled = { editable: true, comment: "---", obstructs: false };
-    const result = validateAnnotationForSubmit(
-      annotatorInput({ existingAnnotations: [suggestionYes, unlabeled], newObjects: [unlabeled] })
-    );
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("unlabeled");
+  it("fails on an old No answer (rejected with a taxonomy category) with the Keep message", () => {
+    const oldNo = { id: "s3", editable: false, selected: false, isRejected: true, comment: "tree", obstructs: false };
+    expect(validateAnnotationForSubmit(annotatorInput([kept, oldNo]))).toEqual({ valid: false, error: KEEP_MESSAGE });
   });
 
-  it("still fails on a drawn box with no Yes or No", () => {
-    const unanswered = { editable: true, comment: "car" };
-    const result = validateAnnotationForSubmit(
-      annotatorInput({ existingAnnotations: [suggestionYes, unanswered], newObjects: [unanswered] })
-    );
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe("Please indicate whether each object obstructs the sidewalk.");
+  it("fails on a free-text category with the category message", () => {
+    const truck = { ...drawn, comment: "truck" };
+    expect(validateAnnotationForSubmit(annotatorInput([kept, truck]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+    const keptTruck = { ...kept, comment: "truck" };
+    expect(validateAnnotationForSubmit(annotatorInput([keptTruck]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+  });
+
+  it("fails on a '---' or empty category with the category message", () => {
+    expect(validateAnnotationForSubmit(annotatorInput([{ ...drawn, comment: "---" }]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+    expect(validateAnnotationForSubmit(annotatorInput([{ ...drawn, comment: "" }]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+  });
+
+  it("asks for no Yes/No, severity or scene answers", () => {
+    const keptYesNoMissing = { id: "s1", editable: false, selected: true, comment: "tree" };
+    const drawnYesNoMissing = { id: "d1", editable: true, comment: "bench" };
+    expect(validateAnnotationForSubmit(annotatorInput([keptYesNoMissing, drawnYesNoMissing]))).toEqual({ valid: true });
   });
 });
 

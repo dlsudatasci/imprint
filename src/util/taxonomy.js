@@ -2,8 +2,8 @@
  * The fixed 18-category obstruction taxonomy from Table 4.1.
  *
  * Values match the `comment` field stored on annotation boxes.
- * The first 13 appear in the contributor dropdown (DefaultInputSection).
- * All 18 appear in model predictions (v0-mapillary).
+ * All 18 appear in the category dropdown (src/util/categoryOptions.js) and in
+ * model predictions (v0-mapillary).
  *
  * Annotations with a category NOT in this list (free-text "Other" entries)
  * are excluded from the retraining feed but kept in the full research export.

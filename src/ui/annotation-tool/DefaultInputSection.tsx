@@ -1,26 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { NOT_AN_OBJECT, getSuggestionPanelMode } from "@/util/suggestionJudgment";
-
-const OBSTRUCTION_OPTIONS = [
-  { value: "bench", label: "Bench" },
-  { value: "bicycle", label: "Bicycle" },
-  { value: "bollard", label: "Bollard" },
-  { value: "car", label: "Car" },
-  { value: "construction_materials", label: "Construction Materials" },
-  { value: "electrical_box", label: "Electrical Box" },
-  { value: "fire_hydrant", label: "Fire Hydrant" },
-  { value: "garbage", label: "Garbage" },
-  { value: "lamp_post", label: "Lamp Post" },
-  { value: "motorcycle", label: "Motorcycle" },
-  { value: "movable_signage", label: "Movable Signage" },
-  { value: "potted_plant", label: "Potted Plant" },
-  { value: "street_sign", label: "Street Sign" },
-  { value: "street_vendor_cart", label: "Street Vendor Cart" },
-  { value: "trash_bin", label: "Trash Bin" },
-  { value: "tree", label: "Tree" },
-  { value: "tricycle", label: "Tricycle" },
-  { value: "utility_post", label: "Utility Post" },
-];
+import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 
 const SEVERITY_LEVELS = [
   { value: 1, label: "Minor inconvenience" },
@@ -176,7 +156,7 @@ function CategoryDropdown({
         <option value="---" disabled>
           Select your option
         </option>
-        {OBSTRUCTION_OPTIONS.map((opt) => (
+        {CATEGORY_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
           </option>
@@ -220,14 +200,14 @@ const DefaultInputSection = ({
       return;
     }
 
-    const exactMatch = OBSTRUCTION_OPTIONS.find((opt) => opt.value === value);
+    const exactMatch = CATEGORY_OPTIONS.find((opt) => opt.value === value);
 
     if (exactMatch) {
       setIsCustom(false);
       return;
     }
 
-    const fuzzyMatch = OBSTRUCTION_OPTIONS.find(
+    const fuzzyMatch = CATEGORY_OPTIONS.find(
       (opt) =>
         opt.label.toLowerCase() === value.toLowerCase() ||
         opt.value.replace(/_/g, " ") === value.toLowerCase()
@@ -330,7 +310,7 @@ const DefaultInputSection = ({
                 <option value="---" disabled>
                   Select your option
                 </option>
-                {OBSTRUCTION_OPTIONS.map((opt) => (
+                {CATEGORY_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
@@ -454,8 +434,9 @@ const DefaultInputSection = ({
 
 const translateValue = (value: string) => {
   if (value === NOT_AN_OBJECT) return "Not an object";
-  const standard = OBSTRUCTION_OPTIONS.find((opt) => opt.value === value);
-  if (standard) return standard.label;
+  const standard = CATEGORY_OPTIONS.find((opt) => opt.value === value);
+  // "Car (incl. van, jeepney, truck, bus)" reads as just "Car" in the question
+  if (standard) return standard.label.replace(/ \(incl\. .*\)$/, "");
   if (value && value !== "---") return value;
   return value;
 };

@@ -10,6 +10,10 @@ import { MILESTONES, KILOMETERS_PER_ANNOTATION } from "@/util/milestones";
  * Calls three endpoints in parallel rather than one combined route. They cost
  * very different amounts to compute, and a slow telemetry aggregation shouldn't
  * hold up the session list.
+ *
+ * Annotators see no Recent Sessions list (decided 4 Oct 2026), so for them the
+ * session history is neither fetched nor shown. isAnnotator comes from the
+ * role getServerSideProps reads from the database.
  */
 export default class DashboardInfo extends React.Component {
   state = {
@@ -38,6 +42,8 @@ export default class DashboardInfo extends React.Component {
   async fetchData() {
     if (!this.state.userId) return;
 
+    const showRecentSessions = !this.props.isAnnotator;
+
     try {
       const [extractUserRes, telemetryRes, recentSessionsRes] = await Promise.all([
         fetch("/api/extractUser", {
@@ -46,12 +52,12 @@ export default class DashboardInfo extends React.Component {
           body: JSON.stringify({}),
         }),
         fetch("/api/telemetryStats"),
-        fetch("/api/recentSessions")
+        showRecentSessions ? fetch("/api/recentSessions") : null,
       ]);
 
       const extractUser = await extractUserRes.json();
       const telemetryStats = await telemetryRes.json();
-      const recentSessionsData = await recentSessionsRes.json();
+      const recentSessionsData = recentSessionsRes ? await recentSessionsRes.json() : { sessions: [] };
 
       this.setState({
         recentSessions: recentSessionsData.sessions || [],
@@ -101,7 +107,8 @@ export default class DashboardInfo extends React.Component {
         <Container>
           <hr className="border-line border-t-2 mb-8" />
 
-          {/* ROW 1: Recent Sessions */}
+          {/* ROW 1: Recent Sessions (contributors only) */}
+          {!this.props.isAnnotator && (
           <div className="mb-12">
             <h3 className="text-2xl font-semibold text-ink tracking-tight mb-6 px-2">Recent Sessions</h3>
 
@@ -127,6 +134,7 @@ export default class DashboardInfo extends React.Component {
               </div>
             </div>
           </div>
+          )}
 
           {/* Real-World Impact Banner */}
           <div className="bg-primary rounded-card p-8 mb-12 text-white">

@@ -260,7 +260,7 @@ export default function ContributePage({ session }) {
 
         </Container>
       </section>
-      <DashboardInfo username={username} userId={userId} />
+      <DashboardInfo username={username} userId={userId} isAnnotator={userRole === "annotator"} />
     </Page>
   );
 }

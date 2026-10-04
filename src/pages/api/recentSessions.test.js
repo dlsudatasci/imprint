@@ -9,7 +9,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import handler from "./recentSessions.js";
 
-function setupMocks({ hasSession = true, completedSessions = [], activeSession = null } = {}) {
+function setupMocks({ hasSession = true, completedSessions = [], activeSession = null, userRole = "user" } = {}) {
   getServerSession.mockResolvedValue(
     hasSession ? mockAuthSession({ _id: MOCK_USER_ID }) : null
   );
@@ -35,15 +35,20 @@ function setupMocks({ hasSession = true, completedSessions = [], activeSession =
     }),
   };
 
+  const usersCol = createMockCollection({
+    findOne: vi.fn().mockResolvedValue({ role: userRole }),
+  });
+
   const db = createMockDb({});
   db.collection = vi.fn((name) => {
+    if (name === "users") return usersCol;
     if (name === "sessions") return sessionsCol;
     if (name === "annotations") return annotationsCol;
     if (name === "Image") return imageCol;
     return createMockCollection();
   });
   connectToDatabase.mockResolvedValue({ db });
-  return { db, sessionsCol, annotationsCol };
+  return { db, sessionsCol, annotationsCol, usersCol };
 }
 
 beforeEach(() => { vi.clearAllMocks(); });
@@ -165,5 +170,21 @@ describe("GET /api/recentSessions", () => {
 
       expect(res._json.sessions[0].averageScore).toBe("3.5");
     });
+  });
+
+  // Annotators see no Recent Sessions list (4 Oct 2026)
+  it("returns no sessions to an annotator without reading the sessions collection", async () => {
+    const { sessionsCol, usersCol } = setupMocks({
+      userRole: "annotator",
+      completedSessions: [{ _id: "s1", userId: MOCK_USER_ID, status: "completed", completedImageIDs: [1], createdAt: new Date() }],
+    });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+
+    expect(res._status).toBe(200);
+    expect(res._json).toEqual({ sessions: [] });
+    expect(usersCol.findOne).toHaveBeenCalledWith(expect.anything(), { projection: { role: 1 } });
+    expect(sessionsCol.find).not.toHaveBeenCalled();
+    expect(sessionsCol.findOne).not.toHaveBeenCalled();
   });
 });

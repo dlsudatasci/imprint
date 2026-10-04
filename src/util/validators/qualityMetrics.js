@@ -68,18 +68,25 @@ export function computePRF1(matchedCount, predictedCount, groundTruthCount) {
   };
 }
 
+// Only pairs where both sides answered Yes or No are compared. Annotator boxes
+// carry obstructs: null from 4 Oct 2026 until the obstruction step exists, and
+// a missing answer is not a disagreement.
 export function computeObstructionAgreement(matchedPairs) {
-  if (matchedPairs.length === 0) return { rate: null, agreed: 0, total: 0 };
+  const answered = matchedPairs.filter(
+    ({ predicted, groundTruth }) =>
+      typeof predicted.obstructs === "boolean" && typeof groundTruth.obstructs === "boolean"
+  );
+  if (answered.length === 0) return { rate: null, agreed: 0, total: 0 };
 
   let agreed = 0;
-  for (const { predicted, groundTruth } of matchedPairs) {
+  for (const { predicted, groundTruth } of answered) {
     if (predicted.obstructs === groundTruth.obstructs) agreed++;
   }
 
   return {
-    rate: +(agreed / matchedPairs.length).toFixed(4),
+    rate: +(agreed / answered.length).toFixed(4),
     agreed,
-    total: matchedPairs.length,
+    total: answered.length,
   };
 }
 

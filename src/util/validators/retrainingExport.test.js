@@ -77,6 +77,27 @@ describe("RETRAINING_CSV_KEYS", () => {
 });
 
 describe("buildRetrainingRows", () => {
+  it("skips a box with no obstruction answer and counts it in excludedNoJudgment (4 Oct 2026)", () => {
+    const annotations = [
+      makeAnnotation({
+        source: "annotator",
+        selectedObjectsID: [makeBox({ id: "a", obstructs: null, severity: null })],
+        newObjects: [makeBox({ id: "b", editable: true, obstructs: undefined }), makeBox({ id: "c", obstructs: false, severity: null })],
+      }),
+    ];
+    const { rows, summary } = buildRetrainingRows({ annotations, userMap: makeUserMap(), imageMap: makeImageMap({ 1: { isReference: false } }) });
+    expect(rows.map((r) => r.objectID)).toEqual(["c"]);
+    expect(summary.excludedNoJudgment).toBe(2);
+    expect(summary.rows).toBe(1);
+  });
+
+  it("starts excludedNoJudgment at zero when every box has an answer", () => {
+    const annotations = [makeAnnotation({ selectedObjectsID: [makeBox()] })];
+    const { summary } = buildRetrainingRows({ annotations, userMap: makeUserMap(), imageMap: makeImageMap({ 1: { isReference: false } }) });
+    expect(summary.excludedNoJudgment).toBe(0);
+    expect(summary.rows).toBe(1);
+  });
+
   it("carries userWalkingFrequency and userTemporaryMobility from the user document", () => {
     const annotations = [makeAnnotation({ selectedObjectsID: [makeBox()] })];
     const userMap = makeUserMap({

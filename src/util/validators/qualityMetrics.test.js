@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { normalizeMark } from "@/util/boxGeometry";
 import {
   computeIoU,
   matchBoxesByIoU,
@@ -121,6 +122,24 @@ describe("computeObstructionAgreement", () => {
   it("returns null rate for empty pairs", () => {
     const result = computeObstructionAgreement([]);
     expect(result.rate).toBeNull();
+  });
+
+  it("compares only pairs where both sides answered Yes or No (4 Oct 2026)", () => {
+    const pairs = [
+      { predicted: { obstructs: true }, groundTruth: { obstructs: true } },
+      { predicted: { obstructs: false }, groundTruth: { obstructs: null } },
+      { predicted: { obstructs: true }, groundTruth: {} },
+      { predicted: { obstructs: false }, groundTruth: { obstructs: true } },
+    ];
+    expect(computeObstructionAgreement(pairs)).toEqual({ rate: 0.5, agreed: 1, total: 2 });
+  });
+
+  it("returns rate null when no pair has an answer on both sides", () => {
+    const pairs = [
+      { predicted: { obstructs: true }, groundTruth: { obstructs: null } },
+      { predicted: { obstructs: null }, groundTruth: { obstructs: null } },
+    ];
+    expect(computeObstructionAgreement(pairs)).toEqual({ rate: null, agreed: 0, total: 0 });
   });
 
   it("computes perfect agreement", () => {
@@ -397,6 +416,20 @@ const ann = (boxes, sceneLevel = null) => ({ selectedObjectsID: [], newObjects: 
 const tree = (x, extra = {}) => box(x, 0, 100, 100, { comment: "tree", obstructs: false, ...extra });
 const car = (x, extra = {}) => box(x, 0, 100, 100, { comment: "car", obstructs: false, ...extra });
 
+describe("computeIoU on normalized marks (4 Oct 2026)", () => {
+  it("gives the same result for boxes stored with negative sizes once normalized", () => {
+    const a = { x: 0, y: 0, width: 100, height: 100 };
+    const b = { x: 50, y: 50, width: 100, height: 100 };
+    const aFlipped = { x: 100, y: 100, width: -100, height: -100 };
+    const bFlipped = { x: 150, y: 50, width: -100, height: 100 };
+    const expected = computeIoU(a, b);
+    expect(expected).toBeGreaterThan(0);
+    expect(computeIoU(normalizeMark(aFlipped), normalizeMark(bFlipped))).toBeCloseTo(expected);
+    // Without normalizing, the flipped boxes do not register an overlap
+    expect(computeIoU(aFlipped, bFlipped)).not.toBeCloseTo(expected);
+  });
+});
+
 describe("buildReferenceStandard", () => {
   it("keeps an object boxed by more than half of the annotators, with median edges and majority category", () => {
     const std = buildReferenceStandard([
@@ -494,6 +527,18 @@ describe("computeReferencePerformanceAgainstTeam", () => {
     expect(r.obstructionAgreement).toBe(0.5); // agrees with the first annotator, not the second
     expect(r.f1).toBe(0); // the category does not match the answer key
     expect(r.annotatorCount).toBe(2);
+  });
+
+  it("gives obstructionAgreement null while annotators have no obstruction answers, and still scores boxes (4 Oct 2026)", () => {
+    const team = [
+      ann([tree(0, { obstructs: null }), car(300, { obstructs: null })]),
+      ann([tree(0, { obstructs: null }), car(300, { obstructs: null })]),
+    ];
+    const contributor = ann([tree(0, { obstructs: true, severity: 3 }), car(300, { obstructs: false })], scene(1));
+    const r = computeReferencePerformanceAgainstTeam(contributor, team);
+    expect(r.obstructionAgreement).toBeNull();
+    expect(r.f1).toBe(1);
+    expect(r.truePositives).toBe(2);
   });
 
   it("returns no severity or scene comparison, since annotators record neither (3 Oct 2026)", () => {

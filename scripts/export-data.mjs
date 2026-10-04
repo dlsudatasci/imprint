@@ -10,8 +10,9 @@
  *   --output <dir> Output directory (default: ./exports/)
  *
  * Annotator rows (source "annotator") have sceneLevel: null and severity: null
- * on every box from 3 Oct 2026, since annotators record boxes, categories and
- * Yes/No only. Earlier annotator rows may still carry both.
+ * on every box from 3 Oct 2026. From 4 Oct 2026 annotators record boxes and
+ * categories only (Step 1 Objects), so their boxes also have obstructs: null
+ * until the obstruction step exists. --retraining skips boxes with no Yes/No.
  *
  * Usage:
  *   node --env-file=.env scripts/export-data.mjs --retraining
@@ -114,7 +115,7 @@ try {
     console.log(`  ✓ ${summary.rows} judgments → ${outPath}`);
     console.log(`    Created-box rows: ${summary.createdBoxRows} (${createdPct}%)`);
     console.log(`    Fallback rows (no initialState): ${summary.fallbackRows}`);
-    console.log(`    Excluded: ${summary.excludedReferenceAnnotations} reference annotations, ${summary.excludedNotAnObject} not-an-object, ${summary.excludedFreeText} free-text, ${summary.excludedNonTaxonomyFeatureCategory} non-taxonomy feature category`);
+    console.log(`    Excluded: ${summary.excludedReferenceAnnotations} reference annotations, ${summary.excludedNotAnObject} not-an-object, ${summary.excludedFreeText} free-text, ${summary.excludedNonTaxonomyFeatureCategory} non-taxonomy feature category, ${summary.excludedNoJudgment} with no obstruction answer`);
   }
 
   // --- FULL EXPORT MODE ---

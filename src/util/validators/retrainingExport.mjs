@@ -50,6 +50,7 @@ export function buildRetrainingRows({ annotations, userMap, imageMap }) {
     excludedNotAnObject: 0,
     excludedFreeText: 0,
     excludedNonTaxonomyFeatureCategory: 0,
+    excludedNoJudgment: 0,
   };
 
   const rows = [];
@@ -100,6 +101,13 @@ export function buildRetrainingRows({ annotations, userMap, imageMap }) {
 
       if (!RETRAINING_TAXONOMY.has(category)) {
         summary.excludedNonTaxonomyFeatureCategory++;
+        continue;
+      }
+
+      // The classifier needs a Yes or No. Annotator boxes carry obstructs: null
+      // from 4 Oct 2026 until the obstruction step exists.
+      if (typeof box.obstructs !== "boolean") {
+        summary.excludedNoJudgment++;
         continue;
       }
 

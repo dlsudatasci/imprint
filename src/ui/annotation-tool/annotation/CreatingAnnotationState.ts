@@ -1,4 +1,5 @@
 import { ReactPictureAnnotation } from "../index";
+import { normalizeMark } from "@/util/boxGeometry";
 import { IShape } from "../Shape";
 import { IAnnotationState } from "./AnnotationState";
 import { DefaultAnnotationState } from "./DefaultAnnotationState";
@@ -74,6 +75,11 @@ export default class CreatingAnnotationState implements IAnnotationState {
     // Has to happen after the state swap — Creating ignores mousedown, so the
     // synthetic event would go nowhere if it fired first.
     if (makeNewBox) {
+      // A box drawn up or to the left keeps its start corner as x, y with a
+      // negative size, so the click below would land outside it. Normalize the
+      // mark in place first (4 Oct 2026, both roles).
+      const { mark } = data.getAnnotationData();
+      Object.assign(mark, normalizeMark(mark));
       this.context.onMouseDownHack(
         data.getAnnotationData().mark.x + 1,
         data.getAnnotationData().mark.y + 1

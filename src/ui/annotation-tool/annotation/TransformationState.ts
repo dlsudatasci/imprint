@@ -1,4 +1,5 @@
 import { ReactPictureAnnotation } from "../index";
+import { normalizeMark } from "@/util/boxGeometry";
 import { IAnnotationState } from "./AnnotationState";
 import { DefaultAnnotationState } from "./DefaultAnnotationState";
 
@@ -23,7 +24,18 @@ export default class TransformationState implements IAnnotationState {
   };
 
   public onMouseUp = () => {
-    const { setAnnotationState } = this.context;
+    const { setAnnotationState, shapes, selectedId, onShapeChange } = this.context;
+
+    // Resizing past the opposite edge flips the sign of the width or height.
+    // The shape edits the original data object, so normalize that mark in
+    // place (4 Oct 2026, both roles).
+    const shape = shapes.find((s) => s.getAnnotationData().id === selectedId);
+    if (shape) {
+      const { mark } = shape.getAnnotationData();
+      Object.assign(mark, normalizeMark(mark));
+      onShapeChange();
+    }
+
     setAnnotationState(new DefaultAnnotationState(this.context));
   };
 

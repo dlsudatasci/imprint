@@ -13,6 +13,13 @@ import { AuthCard, Button, Input, Checkbox, Container } from "@/ui";
  * Demographic questions come later at /complete-profile, so this screen asks
  * for as little as possible.
  *
+ * "Sign up with Google" goes straight to Google, like the login page's button.
+ * It does not need the consent boxes below it: a new Google account is only
+ * created at /choose-username, which asks for consent and the age confirmation
+ * itself, and the server refuses to create it without them. Until 6 Oct 2026
+ * the button waited for these boxes and reported the missing tick under the
+ * Submit button, off screen, so clicking it seemed to do nothing.
+ *
  * Field errors use the browser's own validation bubbles rather than messages
  * rendered on the page. That is why each input clears its custom message as
  * soon as it is typed in — a leftover bubble would otherwise block the form
@@ -31,18 +38,8 @@ export default function Register() {
   }, [session, loading, router]);
 
   const [serverError, setServerError] = useState("");
-  const [consentChecked, setConsentChecked] = useState(false);
-  const [ageChecked, setAgeChecked] = useState(false);
 
   function handleGoogleSignIn() {
-    if (!consentChecked) {
-      setServerError("Please agree to the Informed Consent Form before continuing.");
-      return;
-    }
-    if (!ageChecked) {
-      setServerError("Please confirm that you are at least 18 years old.");
-      return;
-    }
     signIn("google", { callbackUrl: `${window.location.origin}/contribute` });
   }
 
@@ -208,8 +205,6 @@ export default function Register() {
             <div className="space-y-3 mt-8">
               <Checkbox
                 id="consent-agree"
-                checked={consentChecked}
-                onChange={(e) => setConsentChecked(e.target.checked)}
                 required
                 label={
                   <>
@@ -228,8 +223,6 @@ export default function Register() {
               />
               <Checkbox
                 id="consent-age"
-                checked={ageChecked}
-                onChange={(e) => setAgeChecked(e.target.checked)}
                 required
                 label="I confirm that I am at least 18 years old"
               />

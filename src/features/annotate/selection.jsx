@@ -1,18 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { writeSession } from "@/util/sessionCache";
+import { CONTRIBUTOR_OPTIONS, sessionOptionsFor } from "./sessionOptions";
 
 import { Button, Card, Container } from "@/ui";
 
-// Must stay in sync with ALLOWED_SESSION_SIZES in /api/annotationGet — that
-// endpoint rejects any count not on its list.
-const SESSION_OPTIONS = [
-  { count: 5, label: "05", time: "2-3 minutes" },
-  { count: 10, label: "10", time: "4-7 minutes" },
-  { count: 20, label: "20", time: "8-10 minutes" },
-  { count: 40, label: "40", time: "12-15 minutes" },
-];
+// The sizes on offer come from /api/annotationGet (sessionSizes), which knows
+// whether this person is an annotator (10, 25, 50) or a contributor (5, 10, 20,
+// 40) and rejects any count not on their list.
 
 /**
  * The first screen of a new annotation session, asking how many images to take.
@@ -29,6 +25,26 @@ export default function AnnotationSessionSelection() {
   const router = useRouter();
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [poolExhausted, setPoolExhausted] = useState(false);
+  const [options, setOptions] = useState(CONTRIBUTOR_OPTIONS);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/annotationGet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (cancelled || !json || !Array.isArray(json.sessionSizes)) return;
+        const annotator = json.sessionSizes.join() !== CONTRIBUTOR_OPTIONS.map((o) => o.count).join();
+        setOptions(sessionOptionsFor(json.sessionSizes, { annotator }));
+        setSelected((prev) => (json.sessionSizes.includes(prev) ? prev : null));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const startSession = async () => {
     if (!selected) return;
@@ -53,6 +69,12 @@ export default function AnnotationSessionSelection() {
         return;
       }
 
+      if (annotationJson.poolExhausted) {
+        setPoolExhausted(true);
+        setLoading(false);
+        return;
+      }
+
       writeSession({ total: selected, current: 1, data: annotationJson });
 
       window.sessionStorage.setItem("isNavigatingImages", "true");
@@ -70,64 +92,86 @@ export default function AnnotationSessionSelection() {
         <Card padding="none" className="px-8 sm:px-12 py-10 my-5 mb-32 relative overflow-hidden">
 
           <div className="relative z-10 text-center">
-            <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-ink tracking-tight">
-              How many images would you like to annotate?
-            </h2>
-            <p className="mt-3 text-muted font-medium leading-relaxed mx-auto">
-              Each image takes about 30 seconds on average. You&apos;ll identify
-              obstructions, rate sidewalk accessibility, and identify the surface type.
-            </p>
+            {poolExhausted ? (
+              <>
+                <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-ink tracking-tight">
+                  All images annotated
+                </h2>
+                <p className="mt-3 text-muted font-medium leading-relaxed mx-auto max-w-lg">
+                  You have annotated every available image. Thank you for your
+                  incredible contributions! We will notify you when more images
+                  become available.
+                </p>
+                <div className="mt-10">
+                  <Link href="/contribute" className="inline-flex">
+                    <Button>Return to Dashboard</Button>
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-ink tracking-tight">
+                  How many images would you like to annotate?
+                </h2>
+                <p className="mt-3 text-muted font-medium leading-relaxed mx-auto">
+                  Each image takes about 30 seconds on average. You&apos;ll identify
+                  obstructions, rate sidewalk accessibility, and identify the surface type.
+                </p>
 
-            <hr className="my-6 border-line-card" />
+                <hr className="my-6 border-line-card" />
 
-            {/* Selection Cards */}
-            <div className="flex flex-wrap justify-center gap-5 mt-2">
-              {SESSION_OPTIONS.map((option) => {
-                const isSelected = selected === option.count;
-                return (
-                  // eslint-disable-next-line react/forbid-elements -- selectable card, not a Button variant: it carries its own selected state and sizing
-                  <button
-                    key={option.count}
-                    onClick={() => setSelected(option.count)}
-                    disabled={loading}
-                    className={`
-                      group flex flex-col items-center justify-center
-                      w-28 sm:w-32 py-6 rounded-card border-2
-                      transition-colors duration-300 cursor-pointer
-                      ${isSelected
-                        ? "border-primary bg-primary-50"
-                        : "border-line bg-surface hover:border-subtle"
-                      }
-                      disabled:cursor-not-allowed
-                    `}
+                {/* Selection Cards */}
+                <div className="flex flex-wrap justify-center gap-5 mt-2">
+                  {options.map((option) => {
+                    const isSelected = selected === option.count;
+                    return (
+                      // eslint-disable-next-line react/forbid-elements -- selectable card, not a Button variant: it carries its own selected state and sizing
+                      <button
+                        key={option.count}
+                        onClick={() => setSelected(option.count)}
+                        disabled={loading}
+                        className={`
+                          group flex flex-col items-center justify-center
+                          w-28 sm:w-32 py-6 rounded-card border-2
+                          transition-colors duration-300 cursor-pointer
+                          ${isSelected
+                            ? "border-primary bg-primary-50"
+                            : "border-line bg-surface hover:border-subtle"
+                          }
+                          disabled:cursor-not-allowed
+                        `}
+                      >
+                        <span className={`text-4xl sm:text-5xl font-extrabold tracking-tight transition-colors duration-300 ${isSelected ? "text-primary" : "text-body group-hover:text-ink"}`}>
+                          {option.label}
+                        </span>
+                        {option.time && (
+                          <span className={`text-sm font-semibold mt-2 transition-colors duration-300 ${isSelected ? "text-primary/70" : "text-subtle"}`}>
+                            {option.time}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row justify-center gap-4 mt-10">
+                  <Link
+                    href={loading ? "" : "/contribute"}
+                    className={`flex-1 sm:flex-none flex ${loading ? "opacity-50 pointer-events-none" : ""}`}
                   >
-                    <span className={`text-4xl sm:text-5xl font-extrabold tracking-tight transition-colors duration-300 ${isSelected ? "text-primary" : "text-body group-hover:text-ink"}`}>
-                      {option.label}
-                    </span>
-                    <span className={`text-sm font-semibold mt-2 transition-colors duration-300 ${isSelected ? "text-primary/70" : "text-subtle"}`}>
-                      {option.time}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row justify-center gap-4 mt-10">
-              <Link
-                href={loading ? "" : "/contribute"}
-                className={`flex-1 sm:flex-none flex ${loading ? "opacity-50 pointer-events-none" : ""}`}
-              >
-                <Button variant="neutral" fullWidth>Cancel</Button>
-              </Link>
-              <Button
-                className="flex-1 sm:flex-none"
-                onClick={startSession}
-                disabled={!selected || loading}
-              >
-                {loading ? "Starting..." : "Start Session"}
-              </Button>
-            </div>
+                    <Button variant="neutral" fullWidth>Cancel</Button>
+                  </Link>
+                  <Button
+                    className="flex-1 sm:flex-none"
+                    onClick={startSession}
+                    disabled={!selected || loading}
+                  >
+                    {loading ? "Starting..." : "Start Session"}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </Card>
       </section>

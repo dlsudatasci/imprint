@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./[...nextauth]";
 import { connectToDatabase } from "@/util/mongodb";
 import { USERNAME_PATTERN } from "@/util/validation";
+import { newAccountRole } from "@/util/validators/newAccountRole";
 
 /**
  * POST /api/auth/choose-username — saves the username a Google sign-in picks.
@@ -29,7 +30,7 @@ export default function handler(req, res) {
                 return res.status(401).json({ message: "Unauthorized. Please log in first." });
             }
 
-            const { username } = req.body;
+            const { username, consentAgreed, ageConfirmed } = req.body;
 
             // Type check first: an object here would sail past the length check
             // (undefined > 50 is false), reach findOne as a Mongo operator, and
@@ -42,6 +43,13 @@ export default function handler(req, res) {
                 return res.status(422).json({
                     message: "Username must be 3-30 characters, using letters, numbers, dots, underscores, or hyphens.",
                 });
+            }
+
+            if (consentAgreed !== true) {
+                return res.status(422).json({ message: "You must agree to the Informed Consent Form." });
+            }
+            if (ageConfirmed !== true) {
+                return res.status(422).json({ message: "You must confirm that you are at least 18 years old." });
             }
 
             const { db } = await connectToDatabase();
@@ -67,11 +75,16 @@ export default function handler(req, res) {
                     name: session.user.name || "",
                     image: session.user.image || "",
                     username,
+                    consentAgreedAt: new Date(),
+                    ageConfirmedAt: new Date(),
                     updatedAt: new Date(),
                 },
                 $setOnInsert: {
                     createdAt: new Date(),
-                    role: "user",
+                    // "user" (contributor), or "annotator" with the
+                    // local-only REGISTER_AS_ANNOTATOR switch. On insert
+                    // only, so an existing account keeps its role.
+                    role: newAccountRole(),
                     totalAnnotations: 0,
                     hasCompletedTutorial: false,
                     activities: [

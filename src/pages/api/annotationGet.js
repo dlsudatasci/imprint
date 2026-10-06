@@ -4,6 +4,18 @@ import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { normalizeCityName } from "@/util/cities";
 import { ObjectId } from "mongodb";
+import {
+  ALLOWED_SESSION_SIZES,
+  ANNOTATOR_SESSION_SIZES,
+  ensureModelVersion as ensureModelVersionUtil,
+  calculateReferenceCount,
+  canServeImage,
+  REFERENCE_MATCH,
+  ANNOTATOR_MODEL_DEV_MATCH,
+  CONTRIBUTOR_DEPLOYMENT_MATCH,
+  toClientImage,
+  annotatorModelDevFirst,
+} from "@/util/validators/annotationGet";
 
 /**
  * POST /api/annotationGet — gives the annotate page a batch of images to work
@@ -22,30 +34,23 @@ import { ObjectId } from "mongodb";
  *
  * Because the images and the progress position are stored server-side, a
  * session survives signing out or moving to another computer.
+ *
+ * Who sees what (Step 5, decided 30 Sep 2026):
+ *   annotators    reference images first, then model-development images
+ *                 (poolStatus "model_dev": the training, validation and test data)
+ *   contributors  deployment images (poolStatus "served", not reference) with
+ *                 reference images mixed in at one in eight
+ *   nobody        reserve images (poolStatus "reserve") until promoted
+ * Annotators see the pre-annotation suggestions on every image they are served,
+ * reference images included (decided 1 Oct 2026; until then reference images
+ * were served to annotators with no suggestions).
+ * Contributors must never be served a model-development image (Chapter 4,
+ * Datasets and Splits), so every new session is also checked image by image
+ * with canServeImage after the draw.
  */
 
-// Session sizes the UI actually offers. Anything outside this set is either a
-// typo or someone probing, and since the value drives a Mongo $limit we don't
-// want to hand it straight to the database.
-const ALLOWED_SESSION_SIZES = [5, 10, 20, 40];
-
-// Annotators work through reference images, which are a fixed pool (~150).
-// Larger minimum and maximum so they can cover more ground per session.
-const ANNOTATOR_SESSION_SIZES = [10, 20, 40, 80];
-
-/**
- * Applies a contributor's saved work back onto the raw image records.
- *
- * Image records carry the model's suggested boxes. Once someone has worked on
- * an image, their judgements on those suggestions and any boxes they drew
- * themselves live separately, in the annotations collection.
- *
- * Merging the two is what makes a resumed session look exactly as they left it.
- */
 function ensureModelVersion(imgRecords) {
-  for (const img of imgRecords) {
-    if (!img.modelVersion) img.modelVersion = "v0-mapillary";
-  }
+  ensureModelVersionUtil(imgRecords);
 }
 
 async function mergeUserAnnotations(db, userId, imgRecords) {
@@ -74,6 +79,9 @@ async function mergeUserAnnotations(db, userId, imgRecords) {
     img.userSliderValue = annotation.accessibilityRating;
     img.userPavementType = annotation.pavementType;
     img.userSceneLevel = annotation.sceneLevel;
+    // The annotator's sidewalk outline (6 Oct 2026), so Previous and resumed
+    // sessions restore it
+    img.userSidewalkMask = annotation.sidewalkMask ?? null;
   }
 
   return imgRecords;
@@ -106,6 +114,8 @@ const handler = async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
+    // Returned with every successful response so the annotation tool can hide
+    // the scene step and severity for annotators (decided 3 Oct 2026).
     const isAnnotator = user.role === "annotator";
     const allowedSizes = isAnnotator ? ANNOTATOR_SESSION_SIZES : ALLOWED_SESSION_SIZES;
 
@@ -130,12 +140,6 @@ const handler = async (req, res) => {
 
       ensureModelVersion(sortedImgRecords);
 
-      if (isAnnotator) {
-        for (const img of sortedImgRecords) {
-          img.annotationList = [];
-        }
-      }
-
       await mergeUserAnnotations(db, userId, sortedImgRecords);
 
       const completedCount = existingSession.completedImageIDs
@@ -149,18 +153,25 @@ const handler = async (req, res) => {
       const currentCount = existingSession.currentCount
         || Math.min(completedCount + 1, existingSession.totalCount);
 
+      // referenceGroundTruth (other annotators' answers, the contributors'
+      // answer key) never leaves the server (6 Oct 2026, both roles)
       return res.json({
-        imgRecords: sortedImgRecords,
+        imgRecords: sortedImgRecords.map(toClientImage),
         isExistingSession: true,
         currentCount: currentCount,
+        isAnnotator,
       });
     }
 
     // 2. No active session, create a new one
     if (!annotationTotalCount) {
+      // sessionSizes tells the batch-size picker which counts this person may
+      // choose: annotators and contributors have different lists.
       return res.json({
         imgRecords: [],
         message: "No active session found and no count provided.",
+        sessionSizes: allowedSizes,
+        isAnnotator,
       });
     }
 
@@ -180,34 +191,152 @@ const handler = async (req, res) => {
     let imgRecords;
 
     if (isAnnotator) {
-      // Annotators see reference images in random order, regardless of city.
-      // They produce ground-truth labels, so they never see model suggestions.
-      imgRecords = await db
+      // Annotators complete all 150 reference images before moving on to
+      // model-dev images. Both kinds keep their pre-annotation suggestions,
+      // which annotators verify (decided 1 Oct 2026). Model-dev images carry
+      // poolStatus "model_dev", which no contributor query matches.
+
+      // Local testing only: ANNOTATOR_MODEL_DEV_FIRST=true skips the
+      // reference images so the whole session is model-dev (see
+      // annotatorModelDevFirst). Never applies in a production build.
+      const modelDevFirst = annotatorModelDevFirst();
+      if (modelDevFirst) {
+        console.warn("annotationGet: ANNOTATOR_MODEL_DEV_FIRST is on, reference images skipped (local testing only)");
+      }
+
+      // 1. Draw incomplete reference images first
+      const refImages = modelDevFirst ? [] : await db
         .collection("Image")
         .aggregate([
-          { $match: { isReference: true, imageID: { $nin: completedImageIDs } } },
-          { $addFields: { rand: { $rand: {} } } },
-          { $sort: { rand: 1 } },
+          {
+            $match: {
+              ...REFERENCE_MATCH,
+              imageID: { $nin: completedImageIDs },
+            },
+          },
+          {
+            $addFields: {
+              annotationCount: { $ifNull: ["$annotationCount", 0] },
+              rand: { $rand: {} },
+            },
+          },
+          { $sort: { annotationCount: 1, rand: 1 } },
           { $limit: annotationTotalCount },
         ])
         .toArray();
 
-      for (const img of imgRecords) {
-        img.annotationList = [];
+      if (refImages.length >= annotationTotalCount) {
+        // Enough reference images to fill the entire session
+        imgRecords = refImages;
+      } else {
+        // 2. Fill the remainder with model-dev images, city-proportional
+        const remaining = annotationTotalCount - refImages.length;
+
+        const cityDist = await db
+          .collection("Image")
+          .aggregate([
+            {
+              $match: {
+                ...ANNOTATOR_MODEL_DEV_MATCH,
+                imageID: { $nin: completedImageIDs },
+              },
+            },
+            { $group: { _id: "$city", count: { $sum: 1 } } },
+          ])
+          .toArray();
+
+        const totalAvailable = cityDist.reduce((s, c) => s + c.count, 0);
+
+        let modelDevImages = [];
+        if (totalAvailable > 0) {
+          const requested = Math.min(remaining, totalAvailable);
+
+          const allocations = cityDist.map((c) => ({
+            city: c._id,
+            available: c.count,
+            target: Math.min(
+              c.count,
+              Math.max(1, Math.round((c.count / totalAvailable) * requested))
+            ),
+          }));
+
+          let total = allocations.reduce((s, a) => s + a.target, 0);
+          while (total > requested) {
+            allocations.sort((a, b) => b.target - a.target);
+            allocations[0].target--;
+            total--;
+          }
+          while (total < requested) {
+            const expandable = allocations.filter((a) => a.target < a.available);
+            if (expandable.length === 0) break;
+            expandable.sort((a, b) => a.target - b.target);
+            expandable[0].target++;
+            total++;
+          }
+
+          const cityBatches = await Promise.all(
+            allocations
+              .filter((a) => a.target > 0)
+              .map((a) =>
+                db
+                  .collection("Image")
+                  .aggregate([
+                    {
+                      $match: {
+                        city: a.city,
+                        ...ANNOTATOR_MODEL_DEV_MATCH,
+                        imageID: { $nin: completedImageIDs },
+                      },
+                    },
+                    {
+                      $addFields: {
+                        annotationCount: { $ifNull: ["$annotationCount", 0] },
+                        rand: { $rand: {} },
+                      },
+                    },
+                    { $sort: { annotationCount: 1, rand: 1 } },
+                    { $limit: a.target },
+                  ])
+                  .toArray()
+              )
+          );
+
+          modelDevImages = cityBatches.flat();
+        }
+
+        imgRecords = [...refImages, ...modelDevImages];
+      }
+
+      // Shuffle so reference images are not clustered
+      for (let i = imgRecords.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [imgRecords[i], imgRecords[j]] = [imgRecords[j], imgRecords[i]];
       }
     } else {
-      // Mix ~1 in 8 reference images into each contributor session. These are
-      // indistinguishable in the UI but let us measure contributor reliability
-      // by comparing their answers to the annotator ground truth.
-      const refCount = Math.max(1, Math.round(annotationTotalCount / 8));
+      // Mix reference images into contributor sessions at one in eight. These
+      // are indistinguishable in the UI but let us measure contributor
+      // reliability by comparing their answers to the annotator ground truth.
+      // The rate is held over the contributor's whole participation: the count
+      // comes from every image they were served in earlier sessions, so short
+      // sessions do not over- or under-sample reference images.
+      const priorServedResult = await db
+        .collection("sessions")
+        .aggregate([
+          { $match: { userId } },
+          { $group: { _id: null, served: { $sum: { $size: { $ifNull: ["$imageIDs", []] } } } } },
+        ])
+        .toArray();
+      const priorServed = priorServedResult[0]?.served ?? 0;
+      const refCount = calculateReferenceCount(annotationTotalCount, priorServed);
       const regularCount = annotationTotalCount - refCount;
 
-      const refImages = await db
+      // $limit must be positive, so a session owed no reference image skips the query.
+      const refImages = refCount === 0 ? [] : await db
         .collection("Image")
         .aggregate([
-          { $match: { isReference: true, poolStatus: "served", imageID: { $nin: completedImageIDs } } },
-          { $addFields: { rand: { $rand: {} } } },
-          { $sort: { rand: 1 } },
+          { $match: { ...REFERENCE_MATCH, imageID: { $nin: completedImageIDs } } },
+          { $addFields: { annotationCount: { $ifNull: ["$annotationCount", 0] }, rand: { $rand: {} } } },
+          { $sort: { annotationCount: 1, rand: 1 } },
           { $limit: refCount },
         ])
         .toArray();
@@ -225,13 +354,12 @@ const handler = async (req, res) => {
           {
             $match: {
               city: { $in: targetCities },
-              poolStatus: "served",
-              isReference: false,
+              ...CONTRIBUTOR_DEPLOYMENT_MATCH,
               imageID: { $nin: completedImageIDs },
             },
           },
-          { $addFields: { rand: { $rand: {} } } },
-          { $sort: { rand: 1 } },
+          { $addFields: { annotationCount: { $ifNull: ["$annotationCount", 0] }, rand: { $rand: {} } } },
+          { $sort: { annotationCount: 1, rand: 1 } },
           { $limit: needed },
         ])
         .toArray();
@@ -244,13 +372,12 @@ const handler = async (req, res) => {
             {
               $match: {
                 city: { $nin: targetCities },
-                poolStatus: "served",
-                isReference: false,
+                ...CONTRIBUTOR_DEPLOYMENT_MATCH,
                 imageID: { $nin: completedImageIDs },
               },
             },
-            { $addFields: { rand: { $rand: {} } } },
-            { $sort: { rand: 1 } },
+            { $addFields: { annotationCount: { $ifNull: ["$annotationCount", 0] }, rand: { $rand: {} } } },
+            { $sort: { annotationCount: 1, rand: 1 } },
             { $limit: remaining },
           ])
           .toArray();
@@ -265,6 +392,32 @@ const handler = async (req, res) => {
         const j = Math.floor(Math.random() * (i + 1));
         [imgRecords[i], imgRecords[j]] = [imgRecords[j], imgRecords[i]];
       }
+    }
+
+    // Last line of defence for the pool rules: drop any image this person may not
+    // be served, whatever the queries above returned.
+    const drawn = imgRecords.length;
+    imgRecords = imgRecords.filter((img) => canServeImage(img, isAnnotator));
+    if (imgRecords.length !== drawn) {
+      console.error(
+        `annotationGet: dropped ${drawn - imgRecords.length} image(s) outside the ${isAnnotator ? "annotator" : "contributor"} pool`
+      );
+    }
+
+    if (imgRecords.length === 0) {
+      await logTelemetryEvent({
+        event: "POOL_EXHAUSTION",
+        userId,
+        username,
+        requestedCount: annotationTotalCount,
+        availableImages: 0,
+      });
+      return res.json({
+        imgRecords: [],
+        poolExhausted: true,
+        message: "You have annotated every available image. Thank you for your incredible contributions!",
+        isAnnotator,
+      });
     }
 
     const imageIDs = imgRecords.map((img) => img._id);
@@ -283,16 +436,43 @@ const handler = async (req, res) => {
       createdAt: new Date(),
     });
 
+    const cumulativeSessionsToDate = await db
+      .collection("sessions")
+      .countDocuments({ userId, status: "completed" });
+
+    const lastSessionEnd = await db
+      .collection("telemetry_logs")
+      .findOne(
+        { userId, event: "SESSION_END" },
+        { sort: { timestamp: -1 }, projection: { timestamp: 1 } }
+      );
+
+    const distinctActiveDaysResult = await db
+      .collection("telemetry_logs")
+      .aggregate([
+        { $match: { userId, event: "IMAGE_SUBMITTED" } },
+        { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Manila" } } } },
+        { $count: "count" },
+      ])
+      .toArray();
+
     await logTelemetryEvent({
       event: "SESSION_START",
       userId: userId,
       username: username,
       sessionTotalCount: annotationTotalCount,
+      cumulativeSessionsToDate,
+      sessionPositionInHistory: cumulativeSessionsToDate + 1,
+      distinctActiveDays: distinctActiveDaysResult[0]?.count ?? 0,
+      intervalSincePreviousSessionMs: lastSessionEnd
+        ? Date.now() - new Date(lastSessionEnd.timestamp).getTime()
+        : null,
     });
 
     res.json({
-      imgRecords: imgRecords,
+      imgRecords: imgRecords.map(toClientImage),
       isExistingSession: false,
+      isAnnotator,
     });
   } catch (error) {
     console.error("Database Error:", error);

@@ -6,6 +6,7 @@ import { ReactPictureAnnotation } from "@/ui/annotation-tool/index";
  *
  * Rebuilds what the contributor saw: the boxes they drew themselves, plus the
  * model's suggestions they confirmed. Rejected suggestions are left out.
+ * isAnnotator hides the scene step and severity, which annotators never answer.
  */
 export default function AnnotateView({
   selectedObjects = [],
@@ -14,6 +15,7 @@ export default function AnnotateView({
   url,
   id,
   city,
+  isAnnotator = false,
 }) {
   const { data: session } = useSession();
 
@@ -49,6 +51,7 @@ export default function AnnotateView({
         city={city}
         currentAnnotationCount={0}
         username={session?.user?.username ?? ""}
+        isAnnotator={isAnnotator}
       />
     </div>
   );

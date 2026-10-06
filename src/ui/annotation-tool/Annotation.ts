@@ -13,7 +13,9 @@ import { IShapeData } from "./Shape";
  * For a suggestion, `selected` and `isRejected` carry that judgement, giving
  * three meaningful states: both false means untouched (drawn as a yellow dashed
  * box, and the form won't submit while any remain), `selected` means it does
- * block the path, `isRejected` means it doesn't.
+ * block the path, `isRejected` means it doesn't. For annotators (Step 1
+ * Objects, from 4 Oct 2026) `selected` means "kept as a real object" instead,
+ * and every box carries `obstructs: null` until the obstruction step exists.
  *
  * `comment` holds the obstruction label, such as "tree" or "parked_car". It is
  * underscored because it doubles as a machine-readable class; the interface
@@ -31,7 +33,8 @@ export interface IAnnotation<T = IShapeData> {
   editable: boolean;
   selected: boolean;
   isRejected?: boolean;
-  obstructs?: boolean;
+  obstructs?: boolean | null;
   severity?: 1 | 2 | 3 | 4 | 5 | null;
+  confidence?: number | null;
   initialState?: { comment?: string; mark: T };
 }

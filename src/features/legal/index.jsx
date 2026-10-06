@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import { Container } from "@/ui";
 
 /**
- * Shared layout for the Terms of Use and Privacy Policy pages.
+ * Shared layout for the Informed Consent and Privacy Policy pages.
  *
  * Both render through here so they stay a matched pair, with one tab strip for
  * moving between them. Add any future legal page here too rather than giving it
@@ -11,7 +11,7 @@ import { Container } from "@/ui";
  */
 
 const TABS = [
-  { href: "/terms-of-use", label: "Terms of Use" },
+  { href: "/terms-of-use", label: "Informed Consent" },
   { href: "/privacy", label: "Privacy Policy" },
 ];
 

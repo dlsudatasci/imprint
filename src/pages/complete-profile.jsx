@@ -6,7 +6,8 @@ import CreatableSelect from "react-select/creatable";
 import cities from "@/data/cities.json";
 
 import Page from "@/ui/page";
-import { AuthCard, Button, tokens, Container } from "@/ui";
+import { AuthCard, Button, Radio, tokens, Container } from "@/ui";
+import { PROFILE_QUESTIONS, optionsFor, buildProfileBody } from "@/features/profile/profileFields";
 
 /**
  * The demographic questions, asked once after signing up.
@@ -15,10 +16,14 @@ import { AuthCard, Button, tokens, Container } from "@/ui";
  * changes what "accessible" means for the same photograph. The form is
  * therefore required, and annotating stays locked until it is finished.
  *
- * The city field accepts new entries rather than offering a fixed list. The
- * dataset will grow beyond the cities currently in cities.json, and knowing
- * where people want to map is useful before imagery exists there. A city with
- * no matching images simply has no effect on which images get handed out.
+ * Question wording and answer options live in src/features/profile/profileFields.js,
+ * built from the same allowlists the server checks, and buildProfileBody sends every
+ * field the server requires (a test fails otherwise).
+ *
+ * The city field records the cities a person often walks in, which drives the
+ * city-first image draw for contributors. It accepts new entries rather than
+ * offering a fixed list; a city with no matching images simply has no effect on
+ * which images get handed out.
  */
 export default function CompleteProfile() {
     const [loadingForm, setLoading] = useState(false);
@@ -31,59 +36,11 @@ export default function CompleteProfile() {
     const [age, setAge] = useState(null);
     const [gender, setGender] = useState(null);
     const [disability, setDisability] = useState(null);
+    const [temporaryMobility, setTemporaryMobility] = useState(null);
     const [educationalAttainment, setEducationalAttainment] = useState(null);
     const [occupation, setOccupation] = useState("");
     const [accessibilityFamiliarity, setAccessibilityFamiliarity] = useState(null);
     const [priorAnnotationExperience, setPriorAnnotationExperience] = useState(null);
-
-    const ageOptions = [
-        { value: "16-19", label: "16-19 years" },
-        { value: "20-24", label: "20-24 years" },
-        { value: "25-29", label: "25-29 years" },
-        { value: "30-34", label: "30-34 years" },
-        { value: "35-39", label: "35-39 years" },
-        { value: "40-44", label: "40-44 years" },
-        { value: "45-49", label: "45-49 years" },
-        { value: "50-54", label: "50-54 years" },
-        { value: "55-59", label: "55-59 years" },
-        { value: "60-64", label: "60-64 years" },
-        { value: "65+", label: "65 years and over" },
-    ];
-
-    const genderOptions = [
-        { value: "Male", label: "Male" },
-        { value: "Female", label: "Female" },
-        { value: "Other", label: "Other" },
-        { value: "Prefer not to say", label: "Prefer not to say" },
-    ];
-
-    const disabilityOptions = [
-        { value: "No", label: "No" },
-        { value: "Yes", label: "Yes" },
-        { value: "Prefer not to say", label: "Prefer not to say" },
-    ];
-
-    const educationOptions = [
-        { value: "High school", label: "High school" },
-        { value: "Some college", label: "Some college" },
-        { value: "Bachelor's", label: "Bachelor's" },
-        { value: "Master's", label: "Master's" },
-        { value: "Doctorate", label: "Doctorate" },
-        { value: "Other", label: "Other" },
-        { value: "Prefer not to say", label: "Prefer not to say" },
-    ];
-
-    const accessibilityFamiliarityOptions = [
-        { value: "Very familiar", label: "Very familiar" },
-        { value: "Somewhat familiar", label: "Somewhat familiar" },
-        { value: "Slightly familiar", label: "Slightly familiar" },
-        { value: "Not at all familiar", label: "Not at all familiar" },
-    ];
-
-    const annotationExperienceOptions = [
-        { value: "Yes", label: "Yes" },
-        { value: "No", label: "No" },
-    ];
 
     useEffect(() => {
         if (!loading && session) {
@@ -137,39 +94,29 @@ export default function CompleteProfile() {
         setServerError("");
         setLoading(true);
 
-        const walkedCities = frequentlyWalkedCities.map((c) => c.value);
-        const ageValue = age?.value;
-        const genderValue = gender?.value;
-        const disabilityValue = disability?.value;
-        const educationValue = educationalAttainment?.value;
-        const accessibilityValue = accessibilityFamiliarity?.value;
-        const annotationExpValue = priorAnnotationExperience?.value;
+        const { body, missing } = buildProfileBody({
+            frequentlyWalkedCities: frequentlyWalkedCities.map((c) => c.value),
+            occupation,
+            age: age?.value,
+            gender: gender?.value,
+            disability: disability?.value,
+            temporaryMobility: temporaryMobility?.value,
+            educationalAttainment: educationalAttainment?.value,
+            accessibilityFamiliarity: accessibilityFamiliarity?.value,
+            priorAnnotationExperience: priorAnnotationExperience?.value,
+            commuteFrequency: e.currentTarget.commuteFrequency.value,
+            walkingFrequency: e.currentTarget.walkingFrequency.value,
+        });
 
-        if (!ageValue || !genderValue || !disabilityValue || !educationValue || !accessibilityValue || !annotationExpValue) {
-            setServerError("Please select an option for all required dropdowns.");
+        if (missing.length > 0) {
+            setServerError(
+                missing.every((f) => f === "occupation")
+                    ? "Please enter your occupation."
+                    : "Please answer every question."
+            );
             setLoading(false);
             return;
         }
-        if (!occupation.trim()) {
-            setServerError("Please enter your occupation.");
-            setLoading(false);
-            return;
-        }
-        const commuteFrequency = e.currentTarget.commuteFrequency.value;
-        const walkingFrequency = e.currentTarget.walkingFrequency.value;
-
-        const body = {
-            frequentlyWalkedCities: walkedCities,
-            age: ageValue,
-            gender: genderValue,
-            disability: disabilityValue,
-            commuteFrequency,
-            educationalAttainment: educationValue,
-            occupation: occupation.trim(),
-            walkingFrequency,
-            accessibilityFamiliarity: accessibilityValue,
-            priorAnnotationExperience: annotationExpValue,
-        };
 
         try {
             const res = await fetch("/api/auth/complete-profile", {
@@ -202,6 +149,40 @@ export default function CompleteProfile() {
     // Prevent flash while assessing session
     if (loading || !session?.user?.isProfileIncomplete) return null;
 
+    const selectField = (field, value, onChange, className = "mb-4") => {
+        const q = PROFILE_QUESTIONS[field];
+        return (
+            <>
+                <label className="font-semibold text-sm text-ink mb-2 block" htmlFor={field}>
+                    {q.label}
+                </label>
+                {q.hint && <p className="text-xs text-muted -mt-1 mb-2">{q.hint}</p>}
+                <Select
+                    inputId={field}
+                    options={optionsFor(field)}
+                    value={value}
+                    onChange={onChange}
+                    styles={customSelectStyles}
+                    className={className}
+                    placeholder={q.placeholder}
+                />
+            </>
+        );
+    };
+
+    const radioField = (field, className) => (
+        <fieldset className={`border-0 ${className}`}>
+            <legend className="block text-sm font-semibold text-ink mb-2">
+                {PROFILE_QUESTIONS[field].label}
+            </legend>
+            <div className="space-y-2">
+                {optionsFor(field).map((o) => (
+                    <Radio key={o.value} name={field} value={o.value} label={o.label} required />
+                ))}
+            </div>
+        </fieldset>
+    );
+
     return (
         <Page title="Complete Profile - Imprint" contribute={false}>
             <Container as="section" className="py-4 my-12 mb-32 flex flex-col items-center justify-center">
@@ -211,63 +192,27 @@ export default function CompleteProfile() {
                 >
                     <form onSubmit={onSubmit}>
                         <label className="font-semibold text-sm text-ink mb-2 block" htmlFor="frequentlyWalkedCities">
-                            What cities do you want to help us assess?
+                            {PROFILE_QUESTIONS.frequentlyWalkedCities.label}
                         </label>
+                        <p className="text-xs text-muted -mt-1 mb-2">{PROFILE_QUESTIONS.frequentlyWalkedCities.hint}</p>
                         <CreatableSelect
+                            inputId="frequentlyWalkedCities"
                             isMulti
                             options={cityOptions}
                             onChange={(selectedOptions) => setFrequentlyWalkedCities(selectedOptions)}
                             className="mb-4"
-                            placeholder="Type and select cities (e.g., Makati, Cebu)"
+                            placeholder={PROFILE_QUESTIONS.frequentlyWalkedCities.placeholder}
                             styles={customSelectStyles}
                         />
 
-                        <label className="font-semibold text-sm text-ink mb-2 block" htmlFor="age">Age Group</label>
-                        <Select
-                            options={ageOptions}
-                            value={age}
-                            onChange={setAge}
-                            styles={customSelectStyles}
-                            className="mb-4"
-                            placeholder="Select age group"
-                        />
-
-                        <label className="font-semibold text-sm text-ink mb-2 block" htmlFor="gender">Gender</label>
-                        <Select
-                            options={genderOptions}
-                            value={gender}
-                            onChange={setGender}
-                            styles={customSelectStyles}
-                            className="mb-4"
-                            placeholder="Select gender"
-                        />
-
-                        <label className="font-semibold text-sm text-ink mb-2 block" htmlFor="disability">
-                            Do you have any mobility impairments or disabilities?
-                        </label>
-                        <Select
-                            options={disabilityOptions}
-                            value={disability}
-                            onChange={setDisability}
-                            styles={customSelectStyles}
-                            className="mb-4"
-                            placeholder="Select an option"
-                        />
-
-                        <label className="font-semibold text-sm text-ink mb-2 block" htmlFor="educationalAttainment">
-                            Highest level of education
-                        </label>
-                        <Select
-                            options={educationOptions}
-                            value={educationalAttainment}
-                            onChange={setEducationalAttainment}
-                            styles={customSelectStyles}
-                            className="mb-4"
-                            placeholder="Select education level"
-                        />
+                        {selectField("age", age, setAge)}
+                        {selectField("gender", gender, setGender)}
+                        {selectField("disability", disability, setDisability)}
+                        {selectField("temporaryMobility", temporaryMobility, setTemporaryMobility)}
+                        {selectField("educationalAttainment", educationalAttainment, setEducationalAttainment)}
 
                         <label className="font-semibold text-sm text-ink mb-2 block" htmlFor="occupation">
-                            Occupation
+                            {PROFILE_QUESTIONS.occupation.label}
                         </label>
                         <input
                             type="text"
@@ -275,57 +220,15 @@ export default function CompleteProfile() {
                             value={occupation}
                             onChange={(e) => setOccupation(e.target.value)}
                             maxLength={100}
-                            placeholder="e.g. Student, Engineer, Teacher"
+                            placeholder={PROFILE_QUESTIONS.occupation.placeholder}
                             className="w-full mb-4 px-3 py-2.5 text-sm rounded-control border border-line bg-surface-subtle text-ink placeholder:text-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                         />
 
-                        <label className="font-semibold text-sm text-ink mb-2 block" htmlFor="accessibilityFamiliarity">
-                            How familiar are you with accessibility issues?
-                        </label>
-                        <Select
-                            options={accessibilityFamiliarityOptions}
-                            value={accessibilityFamiliarity}
-                            onChange={setAccessibilityFamiliarity}
-                            styles={customSelectStyles}
-                            className="mb-4"
-                            placeholder="Select familiarity level"
-                        />
+                        {selectField("accessibilityFamiliarity", accessibilityFamiliarity, setAccessibilityFamiliarity)}
+                        {selectField("priorAnnotationExperience", priorAnnotationExperience, setPriorAnnotationExperience, "mb-6")}
 
-                        <label className="font-semibold text-sm text-ink mb-2 block" htmlFor="priorAnnotationExperience">
-                            Do you have prior experience with image or data annotation?
-                        </label>
-                        <Select
-                            options={annotationExperienceOptions}
-                            value={priorAnnotationExperience}
-                            onChange={setPriorAnnotationExperience}
-                            styles={customSelectStyles}
-                            className="mb-6"
-                            placeholder="Select an option"
-                        />
-
-                        <fieldset className="border-0 mb-4">
-                            <legend className="block text-sm font-semibold text-ink mb-2">
-                                How often do you walk outdoors in a typical week?
-                            </legend>
-                            {["Daily", "A few times a week", "Once a week", "Rarely", "Never"].map(freq => (
-                                <label key={freq} className="block text-body font-medium mb-2 cursor-pointer">
-                                    <input className="mr-2 leading-tight" type="radio" name="commuteFrequency" value={freq} required />
-                                    <span className="text-sm capitalize">{freq}</span>
-                                </label>
-                            ))}
-                        </fieldset>
-
-                        <fieldset className="border-0 mb-8">
-                            <legend className="block text-sm font-semibold text-ink mb-2">
-                                How often do you walk specifically for exercise or leisure?
-                            </legend>
-                            {["Daily", "Several times a week", "Once a week", "A few times a month", "Rarely", "Never"].map(freq => (
-                                <label key={freq} className="block text-body font-medium mb-2 cursor-pointer">
-                                    <input className="mr-2 leading-tight" type="radio" name="walkingFrequency" value={freq} required />
-                                    <span className="text-sm capitalize">{freq}</span>
-                                </label>
-                            ))}
-                        </fieldset>
+                        {radioField("commuteFrequency", "mb-4")}
+                        {radioField("walkingFrequency", "mb-8")}
 
                         <Button submit fullWidth disabled={loadingForm}>
                             {loadingForm ? "Finalizing Profile..." : "Complete Setup"}

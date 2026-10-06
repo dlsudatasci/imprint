@@ -1,0 +1,354 @@
+import { describe, it, expect } from "vitest";
+import {
+  validateAnnotationForSubmit,
+  validateObjectStep,
+  validateObstructionStep,
+  validateSidewalkStep,
+} from "./clientAnnotation.js";
+
+const validSceneLevel = {
+  sidewalkWidth: "two_people",
+  surfaceCondition: 2,
+  walkability: 2,
+  overallAccessibility: 1,
+};
+
+function makeInput(overrides = {}) {
+  return {
+    existingAnnotations: [],
+    newObjects: [{ comment: "pole", obstructs: true, severity: 3 }],
+    selectedObjects: [{ comment: "tree", obstructs: false }],
+    sceneLevel: { ...validSceneLevel },
+    ...overrides,
+  };
+}
+
+describe("validateAnnotationForSubmit", () => {
+  it("passes when all data is valid", () => {
+    const result = validateAnnotationForSubmit(makeInput());
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("fails when an existing annotation is unconfirmed", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({
+        existingAnnotations: [{ editable: false, selected: false, isRejected: false }],
+      })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Yes or No");
+  });
+
+  it("passes when existing annotation is selected (confirmed)", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({
+        existingAnnotations: [{ editable: false, selected: true, isRejected: false, obstructs: true, severity: 2 }],
+      })
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it("passes when existing annotation is rejected", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({
+        existingAnnotations: [{ editable: false, selected: false, isRejected: true }],
+      })
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it("fails when a new object has no label", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ newObjects: [{ comment: "", obstructs: false }] })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("unlabeled");
+  });
+
+  it("fails when a selected object has placeholder label '---'", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ selectedObjects: [{ comment: "---", obstructs: false }] })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("unlabeled");
+  });
+
+  it("fails when a box is missing obstruction judgment", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ newObjects: [{ comment: "pole", obstructs: undefined }] })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("obstructs");
+  });
+
+  it("fails when an obstructing box has no severity", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ newObjects: [{ comment: "pole", obstructs: true, severity: null }] })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("severity");
+  });
+
+  it("passes when non-obstructing box has no severity", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ newObjects: [{ comment: "bench", obstructs: false }] })
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it("fails when sidewalkWidth is not selected", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ sceneLevel: { ...validSceneLevel, sidewalkWidth: "" } })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("sidewalk width");
+  });
+
+  it("fails when surfaceCondition is null with sidewalk present", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ sceneLevel: { ...validSceneLevel, surfaceCondition: null } })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("surface condition");
+  });
+
+  it("passes with no sidewalk and the other three questions left empty (2 Oct 2026)", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({
+        sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null },
+      })
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it("asks for surface, walking comfort and accessibility once a sidewalk width is chosen", () => {
+    const empty = { sidewalkWidth: "one_person", surfaceCondition: 1, walkability: 1, overallAccessibility: 1 };
+    expect(validateAnnotationForSubmit(makeInput({ sceneLevel: { ...empty, surfaceCondition: undefined } })).error).toContain("surface condition");
+    expect(validateAnnotationForSubmit(makeInput({ sceneLevel: { ...empty, walkability: undefined } })).error).toContain("walking comfort");
+    expect(validateAnnotationForSubmit(makeInput({ sceneLevel: { ...empty, overallAccessibility: undefined } })).error).toContain("accessibility");
+  });
+
+  it("fails when walkability is null", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ sceneLevel: { ...validSceneLevel, walkability: null } })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("walking comfort");
+  });
+
+  it("fails when overallAccessibility is null", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ sceneLevel: { ...validSceneLevel, overallAccessibility: null } })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("accessibility");
+  });
+
+  it("passes when a suggestion is marked not an object", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({
+        existingAnnotations: [
+          { editable: false, selected: false, isRejected: true, comment: "not_an_object", obstructs: false },
+        ],
+      })
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it("fails when a suggestion relabeled to empty is answered No", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({
+        existingAnnotations: [
+          { editable: false, selected: false, isRejected: true, comment: "" },
+        ],
+        selectedObjects: [{ comment: "", obstructs: false }],
+      })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("unlabeled");
+  });
+});
+
+// Annotators' Objects step (4 Oct 2026): every suggestion kept or marked Not an
+// object, every kept or drawn box one of the 18 categories. The Obstructions
+// confirmation is given here so these cases test the Objects rules only.
+describe("validateAnnotationForSubmit for annotators (Objects step)", () => {
+  const KEEP_MESSAGE = "Please click Keep or Not an object on every suggested box.";
+  const CATEGORY_MESSAGE = "Please choose a category from the list for every box.";
+  const kept = { id: "s1", editable: false, selected: true, isRejected: false, comment: "tree", obstructs: null, severity: null };
+  const notAnObject = { id: "s2", editable: false, selected: false, isRejected: true, comment: "not_an_object", obstructs: null, severity: null };
+  const drawn = { id: "d1", editable: true, comment: "car", obstructs: null, severity: null };
+
+  const annotatorInput = (existingAnnotations) => ({
+    existingAnnotations,
+    newObjects: existingAnnotations.filter((b) => b.editable),
+    selectedObjects: existingAnnotations.filter((b) => !b.editable),
+    sceneLevel: null,
+    isAnnotator: true,
+    obstructionsConfirmed: true,
+  });
+
+  it("passes with kept and Not an object suggestions and drawn boxes, all with obstructs null", () => {
+    expect(validateAnnotationForSubmit(annotatorInput([kept, notAnObject, drawn]))).toEqual({ valid: true });
+  });
+
+  it("passes with no boxes at all", () => {
+    expect(validateAnnotationForSubmit(annotatorInput([]))).toEqual({ valid: true });
+  });
+
+  it("fails on an untouched suggestion with the Keep message", () => {
+    const untouched = { id: "s3", editable: false, selected: false, comment: "tree" };
+    expect(validateAnnotationForSubmit(annotatorInput([kept, untouched]))).toEqual({ valid: false, error: KEEP_MESSAGE });
+  });
+
+  it("fails on an old No answer (rejected with a taxonomy category) with the Keep message", () => {
+    const oldNo = { id: "s3", editable: false, selected: false, isRejected: true, comment: "tree", obstructs: false };
+    expect(validateAnnotationForSubmit(annotatorInput([kept, oldNo]))).toEqual({ valid: false, error: KEEP_MESSAGE });
+  });
+
+  it("fails on a free-text category with the category message", () => {
+    const truck = { ...drawn, comment: "truck" };
+    expect(validateAnnotationForSubmit(annotatorInput([kept, truck]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+    const keptTruck = { ...kept, comment: "truck" };
+    expect(validateAnnotationForSubmit(annotatorInput([keptTruck]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+  });
+
+  it("fails on a '---' or empty category with the category message", () => {
+    expect(validateAnnotationForSubmit(annotatorInput([{ ...drawn, comment: "---" }]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+    expect(validateAnnotationForSubmit(annotatorInput([{ ...drawn, comment: "" }]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+  });
+
+  it("asks for no severity or scene answers", () => {
+    const keptNoSeverity = { id: "s1", editable: false, selected: true, comment: "tree", obstructs: true };
+    const drawnUnmarked = { id: "d1", editable: true, comment: "bench" };
+    expect(validateAnnotationForSubmit(annotatorInput([keptNoSeverity, drawnUnmarked]))).toEqual({ valid: true });
+  });
+});
+
+describe("validateObjectStep (exported, 4 Oct 2026)", () => {
+  const kept = { id: "s1", editable: false, selected: true, comment: "tree" };
+
+  it("passes kept, Not an object and drawn boxes", () => {
+    const nao = { id: "s2", editable: false, selected: false, isRejected: true, comment: "not_an_object" };
+    expect(validateObjectStep([kept, nao, { id: "d1", editable: true, comment: "car" }])).toEqual({ valid: true });
+  });
+
+  it("keeps the Keep and category messages", () => {
+    expect(validateObjectStep([{ id: "s3", editable: false, selected: false, comment: "tree" }]).error)
+      .toBe("Please click Keep or Not an object on every suggested box.");
+    expect(validateObjectStep([{ ...kept, comment: "truck" }]).error)
+      .toBe("Please choose a category from the list for every box.");
+  });
+});
+
+// Annotators' Obstructions step (4 Oct 2026): unmarked objects count as "does
+// not obstruct" only after the annotator confirms it
+describe("validateObstructionStep", () => {
+  const CONFIRM_MESSAGE = "Please tick the box to confirm that the objects you did not mark do not obstruct the sidewalk.";
+  const kept = { id: "s1", editable: false, selected: true, comment: "tree", obstructs: true };
+  const drawn = { id: "d1", editable: true, comment: "car" };
+  const nao = { id: "s2", editable: false, selected: false, isRejected: true, comment: "not_an_object" };
+
+  it("is valid without confirmation when there are no real objects", () => {
+    expect(validateObstructionStep({ annotations: [], confirmed: false })).toEqual({ valid: true });
+    expect(validateObstructionStep({ annotations: [nao], confirmed: false })).toEqual({ valid: true });
+  });
+
+  it("fails with the confirmation message when real objects are not confirmed", () => {
+    expect(validateObstructionStep({ annotations: [kept, drawn], confirmed: false })).toEqual({ valid: false, error: CONFIRM_MESSAGE });
+    expect(validateObstructionStep({ annotations: [drawn] })).toEqual({ valid: false, error: CONFIRM_MESSAGE });
+  });
+
+  it("passes once confirmed", () => {
+    expect(validateObstructionStep({ annotations: [kept, drawn], confirmed: true })).toEqual({ valid: true });
+  });
+
+  it("is checked by validateAnnotationForSubmit after the Objects step", () => {
+    const base = { newObjects: [], selectedObjects: [], sceneLevel: null, isAnnotator: true };
+    const untouched = { id: "s3", editable: false, selected: false, comment: "tree" };
+    // An Objects problem is reported before the missing confirmation
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept, untouched] }).error)
+      .toBe("Please click Keep or Not an object on every suggested box.");
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept, drawn] }).error).toBe(CONFIRM_MESSAGE);
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept, drawn], obstructionsConfirmed: true })).toEqual({ valid: true });
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [nao] })).toEqual({ valid: true });
+  });
+});
+
+describe("validateAnnotationForSubmit for drawn boxes (both roles)", () => {
+  it("refuses a contributor's drawn box with no Yes or No", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ newObjects: [{ editable: true, comment: "pole" }] })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Please indicate whether each object obstructs the sidewalk.");
+  });
+
+  it("accepts a contributor's drawn box answered No without severity", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ newObjects: [{ editable: true, comment: "car", obstructs: false }] })
+    );
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("still asks a contributor to rate a drawn box answered Yes", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ newObjects: [{ editable: true, comment: "pole", obstructs: true }] })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("severity");
+  });
+
+  it("still requires the scene battery from a contributor (isAnnotator defaults to false)", () => {
+    const result = validateAnnotationForSubmit(makeInput({ sceneLevel: null }));
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("sidewalk width");
+  });
+});
+
+// Annotators' Sidewalk step on model-development images (6 Oct 2026)
+describe("validateSidewalkStep", () => {
+  const walkSquare = { id: "w1", kind: "walk", points: [{ x: 10, y: 10 }, { x: 110, y: 10 }, { x: 110, y: 110 }, { x: 10, y: 110 }] };
+  const goodMask = { noSidewalk: false, polygons: [walkSquare] };
+
+  it("is skipped when the image needs no outline", () => {
+    expect(validateSidewalkStep({ askSidewalk: false, mask: null, hasDraft: true })).toEqual({ valid: true });
+  });
+
+  it("refuses a shape still being drawn", () => {
+    expect(validateSidewalkStep({ askSidewalk: true, mask: goodMask, hasDraft: true, imageWidth: 640, imageHeight: 360 }))
+      .toEqual({ valid: false, error: "Finish or cancel the shape you are drawing." });
+  });
+
+  it("passes the outline messages through", () => {
+    expect(validateSidewalkStep({ askSidewalk: true, mask: { noSidewalk: false, polygons: [] }, hasDraft: false }).error)
+      .toBe("Outline the sidewalk, or tick No sidewalk if there is none.");
+    expect(validateSidewalkStep({ askSidewalk: true, mask: { noSidewalk: true, polygons: [walkSquare] }, hasDraft: false }).error)
+      .toBe("Remove the sidewalk shapes or untick No sidewalk.");
+    expect(validateSidewalkStep({ askSidewalk: true, mask: null, hasDraft: false }).error).toBe("Sidewalk outline is missing.");
+  });
+
+  it("passes a valid outline and a No sidewalk outline", () => {
+    expect(validateSidewalkStep({ askSidewalk: true, mask: goodMask, hasDraft: false, imageWidth: 640, imageHeight: 360 })).toEqual({ valid: true });
+    expect(validateSidewalkStep({ askSidewalk: true, mask: { noSidewalk: true, polygons: [] }, hasDraft: false })).toEqual({ valid: true });
+  });
+
+  it("is checked by validateAnnotationForSubmit after Objects and before the Obstructions confirmation", () => {
+    const kept = { id: "s1", editable: false, selected: true, comment: "tree", obstructs: true };
+    const untouched = { id: "s3", editable: false, selected: false, comment: "tree" };
+    const base = { newObjects: [], selectedObjects: [], sceneLevel: null, isAnnotator: true, askSidewalk: true, imageWidth: 640, imageHeight: 360 };
+    // Objects first
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept, untouched], sidewalkMask: null }).error)
+      .toBe("Please click Keep or Not an object on every suggested box.");
+    // Then Sidewalk, before the missing confirmation
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept], sidewalkMask: { noSidewalk: false, polygons: [] } }).error)
+      .toBe("Outline the sidewalk, or tick No sidewalk if there is none.");
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept], sidewalkMask: goodMask, sidewalkDraftOpen: true }).error)
+      .toBe("Finish or cancel the shape you are drawing.");
+    // Then the confirmation
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept], sidewalkMask: goodMask }).error)
+      .toBe("Please tick the box to confirm that the objects you did not mark do not obstruct the sidewalk.");
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept], sidewalkMask: goodMask, obstructionsConfirmed: true }))
+      .toEqual({ valid: true });
+  });
+});

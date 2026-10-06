@@ -35,15 +35,16 @@ export default function RecentSessionItem({ sessionData }) {
   };
   const stringDate = jsDate.toLocaleDateString("en-US", options);
 
-  // Score Color Logic based on theme (Primary: #004aad, Gold for high)
+  // Score Color Logic — 1-5 accessibility scale where 1 = easily accessible,
+  // 5 = not accessible. Lower score = better, so thresholds are inverted.
   const numericScore = parseFloat(averageScore);
   let scoreBg = "bg-line text-body";
-  if (numericScore >= 8) {
-    scoreBg = "bg-primary text-white"; // High
-  } else if (numericScore >= 5) {
-    scoreBg = "bg-primary-100 text-primary"; // Mid
-  } else if (numericScore > 0) {
-    scoreBg = "bg-line text-ink"; // Low
+  if (numericScore > 0 && numericScore <= 2) {
+    scoreBg = "bg-primary text-white"; // Good (easily/mostly accessible)
+  } else if (numericScore <= 3.5) {
+    scoreBg = "bg-primary-100 text-primary"; // Mid (some difficulty)
+  } else if (numericScore > 3.5) {
+    scoreBg = "bg-line text-ink"; // Concerning (very difficult / not accessible)
   }
 
   // Bars scale against this session's own busiest image, not a global maximum —
@@ -64,7 +65,7 @@ export default function RecentSessionItem({ sessionData }) {
 
         <div className="flex items-center gap-2">
           {imageUrls.map((url, idx) => (
-            <div key={idx} className="w-14 h-14 relative rounded-control overflow-hidden border border-line bg-surface-subtle">
+            <div key={idx} className="shrink-0 w-14 h-14 relative rounded-control overflow-hidden border border-line bg-surface-subtle">
               {url ? (
                 /* eslint-disable-next-line @next/next/no-img-element -- remote dataset URLs aren't on a configured next/image domain */
                 <img src={url} alt={`Annotation ${idx}`} className="object-cover w-full h-full" />
@@ -74,7 +75,7 @@ export default function RecentSessionItem({ sessionData }) {
             </div>
           ))}
           {totalImages > 3 && (
-            <div className="w-14 h-14 rounded-control bg-surface-subtle border border-line flex items-center justify-center font-bold text-body">
+            <div className="shrink-0 w-14 h-14 rounded-control bg-surface-subtle border border-line flex items-center justify-center font-bold text-body">
               +{totalImages - 3}
             </div>
           )}
@@ -122,13 +123,16 @@ export default function RecentSessionItem({ sessionData }) {
               </div>
             </div>
 
-            {/* Average Score */}
-            <div className="flex flex-col items-center justify-center">
-              <p className="text-[10px] font-bold text-subtle uppercase tracking-widest mb-1">Avg Score</p>
-              <div className={`w-14 h-14 rounded-control flex items-center justify-center text-xl font-extrabold border border-line ${scoreBg}`}>
-                {numericScore > 0 ? numericScore : "-"}
+            {/* Average Score. Hidden when the session has no accessibility
+                answers, as for annotators, who skip the scene-level step. */}
+            {averageScore != null && (
+              <div className="flex flex-col items-center justify-center">
+                <p className="text-[10px] font-bold text-subtle uppercase tracking-widest mb-1">Avg Score</p>
+                <div className={`w-14 h-14 rounded-control flex items-center justify-center text-xl font-extrabold border border-line ${scoreBg}`}>
+                  {numericScore > 0 ? numericScore : "-"}
+                </div>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>

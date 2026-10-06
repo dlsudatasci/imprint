@@ -16,10 +16,10 @@ import { cn } from './cn';
  * Three widths are available, described on the `width` prop below.
  */
 
-export type ContainerWidth = 'page' | 'reading' | 'form';
+export type ContainerWidth = 'page' | 'reading' | 'form' | 'wide';
 
 export interface ContainerProps extends React.HTMLAttributes<HTMLElement> {
-  /** `page` (1280) is the default; `reading` (768) for prose; `form` (448). */
+  /** `page` (1280) is the default; `wide` (1600) for annotation; `reading` (768) for prose; `form` (448). */
   width?: ContainerWidth;
   /** Rendered element — most call sites are section/nav/footer, not div. */
   as?: React.ElementType;
@@ -40,6 +40,7 @@ export interface ContainerProps extends React.HTMLAttributes<HTMLElement> {
 const SHELL = 'w-full mx-auto px-5 sm:px-6 lg:px-10';
 
 const widths: Record<ContainerWidth, string> = {
+  wide: 'max-w-[1600px]',
   page: 'max-w-7xl',
   reading: 'max-w-3xl',
   form: 'max-w-md',

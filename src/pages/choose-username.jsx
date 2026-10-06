@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 
 import Page from "@/ui/page";
-import { AuthCard, Button, Input, Container } from "@/ui";
+import { AuthCard, Button, Input, Checkbox, Container } from "@/ui";
 
 /**
  * Asks someone who signed in with Google to choose a username.
@@ -39,7 +40,9 @@ export default function ChooseUsername() {
 
         const usernameInput = e.currentTarget.username;
         const username = usernameInput.value;
-        const body = { username };
+        const consentAgreed = e.currentTarget["consent-agree"].checked;
+        const ageConfirmed = e.currentTarget["consent-age"].checked;
+        const body = { username, consentAgreed, ageConfirmed };
 
         try {
             const res = await fetch("/api/auth/choose-username", {
@@ -92,8 +95,33 @@ export default function ChooseUsername() {
                             required
                             onInput={(e) => e.target.setCustomValidity("")}
                             error={serverError || null}
-                            className="mb-8"
                         />
+
+                        <div className="space-y-3 mt-6 mb-8">
+                          <Checkbox
+                            id="consent-agree"
+                            required
+                            label={
+                              <>
+                                I have read and understood the{" "}
+                                <Link
+                                  href="/terms-of-use"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="cursor-pointer text-primary font-bold hover:underline"
+                                >
+                                  Informed Consent Form
+                                </Link>
+                                {" "}and agree to participate
+                              </>
+                            }
+                          />
+                          <Checkbox
+                            id="consent-age"
+                            required
+                            label="I confirm that I am at least 18 years old"
+                          />
+                        </div>
 
                         <Button submit fullWidth disabled={loadingForm}>
                             {loadingForm ? "Saving..." : "Continue to Dashboard"}

@@ -21,6 +21,10 @@ export interface ConfirmDialogProps {
   cancelLabel?: string;
   /** Renders the confirm action in the danger variant. */
   destructive?: boolean;
+  /** Keeps the confirm action disabled, e.g. until a confirmation is typed. */
+  confirmDisabled?: boolean;
+  /** Extra content between the description and the actions, e.g. a confirmation field. */
+  children?: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -32,6 +36,8 @@ export default function ConfirmDialog({
   confirmLabel,
   cancelLabel = 'Cancel',
   destructive,
+  confirmDisabled,
+  children,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -67,6 +73,7 @@ export default function ConfirmDialog({
         {description && (
           <p className="text-muted mb-8 leading-relaxed font-medium">{description}</p>
         )}
+        {children && <div className="mb-8 -mt-4">{children}</div>}
         <div className="flex gap-3 justify-end">
           <Button variant="neutral" size="sm" onClick={onCancel}>
             {cancelLabel}
@@ -75,6 +82,7 @@ export default function ConfirmDialog({
             variant={destructive ? 'danger' : 'primary'}
             size="sm"
             onClick={onConfirm}
+            disabled={confirmDisabled}
           >
             {confirmLabel}
           </Button>

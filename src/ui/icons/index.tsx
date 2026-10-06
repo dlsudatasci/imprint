@@ -123,3 +123,22 @@ export function AlertIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function PauseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      {/* Two wobbly vertical bars — universal pause symbol */}
+      <path d="M8.2 5.8C8.3 8.6 8.05 11.4 8.15 14.2C8.25 16.1 8.1 17.4 8.2 18.3" />
+      <path d="M15.8 5.9C15.7 8.7 15.95 11.5 15.85 14.3C15.75 16.2 15.9 17.3 15.8 18.2" />
+    </Icon>
+  );
+}
+
+export function StopIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      {/* A wobbly square — universal stop symbol */}
+      <path d="M6.2 6.1C9.4 5.8 13.8 6.2 17.8 5.9C18.1 9.4 17.8 13.6 18.1 17.9C13.8 18.2 9.6 17.8 6.1 18.1C5.8 13.8 6.1 9.6 6.2 6.1Z" />
+    </Icon>
+  );
+}

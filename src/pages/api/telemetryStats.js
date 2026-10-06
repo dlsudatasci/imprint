@@ -1,6 +1,7 @@
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
+import { getManilaDateString } from "@/util/validators/telemetryStats";
 
 /**
  * GET /api/telemetryStats — the two calculated figures on the dashboard:
@@ -66,13 +67,6 @@ export default async function handler(req, res) {
         // first and collapsed duplicates, so this is a single pass.
         let currentStreak = 0;
         if (uniqueDatesCursor.length > 0) {
-            // Shifting by +8h and reading the UTC date gives the Manila
-            // calendar day, matching how $dateToString bucketed the rows above
-            const getManilaDateString = (dateObj) => {
-                const manilaDate = new Date(dateObj.getTime() + 8 * 60 * 60 * 1000);
-                return manilaDate.toISOString().split("T")[0];
-            };
-
             const today = new Date();
             const todayString = getManilaDateString(today);
 
@@ -112,6 +106,6 @@ export default async function handler(req, res) {
         });
     } catch (error) {
         console.error("Failed to fetch telemetry stats:", error);
-        return res.status(500).json({ error: "Internal Server Error" });
+        return res.status(500).json({ message: "Internal Server Error" });
     }
 }

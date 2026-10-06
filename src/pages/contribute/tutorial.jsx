@@ -1,16 +1,19 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Joyride } from "react-joyride";
 import { useSession } from "next-auth/react";
-import { getServerSession } from "next-auth/next";
 
 import Page from "@/ui/page";
 import AnnotateForm from "@/features/annotate/form";
-import { connectToDatabase } from "@/util/mongodb";
-import { clearSession, writeSession, readSessionData, readCurrentCount } from "@/util/sessionCache";
-import { authOptions } from "@/pages/api/auth/[...nextauth]";
+import TUTORIAL_IMAGES from "@/data/tutorialImages";
+import { clearSession, writeSession, writeTutorialFlag, readSessionData, readCurrentCount } from "@/util/sessionCache";
 import ContentSkeleton from "@/features/layout/contentSkeleton";
 import DesktopOnly from "@/features/annotate/desktopOnly";
 import { useCanAnnotate } from "@/hooks/useCanAnnotate";
+import { buildTourSteps, tourTargets, tourStepCount, tourBeaconPlacements } from "@/features/tutorial/tourSteps";
+import { getServerSession } from "next-auth/next";
+import { ObjectId } from "mongodb";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
+import { connectToDatabase } from "@/util/mongodb";
 
 // How many images the walkthrough runs through. Referenced by the step counter,
 // the progress bar, and the sampling query, so change it in one place.
@@ -24,9 +27,10 @@ const MOCKED_ENDPOINTS = [
   "/api/annotationAbandon",
 ];
 
-// The four things the tour points at, in order. Kept next to TUTORIAL_STEPS
-// below so the "Step n of N" counter can't drift from the actual step list.
-const TOUR_STEP_COUNT = 4;
+// The places the tour points at, in order, and the wording of each step
+// (annotator and contributor versions) live in src/features/tutorial/tourSteps.js,
+// so the "Step n of N" counter and the beacons can't drift from the step list.
+// Contributors have five steps and annotators three (decided 3 Oct 2026).
 
 /**
  * The guided walkthrough new contributors complete before their first real
@@ -50,7 +54,7 @@ const TOUR_STEP_COUNT = 4;
  * annotating in the navbar and on the dashboard.
  */
 /* eslint-disable react/forbid-elements -- react-joyride tooltip and beacon controls: the tour library owns these elements' props and behaviour */
-export default function TutorialPage({ initialData }) {
+export default function TutorialPage({ isAnnotator = false }) {
   const { status, update } = useSession();
   const loading = status === "loading";
   // The tutorial renders the real annotation form, so it needs the same device
@@ -60,6 +64,7 @@ export default function TutorialPage({ initialData }) {
 
   const [current, setCurrent] = useState(null);
   const [data, setData] = useState(null);
+  const completingRef = useRef(false);
 
   // "touring" = auto-open tooltip (disableBeacon: true on all steps)
   // "beacons" = show pulsing dots (disableBeacon: false on all steps)
@@ -69,6 +74,30 @@ export default function TutorialPage({ initialData }) {
   const [joyrideKey, setJoyrideKey] = useState(0);
   // Only true once DOM targets (.rp-stage etc) are confirmed in the page
   const [domReady, setDomReady] = useState(false);
+  // Annotators move from Objects to Sidewalk to Obstructions on each image (4
+  // and 6 Oct 2026), and each step has its own tour and beacons (6 Oct 2026).
+  // Contributors stay on "objects" throughout.
+  const [annotatorStep, setAnnotatorStep] = useState("objects");
+  const stepCount = tourStepCount(isAnnotator, annotatorStep);
+  // Steps whose tour has already run by itself. Like Objects, Sidewalk and
+  // Obstructions walk the annotator through on the first image only, once
+  // each. On later images every step shows beacons.
+  const autoTouredRef = useRef(new Set());
+  // The image on screen, read inside the step-change handler below
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  const handleAnnotatorStepChange = useCallback((step) => {
+    setAnnotatorStep(step);
+    setStepOffset(0);
+    setJoyrideKey((k) => k + 1);
+    if (step !== "objects" && currentRef.current === 1 && !autoTouredRef.current.has(step)) {
+      autoTouredRef.current.add(step);
+      setTourMode("touring");
+    } else {
+      // A tour left open in the previous step would otherwise carry over
+      setTourMode("beacons");
+    }
+  }, []);
 
   // Joyride positions its tooltips against real DOM nodes, so it can't start
   // until the canvas has actually rendered. The annotation tool mounts async
@@ -79,6 +108,7 @@ export default function TutorialPage({ initialData }) {
 
     setDomReady(false);
     setTourMode(null);
+    setAnnotatorStep("objects");
 
     const interval = setInterval(() => {
       const target = document.querySelector(".rp-stage");
@@ -117,7 +147,7 @@ export default function TutorialPage({ initialData }) {
             setJoyrideKey((k) => k + 1);
           }}
           aria-label="Dismiss tour"
-          className="text-subtle hover:text-body transition-colors duration-300 bg-surface-subtle hover:bg-line-card rounded-full w-6 h-6 flex items-center justify-center -mr-2 -mt-2"
+          className="text-subtle hover:text-body transition-colors duration-300 bg-surface-subtle hover:bg-line-card rounded-full shrink-0 w-6 h-6 flex items-center justify-center -mr-2 -mt-2"
         >
           ×
         </button>
@@ -127,7 +157,7 @@ export default function TutorialPage({ initialData }) {
       </div>
       <div className="flex justify-between items-center mt-4">
         <span className="text-xs font-semibold text-subtle">
-          Step {index + stepOffset + 1} of {TOUR_STEP_COUNT}
+          Step {index + stepOffset + 1} of {stepCount}
         </span>
         <div className="flex gap-2">
           {(index > 0 || stepOffset > 0) && (
@@ -148,7 +178,7 @@ export default function TutorialPage({ initialData }) {
           )}
           <button
             onClick={(e) => {
-              if (index + stepOffset === TOUR_STEP_COUNT - 1) {
+              if (index + stepOffset === stepCount - 1) {
                 e.preventDefault();
                 setTourMode("beacons");
                 setJoyrideKey((k) => k + 1);
@@ -158,46 +188,14 @@ export default function TutorialPage({ initialData }) {
             }}
             className="px-4 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary/90 rounded-control transition-colors shadow-sm"
           >
-            {index + stepOffset === TOUR_STEP_COUNT - 1 ? "Finish" : "Next"}
+            {index + stepOffset === stepCount - 1 ? "Finish" : "Next"}
           </button>
         </div>
       </div>
     </div>
   );
 
-  // Build steps. "touring" = all beacons skipped. overlayClickAction="none" because we use native mousedown to avoid Joyride bugs.
-  const buildSteps = useCallback(() => {
-    return [
-      {
-        target: ".rp-stage",
-        content: "This is the image annotation area. Click 'Yes' or 'No' on existing dashed boxes, or draw your own by clicking and dragging if you spot an obstruction.",
-        skipBeacon: true,
-        overlayClickAction: "none",
-        placement: "bottom",
-      },
-      {
-        target: "#accessibilityScore",
-        content: "Rate the overall accessibility from 1 to 10 using this slider. 1 is very inaccessible, 10 is very safe.",
-        skipBeacon: true,
-        overlayClickAction: "none",
-        placement: "top",
-      },
-      {
-        target: "fieldset",
-        content: "Select the surface type that best matches the sidewalk in the image.",
-        skipBeacon: true,
-        overlayClickAction: "none",
-        placement: "top",
-      },
-      {
-        target: "button[type='submit']",
-        content: "Click here to proceed to the next image or finish the tutorial.",
-        skipBeacon: true,
-        overlayClickAction: "none",
-        placement: "bottom",
-      }
-    ];
-  }, []);
+  const buildSteps = useCallback(() => buildTourSteps(isAnnotator, annotatorStep), [isAnnotator, annotatorStep]);
 
   // Clicking the dark overlay should dismiss the tour. Joyride's own
   // overlayClickAction advances the step instead of closing in continuous mode,
@@ -229,6 +227,11 @@ export default function TutorialPage({ initialData }) {
   useEffect(() => {
     if (status !== "authenticated") return;
 
+    // The update() call in the completion path triggers a re-render that
+    // re-runs this effect. Without this guard the re-run would re-write
+    // the session and tutorial flag after clearSession() already removed them.
+    if (completingRef.current) return;
+
     // The tutorial deliberately reuses the real annotate form rather than a
     // parallel copy, so the two can't drift apart. The catch is that the form
     // posts to the live endpoints, so we shim fetch for the duration of the
@@ -258,10 +261,11 @@ export default function TutorialPage({ initialData }) {
 
     const isNavigating = sessionStorage.getItem("isNavigatingImages") === "true";
     let currentCount = 1;
-    let currentData = { imgRecords: initialData };
+    let currentData = { imgRecords: TUTORIAL_IMAGES };
 
     if (!isNavigating) {
       writeSession({ current: 1, total: TUTORIAL_IMAGE_COUNT, data: currentData });
+      writeTutorialFlag(true);
     } else {
       sessionStorage.removeItem("isNavigatingImages");
       const savedCount = readCurrentCount();
@@ -274,9 +278,8 @@ export default function TutorialPage({ initialData }) {
 
     const handleState = async () => {
       if (currentCount > TUTORIAL_IMAGE_COUNT) {
+        completingRef.current = true;
         try {
-          // Persist first, then refresh the JWT, so the dashboard and navbar
-          // both see the completed flag without a hard refresh
           await originalFetch("/api/user/completeTutorial", { method: "POST" });
           await update({ tutorialCompleted: true });
         } catch (error) {
@@ -297,7 +300,7 @@ export default function TutorialPage({ initialData }) {
     return () => {
       window.fetch = originalFetch;
     };
-  }, [status, initialData, update]);
+  }, [status, update]);
 
   // No `typeof window` branch here: rendering different trees on the server and
   // on the client is precisely what breaks hydration. `loading` is true on both
@@ -324,11 +327,16 @@ export default function TutorialPage({ initialData }) {
         data={singleImage}
         current={current}
         total={TUTORIAL_IMAGE_COUNT}
+        allImages={data.imgRecords}
+        isTutorial
+        isAnnotator={isAnnotator}
+        onAnnotatorStepChange={handleAnnotatorStepChange}
       />
 
-      {/* Custom pulsing beacons on all 4 targets — shown when not in active tour */}
+      {/* Custom pulsing beacons on every target of the step's tour, shown when
+          not in active tour. Keyed on the step so they measure again for each step. */}
       {domReady && tourMode === "beacons" && (
-        <TutorialBeacons onBeaconClick={(idx) => {
+        <TutorialBeacons key={`beacons-${annotatorStep}-${current}`} isAnnotator={isAnnotator} annotatorStep={annotatorStep} onBeaconClick={(idx) => {
           setStepOffset(idx);
           setTourMode("touring");
           setJoyrideKey((k) => k + 1);
@@ -360,74 +368,101 @@ export default function TutorialPage({ initialData }) {
 }
 
 /**
- * Pulsing dots on all four targets at once, shown when the tour isn't running.
+ * Pulsing dots on every tour target at once, shown when the tour isn't running.
  *
- * Joyride's own beacons appear one at a time, in sequence. Showing all four
+ * Joyride's own beacons appear one at a time, in sequence. Showing them all
  * lets someone jump straight to the part they're unsure about instead of
  * stepping through the whole tour again.
  *
  * Positioned absolutely against the document (rect + scrollY) rather than
- * fixed to the viewport, so they scroll with the page without a scroll handler.
+ * fixed to the viewport, so they scroll with the page. They follow their
+ * targets when the layout moves (6 Oct 2026): an error message pushing the
+ * buttons down, an image finishing loading, a card growing, or the sticky
+ * guide card sliding as the page scrolls. Every such change schedules one
+ * re-measure on the next animation frame.
  */
-function TutorialBeacons({ onBeaconClick }) {
-  const targets = [
-    { sel: ".rp-stage", placement: "bottom", offset: 15 },
-    { sel: "#accessibilityScore", placement: "bottom", offset: 50 }, // more below
-    { sel: "fieldset", placement: "center", offset: 0 },
-    { sel: "button[type='submit']", placement: "bottom", offset: 15 } // changed to bottom
-  ];
+function TutorialBeacons({ isAnnotator = false, annotatorStep = "objects", onBeaconClick }) {
+  // One beacon per step of the tour on screen, so a beacon's index is its step.
+  // Each tour says where its beacons sit (tourBeaconPlacements): above the
+  // target by default, below it when two steps share a target, and to its left
+  // in the Sidewalk step, where the toolbar sits right above the photo.
+  const placements = tourBeaconPlacements(isAnnotator, annotatorStep);
+  const targets = tourTargets(isAnnotator, annotatorStep).map((sel, i) => ({
+    sel,
+    placement: placements[i],
+    offset: 15,
+  }));
   const [positions, setPositions] = useState([]);
 
   useEffect(() => {
+    let lastKey = "";
     const calcPositions = () => {
-      // Find right column center using fieldset
-      const fieldsetEl = document.querySelector("fieldset");
-      let columnCenterX = null;
-      if (fieldsetEl) {
-        const rect = fieldsetEl.getBoundingClientRect();
-        columnCenterX = rect.left + window.scrollX + rect.width / 2;
-      }
-
       const pos = targets.map((t, index) => {
         const el = document.querySelector(t.sel);
         if (!el) return null;
         const rect = el.getBoundingClientRect();
-        
+
         let top;
-        if (t.placement === "center") {
-          top = rect.top + rect.height / 2;
-        } else if (t.placement === "bottom") {
+        let left = rect.left + window.scrollX + rect.width / 2;
+        if (t.placement === "bottom") {
           top = rect.bottom + t.offset;
+        } else if (t.placement === "left") {
+          // Beside the target, level with its middle, in the gutter
+          top = rect.top + rect.height / 2;
+          left = rect.left + window.scrollX - t.offset - 7;
         } else {
           top = rect.top - t.offset;
         }
-        
-        let left = rect.left + window.scrollX + rect.width / 2;
-        // Align all right-column beacons to perfect vertical line
-        if (t.sel !== ".rp-stage" && columnCenterX !== null) {
-          left = columnCenterX;
-        }
-        
+
         return {
           top: top + window.scrollY,
           left,
           index
         };
       }).filter(Boolean);
-      setPositions(pos);
+      // Skip the re-render when nothing moved
+      const key = JSON.stringify(pos);
+      if (key !== lastKey) {
+        lastKey = key;
+        setPositions(pos);
+      }
+    };
+
+    // At most one measurement per frame, however many changes arrive
+    let frame = null;
+    const schedule = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        calcPositions();
+      });
     };
 
     calcPositions();
 
-    // Measure again shortly after. The first pass can land before images have
-    // finished loading and pushed the layout down, which would leave the
-    // beacons floating over the wrong part of the page.
-    const timeout = setTimeout(calcPositions, 300);
-    window.addEventListener("resize", calcPositions);
-    
+    // The page growing or shrinking (an error message, a loaded image) and
+    // each target changing size
+    const resizeObserver = new ResizeObserver(schedule);
+    resizeObserver.observe(document.body);
+    for (const t of targets) {
+      const el = document.querySelector(t.sel);
+      if (el) resizeObserver.observe(el);
+    }
+    // Elements added or removed anywhere, which can shift a target without
+    // changing the page's size
+    const mutationObserver = new MutationObserver(schedule);
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", schedule);
+    // Capture, so scrolling inside any container counts too. The sticky guide
+    // card moves relative to the page as it scrolls.
+    window.addEventListener("scroll", schedule, true);
+
     return () => {
-      clearTimeout(timeout);
-      window.removeEventListener("resize", calcPositions);
+      if (frame !== null) cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
     };
   }, []);
 
@@ -448,43 +483,25 @@ function TutorialBeacons({ onBeaconClick }) {
   );
 }
 
+/**
+ * Looks up the person's role, so annotators get the annotator wording of the
+ * tour. Read from the database rather than the session token, which is only
+ * refreshed at sign-in and would miss a role set afterwards with set-role.mjs.
+ */
 export async function getServerSideProps(context) {
   const session = await getServerSession(context.req, context.res, authOptions);
-
-  if (!session?.user?._id) {
-    return { redirect: { destination: "/login", permanent: false } };
+  let isAnnotator = false;
+  if (session?.user?._id) {
+    try {
+      const { db } = await connectToDatabase();
+      const user = await db
+        .collection("users")
+        .findOne({ _id: new ObjectId(session.user._id) }, { projection: { role: 1 } });
+      isAnnotator = user?.role === "annotator";
+    } catch (error) {
+      // Fall back to the contributor wording; the tutorial itself still works.
+      console.error("tutorial getServerSideProps: role lookup failed:", error);
+    }
   }
-
-  try {
-    const { db } = await connectToDatabase();
-
-    // $sample, not $limit — a bare $limit returns the same three documents to
-    // every user forever, which makes the walkthrough feel canned and means
-    // nobody ever practices on a different kind of street.
-    const imgRecords = await db
-      .collection("Image")
-      .aggregate([
-        { $sample: { size: TUTORIAL_IMAGE_COUNT } }
-      ])
-      .toArray();
-
-    const sanitizedRecords = imgRecords.map(record => {
-      const sanitized = { ...record };
-      sanitized._id = sanitized._id.toString();
-      return sanitized;
-    });
-
-    return {
-      props: {
-        initialData: sanitizedRecords,
-      },
-    };
-  } catch (error) {
-    console.error("Error fetching random images for tutorial:", error);
-    return {
-      props: {
-        initialData: [],
-      },
-    };
-  }
+  return { props: { session: session ?? null, isAnnotator } };
 }

@@ -51,4 +51,26 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+/**
+ * Corpus images in development.
+ *
+ * On the VM, nginx serves /corpus-images/ straight from disk before a request
+ * ever reaches Next (deploy/nginx.conf). `yarn dev` on a laptop has no such
+ * folder, so when CORPUS_IMAGES_ORIGIN is set (for example
+ * http://127.0.0.1:8080, an SSH tunnel to the VM's nginx) the dev server
+ * proxies /corpus-images/ there. The rewrite exists only in the development
+ * server: `next build` never sees it, so production builds are unchanged even
+ * when the variable is set in the laptop's .env.
+ */
+const { PHASE_DEVELOPMENT_SERVER } = require('next/constants');
+
+module.exports = (phase) => {
+  const origin = (process.env.CORPUS_IMAGES_ORIGIN || '').replace(/\/+$/, '');
+  if (phase !== PHASE_DEVELOPMENT_SERVER || !origin) return nextConfig;
+  return {
+    ...nextConfig,
+    async rewrites() {
+      return [{ source: '/corpus-images/:path*', destination: `${origin}/corpus-images/:path*` }];
+    },
+  };
+};

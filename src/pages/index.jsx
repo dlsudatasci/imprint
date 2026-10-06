@@ -49,6 +49,7 @@ export default function Index() {
   // function each render would refire the fetch or restart the animation.
   const handleFirstLoad = useCallback(() => setDataReady(true), []);
   const handleLoopComplete = useCallback(() => setLoopDone(true), []);
+  const handleSkip = useCallback(() => { setDataReady(true); setLoopDone(true); }, []);
 
   // Skip the intro for anyone who has seen it recently. A layout effect, so the
   // overlay is gone before the first paint rather than flashing for a frame.
@@ -114,6 +115,7 @@ export default function Index() {
           fullscreen
           exiting={exiting}
           onLoopComplete={handleLoopComplete}
+          onSkip={handleSkip}
         />
       )}
 

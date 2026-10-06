@@ -64,6 +64,15 @@ try {
         { $set: { poolStatus: "served" } }
       );
       console.log(`  ✓ Promoted ${result.modifiedCount} image(s) to "served"`);
+
+      await db.collection("telemetry_logs").insertOne({
+        event: "RESERVE_PROMOTED",
+        count: result.modifiedCount,
+        city: values.city || "all",
+        requestedLimit: limit,
+        timestamp: new Date(),
+      });
+      console.log("  ✓ Logged RESERVE_PROMOTED to telemetry_logs");
     }
   } else {
     const count = await coll.countDocuments(filter);
@@ -74,6 +83,15 @@ try {
     } else {
       const result = await coll.updateMany(filter, { $set: { poolStatus: "served" } });
       console.log(`  ✓ Promoted ${result.modifiedCount} image(s) to "served"`);
+
+      await db.collection("telemetry_logs").insertOne({
+        event: "RESERVE_PROMOTED",
+        count: result.modifiedCount,
+        city: values.city || "all",
+        requestedLimit: null,
+        timestamp: new Date(),
+      });
+      console.log("  ✓ Logged RESERVE_PROMOTED to telemetry_logs");
     }
   }
 } catch (err) {

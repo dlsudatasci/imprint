@@ -66,7 +66,7 @@ export default function CityStats({ selectedCity, onFirstLoad }) {
     ? [
         { label: "Sidewalk Images", value: stats.totalImages?.toLocaleString() || "0", sub: "collected for annotation" },
         { label: "Annotations",     value: stats.totalAnnotations?.toLocaleString() || "0", sub: "bounding boxes submitted" },
-        { label: "Accessibility",   value: stats.avgAccessibilityRating > 0 ? `${stats.avgAccessibilityRating}/10` : "—", sub: "average sidewalk rating" },
+        { label: "Accessibility",   value: stats.avgAccessibilityRating > 0 ? `${stats.avgAccessibilityRating}/5` : "—", sub: "average sidewalk rating" },
         { label: "Contributors",    value: stats.totalContributors?.toLocaleString() || "0", sub: "unique volunteers" },
         { label: "Avg. Obstructions", value: stats.avgObstructionsPerImage > 0 ? stats.avgObstructionsPerImage : "—", sub: "per image" },
       ]

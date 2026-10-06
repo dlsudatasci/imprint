@@ -3,6 +3,7 @@ import { RectShape } from "../Shape";
 import Transformer from "../Transformer";
 import randomId from "../utils/randomId";
 import { IAnnotationState } from "./AnnotationState";
+import { pickNearSmallBox } from "@/util/boxGeometry";
 import CreatingAnnotationState from "./CreatingAnnotationState";
 import DraggingAnnotationState from "./DraggingAnnotationState";
 import TransformationState from "./TransformationState";
@@ -54,6 +55,22 @@ export class DefaultAnnotationState implements IAnnotationState {
           originalIndex: i,
           area: mark.width * mark.height
         });
+      }
+    }
+
+    // A click that hit no box may have just missed a small one, whose inside is
+    // only a few pixels wide. Select the nearest small box within a few screen
+    // pixels rather than starting a new box (6 Oct 2026).
+    if (intersectingShapes.length === 0) {
+      const near = pickNearSmallBox(
+        shapes.map((shape) => shape.getAnnotationData().mark),
+        positionX,
+        positionY,
+        this.context.scaleState.scale
+      );
+      if (near !== null) {
+        const mark = shapes[near].getAnnotationData().mark;
+        intersectingShapes.push({ shape: shapes[near], originalIndex: near, area: Math.abs(mark.width * mark.height) });
       }
     }
 

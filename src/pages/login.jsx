@@ -7,7 +7,7 @@ import Image from "next/image";
 
 import Page from "@/ui/page";
 import InteractiveObstructions from "@/ui/InteractiveObstructions";
-import { AuthCard, Button, Input, Badge, Container } from "@/ui";
+import { AuthCard, Button, Input, Badge, Checkbox, Container } from "@/ui";
 
 /**
  * Sign-in page, offering both a password account and Google.
@@ -182,14 +182,11 @@ export default function Login() {
                 />
 
                 <div className="flex justify-between items-center">
-                  <label className="flex items-center gap-2 text-sm text-muted font-medium cursor-pointer">
-                    <input
-                      name="rememberMe"
-                      type="checkbox"
-                      className="rounded border-line text-primary focus:ring-primary/20 h-4 w-4 bg-surface checked:[border-color:transparent]"
-                    />
-                    <span>Remember me for 30 days</span>
-                  </label>
+                  <Checkbox
+                    name="rememberMe"
+                    label="Remember me for 30 days"
+                    labelClassName="text-muted"
+                  />
                   <Link href="/forgot-password">
                     <span className="text-xs font-semibold text-primary transition-colors duration-300 cursor-pointer hover:underline">
                       Forgot Password?

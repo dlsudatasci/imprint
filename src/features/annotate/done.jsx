@@ -9,6 +9,7 @@ import Confetti from "react-confetti";
 import { useWindowSize } from "react-use";
 import { getCrossedMilestone } from "@/util/milestones";
 import { clearSession } from "@/util/sessionCache";
+import NasaTlx from "@/features/contribute/NasaTlx";
 
 /**
  * The screen shown after a contributor finishes their batch.
@@ -23,6 +24,8 @@ export default function AnnotationDone({ data, total }) {
   const { width, height } = useWindowSize();
   const [crossedMilestone, setCrossedMilestone] = React.useState(null);
   const [commitFailed, setCommitFailed] = React.useState(false);
+  const [showNasaTlx, setShowNasaTlx] = React.useState(false);
+  const [nasaTlxInfo, setNasaTlxInfo] = React.useState(null);
   const initialized = useRef(false);
   const router = useRouter();
 
@@ -63,6 +66,14 @@ export default function AnnotationDone({ data, total }) {
             setCrossedMilestone(milestone);
           }
         }
+
+        if (payload.shouldShowNasaTlx) {
+          setNasaTlxInfo({
+            sessionNumber: payload.sessionNumber,
+            sessionId: payload.sessionId,
+          });
+          setTimeout(() => setShowNasaTlx(true), 2000);
+        }
       } catch (err) {
         // This request is the commit: it promotes the batch's pending
         // annotations. Losing it silently is the worst failure this screen has,
@@ -84,6 +95,12 @@ export default function AnnotationDone({ data, total }) {
 
   return (
     <>
+      <NasaTlx
+        open={showNasaTlx}
+        sessionNumber={nasaTlxInfo?.sessionNumber}
+        sessionId={nasaTlxInfo?.sessionId}
+        onComplete={() => setShowNasaTlx(false)}
+      />
       <Confetti
         width={width}
         height={height}

@@ -52,12 +52,16 @@ const handler = async (req, res) => {
       return res.status(404).json({ message: "Image not found." });
     }
 
+    // Everyone sees the suggestions they were served, annotators on reference
+    // images included (decided 1 Oct 2026).
+    const detectedObjects = imageRecord.annotationList;
+
     return res.json({
       imageID: annotationRecord.imageID,
       city: imageRecord.city,
       url: imageRecord.url,
       selectedObjects: annotationRecord.selectedObjectsID,
-      detectedObjects: imageRecord.annotationList,
+      detectedObjects,
       newObjects: annotationRecord.newObjects,
       accessibilityRating: annotationRecord.accessibilityRating,
       sceneRatings: annotationRecord.sceneRatings,

@@ -2,6 +2,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { ObjectId } from "mongodb";
+import { bucketChartData, normalizeCityDisplay } from "@/util/validators/recentSessions";
 
 /**
  * GET|POST /api/recentSessions — the session history shown on the dashboard.
@@ -14,6 +15,9 @@ import { ObjectId } from "mongodb";
  *
  * Note this runs a couple of queries per session in a loop. That is fine at a
  * limit of eight, but worth combining into a single query if the limit grows.
+ *
+ * Annotators get an empty list (decided 4 Oct 2026). The dashboard does not
+ * show them the list, and this keeps an old cached page from showing it either.
  */
 export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
@@ -30,6 +34,14 @@ export default async function handler(req, res) {
   try {
     const { db } = await connectToDatabase();
     const userId = session.user._id;
+
+    // The role comes from the database, since an admin can change it after sign-in
+    const userRecord = await db
+      .collection("users")
+      .findOne({ _id: new ObjectId(userId) }, { projection: { role: 1 } });
+    if (userRecord?.role === "annotator") {
+      return res.status(200).json({ sessions: [] });
+    }
 
     // 1. Fetch completed or abandoned sessions for the user, sorted by newest first
     const sessions = await db
@@ -90,16 +102,15 @@ export default async function handler(req, res) {
       // one arbitrarily
       let location = "Unknown";
       if (cities.size === 1) {
-        location = Array.from(cities)[0];
-        // Slugs lose the ñ, and this is the one city where that's visible
-        if (location.toLowerCase().replace(/\s+/g, '') === 'laspinas') {
-          location = 'Las Piñas';
-        }
+        location = normalizeCityDisplay(Array.from(cities)[0]);
       } else if (cities.size > 1) {
         location = "Mixed Locations";
       }
       
-      const averageScore = validScores > 0 ? (totalScore / validScores).toFixed(1) : 0;
+      // null when nothing in the session has an accessibility answer, as for
+      // annotators, who answer no scene-level questions (decided 3 Oct 2026).
+      // The dashboard hides the score then instead of showing "-".
+      const averageScore = validScores > 0 ? (totalScore / validScores).toFixed(1) : null;
 
       // Thumbnails. The three-way $or is legacy tolerance: completedImageIDs
       // has been written as ObjectIds, as ObjectId strings, and (currently, via
@@ -143,21 +154,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // A 40-image session would render 40 bars in a strip a few pixels wide,
-      // so anything longer is averaged down into five buckets. Averaged rather
-      // than sampled so a busy stretch still shows up as a taller bar.
-      let finalChartData = chartData;
-      if (chartData.length > 5) {
-        const chunkSize = chartData.length / 5;
-        finalChartData = [];
-        for (let i = 0; i < 5; i++) {
-          const start = Math.floor(i * chunkSize);
-          const end = Math.floor((i + 1) * chunkSize);
-          const chunk = chartData.slice(start, end);
-          const sum = chunk.reduce((a, b) => a + b, 0);
-          finalChartData.push(Math.round(sum / (chunk.length || 1)));
-        }
-      }
+      const finalChartData = bucketChartData(chartData);
 
       recentSessions.push({
         id: s._id,

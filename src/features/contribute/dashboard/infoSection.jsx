@@ -10,6 +10,9 @@ import { MILESTONES, KILOMETERS_PER_ANNOTATION } from "@/util/milestones";
  * Calls three endpoints in parallel rather than one combined route. They cost
  * very different amounts to compute, and a slow telemetry aggregation shouldn't
  * hold up the session list.
+ *
+ * Contributors only: annotators see none of this section (6 Oct 2026), so the
+ * dashboard page does not render it for them.
  */
 export default class DashboardInfo extends React.Component {
   state = {

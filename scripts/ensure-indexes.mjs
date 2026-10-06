@@ -61,16 +61,28 @@ const INDEXES = [
   // annotationGet matches on city, then sorts a random field.
   ['Image', { city: 1 }, { name: 'city' },
     'the city-first draw when starting a batch'],
-  ['Image', { imageID: 1 }, { name: 'imageID' },
-    'annotationSubmit and getAnnotation look images up by this'],
+  // Unique since Step 4 (30 Sep 2026): the old Atlas records reused frame
+  // numbers as imageIDs in two cities, so two images shared each ID and
+  // annotations (keyed by imageID + userId) could overwrite each other.
+  ['Image', { imageID: 1 }, { unique: true, name: 'uniq_imageID' },
+    'annotationSubmit and getAnnotation look images up by this, and it must be unique'],
   ['Image', { poolStatus: 1, isReference: 1 }, { name: 'pool_reference' },
     'annotationGet filters served non-reference and reference images'],
   ['Image', { isReference: 1 }, { name: 'isReference' },
     'annotator mode draws only reference images'],
+  ['Image', { annotationCount: 1, city: 1 }, { name: 'annotationCount_city' },
+    'prioritization sort — least-annotated images served first'],
 
   // telemetry_logs grows without bound; the streak aggregation scans it.
   ['telemetry_logs', { userId: 1, event: 1, timestamp: -1 }, { name: 'user_event_time' },
     'the dashboard streak and average-time stats'],
+
+  // NASA-TLX: one response per user per session.
+  ['nasa_tlx', { userId: 1, sessionId: 1 }, { unique: true, name: 'uniq_user_session' },
+    'one NASA-TLX response per user per session'],
+
+  ['exit_surveys', { userId: 1 }, { unique: true, name: 'uniq_user' },
+    'one exit survey per user'],
 ];
 
 const client = new MongoClient(uri);

@@ -62,3 +62,8 @@ ds-bundle/
 # Deploy scripts
 deploy.sh
 vm-setup.sh
+
+# Spec and planning docs (local-only, not needed to run)
+IMPRINT_MASTER_PLAN.md
+IMPRINT_*_SPEC.md
+TESTING_SUMMARY.md

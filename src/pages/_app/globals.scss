@@ -107,10 +107,6 @@ h1, h2, h3 {
 
 .rp-stage {
   position: relative;
-  min-width: 960px;
-  min-height: 600px;
-  width: 960px !important;
-  height: 600px !important;
 }
 
 .rp-image {
@@ -433,4 +429,17 @@ h1, h2, h3 {
   [style*="crayon-boil"] {
     animation: none !important;
   }
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+// Landing-page map (src/features/home/CityMap.jsx). Clicking a city gives its SVG
+// outline keyboard focus, and Chrome then draws its focus ring as a rectangle
+// around the city's whole bounding box. The outlines are not reachable by
+// keyboard anyway, and the selected city is already highlighted, so the ring
+// is hidden (2 Oct 2026).
+.leaflet-container path.leaflet-interactive:focus {
+  outline: none;
 }

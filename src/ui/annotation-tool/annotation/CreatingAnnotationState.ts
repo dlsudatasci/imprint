@@ -1,4 +1,5 @@
 import { ReactPictureAnnotation } from "../index";
+import { normalizeMark, isTooSmallToKeep, pointInsideMark } from "@/util/boxGeometry";
 import { IShape } from "../Shape";
 import { IAnnotationState } from "./AnnotationState";
 import { DefaultAnnotationState } from "./DefaultAnnotationState";
@@ -47,10 +48,12 @@ export default class CreatingAnnotationState implements IAnnotationState {
     // Zero on either axis means the mouse never actually moved: a click, not a
     // drag. Keeping it would litter the image with invisible boxes that still
     // block submission for being unlabeled.
+    //
+    // A box thinner than a few screen pixels counts as a click too: it was
+    // too small to click afterwards, so it could never be labelled or deleted.
     if (
       data &&
-      data.getAnnotationData().mark.width !== 0 &&
-      data.getAnnotationData().mark.height !== 0
+      !isTooSmallToKeep(data.getAnnotationData().mark, this.context.scaleState.scale)
     ) {
       shapes.push(data);
       this.context.selectedId = data.getAnnotationData().id;
@@ -74,10 +77,13 @@ export default class CreatingAnnotationState implements IAnnotationState {
     // Has to happen after the state swap — Creating ignores mousedown, so the
     // synthetic event would go nowhere if it fired first.
     if (makeNewBox) {
-      this.context.onMouseDownHack(
-        data.getAnnotationData().mark.x + 1,
-        data.getAnnotationData().mark.y + 1
-      );
+      // A box drawn up or to the left keeps its start corner as x, y with a
+      // negative size, so the click below would land outside it. Normalize the
+      // mark in place first (4 Oct 2026, both roles).
+      const { mark } = data.getAnnotationData();
+      Object.assign(mark, normalizeMark(mark));
+      const inside = pointInsideMark(mark);
+      this.context.onMouseDownHack(inside.x, inside.y);
     }
   };
 

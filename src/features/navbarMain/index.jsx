@@ -8,7 +8,7 @@ import styles from "@/ui/styles/navMenu.module.css";
 import { useOutsideClick } from "@/hooks/useOutsideClick";
 import { useSession, signOut } from "next-auth/react";
 import { LogOutIcon, MenuIcon, AlertIcon, Container } from "@/ui";
-import { clearSession, readTotalCount, readCurrentCount } from "@/util/sessionCache";
+import { clearSession, readTotalCount, readCurrentCount, readTutorialFlag } from "@/util/sessionCache";
 
 /**
  * The site navbar, used on both public and contributor pages.
@@ -29,17 +29,21 @@ export default function Nav() {
   const [profileMenuState, setProfileMenuState] = useState(false); // Desktop profile dropdown state
   const [notificationMenuState, setNotificationMenuState] = useState(false); // Notifications dropdown state
   const [hasActiveSession, setHasActiveSession] = useState(false);
+  const [isTutorialSession, setIsTutorialSession] = useState(false);
 
-  // Read straight from the session on every render, rather than inside the
-  // effect below. The effect only re-runs when sign-in status changes, so
-  // finishing the tutorial would not reveal the annotate link until a reload.
   const hasCompletedDemo = session?.user?.hasCompletedTutorial === true;
 
   useEffect(() => {
     if (status !== "authenticated") return;
 
     if (readTotalCount() !== null && readCurrentCount() !== null) {
-      setHasActiveSession(true);
+      if (readTutorialFlag()) {
+        setIsTutorialSession(true);
+        setHasActiveSession(false);
+      } else {
+        setHasActiveSession(true);
+        setIsTutorialSession(false);
+      }
       return;
     }
 
@@ -197,14 +201,22 @@ export default function Nav() {
               </div>
             </div>
 
-            {/* Let's Annotate Button */}
-            {(router.pathname !== '/contribute' && router.pathname !== '/contribute/annotate' && !session?.user?.isProfileIncomplete && hasCompletedDemo) && (
+            {/* Let's Annotate / Resume Tutorial Button */}
+            {(router.pathname !== '/contribute' && router.pathname !== '/contribute/annotate' && router.pathname !== '/contribute/tutorial' && !session?.user?.isProfileIncomplete && hasCompletedDemo) && (
               <div className="hidden md:block">
-                <Link href="/contribute/annotate">
-                  <Button variant="secondary" size="sm" className="whitespace-nowrap">
-                    {hasActiveSession ? "Resume Session" : "Let's Annotate!"}
-                  </Button>
-                </Link>
+                {isTutorialSession ? (
+                  <Link href="/contribute/tutorial">
+                    <Button variant="secondary" size="sm" className="whitespace-nowrap">
+                      Resume Tutorial
+                    </Button>
+                  </Link>
+                ) : (
+                  <Link href="/contribute/annotate">
+                    <Button variant="secondary" size="sm" className="whitespace-nowrap">
+                      {hasActiveSession ? "Resume Session" : "Let's Annotate!"}
+                    </Button>
+                  </Link>
+                )}
               </div>
             )}
 
@@ -284,11 +296,17 @@ export default function Nav() {
             {status === "authenticated" && (
               <>
                 <hr className="my-1 border-line" />
-                {(!session?.user?.isProfileIncomplete && hasCompletedDemo) && (
+                {(!session?.user?.isProfileIncomplete && hasCompletedDemo && router.pathname !== '/contribute/tutorial') && (
                   <li>
-                    <Link href="/contribute/annotate" onClick={() => setMenuState(false)} className="text-primary font-bold">
-                      {hasActiveSession ? "Resume Session" : "Let's Annotate!"}
-                    </Link>
+                    {isTutorialSession ? (
+                      <Link href="/contribute/tutorial" onClick={() => setMenuState(false)} className="text-primary font-bold">
+                        Resume Tutorial
+                      </Link>
+                    ) : (
+                      <Link href="/contribute/annotate" onClick={() => setMenuState(false)} className="text-primary font-bold">
+                        {hasActiveSession ? "Resume Session" : "Let's Annotate!"}
+                      </Link>
+                    )}
                   </li>
                 )}
                 <li>
@@ -297,7 +315,7 @@ export default function Nav() {
                 {session?.user?.isProfileIncomplete && (
                   <li>
                     <Link href="/complete-profile" onClick={() => setMenuState(false)} className="flex items-center text-warning font-medium">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 mr-1">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="shrink-0 w-4 h-4 mr-1">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                       </svg>
                       Pending Tasks

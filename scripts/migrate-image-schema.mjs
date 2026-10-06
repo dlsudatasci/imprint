@@ -11,7 +11,7 @@
  *   predictions          Object  — stub for the model pipeline. Starts null.
  *
  * Safe to re-run: uses $set with $exists guards so it never overwrites data
- * that a later script (flag-reference-images, promote-reserve) already wrote.
+ * that a later script (apply-roles, promote-reserve) already wrote.
  *
  * Usage:  node --env-file=.env scripts/migrate-image-schema.mjs
  */

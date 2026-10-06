@@ -19,6 +19,12 @@ export type { IconButtonProps, IconButtonTone, IconButtonSize } from './IconButt
 export { default as Input } from './Input';
 export type { InputProps } from './Input';
 
+export { default as Checkbox } from './Checkbox';
+export type { CheckboxProps } from './Checkbox';
+
+export { default as Radio } from './Radio';
+export type { RadioProps } from './Radio';
+
 export { default as Container } from './Container';
 export type { ContainerProps, ContainerWidth } from './Container';
 

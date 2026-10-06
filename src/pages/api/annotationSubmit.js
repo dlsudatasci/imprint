@@ -3,10 +3,20 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
-
-// Generous ceiling — real images top out well under this. Exists so a scripted
-// client can't push a multi-megabyte box array into a single document.
-const MAX_BOXES_PER_IMAGE = 300;
+import {
+  validateSceneLevel,
+  validateBoxes,
+  normalizeAnnotatorSubmission,
+  validateAnnotatorBoxes,
+  normalizeSubmittedMarks,
+  hasEmptyBox,
+} from "@/util/validators/annotationSubmit";
+import { filterAnnotationsByTau, TAU_THRESHOLD } from "@/util/validators/telemetryPayload";
+import {
+  requiresSidewalkMask,
+  normalizeSidewalkMask,
+  validateSidewalkMask,
+} from "@/util/validators/sidewalkMask";
 
 /**
  * POST /api/annotationSubmit — saves the work done on one image.
@@ -39,74 +49,57 @@ const handler = async (req, res) => {
     const {
       imageID,
       servedModelVersion,
-      sceneLevel,
-      selectedObjectsID,
-      newObjects,
       currentAnnotationCount,
       telemetry,
     } = req.body;
+    let { sceneLevel, selectedObjectsID, newObjects, sidewalkMask } = req.body;
 
     if (imageID === undefined || imageID === null) {
       return res.status(400).json({ message: "Missing required field: imageID." });
     }
 
-    // Scene-level battery: sidewalkPresent, surfaceCondition, walkability, overallAccessibility
-    if (!sceneLevel || typeof sceneLevel !== "object") {
-      return res.status(422).json({ message: "sceneLevel is required." });
-    }
-    const SIDEWALK_PRESENT = ["yes", "partial", "no"];
-    if (!SIDEWALK_PRESENT.includes(sceneLevel.sidewalkPresent)) {
-      return res.status(422).json({ message: "sceneLevel.sidewalkPresent must be yes, partial, or no." });
-    }
-    if (sceneLevel.sidewalkPresent === "no") {
-      if (sceneLevel.surfaceCondition !== null && sceneLevel.surfaceCondition !== undefined) {
-        return res.status(422).json({ message: "surfaceCondition must be null when there is no sidewalk." });
-      }
-    } else {
-      const sc = Number(sceneLevel.surfaceCondition);
-      if (!Number.isInteger(sc) || sc < 1 || sc > 4) {
-        return res.status(422).json({ message: "sceneLevel.surfaceCondition must be 1–4 when a sidewalk is present." });
-      }
-    }
-    const walkVal = Number(sceneLevel.walkability);
-    if (!Number.isInteger(walkVal) || walkVal < 1 || walkVal > 5) {
-      return res.status(422).json({ message: "sceneLevel.walkability must be an integer from 1 to 5." });
-    }
-    const accVal = Number(sceneLevel.overallAccessibility);
-    if (!Number.isInteger(accVal) || accVal < 1 || accVal > 5) {
-      return res.status(422).json({ message: "sceneLevel.overallAccessibility must be an integer from 1 to 5." });
-    }
-
-    if (!Array.isArray(selectedObjectsID) || !Array.isArray(newObjects)) {
-      return res.status(422).json({ message: "selectedObjectsID and newObjects must be arrays." });
-    }
-
-    if (selectedObjectsID.length + newObjects.length > MAX_BOXES_PER_IMAGE) {
-      return res.status(422).json({ message: "Too many boxes for a single image." });
-    }
-
-    // Every box must carry an explicit obstruction judgment, and obstructing
-    // boxes must have a severity rating 1–5
-    const allBoxes = [...selectedObjectsID, ...newObjects];
-    for (const box of allBoxes) {
-      if (typeof box.obstructs !== "boolean") {
-        return res.status(422).json({ message: "Every object must have an obstruction judgment (obstructs: true/false)." });
-      }
-      if (box.obstructs === true) {
-        const sev = Number(box.severity);
-        if (!Number.isInteger(sev) || sev < 1 || sev > 5) {
-          return res.status(422).json({ message: "Obstructing objects must have a severity rating from 1 to 5." });
-        }
-      }
-    }
-
+    // The role decides what is validated and stored, so it is read before
+    // validation. It comes from the database, not the session, because an
+    // admin can change it after sign-in.
+    let isAnnotator;
     try {
       const userRecord = await db.collection("users").findOne(
         { _id: new ObjectId(userId) },
         { projection: { role: 1 } }
       );
-      const isAnnotator = userRecord?.role === "annotator";
+      isAnnotator = userRecord?.role === "annotator";
+    } catch (error) {
+      console.error("Database Error:", error);
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
 
+    // Annotators do two steps per image (decided 4 Oct 2026): Objects (boxes
+    // and categories, every suggestion kept or marked not an object), then
+    // Obstructions (obstructs true or false on every real box). Scene answers
+    // and severities are dropped here rather than refused, so the server
+    // stores none. A real box without a Yes/No answer is refused.
+    let boxResult;
+    if (isAnnotator) {
+      ({ sceneLevel, selectedObjectsID, newObjects, sidewalkMask } = normalizeAnnotatorSubmission({
+        sceneLevel,
+        selectedObjectsID,
+        newObjects,
+        sidewalkMask,
+      }));
+      boxResult = validateAnnotatorBoxes(selectedObjectsID, newObjects);
+    } else {
+      const sceneResult = validateSceneLevel(sceneLevel);
+      if (!sceneResult.valid) {
+        return res.status(422).json({ message: sceneResult.message });
+      }
+      boxResult = validateBoxes(selectedObjectsID, newObjects, { requireSeverity: true });
+    }
+
+    if (!boxResult.valid) {
+      return res.status(422).json({ message: boxResult.message });
+    }
+
+    try {
       // Only accept submissions for images actually handed out in this user's
       // active session, and read the city off the Image record rather than
       // trusting the body — otherwise anyone can attribute annotations to a
@@ -122,11 +115,51 @@ const handler = async (req, res) => {
 
       const imageRecord = await db.collection("Image").findOne(
         { imageID: imageID, _id: { $in: activeSession.imageIDs || [] } },
-        { projection: { city: 1 } }
+        { projection: { city: 1, width: 1, height: 1, annotationList: 1, poolStatus: 1, isReference: 1, sidewalkAgreement: 1 } }
       );
 
       if (!imageRecord) {
         return res.status(403).json({ message: "That image is not part of your current session." });
+      }
+
+      // Both roles: a box drawn up or to the left, or resized past its
+      // opposite edge, arrives with a negative size. Store it normalized and
+      // clipped to the image. Marks are in the display copy's pixels, the same
+      // space as Image.width and Image.height.
+      selectedObjectsID = normalizeSubmittedMarks(selectedObjectsID, imageRecord.width, imageRecord.height);
+      newObjects = normalizeSubmittedMarks(newObjects, imageRecord.width, imageRecord.height);
+      if (hasEmptyBox(selectedObjectsID) || hasEmptyBox(newObjects)) {
+        return res.status(422).json({ message: "A box has no area inside the image." });
+      }
+
+      // Annotators: every suggestion the tool shows must be decided, and only
+      // this image's suggestions may be submitted. Suggestions hidden by the
+      // confidence threshold are never shown, so they may be missing.
+      if (isAnnotator) {
+        const suggestions = imageRecord.annotationList || [];
+        const knownIds = new Set(suggestions.map((a) => String(a.id)));
+        const submittedIds = new Set(selectedObjectsID.map((b) => String(b.id)));
+        if (selectedObjectsID.some((b) => !knownIds.has(String(b.id)))) {
+          return res.status(422).json({ message: "A suggested box does not belong to this image." });
+        }
+        const { visible } = filterAnnotationsByTau(suggestions, TAU_THRESHOLD);
+        if (visible.some((a) => !submittedIds.has(String(a.id)))) {
+          return res.status(422).json({ message: "Every suggested box must be kept or marked not an object." });
+        }
+
+        // Sidewalk step (6 Oct 2026): model-development images and the
+        // reference images flagged sidewalkAgreement need an outline, stored
+        // normalized (clamped to the image, rounded). Other reference images
+        // never get one, whatever the client sent.
+        if (requiresSidewalkMask(imageRecord)) {
+          sidewalkMask = normalizeSidewalkMask(sidewalkMask, imageRecord.width, imageRecord.height);
+          const maskResult = validateSidewalkMask(sidewalkMask, imageRecord.width, imageRecord.height);
+          if (!maskResult.valid) {
+            return res.status(422).json({ message: maskResult.message });
+          }
+        } else {
+          sidewalkMask = null;
+        }
       }
 
       const city = imageRecord.city;
@@ -151,6 +184,8 @@ const handler = async (req, res) => {
             schemaVersion: 2,
             selectedObjectsID,
             newObjects,
+            // Annotators only. Contributors get no sidewalkMask field at all.
+            ...(isAnnotator ? { sidewalkMask } : {}),
             status: "pending",
           },
         },
@@ -172,12 +207,17 @@ const handler = async (req, res) => {
       // stats. Best-effort: logTelemetryEvent swallows its own errors so a
       // telemetry outage can't cost someone their annotation.
       if (telemetry) {
+        const cumulativeAnnotationsToDate = await db
+          .collection("annotations")
+          .countDocuments({ userId, status: "completed" });
+
         await logTelemetryEvent({
           event: "IMAGE_SUBMITTED",
           userId,
           username,
           imageID,
           ...telemetry,
+          cumulativeAnnotationsToDate,
         });
       }
 

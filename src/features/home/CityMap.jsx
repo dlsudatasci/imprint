@@ -56,6 +56,41 @@ function InvalidateOnResize({ isFullscreen }) {
 }
 
 /**
+ * Mouse-wheel and pinch zoom (2 Oct 2026).
+ *
+ * MapContainer reads its options only once, when the map is created, so the
+ * earlier `scrollWheelZoom={isFullscreen}` never turned zoom on in fullscreen.
+ * The handlers are switched here instead:
+ *   - fullscreen: wheel and pinch zoom always on;
+ *   - inline: wheel zoom turns on once the map is clicked and off again when
+ *     the pointer leaves it, so scrolling down the page past the map never gets
+ *     caught by the map. Pinch zoom stays off inline for the same reason on
+ *     phones (the + and - buttons still work).
+ */
+function ZoomControlByMode({ isFullscreen }) {
+  const map = useMap();
+  useEffect(() => {
+    if (isFullscreen) {
+      map.scrollWheelZoom.enable();
+      map.touchZoom.enable();
+      return undefined;
+    }
+    map.scrollWheelZoom.disable();
+    map.touchZoom.disable();
+    const turnOn = () => map.scrollWheelZoom.enable();
+    const turnOff = () => map.scrollWheelZoom.disable();
+    const el = map.getContainer();
+    map.on("click", turnOn);
+    el.addEventListener("mouseleave", turnOff);
+    return () => {
+      map.off("click", turnOn);
+      el.removeEventListener("mouseleave", turnOff);
+    };
+  }, [map, isFullscreen]);
+  return null;
+}
+
+/**
  * Clicking empty map clears the selected city.
  *
  * Leaflet also fires the map's click handler when a city is clicked, so the
@@ -94,6 +129,10 @@ function CityPolygons({ selectedCity, onCitySelect }) {
       const name = feature.properties.name;
       const color = getCityColor(feature, boundaries.features.indexOf(feature));
 
+      // With twelve cities the outline alone doesn't say which one it is, so the
+      // name follows the pointer on hover (added 2 Oct 2026).
+      layer.bindTooltip(name, { sticky: true, direction: "top", opacity: 0.95 });
+
       layer.on({
         mouseover: () => { if (name !== selectedCity) layer.setStyle(getStyle(color, "hover")); },
         mouseout:  () => { if (name !== selectedCity) layer.setStyle(getStyle(color, "default")); },
@@ -124,9 +163,9 @@ function CityPolygons({ selectedCity, onCitySelect }) {
  * Leaflet uses `window` as soon as it is imported, so pulling this into a
  * server-rendered page breaks the build.
  *
- * Scroll and pinch zoom are disabled inline and enabled in fullscreen. The map
- * sits partway down the page, and one that captures scrolling traps anyone
- * trying to swipe past it on a phone.
+ * Inline, wheel zoom starts once the map is clicked and pinch zoom is off. The
+ * map sits partway down the page, and one that captures scrolling traps anyone
+ * trying to scroll or swipe past it. Fullscreen enables both (ZoomControlByMode).
  */
 export default function CityMap({ selectedCity, onCitySelect }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -176,10 +215,10 @@ export default function CityMap({ selectedCity, onCitySelect }) {
       <MapContainer
         center={[14.5, 121.01]}
         zoom={12}
-        scrollWheelZoom={isFullscreen}
+        scrollWheelZoom={false}
         zoomControl={true}
         doubleClickZoom={false}
-        touchZoom={isFullscreen}
+        touchZoom={false}
         dragging={true}
         attributionControl={false}
         className="h-full w-full"
@@ -193,6 +232,7 @@ export default function CityMap({ selectedCity, onCitySelect }) {
         />
         <FitBounds />
         <InvalidateOnResize isFullscreen={isFullscreen} />
+        <ZoomControlByMode isFullscreen={isFullscreen} />
         <MapDeselect onCitySelect={onCitySelect} />
         <CityPolygons selectedCity={selectedCity} onCitySelect={onCitySelect} />
       </MapContainer>

@@ -88,7 +88,7 @@ export default function Footer() {
             </div>
             <div className="md:flex-1 md:px-4 text-center md:text-right">
               <Link href="/terms-of-use" className="cursor-pointer py-2 px-3 text-white inline-block hover:underline">
-                Terms of Use
+                Informed Consent
               </Link>
               <Link href="/privacy" className="cursor-pointer py-2 px-3 text-white inline-block hover:underline">
                 Privacy Policy

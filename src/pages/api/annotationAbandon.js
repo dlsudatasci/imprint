@@ -70,9 +70,14 @@ const handler = async (req, res) => {
                         if (completedRefIDs.length > 0) {
                             const refAnnotations = await db
                                 .collection("annotations")
-                                .find({ userId, imageID: { $in: completedRefIDs }, status: "completed" })
+                                // Only annotators' answers become reference answers (1 Oct 2026).
+                                .find({ userId, imageID: { $in: completedRefIDs }, status: "completed", source: "annotator" })
                                 .toArray();
 
+                            // The sidewalk outline is deliberately not copied: contributors
+                            // are never scored on outlines, and the agreement outlines on
+                            // flagged reference images are read from the annotations
+                            // collection (6 Oct 2026).
                             const ops = refAnnotations.map((ann) => ({
                                 updateOne: {
                                     filter: { imageID: ann.imageID },
@@ -97,10 +102,11 @@ const handler = async (req, res) => {
                         }
                     }
 
-                    // Count only the rows this call actually flipped to completed.
-                    // Using completedImages.length would double-count anything the
-                    // user re-annotated, since re-submitting an image resets it to
-                    // "pending" even though it was already tallied once.
+                    await db.collection("Image").updateMany(
+                        { imageID: { $in: completedImages } },
+                        { $inc: { annotationCount: 1 } }
+                    );
+
                     const newlyCompleted = finalized.modifiedCount;
 
                     if (newlyCompleted > 0) {

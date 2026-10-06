@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { useSession } from "next-auth/react";
 import { connectToDatabase } from "@/util/mongodb";
 import { ObjectId } from "mongodb";
-import { readTotalCount, readCurrentCount } from "@/util/sessionCache";
+import { readTotalCount, readCurrentCount, readTutorialFlag, clearSession } from "@/util/sessionCache";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
 
 import Page from "@/ui/page";
@@ -33,11 +33,12 @@ const FUN_FACTS = [
  * button always shows whichever step is still outstanding, so there is one
  * obvious next action at any point.
  *
- * The session loaded on the server takes precedence over the one held in the
- * browser, because it has been re-read from the database. The browser's copy
- * can be out of date for anything that changes outside signing in.
+ * The values read from the database on the server (liveUser) take precedence
+ * over the session held in the browser. The browser's copy comes from the login
+ * token, which can be out of date for anything that changes outside signing in,
+ * such as the role an admin sets.
  */
-export default function ContributePage({ session }) {
+export default function ContributePage({ session, liveUser = null }) {
   const { data: clientSession, status } = useSession();
   const loading = status === "loading";
 
@@ -46,16 +47,25 @@ export default function ContributePage({ session }) {
     current: 0,
     total: 0,
   });
+  const [isTutorialSession, setIsTutorialSession] = useState(false);
   const [randomFact, setRandomFact] = useState("");
 
-  // Prioritize the server-side session because it contains our live DB stats
+  // _app hands `session` to SessionProvider and never passes it to the page,
+  // and useSession refetches the token's copy in the background (on window
+  // focus, for one), whose role and progress can be days old. So the database
+  // values come as their own prop, liveUser, and always win (6 Oct 2026, the
+  // same approach as isAnnotator on the tutorial page). Before this, an
+  // annotator made by changing the role in the database saw the contributor
+  // dashboard again as soon as the token was refetched.
   const activeSession = session || clientSession;
-  const username = activeSession?.user?.username || "";
-  const userId = activeSession?.user?._id || "";
+  const user = { ...activeSession?.user, ...liveUser };
+  const username = user.username || "";
+  const userRole = user.role || "contributor";
+  const userId = user._id || "";
 
   // getServerSideProps reads this straight from the database on every request,
   // so it stays correct even if the JWT is stale from another device
-  const hasCompletedDemo = activeSession?.user?.hasCompletedTutorial === true;
+  const hasCompletedDemo = user.hasCompletedTutorial === true;
 
   useEffect(() => {
     // Picked client-side: choosing during SSR makes the server and client HTML
@@ -89,11 +99,17 @@ export default function ContributePage({ session }) {
       const localCurrent = readCurrentCount();
 
       if (localTotal !== null && localCurrent !== null) {
-        setSessionState({
-          status: "active",
-          current: localCurrent,
-          total: localTotal,
-        });
+        if (readTutorialFlag()) {
+          setIsTutorialSession(true);
+          setSessionState({ status: "none", current: 0, total: 0 });
+        } else {
+          setIsTutorialSession(false);
+          setSessionState({
+            status: "active",
+            current: localCurrent,
+            total: localTotal,
+          });
+        }
         return;
       }
 
@@ -159,26 +175,40 @@ export default function ContributePage({ session }) {
               <h1 className="font-display text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight text-primary">
                 {username}.
               </h1>
+              {userRole === "annotator" && (
+                <Badge tone="success">Annotator</Badge>
+              )}
             </div>
 
             {/* Right Side: Fun Fact & Action Buttons */}
             <div className="flex flex-col items-start md:items-end w-full md:w-auto mt-4 md:mt-0 gap-3">
               {/* Fun Fact Pill */}
-              {!hasSession && randomFact && (
+              {!hasSession && !isTutorialSession && randomFact && (
                 <Badge tone="warning">
                   <span>{randomFact}</span>
                 </Badge>
               )}
 
               <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 w-full md:w-auto">
-              {!hasSession && (
+              {isTutorialSession ? (
                 <>
-                  {hasCompletedDemo && (
-                     <Link href="/contribute/tutorial" className="flex-1 md:flex-none flex">
-                        <Button variant="neutral" fullWidth>Replay Tutorial</Button>
-                     </Link>
-                  )}
-
+                  <Link href="/contribute/tutorial" className="flex-1 md:flex-none flex">
+                    <Button fullWidth>Resume Tutorial</Button>
+                  </Link>
+                  {/* eslint-disable-next-line react/forbid-elements -- dashboard action button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearSession();
+                      setIsTutorialSession(false);
+                    }}
+                    className="flex-1 md:flex-none"
+                  >
+                    <Button variant="neutral" fullWidth>Stop Tutorial</Button>
+                  </button>
+                </>
+              ) : !hasSession ? (
+                <>
                   {!hasCompletedDemo ? (
                     <Link
                       href={isLoadingSession ? "" : "/contribute/tutorial"}
@@ -188,15 +218,10 @@ export default function ContributePage({ session }) {
                         {isLoadingSession ? "Loading..." : "Start Demo Tutorial"}
                       </Button>
                     </Link>
-                  ) : activeSession?.user?.isProfileIncomplete ? (
-                    <div className="flex-1 md:flex-none flex relative group cursor-not-allowed">
-                      <Button disabled fullWidth>Start Annotating</Button>
-                      {/* Custom Tooltip */}
-                      <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-ink text-white text-sm font-semibold rounded-control py-2 px-4 whitespace-nowrap pointer-events-none z-50 shadow-md">
-                        Complete your profile to continue mapping
-                        <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-ink rotate-45"></div>
-                      </div>
-                    </div>
+                  ) : user.isProfileIncomplete ? (
+                    <Link href="/complete-profile" className="flex-1 md:flex-none flex">
+                      <Button fullWidth>Complete Profile to Start</Button>
+                    </Link>
                   ) : (
                     <Link
                       href={isLoadingSession ? "" : "/contribute/annotate"}
@@ -207,15 +232,46 @@ export default function ContributePage({ session }) {
                       </Button>
                     </Link>
                   )}
+
+                  {hasCompletedDemo && (
+                     <Link href="/contribute/tutorial" className="flex-1 md:flex-none flex">
+                        <Button variant="neutral" fullWidth>Replay Tutorial</Button>
+                     </Link>
+                  )}
                 </>
-              )}
+              ) : hasSession ? (
+                <>
+                  <Link href="/contribute/annotate" className="flex-1 md:flex-none flex">
+                    <Button fullWidth>Resume Session</Button>
+                  </Link>
+                  {/* eslint-disable-next-line react/forbid-elements -- dashboard action button */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await fetch("/api/annotationAbandon", { method: "POST" });
+                        clearSession();
+                        setSessionState({ status: "none", current: 0, total: 0 });
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    }}
+                    className="flex-1 md:flex-none"
+                  >
+                    <Button variant="neutral" fullWidth>Stop Session</Button>
+                  </button>
+                </>
+              ) : null}
               </div>
             </div>
           </div>
 
         </Container>
       </section>
-      <DashboardInfo username={username} userId={userId} />
+      {/* The lower dashboard (Recent Sessions, the distance banner, contribution
+          figures) is for contributors only. Annotators see none of it (6 Oct 2026).
+          userRole comes from the database, overlaid in getServerSideProps. */}
+      {userRole !== "annotator" && <DashboardInfo username={username} userId={userId} />}
     </Page>
   );
 }
@@ -226,24 +282,29 @@ export async function getServerSideProps(context) {
   const session = await getServerSession(context.req, context.res, authOptions);
 
   if (!session || !session.user?._id) {
-    return { props: { session: session ?? null } };
+    return { props: { session: session ?? null, liveUser: null } };
   }
+
+  let liveUser = null;
 
   try {
     const { db } = await connectToDatabase();
     const dbUser = await db.collection("users").findOne({ _id: new ObjectId(session.user._id) });
 
-    // Overlay the live values onto the session. The JWT is only refreshed at
-    // login or on an explicit update() call, so these three can be stale by
-    // days — and all three gate what the page offers. Finishing the tutorial in
+    // Read the live values. The JWT is only refreshed at login or on an
+    // explicit update() call, so these can be stale by days — and all of
+    // them gate what the page offers. Finishing the tutorial in
     // another tab should light up "Let's Annotate" here on the next load.
     if (dbUser) {
-      session.user.totalAnnotations = dbUser.totalAnnotations || 0;
-      session.user.hasCompletedTutorial = dbUser.hasCompletedTutorial || false;
+      liveUser = {
+        totalAnnotations: dbUser.totalAnnotations || 0,
+        hasCompletedTutorial: dbUser.hasCompletedTutorial || false,
+        role: dbUser.role || "contributor",
+      };
+      if (dbUser.age) liveUser.isProfileIncomplete = false;
 
-      if (dbUser.age) {
-        session.user.isProfileIncomplete = false;
-      }
+      // Still overlaid on the session too, so SessionProvider's first copy matches
+      Object.assign(session.user, liveUser);
     }
   } catch (error) {
     // Fall through with the token's values — a stale dashboard beats an error
@@ -251,5 +312,5 @@ export async function getServerSideProps(context) {
     console.error("Failed to fetch live user stats in dashboard getServerSideProps:", error);
   }
 
-  return { props: { session } };
+  return { props: { session, liveUser } };
 }

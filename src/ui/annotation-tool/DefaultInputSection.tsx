@@ -435,8 +435,7 @@ const DefaultInputSection = ({
 const translateValue = (value: string) => {
   if (value === NOT_AN_OBJECT) return "Not an object";
   const standard = CATEGORY_OPTIONS.find((opt) => opt.value === value);
-  // "Car (incl. van, jeepney, truck, bus)" reads as just "Car" in the question
-  if (standard) return standard.label.replace(/ \(incl\. .*\)$/, "");
+  if (standard) return standard.label;
   if (value && value !== "---") return value;
   return value;
 };

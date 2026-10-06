@@ -7,13 +7,14 @@ import { TAXONOMY_CATEGORIES } from "@/util/taxonomy";
  * taxonomy.
  *
  * "Car" covers every motor vehicle with four or more wheels (decided 4 Oct
- * 2026). The stored value stays "car", and the canvas still shows "Car".
+ * 2026). The label is just "Car" (6 Oct 2026). The rule is shown in the
+ * annotators' "What to Box" list instead. The stored value stays "car".
  */
 const LABELS = {
   bench: "Bench",
   bicycle: "Bicycle",
   bollard: "Bollard",
-  car: "Car (incl. van, jeepney, truck, bus)",
+  car: "Car",
   construction_materials: "Construction Materials",
   electrical_box: "Electrical Box",
   fire_hydrant: "Fire Hydrant",

@@ -114,11 +114,7 @@ const ObjectInputSection = ({
       <div className={PANEL_CLASS} onMouseDown={stop} onMouseUp={stop}>
         <CategorySelect value={value} onChange={onChange} />
         <SizeNote show={belowMinimumSize} />
-        <p className="text-xs text-muted mt-2">Fix the box first if it is loose. Drag it or its corners.</p>
-        <p className="text-xs text-muted mt-1 mb-3">
-          Click Not an object if the box marks nothing real or repeats an object that already has a box.
-        </p>
-        <div className="flex gap-2">
+        <div className="flex gap-2 mt-3">
           <button
             className="flex-1 py-2 rounded-control font-bold text-sm transition-all shadow-sm border border-primary bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={!hasCategory}

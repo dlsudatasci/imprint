@@ -18,9 +18,9 @@ describe("CATEGORY_OPTIONS", () => {
     for (const o of CATEGORY_OPTIONS) expect(o.label).toBeTruthy();
   });
 
-  it("names van, jeepney, truck and bus in the Car label (4 Oct 2026)", () => {
+  it("labels Car as just \"Car\" (6 Oct 2026), the vehicle rule living in the What to Box list", () => {
     const car = CATEGORY_OPTIONS.find((o) => o.value === "car");
-    for (const word of ["van", "jeepney", "truck", "bus"]) expect(car.label).toContain(word);
+    expect(car.label).toBe("Car");
   });
 
   it("has no em dash or semicolon in any label", () => {

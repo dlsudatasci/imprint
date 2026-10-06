@@ -114,18 +114,34 @@ describe("POST /api/auth/choose-username", () => {
   });
 });
 
-// Local testing only (6 Oct 2026)
-describe("POST /api/auth/choose-username with REGISTER_AS_ANNOTATOR", () => {
+// SIGNUP_ROLE server switch (6 Oct 2026)
+describe("POST /api/auth/choose-username with SIGNUP_ROLE", () => {
   afterEach(() => vi.unstubAllEnvs());
+  const body = { username: "newuser", consentAgreed: true, ageConfirmed: true };
 
-  it("creates a new Google account as an annotator on a local database, on insert only", async () => {
-    vi.stubEnv("MONGODB_DB", "imprint_dev");
-    vi.stubEnv("REGISTER_AS_ANNOTATOR", "true");
+  it("creates a new Google account as an annotator with the annotator fields, on insert only", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "annotator");
+    vi.stubEnv("NODE_ENV", "production");
     const mocks = setupMocks();
-    await handler(createMockReq({ body: { username: "newuser", consentAgreed: true, ageConfirmed: true } }), createMockRes());
+    await handler(createMockReq({ body }), createMockRes());
     const [, update] = mocks.usersCol.updateOne.mock.calls[0];
-    expect(update.$setOnInsert.role).toBe("annotator");
-    // An existing account keeps its role
-    expect(update.$set).not.toHaveProperty("role");
+    expect(update.$setOnInsert).toMatchObject({ role: "annotator", annotatorPass: 1, annotatorActive: true });
+    // An existing account keeps its role and fields
+    for (const field of ["role", "annotatorPass", "annotatorActive"]) {
+      expect(update.$set).not.toHaveProperty(field);
+    }
+  });
+
+  it("creates a contributor with no annotator fields without it, even with the old local switch set", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    // The replaced setting no longer does anything
+    vi.stubEnv("REGISTER_AS_ANNOTATOR", "true");
+    vi.stubEnv("MONGODB_DB", "imprint_dev");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert.role).toBe("user");
+    expect(update.$setOnInsert).not.toHaveProperty("annotatorPass");
+    expect(update.$setOnInsert).not.toHaveProperty("annotatorActive");
   });
 });

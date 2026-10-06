@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./[...nextauth]";
 import { connectToDatabase } from "@/util/mongodb";
 import { USERNAME_PATTERN } from "@/util/validation";
-import { newAccountRole } from "@/util/validators/newAccountRole";
+import { newAccountFields } from "@/util/validators/newAccountRole";
 
 /**
  * POST /api/auth/choose-username — saves the username a Google sign-in picks.
@@ -81,10 +81,11 @@ export default function handler(req, res) {
                 },
                 $setOnInsert: {
                     createdAt: new Date(),
-                    // "user" (contributor), or "annotator" with the
-                    // local-only REGISTER_AS_ANNOTATOR switch. On insert
-                    // only, so an existing account keeps its role.
-                    role: newAccountRole(),
+                    // role "user" (contributor), or with SIGNUP_ROLE=annotator
+                    // on the server, role "annotator" and the annotator fields
+                    // (see newAccountRole). On insert only, so an existing
+                    // account keeps its role and fields.
+                    ...newAccountFields(),
                     totalAnnotations: 0,
                     hasCompletedTutorial: false,
                     activities: [

@@ -2,7 +2,9 @@
  * /api/admin/accounts — the admin Accounts tab (added 1 Oct 2026).
  *
  * GET   every account with username, email, role, sign-up date, whether the
- *       profile is complete, and number of annotations.
+ *       profile is complete, and number of annotations, plus signupRole: the
+ *       role new sign-ups get from the server's SIGNUP_ROLE setting (6 Oct
+ *       2026), so the tab can warn while every new account is an annotator.
  * POST  { action: "preview", userId }                    counts of what a deletion would remove
  *       { action: "delete",  userId, confirmName }        deletes the account and everything it
  *                                                         recorded; confirmName must be its username
@@ -27,6 +29,7 @@ import {
   roleOf,
   summarizeAccount,
 } from "@/util/validators/accountAdmin";
+import { signupRole } from "@/util/validators/newAccountRole";
 
 function ownedBy(target) {
   const id = String(target._id);
@@ -78,6 +81,7 @@ export default async function handler(req, res) {
         accounts: users.map((u) =>
           summarizeAccount(u, counts.get(String(u._id)) || 0, actorId, busy.has(String(u._id)))
         ),
+        signupRole: signupRole(),
       });
     }
 

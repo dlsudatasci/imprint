@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./[...nextauth]";
 import { connectToDatabase } from "@/util/mongodb";
 import { validateDemographics, validateOccupation, validateCities } from "@/util/validators/completeProfile";
+import { newAccountFields } from "@/util/validators/newAccountRole";
 
 /**
  * POST /api/auth/complete-profile — saves a contributor's demographic answers.
@@ -91,7 +92,11 @@ export default function handler(req, res) {
                 },
                 $setOnInsert: {
                     createdAt: new Date(),
-                    role: "user", // Default Role
+                    // role "user" (contributor), or with SIGNUP_ROLE=annotator
+                    // on the server, role "annotator" and the annotator fields
+                    // (see newAccountRole). On insert only, so an existing
+                    // account keeps its role and fields.
+                    ...newAccountFields(),
                     totalAnnotations: 0,
                     hasCompletedTutorial: false,
                     activities: [

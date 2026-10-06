@@ -26,6 +26,8 @@ const ROLE_TONE = { admin: "warning", annotator: "success", user: "info" };
 
 export default function AccountsTab() {
   const [accounts, setAccounts] = useState(null);
+  // The role new sign-ups get from the server's SIGNUP_ROLE setting (6 Oct 2026)
+  const [signupRole, setSignupRole] = useState("user");
   const [loadError, setLoadError] = useState(null);
   const [notice, setNotice] = useState(null); // { tone: "success" | "danger", text }
 
@@ -46,6 +48,7 @@ export default function AccountsTab() {
         const json = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(json.message || `Request failed (${r.status}).`);
         setAccounts(json.accounts);
+        setSignupRole(json.signupRole === "annotator" ? "annotator" : "user");
       })
       .catch((e) => setLoadError(e.message));
   }, []);
@@ -139,6 +142,16 @@ export default function AccountsTab() {
 
   return (
     <div className="space-y-4">
+      {/* So the switch is not forgotten when contributors open */}
+      {signupRole === "annotator" && (
+        <p
+          role="status"
+          className="text-sm font-medium rounded-control border px-4 py-3 bg-warning-soft text-warning border-warning-border"
+        >
+          New sign-ups become annotators. Set SIGNUP_ROLE back before contributors open.
+        </p>
+      )}
+
       {notice && (
         <p
           role="status"

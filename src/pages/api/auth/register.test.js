@@ -135,26 +135,40 @@ describe("POST /api/auth/register", () => {
   });
 });
 
-// Local testing only (6 Oct 2026): REGISTER_AS_ANNOTATOR=true makes new
-// accounts annotators, except in production or against the study database
-describe("POST /api/auth/register with REGISTER_AS_ANNOTATOR", () => {
+// SIGNUP_ROLE server switch (6 Oct 2026)
+describe("POST /api/auth/register with SIGNUP_ROLE", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("creates an annotator on a local database when the switch is on", async () => {
-    vi.stubEnv("MONGODB_DB", "imprint_dev");
-    vi.stubEnv("REGISTER_AS_ANNOTATOR", "true");
+  it("creates an annotator with the annotator fields when SIGNUP_ROLE=annotator", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "annotator");
     const mocks = setupMocks();
     const res = createMockRes();
     await handler(createMockReq({ body: validBody }), res);
     expect(res._status).toBe(201);
-    expect(mocks.usersCol.insertOne.mock.calls[0][0].role).toBe("annotator");
+    expect(mocks.usersCol.insertOne.mock.calls[0][0]).toMatchObject({
+      role: "annotator", annotatorPass: 1, annotatorActive: true,
+    });
   });
 
-  it("still creates a contributor against the study database", async () => {
-    vi.stubEnv("MONGODB_DB", "imprint");
+  it("creates a contributor with no annotator fields without it, even with the old local switch set", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    // The replaced setting no longer does anything
     vi.stubEnv("REGISTER_AS_ANNOTATOR", "true");
+    vi.stubEnv("MONGODB_DB", "imprint_dev");
     const mocks = setupMocks();
     await handler(createMockReq({ body: validBody }), createMockRes());
-    expect(mocks.usersCol.insertOne.mock.calls[0][0].role).toBe("user");
+    const doc = mocks.usersCol.insertOne.mock.calls[0][0];
+    expect(doc.role).toBe("user");
+    expect(doc).not.toHaveProperty("annotatorPass");
+    expect(doc).not.toHaveProperty("annotatorActive");
+  });
+
+  it("creates an annotator on the live site and the study database when switched on", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "annotator");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MONGODB_DB", "imprint");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    expect(mocks.usersCol.insertOne.mock.calls[0][0].role).toBe("annotator");
   });
 });

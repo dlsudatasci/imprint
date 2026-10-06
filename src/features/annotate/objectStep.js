@@ -8,8 +8,8 @@ import { computeIoU } from "@/util/validators/qualityMetrics";
  * "Objects in This Image" card under the canvas (4 Oct 2026).
  */
 
-// Same order as the tool's sortedAnnotations, so "Next suggestion to decide"
-// walks the boxes in the order the card lists them
+// Same order as the tool's sortedAnnotations, so toDecideIds follows the order
+// the card lists the boxes in
 const byId = (a, b) => String(a.id).localeCompare(String(b.id));
 
 export function summarizeObjectStep(annotations = []) {

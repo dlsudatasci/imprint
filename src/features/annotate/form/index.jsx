@@ -4,8 +4,17 @@ import { ReactPictureAnnotation } from "@/ui/annotation-tool/index";
 import { useSession } from "next-auth/react";
 import { clearSession } from "@/util/sessionCache";
 import ProgressStrip from "@/features/annotate/ProgressStrip";
+import { requiresSidewalkMask } from "@/util/validators/sidewalkMask";
 
-export default function AnnotateForm({ data, current, total, allImages, isTutorial = false, isAnnotator = false }) {
+export default function AnnotateForm({
+  data,
+  current,
+  total,
+  allImages,
+  isTutorial = false,
+  isAnnotator = false,
+  onAnnotatorStepChange,
+}) {
   const onSelect = () => { };
   const onChange = () => { };
   const { data: session, status } = useSession();
@@ -91,6 +100,10 @@ export default function AnnotateForm({ data, current, total, allImages, isTutori
         totalAnnotationCount={total}
         username={session?.user?.username ?? ""}
         isAnnotator={isAnnotator}
+        // Model-development images get the Sidewalk step. The tutorial always
+        // shows it to annotators, so they practise it (6 Oct 2026).
+        askSidewalk={isAnnotator && (isTutorial || requiresSidewalkMask(data))}
+        onAnnotatorStepChange={onAnnotatorStepChange}
       />
     </Container>
   );

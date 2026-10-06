@@ -1,13 +1,15 @@
 import { isDecidedForObjects } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
+import { realObjects } from "@/features/annotate/obstructionStep";
+import { validateSidewalkMask } from "@/util/validators/sidewalkMask";
 
 /**
- * Annotators do Step 1 Objects only (decided 4 Oct 2026): every suggestion is
- * kept or marked Not an object, and every kept or drawn box has one of the 18
- * categories. No obstruction answer, severity or scene answers. Everything can
- * be checked from existingAnnotations, which holds every box on the canvas.
+ * The annotator's Objects step (decided 4 Oct 2026): every suggestion is kept
+ * or marked Not an object, and every kept or drawn box has one of the 18
+ * categories. Everything can be checked from existingAnnotations, which holds
+ * every box on the canvas.
  */
-function validateObjectStep(existingAnnotations) {
+export function validateObjectStep(existingAnnotations) {
   const boxes = existingAnnotations || [];
   if (boxes.some((box) => !box.editable && !isDecidedForObjects(box))) {
     return { valid: false, error: "Please click Keep or Not an object on every suggested box." };
@@ -19,15 +21,60 @@ function validateObjectStep(existingAnnotations) {
   return { valid: true };
 }
 
+/**
+ * The annotator's Obstructions step (decided 4 Oct 2026): unmarked objects
+ * become "does not obstruct" only after the annotator confirms it, so a "No"
+ * is never recorded by default (the principle of chapter_4.tex line 182).
+ * An image with no real objects has nothing to confirm.
+ */
+export function validateObstructionStep({ annotations, confirmed }) {
+  if (realObjects(annotations).length === 0) return { valid: true };
+  if (confirmed !== true) {
+    return {
+      valid: false,
+      error: "Please tick the box to confirm that the objects you did not mark do not obstruct the sidewalk.",
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * The annotator's Sidewalk step (6 Oct 2026), on model-development images only.
+ * A half-drawn shape must be finished or cancelled, then the outline must pass
+ * validateSidewalkMask (at least one walking space shape, or No sidewalk).
+ */
+export function validateSidewalkStep({ askSidewalk, mask, hasDraft, imageWidth, imageHeight }) {
+  if (!askSidewalk) return { valid: true };
+  if (hasDraft) return { valid: false, error: "Finish or cancel the shape you are drawing." };
+  const result = validateSidewalkMask(mask, imageWidth, imageHeight);
+  return result.valid ? { valid: true } : { valid: false, error: result.message };
+}
+
 export function validateAnnotationForSubmit({
   existingAnnotations,
   newObjects,
   selectedObjects,
   sceneLevel,
   isAnnotator = false,
+  obstructionsConfirmed = false,
+  askSidewalk = false,
+  sidewalkMask = null,
+  sidewalkDraftOpen = false,
+  imageWidth,
+  imageHeight,
 }) {
   if (isAnnotator) {
-    return validateObjectStep(existingAnnotations);
+    const objects = validateObjectStep(existingAnnotations);
+    if (!objects.valid) return objects;
+    const sidewalk = validateSidewalkStep({
+      askSidewalk,
+      mask: sidewalkMask,
+      hasDraft: sidewalkDraftOpen,
+      imageWidth,
+      imageHeight,
+    });
+    if (!sidewalk.valid) return sidewalk;
+    return validateObstructionStep({ annotations: existingAnnotations, confirmed: obstructionsConfirmed });
   }
 
   const unconfirmed = (existingAnnotations || []).filter(

@@ -9,7 +9,7 @@ import { clearSession, writeSession, writeTutorialFlag, readSessionData, readCur
 import ContentSkeleton from "@/features/layout/contentSkeleton";
 import DesktopOnly from "@/features/annotate/desktopOnly";
 import { useCanAnnotate } from "@/hooks/useCanAnnotate";
-import { buildTourSteps, tourTargets, tourStepCount } from "@/features/tutorial/tourSteps";
+import { buildTourSteps, tourTargets, tourStepCount, tourBeaconPlacements } from "@/features/tutorial/tourSteps";
 import { getServerSession } from "next-auth/next";
 import { ObjectId } from "mongodb";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
@@ -61,7 +61,6 @@ export default function TutorialPage({ isAnnotator = false }) {
   // check the live flow has. Without it a phone could reach the canvas here and
   // mark the tutorial complete on a tool it can't actually use.
   const canAnnotate = useCanAnnotate();
-  const stepCount = tourStepCount(isAnnotator);
 
   const [current, setCurrent] = useState(null);
   const [data, setData] = useState(null);
@@ -75,6 +74,30 @@ export default function TutorialPage({ isAnnotator = false }) {
   const [joyrideKey, setJoyrideKey] = useState(0);
   // Only true once DOM targets (.rp-stage etc) are confirmed in the page
   const [domReady, setDomReady] = useState(false);
+  // Annotators move from Objects to Sidewalk to Obstructions on each image (4
+  // and 6 Oct 2026), and each step has its own tour and beacons (6 Oct 2026).
+  // Contributors stay on "objects" throughout.
+  const [annotatorStep, setAnnotatorStep] = useState("objects");
+  const stepCount = tourStepCount(isAnnotator, annotatorStep);
+  // Steps whose tour has already run by itself. Like Objects, Sidewalk and
+  // Obstructions walk the annotator through on the first image only, once
+  // each. On later images every step shows beacons.
+  const autoTouredRef = useRef(new Set());
+  // The image on screen, read inside the step-change handler below
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  const handleAnnotatorStepChange = useCallback((step) => {
+    setAnnotatorStep(step);
+    setStepOffset(0);
+    setJoyrideKey((k) => k + 1);
+    if (step !== "objects" && currentRef.current === 1 && !autoTouredRef.current.has(step)) {
+      autoTouredRef.current.add(step);
+      setTourMode("touring");
+    } else {
+      // A tour left open in the previous step would otherwise carry over
+      setTourMode("beacons");
+    }
+  }, []);
 
   // Joyride positions its tooltips against real DOM nodes, so it can't start
   // until the canvas has actually rendered. The annotation tool mounts async
@@ -85,6 +108,7 @@ export default function TutorialPage({ isAnnotator = false }) {
 
     setDomReady(false);
     setTourMode(null);
+    setAnnotatorStep("objects");
 
     const interval = setInterval(() => {
       const target = document.querySelector(".rp-stage");
@@ -171,7 +195,7 @@ export default function TutorialPage({ isAnnotator = false }) {
     </div>
   );
 
-  const buildSteps = useCallback(() => buildTourSteps(isAnnotator), [isAnnotator]);
+  const buildSteps = useCallback(() => buildTourSteps(isAnnotator, annotatorStep), [isAnnotator, annotatorStep]);
 
   // Clicking the dark overlay should dismiss the tour. Joyride's own
   // overlayClickAction advances the step instead of closing in continuous mode,
@@ -306,11 +330,13 @@ export default function TutorialPage({ isAnnotator = false }) {
         allImages={data.imgRecords}
         isTutorial
         isAnnotator={isAnnotator}
+        onAnnotatorStepChange={handleAnnotatorStepChange}
       />
 
-      {/* Custom pulsing beacons on every tour target, shown when not in active tour */}
+      {/* Custom pulsing beacons on every target of the step's tour, shown when
+          not in active tour. Keyed on the step so they measure again for each step. */}
       {domReady && tourMode === "beacons" && (
-        <TutorialBeacons isAnnotator={isAnnotator} onBeaconClick={(idx) => {
+        <TutorialBeacons key={`beacons-${annotatorStep}-${current}`} isAnnotator={isAnnotator} annotatorStep={annotatorStep} onBeaconClick={(idx) => {
           setStepOffset(idx);
           setTourMode("touring");
           setJoyrideKey((k) => k + 1);
@@ -349,20 +375,27 @@ export default function TutorialPage({ isAnnotator = false }) {
  * stepping through the whole tour again.
  *
  * Positioned absolutely against the document (rect + scrollY) rather than
- * fixed to the viewport, so they scroll with the page without a scroll handler.
+ * fixed to the viewport, so they scroll with the page. They follow their
+ * targets when the layout moves (6 Oct 2026): an error message pushing the
+ * buttons down, an image finishing loading, a card growing, or the sticky
+ * guide card sliding as the page scrolls. Every such change schedules one
+ * re-measure on the next animation frame.
  */
-function TutorialBeacons({ isAnnotator = false, onBeaconClick }) {
-  // One beacon per tour step, so a beacon's index is its step. The canvas
-  // beacon sits below it, and when two steps share a target (the contributor
-  // box and severity steps) the second beacon sits below so they don't overlap.
-  const targets = tourTargets(isAnnotator).map((sel, i, all) => ({
+function TutorialBeacons({ isAnnotator = false, annotatorStep = "objects", onBeaconClick }) {
+  // One beacon per step of the tour on screen, so a beacon's index is its step.
+  // Each tour says where its beacons sit (tourBeaconPlacements): above the
+  // target by default, below it when two steps share a target, and to its left
+  // in the Sidewalk step, where the toolbar sits right above the photo.
+  const placements = tourBeaconPlacements(isAnnotator, annotatorStep);
+  const targets = tourTargets(isAnnotator, annotatorStep).map((sel, i) => ({
     sel,
-    placement: sel === ".rp-stage" || all.indexOf(sel) !== i ? "bottom" : "top",
+    placement: placements[i],
     offset: 15,
   }));
   const [positions, setPositions] = useState([]);
 
   useEffect(() => {
+    let lastKey = "";
     const calcPositions = () => {
       const pos = targets.map((t, index) => {
         const el = document.querySelector(t.sel);
@@ -370,13 +403,16 @@ function TutorialBeacons({ isAnnotator = false, onBeaconClick }) {
         const rect = el.getBoundingClientRect();
 
         let top;
+        let left = rect.left + window.scrollX + rect.width / 2;
         if (t.placement === "bottom") {
           top = rect.bottom + t.offset;
+        } else if (t.placement === "left") {
+          // Beside the target, level with its middle, in the gutter
+          top = rect.top + rect.height / 2;
+          left = rect.left + window.scrollX - t.offset - 7;
         } else {
           top = rect.top - t.offset;
         }
-
-        const left = rect.left + window.scrollX + rect.width / 2;
 
         return {
           top: top + window.scrollY,
@@ -384,20 +420,49 @@ function TutorialBeacons({ isAnnotator = false, onBeaconClick }) {
           index
         };
       }).filter(Boolean);
-      setPositions(pos);
+      // Skip the re-render when nothing moved
+      const key = JSON.stringify(pos);
+      if (key !== lastKey) {
+        lastKey = key;
+        setPositions(pos);
+      }
+    };
+
+    // At most one measurement per frame, however many changes arrive
+    let frame = null;
+    const schedule = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        calcPositions();
+      });
     };
 
     calcPositions();
 
-    // Measure again shortly after. The first pass can land before images have
-    // finished loading and pushed the layout down, which would leave the
-    // beacons floating over the wrong part of the page.
-    const timeout = setTimeout(calcPositions, 300);
-    window.addEventListener("resize", calcPositions);
-    
+    // The page growing or shrinking (an error message, a loaded image) and
+    // each target changing size
+    const resizeObserver = new ResizeObserver(schedule);
+    resizeObserver.observe(document.body);
+    for (const t of targets) {
+      const el = document.querySelector(t.sel);
+      if (el) resizeObserver.observe(el);
+    }
+    // Elements added or removed anywhere, which can shift a target without
+    // changing the page's size
+    const mutationObserver = new MutationObserver(schedule);
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", schedule);
+    // Capture, so scrolling inside any container counts too. The sticky guide
+    // card moves relative to the page as it scrolls.
+    window.addEventListener("scroll", schedule, true);
+
     return () => {
-      clearTimeout(timeout);
-      window.removeEventListener("resize", calcPositions);
+      if (frame !== null) cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
     };
   }, []);
 

@@ -1,5 +1,15 @@
 import { IAnnotation } from "./Annotation";
 
+/**
+ * "obstructions" is the annotator's Obstructions step (4 Oct 2026): Not an
+ * object boxes are hidden, marked objects are red and the rest grey.
+ * "context" is the annotator's Sidewalk step (6 Oct 2026): every real box as a
+ * thin grey outline with no label, so the annotator can see what stands on the
+ * sidewalk while outlining it.
+ * "default" is every other view, contributors and the Objects step included.
+ */
+export type PaintVariant = "default" | "obstructions" | "context";
+
 
 export const defaultShapeStyle: IShapeStyle = {
   paddingX: 12,
@@ -64,7 +74,8 @@ export interface IShape {
     canvas2D: CanvasRenderingContext2D,
     calculateTruePosition: (shapeData: IShapeBase) => IShapeBase,
     selected: boolean,
-    displayLabel?: string
+    displayLabel?: string,
+    variant?: PaintVariant
   ) => IShapeBase;
   getAnnotationData: () => IAnnotation;
   adjustMark: (adjustBase: IShapeAdjustBase) => void;
@@ -158,6 +169,17 @@ export class RectShape implements IShape {
    *   yellow solid   rejected; kept visible so it's clear it was considered
    *   blue           drawn by the user (dashed until they pick a label)
    *
+   * In the "obstructions" variant (the annotator's Obstructions step) the boxes
+   * are locked and only the obstruction answer is shown:
+   *
+   *   red solid      marked as obstructing
+   *   grey solid     not marked
+   *   (hidden)       Not an object; still returns its position for callers
+   *
+   * In the "context" variant (the annotator's Sidewalk step) every real box is
+   * a thin light grey outline with no label or fill, and Not an object boxes
+   * are hidden.
+   *
    * `selectedAnnotation` means "currently clicked", which is different from the
    * annotation's own `selected` flag — that one is the user's verdict. When a
    * box is clicked its label is suppressed in favour of a fill, because the
@@ -167,22 +189,36 @@ export class RectShape implements IShape {
     canvas2D: CanvasRenderingContext2D,
     calculateTruePosition: (shapeData: IShapeBase) => IShapeBase,
     selectedAnnotation: boolean,
-    displayLabel?: string
+    displayLabel?: string,
+    variant: PaintVariant = "default"
   ) => {
     const { x, y, width, height } = calculateTruePosition(
       this.annotationData.mark
     );
+    if (variant === "obstructions") {
+      if (this.annotationData.comment !== "not_an_object") {
+        this.paintObstructionAnswer(canvas2D, { x, y, width, height }, displayLabel);
+      }
+      return { x, y, width, height };
+    }
+    if (variant === "context") {
+      if (this.annotationData.comment !== "not_an_object") {
+        canvas2D.save();
+        canvas2D.setLineDash([]);
+        canvas2D.strokeStyle = "#9ca3af";
+        canvas2D.lineWidth = 1.5;
+        canvas2D.strokeRect(x, y, width, height);
+        canvas2D.restore();
+      }
+      return { x, y, width, height };
+    }
     // Paired with the restore() at the end. Shadow, dash, and fill settings are
     // all changed below and every shape paints onto the same shared context, so
     // leaving any of them set would bleed into the next box drawn.
     canvas2D.save();
     const {
-      paddingX,
-      paddingY,
       lineWidth,
       shadowBlur,
-      fontSize,
-      fontFamily,
       shapeBackground,
       shapeShadowStyle,
     } = this.shapeStyle;
@@ -230,8 +266,6 @@ export class RectShape implements IShape {
     } else {
       if (comment) {
         const labelText = displayLabel ?? comment.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        canvas2D.font = `bold ${fontSize}px ${fontFamily}`;
-        const metrics = canvas2D.measureText(labelText);
 
         let labelBgColor = "#d97706";
         let labelTextColor = "#111827";
@@ -247,37 +281,78 @@ export class RectShape implements IShape {
           labelTextColor = "#111827";
         }
 
-        canvas2D.fillStyle = labelBgColor;
-
-        // Draw rounded rectangle background
-        const rectX = x;
-        const rectY = y;
-        const rectW = metrics.width + paddingX * 2;
-        const rectH = fontSize + paddingY * 2;
-        const radius = 5;
-
-        canvas2D.beginPath();
-        canvas2D.moveTo(rectX + radius, rectY);
-        canvas2D.lineTo(rectX + rectW - radius, rectY);
-        canvas2D.quadraticCurveTo(rectX + rectW, rectY, rectX + rectW, rectY + radius);
-        canvas2D.lineTo(rectX + rectW, rectY + rectH - radius);
-        canvas2D.quadraticCurveTo(rectX + rectW, rectY + rectH, rectX + rectW - radius, rectY + rectH);
-        canvas2D.lineTo(rectX + radius, rectY + rectH);
-        canvas2D.quadraticCurveTo(rectX, rectY + rectH, rectX, rectY + rectH - radius);
-        canvas2D.lineTo(rectX, rectY + radius);
-        canvas2D.quadraticCurveTo(rectX, rectY, rectX + radius, rectY);
-        canvas2D.closePath();
-        canvas2D.fill();
-
-        canvas2D.textBaseline = "middle";
-        canvas2D.fillStyle = labelTextColor;
-
-        canvas2D.fillText(labelText, x + paddingX, y + rectH / 2);
+        this.paintLabel(canvas2D, x, y, labelText, labelBgColor, labelTextColor);
       }
     }
     canvas2D.restore();
 
     return { x, y, width, height };
+  };
+
+  /** One box in the Obstructions step: red when marked, grey otherwise. No dash, box fill or transformer. */
+  private paintObstructionAnswer = (
+    canvas2D: CanvasRenderingContext2D,
+    { x, y, width, height }: IShapeBase,
+    displayLabel?: string
+  ) => {
+    const marked = this.annotationData.obstructs === true;
+    canvas2D.save();
+    canvas2D.setLineDash([]);
+    canvas2D.strokeStyle = marked ? "#dc2626" : "#6b7280";
+    canvas2D.lineWidth = marked ? 3 : 2;
+    canvas2D.strokeRect(x, y, width, height);
+
+    const { comment } = this.annotationData;
+    if (comment) {
+      const labelText = displayLabel ?? comment.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      this.paintLabel(
+        canvas2D,
+        x,
+        y,
+        labelText,
+        marked ? "#dc2626" : "#e5e7eb",
+        marked ? "white" : "#111827"
+      );
+    }
+    canvas2D.restore();
+  };
+
+  /**
+   * A box's label: the text on a rounded rectangle at the box's top-left
+   * corner. Shared by the default view and the Obstructions view so labels look
+   * the same in both.
+   */
+  private paintLabel = (
+    canvas2D: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    labelText: string,
+    background: string,
+    textColor: string
+  ) => {
+    const { paddingX, paddingY, fontSize, fontFamily } = this.shapeStyle;
+    canvas2D.font = `bold ${fontSize}px ${fontFamily}`;
+    const rectW = canvas2D.measureText(labelText).width + paddingX * 2;
+    const rectH = fontSize + paddingY * 2;
+    const radius = 5;
+
+    canvas2D.fillStyle = background;
+    canvas2D.beginPath();
+    canvas2D.moveTo(x + radius, y);
+    canvas2D.lineTo(x + rectW - radius, y);
+    canvas2D.quadraticCurveTo(x + rectW, y, x + rectW, y + radius);
+    canvas2D.lineTo(x + rectW, y + rectH - radius);
+    canvas2D.quadraticCurveTo(x + rectW, y + rectH, x + rectW - radius, y + rectH);
+    canvas2D.lineTo(x + radius, y + rectH);
+    canvas2D.quadraticCurveTo(x, y + rectH, x, y + rectH - radius);
+    canvas2D.lineTo(x, y + radius);
+    canvas2D.quadraticCurveTo(x, y, x + radius, y);
+    canvas2D.closePath();
+    canvas2D.fill();
+
+    canvas2D.textBaseline = "middle";
+    canvas2D.fillStyle = textColor;
+    canvas2D.fillText(labelText, x + paddingX, y + rectH / 2);
   };
 
   public adjustMark = ({

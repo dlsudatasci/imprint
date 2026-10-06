@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { validateAnnotationForSubmit } from "./clientAnnotation.js";
+import {
+  validateAnnotationForSubmit,
+  validateObjectStep,
+  validateObstructionStep,
+  validateSidewalkStep,
+} from "./clientAnnotation.js";
 
 const validSceneLevel = {
   sidewalkWidth: "two_people",
@@ -164,9 +169,10 @@ describe("validateAnnotationForSubmit", () => {
   });
 });
 
-// Annotators do Step 1 Objects only (4 Oct 2026): every suggestion kept or
-// marked Not an object, every kept or drawn box one of the 18 categories
-describe("validateAnnotationForSubmit for annotators (Step 1 Objects)", () => {
+// Annotators' Objects step (4 Oct 2026): every suggestion kept or marked Not an
+// object, every kept or drawn box one of the 18 categories. The Obstructions
+// confirmation is given here so these cases test the Objects rules only.
+describe("validateAnnotationForSubmit for annotators (Objects step)", () => {
   const KEEP_MESSAGE = "Please click Keep or Not an object on every suggested box.";
   const CATEGORY_MESSAGE = "Please choose a category from the list for every box.";
   const kept = { id: "s1", editable: false, selected: true, isRejected: false, comment: "tree", obstructs: null, severity: null };
@@ -179,6 +185,7 @@ describe("validateAnnotationForSubmit for annotators (Step 1 Objects)", () => {
     selectedObjects: existingAnnotations.filter((b) => !b.editable),
     sceneLevel: null,
     isAnnotator: true,
+    obstructionsConfirmed: true,
   });
 
   it("passes with kept and Not an object suggestions and drawn boxes, all with obstructs null", () => {
@@ -211,10 +218,60 @@ describe("validateAnnotationForSubmit for annotators (Step 1 Objects)", () => {
     expect(validateAnnotationForSubmit(annotatorInput([{ ...drawn, comment: "" }]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
   });
 
-  it("asks for no Yes/No, severity or scene answers", () => {
-    const keptYesNoMissing = { id: "s1", editable: false, selected: true, comment: "tree" };
-    const drawnYesNoMissing = { id: "d1", editable: true, comment: "bench" };
-    expect(validateAnnotationForSubmit(annotatorInput([keptYesNoMissing, drawnYesNoMissing]))).toEqual({ valid: true });
+  it("asks for no severity or scene answers", () => {
+    const keptNoSeverity = { id: "s1", editable: false, selected: true, comment: "tree", obstructs: true };
+    const drawnUnmarked = { id: "d1", editable: true, comment: "bench" };
+    expect(validateAnnotationForSubmit(annotatorInput([keptNoSeverity, drawnUnmarked]))).toEqual({ valid: true });
+  });
+});
+
+describe("validateObjectStep (exported, 4 Oct 2026)", () => {
+  const kept = { id: "s1", editable: false, selected: true, comment: "tree" };
+
+  it("passes kept, Not an object and drawn boxes", () => {
+    const nao = { id: "s2", editable: false, selected: false, isRejected: true, comment: "not_an_object" };
+    expect(validateObjectStep([kept, nao, { id: "d1", editable: true, comment: "car" }])).toEqual({ valid: true });
+  });
+
+  it("keeps the Keep and category messages", () => {
+    expect(validateObjectStep([{ id: "s3", editable: false, selected: false, comment: "tree" }]).error)
+      .toBe("Please click Keep or Not an object on every suggested box.");
+    expect(validateObjectStep([{ ...kept, comment: "truck" }]).error)
+      .toBe("Please choose a category from the list for every box.");
+  });
+});
+
+// Annotators' Obstructions step (4 Oct 2026): unmarked objects count as "does
+// not obstruct" only after the annotator confirms it
+describe("validateObstructionStep", () => {
+  const CONFIRM_MESSAGE = "Please tick the box to confirm that the objects you did not mark do not obstruct the sidewalk.";
+  const kept = { id: "s1", editable: false, selected: true, comment: "tree", obstructs: true };
+  const drawn = { id: "d1", editable: true, comment: "car" };
+  const nao = { id: "s2", editable: false, selected: false, isRejected: true, comment: "not_an_object" };
+
+  it("is valid without confirmation when there are no real objects", () => {
+    expect(validateObstructionStep({ annotations: [], confirmed: false })).toEqual({ valid: true });
+    expect(validateObstructionStep({ annotations: [nao], confirmed: false })).toEqual({ valid: true });
+  });
+
+  it("fails with the confirmation message when real objects are not confirmed", () => {
+    expect(validateObstructionStep({ annotations: [kept, drawn], confirmed: false })).toEqual({ valid: false, error: CONFIRM_MESSAGE });
+    expect(validateObstructionStep({ annotations: [drawn] })).toEqual({ valid: false, error: CONFIRM_MESSAGE });
+  });
+
+  it("passes once confirmed", () => {
+    expect(validateObstructionStep({ annotations: [kept, drawn], confirmed: true })).toEqual({ valid: true });
+  });
+
+  it("is checked by validateAnnotationForSubmit after the Objects step", () => {
+    const base = { newObjects: [], selectedObjects: [], sceneLevel: null, isAnnotator: true };
+    const untouched = { id: "s3", editable: false, selected: false, comment: "tree" };
+    // An Objects problem is reported before the missing confirmation
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept, untouched] }).error)
+      .toBe("Please click Keep or Not an object on every suggested box.");
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept, drawn] }).error).toBe(CONFIRM_MESSAGE);
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept, drawn], obstructionsConfirmed: true })).toEqual({ valid: true });
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [nao] })).toEqual({ valid: true });
   });
 });
 
@@ -246,5 +303,52 @@ describe("validateAnnotationForSubmit for drawn boxes (both roles)", () => {
     const result = validateAnnotationForSubmit(makeInput({ sceneLevel: null }));
     expect(result.valid).toBe(false);
     expect(result.error).toContain("sidewalk width");
+  });
+});
+
+// Annotators' Sidewalk step on model-development images (6 Oct 2026)
+describe("validateSidewalkStep", () => {
+  const walkSquare = { id: "w1", kind: "walk", points: [{ x: 10, y: 10 }, { x: 110, y: 10 }, { x: 110, y: 110 }, { x: 10, y: 110 }] };
+  const goodMask = { noSidewalk: false, polygons: [walkSquare] };
+
+  it("is skipped when the image needs no outline", () => {
+    expect(validateSidewalkStep({ askSidewalk: false, mask: null, hasDraft: true })).toEqual({ valid: true });
+  });
+
+  it("refuses a shape still being drawn", () => {
+    expect(validateSidewalkStep({ askSidewalk: true, mask: goodMask, hasDraft: true, imageWidth: 640, imageHeight: 360 }))
+      .toEqual({ valid: false, error: "Finish or cancel the shape you are drawing." });
+  });
+
+  it("passes the outline messages through", () => {
+    expect(validateSidewalkStep({ askSidewalk: true, mask: { noSidewalk: false, polygons: [] }, hasDraft: false }).error)
+      .toBe("Outline the sidewalk, or tick No sidewalk if there is none.");
+    expect(validateSidewalkStep({ askSidewalk: true, mask: { noSidewalk: true, polygons: [walkSquare] }, hasDraft: false }).error)
+      .toBe("Remove the sidewalk shapes or untick No sidewalk.");
+    expect(validateSidewalkStep({ askSidewalk: true, mask: null, hasDraft: false }).error).toBe("Sidewalk outline is missing.");
+  });
+
+  it("passes a valid outline and a No sidewalk outline", () => {
+    expect(validateSidewalkStep({ askSidewalk: true, mask: goodMask, hasDraft: false, imageWidth: 640, imageHeight: 360 })).toEqual({ valid: true });
+    expect(validateSidewalkStep({ askSidewalk: true, mask: { noSidewalk: true, polygons: [] }, hasDraft: false })).toEqual({ valid: true });
+  });
+
+  it("is checked by validateAnnotationForSubmit after Objects and before the Obstructions confirmation", () => {
+    const kept = { id: "s1", editable: false, selected: true, comment: "tree", obstructs: true };
+    const untouched = { id: "s3", editable: false, selected: false, comment: "tree" };
+    const base = { newObjects: [], selectedObjects: [], sceneLevel: null, isAnnotator: true, askSidewalk: true, imageWidth: 640, imageHeight: 360 };
+    // Objects first
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept, untouched], sidewalkMask: null }).error)
+      .toBe("Please click Keep or Not an object on every suggested box.");
+    // Then Sidewalk, before the missing confirmation
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept], sidewalkMask: { noSidewalk: false, polygons: [] } }).error)
+      .toBe("Outline the sidewalk, or tick No sidewalk if there is none.");
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept], sidewalkMask: goodMask, sidewalkDraftOpen: true }).error)
+      .toBe("Finish or cancel the shape you are drawing.");
+    // Then the confirmation
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept], sidewalkMask: goodMask }).error)
+      .toBe("Please tick the box to confirm that the objects you did not mark do not obstruct the sidewalk.");
+    expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept], sidewalkMask: goodMask, obstructionsConfirmed: true }))
+      .toEqual({ valid: true });
   });
 });

@@ -82,18 +82,29 @@ export function validateBoxes(selectedObjectsID, newObjects, { requireSeverity =
   return { valid: true };
 }
 
-// Annotators record boxes and categories only from 4 Oct 2026 (Step 1
-// Objects). Obstruction answers come in a later annotator step, so the server
-// drops any scene answers, obstruction answers or severities an old client
-// still sends. Takes { sceneLevel, selectedObjectsID, newObjects }. The
-// incoming sceneLevel is discarded whatever it holds. The input is not mutated.
-export function normalizeAnnotatorSubmission({ selectedObjectsID, newObjects }) {
+// Annotators answer the obstruction question in their Obstructions step (from
+// 4 Oct 2026), but give no severity and no scene answers. Real boxes keep the
+// obstructs answer as sent (validateAnnotatorBoxes then requires a boolean),
+// Not an object boxes carry obstructs: null, every box gets severity: null,
+// and the incoming sceneLevel is discarded. The sidewalk outline (Sidewalk
+// step, 6 Oct 2026) is returned unchanged: the route normalizes and checks it
+// once it knows the image's size and whether the image needs one. Takes
+// { sceneLevel, selectedObjectsID, newObjects, sidewalkMask }. The input is not
+// mutated.
+export function normalizeAnnotatorSubmission({ selectedObjectsID, newObjects, sidewalkMask }) {
   const clearJudgments = (boxes) =>
-    Array.isArray(boxes) ? boxes.map((box) => ({ ...box, obstructs: null, severity: null })) : boxes;
+    Array.isArray(boxes)
+      ? boxes.map((box) => ({
+          ...box,
+          obstructs: box?.comment === NOT_AN_OBJECT ? null : box?.obstructs,
+          severity: null,
+        }))
+      : boxes;
   return {
     sceneLevel: null,
     selectedObjectsID: clearJudgments(selectedObjectsID),
     newObjects: clearJudgments(newObjects),
+    sidewalkMask,
   };
 }
 
@@ -103,12 +114,14 @@ const hasNumericMark = (box) =>
   ["x", "y", "width", "height"].every((k) => typeof box.mark[k] === "number" && Number.isFinite(box.mark[k]));
 
 /**
- * The annotator's Step 1 rules (4 Oct 2026): every drawn box has one of the 18
- * categories, every suggestion is kept with one of the 18 or marked not an
- * object, and every box has a numeric mark. No free-text "Other" category,
- * since an "other" box cannot train an 18-class detector (chapter_4.tex line 59).
+ * The annotator's rules (4 Oct 2026). Objects step: every drawn box has one of
+ * the 18 categories, every suggestion is kept with one of the 18 or marked not
+ * an object, and every box has a numeric mark. No free-text "Other" category,
+ * since an "other" box cannot train an 18-class detector (chapter_4.tex line
+ * 59). Obstructions step: every real box (drawn or kept) has obstructs true or
+ * false, the label the classifier is trained on (chapter_4.tex line 69).
  */
-export function validateAnnotatorObjectBoxes(selectedObjectsID, newObjects) {
+export function validateAnnotatorBoxes(selectedObjectsID, newObjects) {
   if (!Array.isArray(selectedObjectsID) || !Array.isArray(newObjects)) {
     return { valid: false, message: "selectedObjectsID and newObjects must be arrays." };
   }
@@ -138,6 +151,11 @@ export function validateAnnotatorObjectBoxes(selectedObjectsID, newObjects) {
 
   if (![...selectedObjectsID, ...newObjects].every(hasNumericMark)) {
     return { valid: false, message: "Every box must have a position (x, y, width and height)." };
+  }
+
+  const realBoxes = [...newObjects, ...selectedObjectsID.filter((box) => box?.comment !== NOT_AN_OBJECT)];
+  if (realBoxes.some((box) => typeof box.obstructs !== "boolean")) {
+    return { valid: false, message: "Every object must have an obstruction answer (obstructs: true or false)." };
   }
 
   return { valid: true };

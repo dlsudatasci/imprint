@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createMockReq, createMockRes, createMockCollection, createMockDb, mockAuthSession, MOCK_USER_ID } from "@/test-utils/api-helpers";
 
 vi.mock("@/util/mongodb", () => ({ connectToDatabase: vi.fn() }));
@@ -612,6 +612,134 @@ describe("POST /api/annotationGet", () => {
       expect(res._json.isExistingSession).toBe(false);
       expect(res._json.imgRecords.length).toBeGreaterThan(0);
       expect(res._json.isAnnotator).toBe(false);
+    });
+  });
+
+  // Reference answers never leave the server (6 Oct 2026, both roles), and the
+  // annotator's sidewalk outline comes back for Previous and resumed sessions
+  describe("what the browser receives", () => {
+    const answerKey = [{ userId: "a1", source: "annotator", selectedObjectsID: [], newObjects: [{ id: "n1", obstructs: true }] }];
+
+    it("strips referenceGroundTruth from a resumed session", async () => {
+      const ref = { _id: "ref-0", imageID: 1, isReference: true, poolStatus: "served", annotationList: [], referenceGroundTruth: answerKey };
+      const mocks = setupMocks({
+        userRole: "user",
+        activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: ["ref-0"], completedImageIDs: [], totalCount: 5 },
+      });
+      mocks.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([ref]) });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+
+      expect(res._json.imgRecords).toHaveLength(1);
+      expect(res._json.imgRecords[0]).not.toHaveProperty("referenceGroundTruth");
+      expect(res._json.imgRecords[0].imageID).toBe(1);
+    });
+
+    it("strips referenceGroundTruth from a new session", async () => {
+      const mocks = setupMocks({ userRole: "annotator" });
+      const refImages = Array.from({ length: 10 }, (_, i) => ({
+        _id: `ref-${i}`, imageID: i + 1, isReference: true, poolStatus: "served", annotationList: [], referenceGroundTruth: answerKey,
+      }));
+      mocks.imageCol.aggregate.mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue(refImages) });
+      const res = createMockRes();
+      await handler(createMockReq({ body: { annotationTotalCount: 10 } }), res);
+
+      expect(res._json.imgRecords).toHaveLength(10);
+      for (const img of res._json.imgRecords) expect(img).not.toHaveProperty("referenceGroundTruth");
+    });
+
+    // Guard: the browser needs sidewalkAgreement to ask for the outline on the
+    // flagged reference images (6 Oct 2026)
+    it("keeps sidewalkAgreement on images in resumed and new sessions", async () => {
+      const ref = { _id: "ref-0", imageID: 1, isReference: true, poolStatus: "served", sidewalkAgreement: true, annotationList: [], referenceGroundTruth: answerKey };
+      const resumed = setupMocks({
+        userRole: "annotator",
+        activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: ["ref-0"], completedImageIDs: [], totalCount: 10 },
+      });
+      resumed.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([ref]) });
+      const res1 = createMockRes();
+      await handler(createMockReq({ body: {} }), res1);
+      expect(res1._json.imgRecords[0].sidewalkAgreement).toBe(true);
+
+      const fresh = setupMocks({ userRole: "annotator" });
+      const refImages = Array.from({ length: 10 }, (_, i) => ({ ...ref, _id: `ref-${i}`, imageID: i + 1 }));
+      fresh.imageCol.aggregate.mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue(refImages) });
+      const res2 = createMockRes();
+      await handler(createMockReq({ body: { annotationTotalCount: 10 } }), res2);
+      expect(res2._json.imgRecords).toHaveLength(10);
+      for (const img of res2._json.imgRecords) expect(img.sidewalkAgreement).toBe(true);
+    });
+
+    it("copies the stored sidewalk outline into userSidewalkMask", async () => {
+      const dev = { _id: "dev-0", imageID: 3, isReference: false, poolStatus: "model_dev", annotationList: [] };
+      const mask = { noSidewalk: false, polygons: [{ id: "w1", kind: "walk", points: [{ x: 0, y: 0 }, { x: 9, y: 0 }, { x: 0, y: 9 }] }] };
+      const mocks = setupMocks({
+        userRole: "annotator",
+        activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: ["dev-0"], completedImageIDs: [3], totalCount: 10 },
+      });
+      mocks.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([dev]) });
+      mocks.annotationsCol.find.mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([{ imageID: 3, selectedObjectsID: [], newObjects: [], sceneLevel: null, sidewalkMask: mask }]),
+      });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+
+      expect(res._json.imgRecords[0].userSidewalkMask).toEqual(mask);
+    });
+  });
+
+  // Local testing only (6 Oct 2026): ANNOTATOR_MODEL_DEV_FIRST=true
+  describe("ANNOTATOR_MODEL_DEV_FIRST", () => {
+    const saved = process.env.ANNOTATOR_MODEL_DEV_FIRST;
+    const devImg = (i) => ({ _id: `dev-${i}`, imageID: 900 + i, city: "makati", isReference: false, poolStatus: "model_dev", annotationList: [] });
+    const hasReferenceQuery = (mocks) =>
+      mocks.imageCol.aggregate.mock.calls.some((c) => c[0].some((st) => st.$match && st.$match.isReference === true));
+
+    function setupModelDevSession(role) {
+      const mocks = setupMocks({ userRole: role });
+      mocks.imageCol.aggregate.mockImplementation((pipeline) => {
+        const group = pipeline.find((st) => st.$group);
+        const rows = group ? [{ _id: "makati", count: 50 }] : Array.from({ length: 10 }, (_, i) => devImg(i));
+        return { toArray: vi.fn().mockResolvedValue(rows) };
+      });
+      return mocks;
+    }
+
+    afterEach(() => {
+      if (saved === undefined) delete process.env.ANNOTATOR_MODEL_DEV_FIRST;
+      else process.env.ANNOTATOR_MODEL_DEV_FIRST = saved;
+    });
+
+    it("skips the reference images for an annotator when on", async () => {
+      process.env.ANNOTATOR_MODEL_DEV_FIRST = "true";
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const mocks = setupModelDevSession("annotator");
+      const res = createMockRes();
+      await handler(createMockReq({ body: { annotationTotalCount: 10 } }), res);
+      warn.mockRestore();
+
+      expect(hasReferenceQuery(mocks)).toBe(false);
+      expect(res._json.imgRecords).toHaveLength(10);
+      expect(res._json.imgRecords.every((img) => img.poolStatus === "model_dev")).toBe(true);
+    });
+
+    it("still draws reference images first when off", async () => {
+      delete process.env.ANNOTATOR_MODEL_DEV_FIRST;
+      const mocks = setupModelDevSession("annotator");
+      await handler(createMockReq({ body: { annotationTotalCount: 10 } }), createMockRes());
+
+      expect(hasReferenceQuery(mocks)).toBe(true);
+      expect(mocks.imageCol.aggregate.mock.calls[0][0][0].$match.isReference).toBe(true);
+    });
+
+    it("does not change contributor sessions", async () => {
+      process.env.ANNOTATOR_MODEL_DEV_FIRST = "true";
+      const mocks = setupMocks({ userRole: "user" });
+      await handler(createMockReq({ body: { annotationTotalCount: 5 } }), createMockRes());
+
+      const matches = mocks.imageCol.aggregate.mock.calls.map((c) => c[0].find((st) => st.$match).$match);
+      expect(matches.some((m) => m.isReference === true)).toBe(true);
+      expect(matches.every((m) => m.poolStatus === "served")).toBe(true);
     });
   });
 });

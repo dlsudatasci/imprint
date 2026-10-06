@@ -7,11 +7,16 @@ import {
   validateSceneLevel,
   validateBoxes,
   normalizeAnnotatorSubmission,
-  validateAnnotatorObjectBoxes,
+  validateAnnotatorBoxes,
   normalizeSubmittedMarks,
   hasEmptyBox,
 } from "@/util/validators/annotationSubmit";
 import { filterAnnotationsByTau, TAU_THRESHOLD } from "@/util/validators/telemetryPayload";
+import {
+  requiresSidewalkMask,
+  normalizeSidewalkMask,
+  validateSidewalkMask,
+} from "@/util/validators/sidewalkMask";
 
 /**
  * POST /api/annotationSubmit — saves the work done on one image.
@@ -47,7 +52,7 @@ const handler = async (req, res) => {
       currentAnnotationCount,
       telemetry,
     } = req.body;
-    let { sceneLevel, selectedObjectsID, newObjects } = req.body;
+    let { sceneLevel, selectedObjectsID, newObjects, sidewalkMask } = req.body;
 
     if (imageID === undefined || imageID === null) {
       return res.status(400).json({ message: "Missing required field: imageID." });
@@ -68,18 +73,20 @@ const handler = async (req, res) => {
       return res.status(500).json({ message: "Internal Server Error" });
     }
 
-    // Annotators do Step 1 Objects only (decided 4 Oct 2026): boxes and
-    // categories, with every suggestion kept or marked not an object. Scene
-    // answers, obstruction answers and severities from an old client are
-    // dropped here rather than refused, so the server stores none.
+    // Annotators do two steps per image (decided 4 Oct 2026): Objects (boxes
+    // and categories, every suggestion kept or marked not an object), then
+    // Obstructions (obstructs true or false on every real box). Scene answers
+    // and severities are dropped here rather than refused, so the server
+    // stores none. A real box without a Yes/No answer is refused.
     let boxResult;
     if (isAnnotator) {
-      ({ sceneLevel, selectedObjectsID, newObjects } = normalizeAnnotatorSubmission({
+      ({ sceneLevel, selectedObjectsID, newObjects, sidewalkMask } = normalizeAnnotatorSubmission({
         sceneLevel,
         selectedObjectsID,
         newObjects,
+        sidewalkMask,
       }));
-      boxResult = validateAnnotatorObjectBoxes(selectedObjectsID, newObjects);
+      boxResult = validateAnnotatorBoxes(selectedObjectsID, newObjects);
     } else {
       const sceneResult = validateSceneLevel(sceneLevel);
       if (!sceneResult.valid) {
@@ -108,7 +115,7 @@ const handler = async (req, res) => {
 
       const imageRecord = await db.collection("Image").findOne(
         { imageID: imageID, _id: { $in: activeSession.imageIDs || [] } },
-        { projection: { city: 1, width: 1, height: 1, annotationList: 1 } }
+        { projection: { city: 1, width: 1, height: 1, annotationList: 1, poolStatus: 1, isReference: 1, sidewalkAgreement: 1 } }
       );
 
       if (!imageRecord) {
@@ -139,6 +146,20 @@ const handler = async (req, res) => {
         if (visible.some((a) => !submittedIds.has(String(a.id)))) {
           return res.status(422).json({ message: "Every suggested box must be kept or marked not an object." });
         }
+
+        // Sidewalk step (6 Oct 2026): model-development images and the
+        // reference images flagged sidewalkAgreement need an outline, stored
+        // normalized (clamped to the image, rounded). Other reference images
+        // never get one, whatever the client sent.
+        if (requiresSidewalkMask(imageRecord)) {
+          sidewalkMask = normalizeSidewalkMask(sidewalkMask, imageRecord.width, imageRecord.height);
+          const maskResult = validateSidewalkMask(sidewalkMask, imageRecord.width, imageRecord.height);
+          if (!maskResult.valid) {
+            return res.status(422).json({ message: maskResult.message });
+          }
+        } else {
+          sidewalkMask = null;
+        }
       }
 
       const city = imageRecord.city;
@@ -163,6 +184,8 @@ const handler = async (req, res) => {
             schemaVersion: 2,
             selectedObjectsID,
             newObjects,
+            // Annotators only. Contributors get no sidewalkMask field at all.
+            ...(isAnnotator ? { sidewalkMask } : {}),
             status: "pending",
           },
         },

@@ -31,6 +31,22 @@ function computeStepTimings(mountTime, sceneStepStartMs, submitTime, { hasSceneS
   };
 }
 
+// Annotators (4 and 6 Oct 2026): Objects, then Sidewalk (model-development
+// images only), then Obstructions. Each start time is the last time the
+// annotator entered that step, and the tool clears the start times of later
+// steps whenever an earlier step is entered, so mount <= sidewalk start <=
+// obstruction start <= submit. Time spent in a later step before going back
+// counts toward the earlier one. msSceneStep is null, since annotators have no
+// scene step.
+function computeAnnotatorStepTimings(mountTime, obstructionStepStartMs, submitTime, { sidewalkStepStartMs = null } = {}) {
+  return {
+    msObjectStep: (sidewalkStepStartMs ?? obstructionStepStartMs ?? submitTime) - mountTime,
+    msSidewalkStep: sidewalkStepStartMs == null ? null : (obstructionStepStartMs ?? submitTime) - sidewalkStepStartMs,
+    msObstructionStep: obstructionStepStartMs == null ? null : submitTime - obstructionStepStartMs,
+    msSceneStep: null,
+  };
+}
+
 function buildSuggestionConfidences(annotations) {
   const result = [];
   for (const obj of annotations) {
@@ -180,6 +196,7 @@ export {
   TAU_THRESHOLD,
   filterAnnotationsByTau,
   computeStepTimings,
+  computeAnnotatorStepTimings,
   buildSuggestionConfidences,
   buildGeometryChanges,
   buildLabelChanges,

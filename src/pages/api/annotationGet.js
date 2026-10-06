@@ -13,6 +13,8 @@ import {
   REFERENCE_MATCH,
   ANNOTATOR_MODEL_DEV_MATCH,
   CONTRIBUTOR_DEPLOYMENT_MATCH,
+  toClientImage,
+  annotatorModelDevFirst,
 } from "@/util/validators/annotationGet";
 
 /**
@@ -77,6 +79,9 @@ async function mergeUserAnnotations(db, userId, imgRecords) {
     img.userSliderValue = annotation.accessibilityRating;
     img.userPavementType = annotation.pavementType;
     img.userSceneLevel = annotation.sceneLevel;
+    // The annotator's sidewalk outline (6 Oct 2026), so Previous and resumed
+    // sessions restore it
+    img.userSidewalkMask = annotation.sidewalkMask ?? null;
   }
 
   return imgRecords;
@@ -148,8 +153,10 @@ const handler = async (req, res) => {
       const currentCount = existingSession.currentCount
         || Math.min(completedCount + 1, existingSession.totalCount);
 
+      // referenceGroundTruth (other annotators' answers, the contributors'
+      // answer key) never leaves the server (6 Oct 2026, both roles)
       return res.json({
-        imgRecords: sortedImgRecords,
+        imgRecords: sortedImgRecords.map(toClientImage),
         isExistingSession: true,
         currentCount: currentCount,
         isAnnotator,
@@ -189,8 +196,16 @@ const handler = async (req, res) => {
       // which annotators verify (decided 1 Oct 2026). Model-dev images carry
       // poolStatus "model_dev", which no contributor query matches.
 
+      // Local testing only: ANNOTATOR_MODEL_DEV_FIRST=true skips the
+      // reference images so the whole session is model-dev (see
+      // annotatorModelDevFirst). Never applies in a production build.
+      const modelDevFirst = annotatorModelDevFirst();
+      if (modelDevFirst) {
+        console.warn("annotationGet: ANNOTATOR_MODEL_DEV_FIRST is on, reference images skipped (local testing only)");
+      }
+
       // 1. Draw incomplete reference images first
-      const refImages = await db
+      const refImages = modelDevFirst ? [] : await db
         .collection("Image")
         .aggregate([
           {
@@ -455,7 +470,7 @@ const handler = async (req, res) => {
     });
 
     res.json({
-      imgRecords: imgRecords,
+      imgRecords: imgRecords.map(toClientImage),
       isExistingSession: false,
       isAnnotator,
     });

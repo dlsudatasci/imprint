@@ -5,7 +5,7 @@ import {
   validateSceneLevel,
   validateBoxes,
   normalizeAnnotatorSubmission,
-  validateAnnotatorObjectBoxes,
+  validateAnnotatorBoxes,
   normalizeSubmittedMarks,
   hasEmptyBox,
 } from "./annotationSubmit.js";
@@ -242,19 +242,23 @@ describe("normalizeAnnotatorSubmission", () => {
     newObjects: [{ id: "n1", comment: "car", obstructs: false, severity: 2 }],
   });
 
-  it("sets sceneLevel to null and every obstructs and severity to null (4 Oct 2026)", () => {
+  it("sets sceneLevel and every severity to null", () => {
     const out = normalizeAnnotatorSubmission(input());
     expect(out.sceneLevel).toBeNull();
-    for (const box of [...out.selectedObjectsID, ...out.newObjects]) {
-      expect(box.severity).toBeNull();
-      expect(box.obstructs).toBeNull();
-    }
+    for (const box of [...out.selectedObjectsID, ...out.newObjects]) expect(box.severity).toBeNull();
   });
 
-  it("keeps every other box field", () => {
+  it("keeps the obstruction answer on real boxes and nulls it on Not an object boxes (Obstructions step, 4 Oct 2026)", () => {
     const out = normalizeAnnotatorSubmission(input());
-    expect(out.selectedObjectsID[0]).toEqual({ id: "s1", comment: "tree", obstructs: null, severity: null });
-    expect(out.newObjects[0]).toEqual({ id: "n1", comment: "car", obstructs: null, severity: null });
+    expect(out.selectedObjectsID[0]).toEqual({ id: "s1", comment: "tree", obstructs: true, severity: null });
+    expect(out.selectedObjectsID[1]).toEqual({ id: "s2", comment: "not_an_object", obstructs: null, severity: null });
+    expect(out.newObjects[0]).toEqual({ id: "n1", comment: "car", obstructs: false, severity: null });
+  });
+
+  it("returns the sidewalk outline unchanged for the route to check (6 Oct 2026)", () => {
+    const sidewalkMask = { noSidewalk: false, polygons: [{ id: "w1", kind: "walk", points: [{ x: -1, y: 0 }, { x: 5, y: 0 }, { x: 0, y: 5 }] }] };
+    expect(normalizeAnnotatorSubmission({ ...input(), sidewalkMask }).sidewalkMask).toBe(sidewalkMask);
+    expect(normalizeAnnotatorSubmission(input()).sidewalkMask).toBeUndefined();
   });
 
   it("does not mutate its input", () => {
@@ -272,47 +276,64 @@ describe("normalizeAnnotatorSubmission", () => {
   });
 });
 
-// Annotators, Step 1 Objects (4 Oct 2026)
-describe("validateAnnotatorObjectBoxes", () => {
+// Annotators, Objects then Obstructions (4 Oct 2026)
+describe("validateAnnotatorBoxes", () => {
   const mark = { type: "RECT", x: 10, y: 10, width: 50, height: 50 };
-  const kept = { id: "s1", editable: false, selected: true, isRejected: false, comment: "tree", obstructs: null, severity: null, mark };
+  const kept = { id: "s1", editable: false, selected: true, isRejected: false, comment: "tree", obstructs: false, severity: null, mark };
   const notAnObject = { id: "s2", editable: false, selected: false, isRejected: true, comment: "not_an_object", obstructs: null, severity: null, mark };
-  const drawn = { id: "d1", editable: true, comment: "car", obstructs: null, severity: null, mark };
+  const drawn = { id: "d1", editable: true, comment: "car", obstructs: true, severity: null, mark };
+  const ANSWER_MESSAGE = "Every object must have an obstruction answer (obstructs: true or false).";
 
-  it("accepts kept, Not an object and drawn boxes with obstructs null", () => {
-    expect(validateAnnotatorObjectBoxes([kept, notAnObject], [drawn])).toEqual({ valid: true });
-    expect(validateAnnotatorObjectBoxes([], [])).toEqual({ valid: true });
+  it("accepts real boxes answered true and false, and Not an object boxes with obstructs null", () => {
+    expect(validateAnnotatorBoxes([kept, notAnObject], [drawn])).toEqual({ valid: true });
+    expect(validateAnnotatorBoxes([{ ...kept, obstructs: true }], [{ ...drawn, obstructs: false }])).toEqual({ valid: true });
+    expect(validateAnnotatorBoxes([], [])).toEqual({ valid: true });
+  });
+
+  it("refuses a real box whose obstruction answer is null or missing", () => {
+    expect(validateAnnotatorBoxes([{ ...kept, obstructs: null }], []).message).toBe(ANSWER_MESSAGE);
+    const drawnNoAnswer = { ...drawn };
+    delete drawnNoAnswer.obstructs;
+    expect(validateAnnotatorBoxes([], [drawnNoAnswer]).message).toBe(ANSWER_MESSAGE);
+    expect(validateAnnotatorBoxes([], [{ ...drawn, obstructs: "yes" }]).message).toBe(ANSWER_MESSAGE);
+  });
+
+  it("leaves Not an object boxes with obstructs null once normalized", () => {
+    const sent = { selectedObjectsID: [kept, { ...notAnObject, obstructs: true }], newObjects: [drawn] };
+    const out = normalizeAnnotatorSubmission(sent);
+    expect(out.selectedObjectsID[1].obstructs).toBeNull();
+    expect(validateAnnotatorBoxes(out.selectedObjectsID, out.newObjects)).toEqual({ valid: true });
   });
 
   it("refuses a drawn box marked Not an object", () => {
-    const r = validateAnnotatorObjectBoxes([], [{ ...drawn, comment: "not_an_object" }]);
+    const r = validateAnnotatorBoxes([], [{ ...drawn, comment: "not_an_object" }]);
     expect(r.valid).toBe(false);
     expect(r.message).toContain("Only model suggestions");
   });
 
   it("refuses a free-text category on a drawn or kept box", () => {
-    expect(validateAnnotatorObjectBoxes([], [{ ...drawn, comment: "truck" }]).message).toBe("Every box must have a category from the list.");
-    expect(validateAnnotatorObjectBoxes([{ ...kept, comment: "truck" }], []).message).toBe("Every box must have a category from the list.");
+    expect(validateAnnotatorBoxes([], [{ ...drawn, comment: "truck" }]).message).toBe("Every box must have a category from the list.");
+    expect(validateAnnotatorBoxes([{ ...kept, comment: "truck" }], []).message).toBe("Every box must have a category from the list.");
   });
 
   it("refuses an undecided suggestion and an old No answer", () => {
     const message = "Every suggested box must be kept or marked not an object.";
-    expect(validateAnnotatorObjectBoxes([{ ...kept, selected: false }], []).message).toBe(message);
-    expect(validateAnnotatorObjectBoxes([{ ...kept, selected: false, isRejected: true, obstructs: false }], []).message).toBe(message);
+    expect(validateAnnotatorBoxes([{ ...kept, selected: false }], []).message).toBe(message);
+    expect(validateAnnotatorBoxes([{ ...kept, selected: false, isRejected: true, obstructs: false }], []).message).toBe(message);
   });
 
   it("refuses non-arrays and more than 300 boxes", () => {
-    expect(validateAnnotatorObjectBoxes("x", []).valid).toBe(false);
-    expect(validateAnnotatorObjectBoxes([], null).valid).toBe(false);
+    expect(validateAnnotatorBoxes("x", []).valid).toBe(false);
+    expect(validateAnnotatorBoxes([], null).valid).toBe(false);
     const many = Array.from({ length: MAX_BOXES_PER_IMAGE + 1 }, (_, i) => ({ ...drawn, id: `d${i}` }));
-    expect(validateAnnotatorObjectBoxes([], many).message).toBe("Too many boxes for a single image.");
+    expect(validateAnnotatorBoxes([], many).message).toBe("Too many boxes for a single image.");
   });
 
   it("refuses a box without a numeric mark", () => {
     const message = "Every box must have a position (x, y, width and height).";
-    expect(validateAnnotatorObjectBoxes([], [{ ...drawn, mark: undefined }]).message).toBe(message);
-    expect(validateAnnotatorObjectBoxes([], [{ ...drawn, mark: { ...mark, width: "50" } }]).message).toBe(message);
-    expect(validateAnnotatorObjectBoxes([{ ...kept, mark: { ...mark, x: NaN } }], []).message).toBe(message);
+    expect(validateAnnotatorBoxes([], [{ ...drawn, mark: undefined }]).message).toBe(message);
+    expect(validateAnnotatorBoxes([], [{ ...drawn, mark: { ...mark, width: "50" } }]).message).toBe(message);
+    expect(validateAnnotatorBoxes([{ ...kept, mark: { ...mark, x: NaN } }], []).message).toBe(message);
   });
 });
 

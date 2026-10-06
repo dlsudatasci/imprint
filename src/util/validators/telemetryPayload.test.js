@@ -4,11 +4,54 @@ import {
   TAU_THRESHOLD,
   filterAnnotationsByTau,
   computeStepTimings,
+  computeAnnotatorStepTimings,
   buildSuggestionConfidences,
   buildGeometryChanges,
   buildLabelChanges,
   buildSubmissionCounts,
 } from "./telemetryPayload";
+
+// Annotators (4 Oct 2026): Objects, then Obstructions
+describe("computeAnnotatorStepTimings", () => {
+  it("times both steps from the last entry into Obstructions, with no scene step", () => {
+    expect(computeAnnotatorStepTimings(1000, 4000, 6000)).toEqual({
+      msObjectStep: 3000,
+      msSidewalkStep: null,
+      msObstructionStep: 2000,
+      msSceneStep: null,
+    });
+  });
+
+  it("counts the whole time as object time when Obstructions was never entered", () => {
+    for (const start of [null, undefined]) {
+      expect(computeAnnotatorStepTimings(1000, start, 6000)).toEqual({
+        msObjectStep: 5000,
+        msSidewalkStep: null,
+        msObstructionStep: null,
+        msSceneStep: null,
+      });
+    }
+  });
+
+  it("times three steps that add up to the whole when the Sidewalk step was entered (6 Oct 2026)", () => {
+    const t = computeAnnotatorStepTimings(1000, 7000, 9000, { sidewalkStepStartMs: 3000 });
+    expect(t).toEqual({ msObjectStep: 2000, msSidewalkStep: 4000, msObstructionStep: 2000, msSceneStep: null });
+    expect(t.msObjectStep + t.msSidewalkStep + t.msObstructionStep).toBe(9000 - 1000);
+  });
+
+  it("counts Sidewalk up to submit when Obstructions was never entered", () => {
+    expect(computeAnnotatorStepTimings(1000, null, 9000, { sidewalkStepStartMs: 3000 })).toEqual({
+      msObjectStep: 2000,
+      msSidewalkStep: 6000,
+      msObstructionStep: null,
+      msSceneStep: null,
+    });
+  });
+
+  it("leaves computeStepTimings unchanged for contributors", () => {
+    expect(computeStepTimings(1000, 4000, 6000)).toEqual({ msObjectStep: 3000, msSceneStep: 2000 });
+  });
+});
 
 describe("computeStepTimings", () => {
   it("splits time at the scene step boundary", () => {

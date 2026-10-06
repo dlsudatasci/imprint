@@ -9,6 +9,8 @@ import {
   REFERENCE_MATCH,
   ANNOTATOR_MODEL_DEV_MATCH,
   CONTRIBUTOR_DEPLOYMENT_MATCH,
+  toClientImage,
+  annotatorModelDevFirst,
 } from "./annotationGet.js";
 
 describe("session size constants", () => {
@@ -190,5 +192,54 @@ describe("canServeImage", () => {
     expect(canServeImage({ isReference: false }, true)).toBe(false);
     expect(canServeImage(null, false)).toBe(false);
     expect(canServeImage(undefined, true)).toBe(false);
+  });
+});
+
+// Reference answers stay on the server (6 Oct 2026, both roles)
+describe("toClientImage", () => {
+  const image = {
+    _id: "i1",
+    imageID: 7,
+    url: "/corpus-images/a.jpg",
+    isReference: true,
+    annotationList: [{ id: "p1" }],
+    referenceGroundTruth: [{ userId: "a1", source: "annotator", newObjects: [] }],
+  };
+
+  it("removes referenceGroundTruth and keeps every other field", () => {
+    const out = toClientImage(image);
+    expect(out).not.toHaveProperty("referenceGroundTruth");
+    expect(out).toEqual({ _id: "i1", imageID: 7, url: "/corpus-images/a.jpg", isReference: true, annotationList: [{ id: "p1" }] });
+  });
+
+  it("does not mutate its input", () => {
+    const original = structuredClone(image);
+    toClientImage(image);
+    expect(image).toEqual(original);
+  });
+
+  it("passes an image without reference answers through as a copy, and a missing image as it is", () => {
+    const plain = { imageID: 8, url: "x" };
+    expect(toClientImage(plain)).toEqual(plain);
+    expect(toClientImage(plain)).not.toBe(plain);
+    expect(toClientImage(null)).toBeNull();
+  });
+});
+
+// Local testing only (6 Oct 2026)
+describe("annotatorModelDevFirst", () => {
+  it("is on only when ANNOTATOR_MODEL_DEV_FIRST is \"true\" outside production", () => {
+    expect(annotatorModelDevFirst({ NODE_ENV: "development", ANNOTATOR_MODEL_DEV_FIRST: "true" })).toBe(true);
+    expect(annotatorModelDevFirst({ NODE_ENV: "test", ANNOTATOR_MODEL_DEV_FIRST: "true" })).toBe(true);
+  });
+
+  it("is never on in a production build, so the live study order cannot change", () => {
+    expect(annotatorModelDevFirst({ NODE_ENV: "production", ANNOTATOR_MODEL_DEV_FIRST: "true" })).toBe(false);
+  });
+
+  it("is off when the setting is missing or anything other than \"true\"", () => {
+    for (const value of [undefined, "", "1", "yes", "TRUE", "false"]) {
+      expect(annotatorModelDevFirst({ NODE_ENV: "development", ANNOTATOR_MODEL_DEV_FIRST: value })).toBe(false);
+    }
   });
 });

@@ -77,6 +77,23 @@ describe("POST /api/annotationAbandon", () => {
     expect(op.updateOne.update.$push.referenceGroundTruth).toMatchObject({ source: "annotator", newObjects: ann.newObjects });
   });
 
+  // Guard: the outline on a flagged reference image stays in the annotations
+  // collection and never enters the contributors' answer key (6 Oct 2026)
+  it("leaves the sidewalk outline out of the referenceGroundTruth entry", async () => {
+    const m = setupMocks({
+      activeSession: { _id: "session-1", userId: MOCK_USER_ID, status: "active", imageIDs: ["ref-oid"], completedImageIDs: [42] },
+    });
+    m.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: "ref-oid", imageID: 42, sidewalkAgreement: true }]) });
+    const ann = { imageID: 42, source: "annotator", sceneLevel: null, selectedObjectsID: [], newObjects: [], sidewalkMask: { noSidewalk: false, polygons: [{ id: "w1", kind: "walk", points: [{ x: 0, y: 0 }, { x: 9, y: 0 }, { x: 0, y: 9 }] }] } };
+    m.annotationsCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([ann]) });
+    m.imageCol.bulkWrite = vi.fn().mockResolvedValue({});
+
+    await handler(createMockReq({ body: {} }), createMockRes());
+
+    const [op] = m.imageCol.bulkWrite.mock.calls[0][0];
+    expect(op.updateOne.update.$push.referenceGroundTruth).not.toHaveProperty("sidewalkMask");
+  });
+
   it("returns 200 when abandoning a session with completed images", async () => {
     setupMocks();
     const req = createMockReq({ body: {} });

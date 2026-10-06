@@ -74,6 +74,10 @@ const handler = async (req, res) => {
                                 .find({ userId, imageID: { $in: completedRefIDs }, status: "completed", source: "annotator" })
                                 .toArray();
 
+                            // The sidewalk outline is deliberately not copied: contributors
+                            // are never scored on outlines, and the agreement outlines on
+                            // flagged reference images are read from the annotations
+                            // collection (6 Oct 2026).
                             const ops = refAnnotations.map((ann) => ({
                                 updateOne: {
                                     filter: { imageID: ann.imageID },

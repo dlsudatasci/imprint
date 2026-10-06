@@ -27,7 +27,7 @@ const validBody = {
 const rect = (x, y, width, height) => ({ type: "RECT", x, y, width, height });
 
 // A 1280 by 960 image with two visible pre-annotations
-const STEP1_IMAGE = {
+const ANNOTATOR_IMAGE = {
   city: "makati",
   width: 1280,
   height: 960,
@@ -37,16 +37,17 @@ const STEP1_IMAGE = {
   ],
 };
 
-// An annotator's Step 1 submission: one suggestion kept, one marked not an object, one drawn box
-function step1Body() {
+// An annotator's submission after Objects and Obstructions: one suggestion
+// kept and answered No, one marked not an object, one drawn box answered Yes
+function annotatorBody() {
   return {
     imageID: 42,
     selectedObjectsID: [
-      { id: "p1", editable: false, selected: true, isRejected: false, comment: "tree", obstructs: null, severity: null, mark: rect(100, 100, 80, 200) },
+      { id: "p1", editable: false, selected: true, isRejected: false, comment: "tree", obstructs: false, severity: null, mark: rect(100, 100, 80, 200) },
       { id: "p2", editable: false, selected: false, isRejected: true, comment: "not_an_object", obstructs: null, severity: null, mark: rect(400, 300, 200, 120) },
     ],
     newObjects: [
-      { id: "d1", editable: true, selected: false, comment: "bollard", obstructs: null, severity: null, mark: rect(700, 600, 30, 90) },
+      { id: "d1", editable: true, selected: false, comment: "bollard", obstructs: true, severity: null, mark: rect(700, 600, 30, 90) },
     ],
     currentAnnotationCount: 1,
   };
@@ -196,8 +197,8 @@ describe("POST /api/annotationSubmit", () => {
 
   it("tags annotator source correctly", async () => {
     const mocks = setupMocks({ userRole: "annotator" });
-    mocks.imageCol.findOne.mockResolvedValue(STEP1_IMAGE);
-    const req = createMockReq({ body: step1Body() });
+    mocks.imageCol.findOne.mockResolvedValue(ANNOTATOR_IMAGE);
+    const req = createMockReq({ body: annotatorBody() });
     const res = createMockRes();
 
     await handler(req, res);
@@ -267,52 +268,75 @@ describe("POST /api/annotationSubmit", () => {
     expect(res._status).toBe(422);
   });
 
-  // Annotators do Step 1 Objects only (4 Oct 2026): boxes and categories,
-  // every suggestion kept or marked not an object, no obstruction answer
-  describe("annotators (Step 1 Objects)", () => {
-    function setupAnnotator(image = STEP1_IMAGE) {
+  // Annotators do Objects, then Obstructions (4 Oct 2026): every suggestion
+  // kept or marked not an object, and obstructs true or false on every real box
+  describe("annotators (Objects and Obstructions)", () => {
+    function setupAnnotator(image = ANNOTATOR_IMAGE) {
       const mocks = setupMocks({ userRole: "annotator" });
       mocks.imageCol.findOne.mockResolvedValue(image);
       return mocks;
     }
     const storedSet = (mocks) => mocks.annotationsCol.updateOne.mock.calls[0][1].$set;
 
-    it("stores a valid submission with obstructs, severity and sceneLevel null", async () => {
+    it("stores the true and false answers on real boxes, null on the Not an object box", async () => {
       const mocks = setupAnnotator();
       const res = createMockRes();
-      await handler(createMockReq({ body: step1Body() }), res);
+      await handler(createMockReq({ body: annotatorBody() }), res);
 
       expect(res._status).toBe(200);
       const $set = storedSet(mocks);
       expect($set.sceneLevel).toBeNull();
       expect($set.source).toBe("annotator");
-      expect($set.selectedObjectsID).toHaveLength(2);
-      expect($set.newObjects).toHaveLength(1);
-      for (const box of [...$set.selectedObjectsID, ...$set.newObjects]) {
-        expect(box.obstructs).toBeNull();
-        expect(box.severity).toBeNull();
-      }
+      expect($set.selectedObjectsID.map((b) => b.obstructs)).toEqual([false, null]);
+      expect($set.newObjects.map((b) => b.obstructs)).toEqual([true]);
+      for (const box of [...$set.selectedObjectsID, ...$set.newObjects]) expect(box.severity).toBeNull();
     });
 
-    it("stores obstruction answers, severities and scene answers from an old client as null", async () => {
+    it("returns 422 for a real box with no obstruction answer", async () => {
       const mocks = setupAnnotator();
-      const body = step1Body();
+      const body = annotatorBody();
+      body.selectedObjectsID[0] = { ...body.selectedObjectsID[0], obstructs: null };
+      const res = createMockRes();
+      await handler(createMockReq({ body }), res);
+
+      expect(res._status).toBe(422);
+      expect(res._json.message).toBe("Every object must have an obstruction answer (obstructs: true or false).");
+      expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+    });
+
+    it("stores a Not an object box sent with obstructs true as null", async () => {
+      const mocks = setupAnnotator();
+      const body = annotatorBody();
+      body.selectedObjectsID[1] = { ...body.selectedObjectsID[1], obstructs: true };
+      const res = createMockRes();
+      await handler(createMockReq({ body }), res);
+
+      expect(res._status).toBe(200);
+      const stored = storedSet(mocks).selectedObjectsID;
+      expect(stored[1].obstructs).toBeNull();
+      // The kept suggestion's own answer is kept
+      expect(stored[0].obstructs).toBe(false);
+    });
+
+    it("stores severities and scene answers sent by the client as null", async () => {
+      const mocks = setupAnnotator();
+      const body = annotatorBody();
       body.sceneLevel = validBody.sceneLevel;
-      body.selectedObjectsID[0] = { ...body.selectedObjectsID[0], obstructs: true, severity: 4 };
-      body.newObjects[0] = { ...body.newObjects[0], obstructs: false, severity: 2 };
+      body.selectedObjectsID[0] = { ...body.selectedObjectsID[0], severity: 4 };
+      body.newObjects[0] = { ...body.newObjects[0], severity: 2 };
       const res = createMockRes();
       await handler(createMockReq({ body }), res);
 
       expect(res._status).toBe(200);
       const $set = storedSet(mocks);
       expect($set.sceneLevel).toBeNull();
-      expect($set.selectedObjectsID[0]).toMatchObject({ obstructs: null, severity: null });
-      expect($set.newObjects[0]).toMatchObject({ obstructs: null, severity: null });
+      expect($set.selectedObjectsID[0]).toMatchObject({ obstructs: false, severity: null });
+      expect($set.newObjects[0]).toMatchObject({ obstructs: true, severity: null });
     });
 
     it("returns 422 for a free-text category, checked after the role lookup and before the session", async () => {
       const mocks = setupAnnotator();
-      const body = step1Body();
+      const body = annotatorBody();
       body.newObjects[0] = { ...body.newObjects[0], comment: "truck" };
       const res = createMockRes();
       await handler(createMockReq({ body }), res);
@@ -329,7 +353,7 @@ describe("POST /api/annotationSubmit", () => {
 
     it("returns 422 when a visible suggestion is missing", async () => {
       const mocks = setupAnnotator();
-      const body = step1Body();
+      const body = annotatorBody();
       body.selectedObjectsID = body.selectedObjectsID.filter((b) => b.id !== "p2");
       const res = createMockRes();
       await handler(createMockReq({ body }), res);
@@ -341,7 +365,7 @@ describe("POST /api/annotationSubmit", () => {
 
     it("returns 422 for a suggestion id that is not in the image's annotationList", async () => {
       const mocks = setupAnnotator();
-      const body = step1Body();
+      const body = annotatorBody();
       body.selectedObjectsID.push({ ...body.selectedObjectsID[0], id: "elsewhere" });
       const res = createMockRes();
       await handler(createMockReq({ body }), res);
@@ -353,9 +377,9 @@ describe("POST /api/annotationSubmit", () => {
 
     it("allows a suggestion hidden by the confidence threshold to be missing", async () => {
       const hidden = { id: "p3", comment: "bench", confidence: 0.2, mark: rect(500, 500, 40, 40) };
-      setupAnnotator({ ...STEP1_IMAGE, annotationList: [...STEP1_IMAGE.annotationList, hidden] });
+      setupAnnotator({ ...ANNOTATOR_IMAGE, annotationList: [...ANNOTATOR_IMAGE.annotationList, hidden] });
       const res = createMockRes();
-      await handler(createMockReq({ body: step1Body() }), res);
+      await handler(createMockReq({ body: annotatorBody() }), res);
 
       expect(res._status).toBe(200);
     });
@@ -363,12 +387,12 @@ describe("POST /api/annotationSubmit", () => {
 
   // Both roles (4 Oct 2026): marks normalized and clipped to the image
   describe("box geometry", () => {
-    it("asks the Image lookup for width, height and annotationList", async () => {
+    it("asks the Image lookup for width, height, annotationList, poolStatus, isReference and sidewalkAgreement", async () => {
       const mocks = setupMocks();
       await handler(createMockReq({ body: validBody }), createMockRes());
 
       expect(mocks.imageCol.findOne.mock.calls[0][1]).toEqual({
-        projection: { city: 1, width: 1, height: 1, annotationList: 1 },
+        projection: { city: 1, width: 1, height: 1, annotationList: 1, poolStatus: 1, isReference: 1, sidewalkAgreement: 1 },
       });
     });
 
@@ -385,8 +409,8 @@ describe("POST /api/annotationSubmit", () => {
 
     it("stores an annotator box past the image edge clipped to the image", async () => {
       const mocks = setupMocks({ userRole: "annotator" });
-      mocks.imageCol.findOne.mockResolvedValue(STEP1_IMAGE);
-      const body = step1Body();
+      mocks.imageCol.findOne.mockResolvedValue(ANNOTATOR_IMAGE);
+      const body = annotatorBody();
       body.newObjects[0] = { ...body.newObjects[0], mark: rect(1250, 900, 100, 100) };
       const res = createMockRes();
       await handler(createMockReq({ body }), res);
@@ -465,5 +489,122 @@ describe("POST /api/annotationSubmit", () => {
 
     expect(res._status).toBe(500);
     expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+  });
+
+  // Sidewalk step on model-development images (6 Oct 2026)
+  describe("sidewalk outline", () => {
+    const DEV_IMAGE = { ...ANNOTATOR_IMAGE, poolStatus: "model_dev", isReference: false };
+    const REF_IMAGE = { ...ANNOTATOR_IMAGE, poolStatus: "served", isReference: true };
+    const SHAPE_MESSAGE = "A sidewalk shape is not a valid outline. Each shape needs at least three points and its edges must not cross.";
+    const walk = (points) => ({ id: "w1", kind: "walk", points });
+
+    function submitAs({ role = "annotator", image = DEV_IMAGE, sidewalkMask, body } = {}) {
+      const mocks = setupMocks({ userRole: role });
+      mocks.imageCol.findOne.mockResolvedValue(image);
+      const payload = body ?? annotatorBody();
+      if (sidewalkMask !== undefined) payload.sidewalkMask = sidewalkMask;
+      const res = createMockRes();
+      return handler(createMockReq({ body: payload }), res).then(() => ({ mocks, res }));
+    }
+    const stored = (mocks) => mocks.annotationsCol.updateOne.mock.calls[0][1].$set;
+
+    it("stores a valid outline normalized: clamped to the image and rounded", async () => {
+      const { mocks, res } = await submitAs({
+        sidewalkMask: { noSidewalk: false, polygons: [walk([{ x: -5, y: 900.456 }, { x: 640.123, y: 500 }, { x: 1300, y: 960.4 }])] },
+      });
+      expect(res._status).toBe(200);
+      expect(stored(mocks).sidewalkMask).toEqual({
+        noSidewalk: false,
+        polygons: [walk([{ x: 0, y: 900.46 }, { x: 640.12, y: 500 }, { x: 1280, y: 960 }])],
+      });
+    });
+
+    it("returns 422 for an outline with a cut out, removed on 6 Oct 2026", async () => {
+      const { mocks, res } = await submitAs({
+        sidewalkMask: {
+          noSidewalk: false,
+          polygons: [
+            walk([{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 400 }, { x: 0, y: 400 }]),
+            { id: "c1", kind: "cutout", points: [{ x: 50, y: 50 }, { x: 100, y: 50 }, { x: 100, y: 100 }, { x: 50, y: 100 }] },
+          ],
+        },
+      });
+      expect(res._status).toBe(422);
+      expect(res._json.message).toBe(SHAPE_MESSAGE);
+      expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+    });
+
+    it("stores a valid No sidewalk outline", async () => {
+      const { mocks, res } = await submitAs({ sidewalkMask: { noSidewalk: true, polygons: [] } });
+      expect(res._status).toBe(200);
+      expect(stored(mocks).sidewalkMask).toEqual({ noSidewalk: true, polygons: [] });
+    });
+
+    it("returns 422 for a missing outline, No sidewalk with shapes, a crossing shape, or a shape outside the image", async () => {
+      const cases = [
+        [undefined, "Sidewalk outline is missing."],
+        [{ noSidewalk: true, polygons: [walk([{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 0, y: 50 }])] }, "Remove the sidewalk shapes or untick No sidewalk."],
+        [{ noSidewalk: false, polygons: [walk([{ x: 0, y: 0 }, { x: 100, y: 100 }, { x: 100, y: 0 }, { x: 0, y: 100 }])] }, SHAPE_MESSAGE],
+        // Far outside the image, every point clamps onto the same corner, leaving no area
+        [{ noSidewalk: false, polygons: [walk([{ x: 5000, y: 5000 }, { x: 6000, y: 5000 }, { x: 6000, y: 6000 }])] }, SHAPE_MESSAGE],
+      ];
+      for (const [sidewalkMask, message] of cases) {
+        const { mocks, res } = await submitAs({ sidewalkMask });
+        expect(res._status).toBe(422);
+        expect(res._json.message).toBe(message);
+        expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+      }
+    });
+
+    it("stores null on a reference image, whatever the client sent", async () => {
+      const { mocks, res } = await submitAs({
+        image: REF_IMAGE,
+        sidewalkMask: { noSidewalk: false, polygons: [walk([{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 0, y: 50 }])] },
+      });
+      expect(res._status).toBe(200);
+      expect(stored(mocks).sidewalkMask).toBeNull();
+    });
+
+    // The 30 reference images flagged for outline agreement (6 Oct 2026)
+    const AGREEMENT_IMAGE = { ...REF_IMAGE, sidewalkAgreement: true };
+
+    it("stores a valid outline normalized on a flagged reference image", async () => {
+      const { mocks, res } = await submitAs({
+        image: AGREEMENT_IMAGE,
+        sidewalkMask: { noSidewalk: false, polygons: [walk([{ x: -5, y: 100.456 }, { x: 640.123, y: 100 }, { x: 300, y: 1000 }])] },
+      });
+      expect(res._status).toBe(200);
+      expect(stored(mocks).sidewalkMask).toEqual({
+        noSidewalk: false,
+        polygons: [walk([{ x: 0, y: 100.46 }, { x: 640.12, y: 100 }, { x: 300, y: 960 }])],
+      });
+    });
+
+    it("returns 422 for a missing outline on a flagged reference image", async () => {
+      const { mocks, res } = await submitAs({ image: AGREEMENT_IMAGE });
+      expect(res._status).toBe(422);
+      expect(res._json.message).toBe("Sidewalk outline is missing.");
+      expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+    });
+
+    it("writes no sidewalkMask field for a contributor on a flagged reference image", async () => {
+      const { mocks, res } = await submitAs({
+        role: "user",
+        image: { city: "makati", width: 1280, height: 960, poolStatus: "served", isReference: true, sidewalkAgreement: true },
+        body: { ...validBody, sidewalkMask: { noSidewalk: true, polygons: [] } },
+      });
+      expect(res._status).toBe(200);
+      expect(stored(mocks)).not.toHaveProperty("sidewalkMask");
+    });
+
+    it("writes no sidewalkMask field for a contributor", async () => {
+      const { mocks, res } = await submitAs({
+        role: "user",
+        image: { city: "makati", width: 1280, height: 960, poolStatus: "model_dev", isReference: false },
+        body: { ...validBody, sidewalkMask: { noSidewalk: true, polygons: [] } },
+      });
+      expect(res._status).toBe(200);
+      expect(stored(mocks)).not.toHaveProperty("sidewalkMask");
+    });
   });
 });

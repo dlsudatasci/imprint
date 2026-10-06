@@ -59,3 +59,29 @@ export function canServeImage(img, isAnnotator) {
   if (isAnnotator) return img.poolStatus === "model_dev";
   return img.poolStatus === "served" && img.isReference === false;
 }
+
+/**
+ * A copy of an Image document safe to send to the browser (6 Oct 2026, both
+ * roles). referenceGroundTruth holds every annotator's answers on a reference
+ * image, with their user ids: an annotator must not see the others' work, and
+ * a contributor must not see the answer key they are scored against. The admin
+ * quality routes read it from the database, so nothing in the browser needs it.
+ */
+export function toClientImage(image) {
+  if (!image || typeof image !== "object") return image;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
+  const { referenceGroundTruth, ...rest } = image;
+  return rest;
+}
+
+/**
+ * Local testing only (6 Oct 2026). With ANNOTATOR_MODEL_DEV_FIRST=true in .env,
+ * annotator sessions draw model-development images and skip the reference
+ * images, so all three annotator steps (Objects, Sidewalk, Obstructions) can be
+ * tried without first working through the 150 reference images. Ignored in a
+ * production build, so the study order (reference images first) can never
+ * change on the live site, even if the setting were copied there.
+ */
+export function annotatorModelDevFirst(env = process.env) {
+  return env.NODE_ENV !== "production" && env.ANNOTATOR_MODEL_DEV_FIRST === "true";
+}

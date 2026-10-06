@@ -3,21 +3,34 @@
  *
  * Modes:
  *   --retraining   Obstruction judgments with demographic features, excluding
- *                  custom categories and reference-image annotations. One row
- *                  per judgment in the per-judgment format the classifier expects.
+ *                  custom categories, reference-image annotations and boxes
+ *                  smaller than about 20 by 20 pixels (under 400 square pixels in
+ *                  the 640 by 640 model copy, 6 Oct 2026). One row per judgment
+ *                  in the per-judgment format the classifier expects.
  *   --full         All collections as JSON files, pseudonymized (no emails/passwords).
  *   --quality      Paired reference/contributor annotations for agreement computation.
+ *   --masks        Annotators' sidewalk outlines (polygons), one JSON object per
+ *                  line. sidewalk-masks.jsonl holds the model-development
+ *                  outlines, for training and evaluation. The pixel masks are
+ *                  drawn from them outside IMPRINT. sidewalk-masks-agreement.jsonl
+ *                  (always written, empty when there are none) holds the outlines
+ *                  on the 30 reference images flagged sidewalkAgreement: true, for
+ *                  agreement between annotators only, never for training.
  *   --output <dir> Output directory (default: ./exports/)
  *
  * Annotator rows (source "annotator") have sceneLevel: null and severity: null
- * on every box from 3 Oct 2026. From 4 Oct 2026 annotators record boxes and
- * categories only (Step 1 Objects), so their boxes also have obstructs: null
- * until the obstruction step exists. --retraining skips boxes with no Yes/No.
+ * on every box from 3 Oct 2026. From 4 Oct 2026 annotators do Objects, then
+ * Obstructions, so every real box (kept or drawn) carries obstructs true or
+ * false and Not an object boxes carry obstructs: null. --retraining skips any
+ * box with no Yes/No. From 6 Oct 2026 annotator rows on model-development
+ * images also carry sidewalkMask ({ noSidewalk, polygons }), null on reference
+ * images. Contributor rows have no sidewalkMask.
  *
  * Usage:
  *   node --env-file=.env scripts/export-data.mjs --retraining
  *   node --env-file=.env scripts/export-data.mjs --full --output ./my-exports
  *   node --env-file=.env scripts/export-data.mjs --quality
+ *   node --env-file=.env scripts/export-data.mjs --masks
  */
 import { MongoClient } from "mongodb";
 import { parseArgs } from "node:util";
@@ -27,12 +40,14 @@ import {
   RETRAINING_CSV_KEYS, RETRAINING_TAXONOMY,
   buildRetrainingRows, pseudonymize, toCsvRow, writeCsv,
 } from "../src/util/validators/retrainingExport.mjs";
+import { buildSidewalkMaskRows, toJsonl } from "../src/util/validators/sidewalkMaskExport.mjs";
 
 const { values } = parseArgs({
   options: {
     retraining: { type: "boolean", default: false },
     full:       { type: "boolean", default: false },
     quality:    { type: "boolean", default: false },
+    masks:      { type: "boolean", default: false },
     output:     { type: "string", default: "./exports" },
   },
 });
@@ -45,8 +60,8 @@ if (!uri || !dbName) {
   process.exit(1);
 }
 
-if (!values.retraining && !values.full && !values.quality) {
-  console.error("Specify at least one mode: --retraining, --full, or --quality");
+if (!values.retraining && !values.full && !values.quality && !values.masks) {
+  console.error("Specify at least one mode: --retraining, --full, --quality, or --masks");
   process.exit(1);
 }
 
@@ -84,7 +99,7 @@ try {
   async function buildImageMap() {
     const images = await db.collection("Image").find(
       {},
-      { projection: { _id: 1, imageID: 1, isReference: 1, city: 1 } }
+      { projection: { _id: 1, imageID: 1, isReference: 1, city: 1, width: 1, height: 1 } }
     ).toArray();
     const map = new Map();
     for (const img of images) {
@@ -115,7 +130,7 @@ try {
     console.log(`  ✓ ${summary.rows} judgments → ${outPath}`);
     console.log(`    Created-box rows: ${summary.createdBoxRows} (${createdPct}%)`);
     console.log(`    Fallback rows (no initialState): ${summary.fallbackRows}`);
-    console.log(`    Excluded: ${summary.excludedReferenceAnnotations} reference annotations, ${summary.excludedNotAnObject} not-an-object, ${summary.excludedFreeText} free-text, ${summary.excludedNonTaxonomyFeatureCategory} non-taxonomy feature category, ${summary.excludedNoJudgment} with no obstruction answer`);
+    console.log(`    Excluded: ${summary.excludedReferenceAnnotations} reference annotations, ${summary.excludedNotAnObject} not-an-object, ${summary.excludedFreeText} free-text, ${summary.excludedNonTaxonomyFeatureCategory} non-taxonomy feature category, ${summary.excludedNoJudgment} with no obstruction answer, ${summary.excludedBelowMinimumSize} smaller than about 20 by 20 pixels`);
   }
 
   // --- FULL EXPORT MODE ---
@@ -213,6 +228,29 @@ try {
     const outPath = join(outDir, "quality-pairs.json");
     await writeFile(outPath, JSON.stringify(pairs, null, 2));
     console.log(`  ✓ ${pairs.length} reference annotations from ${refImageIDs.length} reference images → ${outPath}`);
+  }
+
+  // --- SIDEWALK MASKS MODE ---
+  if (values.masks) {
+    console.log("=== Sidewalk Outlines ===");
+    const annotations = await db.collection("annotations").find(
+      { source: "annotator", status: "completed", sidewalkMask: { $ne: null } }
+    ).toArray();
+    const imageIDs = [...new Set(annotations.map((ann) => ann.imageID))];
+    const images = await db.collection("Image").find(
+      { imageID: { $in: imageIDs } },
+      { projection: { imageID: 1, imageName: 1, city: 1, width: 1, height: 1, letterbox: 1, isReference: 1, sidewalkAgreement: 1 } }
+    ).toArray();
+    const imageMap = new Map(images.map((img) => [img.imageID, img]));
+
+    const { rows, agreementRows, summary } = buildSidewalkMaskRows({ annotations, imageMap });
+    const outPath = join(outDir, "sidewalk-masks.jsonl");
+    await writeFile(outPath, toJsonl(rows));
+    console.log(`  ✓ ${summary.rows} outlines (${summary.noSidewalkRows} with no sidewalk) → ${outPath}`);
+    const agreementPath = join(outDir, "sidewalk-masks-agreement.jsonl");
+    await writeFile(agreementPath, toJsonl(agreementRows));
+    console.log(`  ✓ ${summary.agreementRows} agreement outlines on flagged reference images (${summary.agreementNoSidewalkRows} with no sidewalk) → ${agreementPath}`);
+    console.log(`    Excluded: ${summary.excludedReference} on unflagged reference images, ${summary.excludedMissingImage} with no Image record`);
   }
 
   console.log("\nDone.");

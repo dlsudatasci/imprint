@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createMockReq, createMockRes, createMockCollection, createMockDb, mockAuthSession, MOCK_USER_ID } from "@/test-utils/api-helpers";
 import { ObjectId } from "mongodb";
 
@@ -198,5 +198,27 @@ describe("/api/admin/accounts", () => {
     await handler(post({ action: "role", userId: TARGET_ID, role: "admin" }), res);
     expect(res._status).toBe(400);
     expect(m.users.updateOne).not.toHaveBeenCalled();
+  });
+});
+
+// SIGNUP_ROLE server switch (6 Oct 2026): the tab warns while it is on
+describe("/api/admin/accounts signupRole", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("reports annotator while SIGNUP_ROLE=annotator", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "annotator");
+    setup();
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(res._status).toBe(200);
+    expect(res._json.signupRole).toBe("annotator");
+  });
+
+  it("reports user without it", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    setup();
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(res._json.signupRole).toBe("user");
   });
 });

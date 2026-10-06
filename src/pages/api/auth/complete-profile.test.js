@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createMockReq, createMockRes, createMockCollection, createMockDb, mockAuthSession } from "@/test-utils/api-helpers";
 
 vi.mock("@/util/mongodb", () => ({ connectToDatabase: vi.fn() }));
@@ -134,5 +134,33 @@ describe("POST /api/auth/complete-profile", () => {
     await handler(req, res);
 
     expect(res._status).toBe(400);
+  });
+});
+
+// SIGNUP_ROLE server switch (6 Oct 2026): a Google user who completes the
+// profile before choosing a username creates the account here
+describe("POST /api/auth/complete-profile with SIGNUP_ROLE", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("creates a new account as an annotator with the annotator fields, on insert only", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "annotator");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert).toMatchObject({ role: "annotator", annotatorPass: 1, annotatorActive: true });
+    // An existing account keeps its role and fields
+    for (const field of ["role", "annotatorPass", "annotatorActive"]) {
+      expect(update.$set).not.toHaveProperty(field);
+    }
+  });
+
+  it("creates a new account as a contributor with only role user without it", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert.role).toBe("user");
+    expect(update.$setOnInsert).not.toHaveProperty("annotatorPass");
+    expect(update.$setOnInsert).not.toHaveProperty("annotatorActive");
   });
 });

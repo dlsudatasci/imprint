@@ -145,6 +145,28 @@ healthy from the outside.
 
 ---
 
+## Sign-up role
+
+`SIGNUP_ROLE=annotator` in `/srv/imprint/.env` makes every new account an
+annotator, on the live site and the study database, so annotators can sign up
+and go straight to the annotator tutorial without an admin changing their role.
+Anything else (missing, empty, `user`, a typo) makes contributors, which is the
+default. `admin` can never be given this way, and existing accounts are never
+changed: it only decides the role an account is created with.
+
+Turning it on or off needs no deploy, only an edit and a restart:
+
+```bash
+sudo -u imprint nano /srv/imprint/.env      # add or remove SIGNUP_ROLE=annotator
+sudo systemctl restart imprint
+```
+
+While it is on, the admin Accounts tab says "New sign-ups become annotators".
+**Turn it off before contributors open**, or they will sign up as annotators
+too (decided 6 Oct 2026: on while the site is not public).
+
+---
+
 ## Known gaps
 
 Worth knowing before this carries real users.

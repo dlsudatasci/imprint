@@ -7,6 +7,7 @@ import {
   MIN_PASSWORD_LENGTH,
   MAX_PASSWORD_LENGTH,
 } from "@/util/validation";
+import { newAccountRole } from "@/util/validators/newAccountRole";
 
 /**
  * POST /api/auth/register — creates a password account.
@@ -106,7 +107,9 @@ const handler = async (req, res) => {
       activities,
       totalAnnotations: 0,
       hasCompletedTutorial: false,
-      role: "user",
+      // "user" (contributor), or "annotator" with the local-only
+      // REGISTER_AS_ANNOTATOR switch (see newAccountRole)
+      role: newAccountRole(),
       consentAgreedAt: dateRegistered,
       ageConfirmedAt: dateRegistered,
       createdAt: dateRegistered,

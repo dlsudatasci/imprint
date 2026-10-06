@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createMockReq, createMockRes, createMockCollection, createMockDb, mockAuthSession } from "@/test-utils/api-helpers";
 
 vi.mock("@/util/mongodb", () => ({ connectToDatabase: vi.fn() }));
@@ -111,5 +111,21 @@ describe("POST /api/auth/choose-username", () => {
     expect(update.$set.ageConfirmedAt).toBeInstanceOf(Date);
     expect(update.$setOnInsert.role).toBe("user");
     expect(options.upsert).toBe(true);
+  });
+});
+
+// Local testing only (6 Oct 2026)
+describe("POST /api/auth/choose-username with REGISTER_AS_ANNOTATOR", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("creates a new Google account as an annotator on a local database, on insert only", async () => {
+    vi.stubEnv("MONGODB_DB", "imprint_dev");
+    vi.stubEnv("REGISTER_AS_ANNOTATOR", "true");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: { username: "newuser", consentAgreed: true, ageConfirmed: true } }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert.role).toBe("annotator");
+    // An existing account keeps its role
+    expect(update.$set).not.toHaveProperty("role");
   });
 });

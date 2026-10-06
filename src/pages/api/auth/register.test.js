@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createMockReq, createMockRes, createMockCollection, createMockDb } from "@/test-utils/api-helpers";
 
 vi.mock("@/util/mongodb", () => ({ connectToDatabase: vi.fn() }));
@@ -132,5 +132,29 @@ describe("POST /api/auth/register", () => {
     expect(insertCall.role).toBe("user");
     expect(insertCall.consentAgreedAt).toBeInstanceOf(Date);
     expect(insertCall.ageConfirmedAt).toBeInstanceOf(Date);
+  });
+});
+
+// Local testing only (6 Oct 2026): REGISTER_AS_ANNOTATOR=true makes new
+// accounts annotators, except in production or against the study database
+describe("POST /api/auth/register with REGISTER_AS_ANNOTATOR", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("creates an annotator on a local database when the switch is on", async () => {
+    vi.stubEnv("MONGODB_DB", "imprint_dev");
+    vi.stubEnv("REGISTER_AS_ANNOTATOR", "true");
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: validBody }), res);
+    expect(res._status).toBe(201);
+    expect(mocks.usersCol.insertOne.mock.calls[0][0].role).toBe("annotator");
+  });
+
+  it("still creates a contributor against the study database", async () => {
+    vi.stubEnv("MONGODB_DB", "imprint");
+    vi.stubEnv("REGISTER_AS_ANNOTATOR", "true");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    expect(mocks.usersCol.insertOne.mock.calls[0][0].role).toBe("user");
   });
 });

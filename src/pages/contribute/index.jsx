@@ -33,11 +33,12 @@ const FUN_FACTS = [
  * button always shows whichever step is still outstanding, so there is one
  * obvious next action at any point.
  *
- * The session loaded on the server takes precedence over the one held in the
- * browser, because it has been re-read from the database. The browser's copy
- * can be out of date for anything that changes outside signing in.
+ * The values read from the database on the server (liveUser) take precedence
+ * over the session held in the browser. The browser's copy comes from the login
+ * token, which can be out of date for anything that changes outside signing in,
+ * such as the role an admin sets.
  */
-export default function ContributePage({ session }) {
+export default function ContributePage({ session, liveUser = null }) {
   const { data: clientSession, status } = useSession();
   const loading = status === "loading";
 
@@ -49,15 +50,22 @@ export default function ContributePage({ session }) {
   const [isTutorialSession, setIsTutorialSession] = useState(false);
   const [randomFact, setRandomFact] = useState("");
 
-  // Prioritize the server-side session because it contains our live DB stats
+  // _app hands `session` to SessionProvider and never passes it to the page,
+  // and useSession refetches the token's copy in the background (on window
+  // focus, for one), whose role and progress can be days old. So the database
+  // values come as their own prop, liveUser, and always win (6 Oct 2026, the
+  // same approach as isAnnotator on the tutorial page). Before this, an
+  // annotator made by changing the role in the database saw the contributor
+  // dashboard again as soon as the token was refetched.
   const activeSession = session || clientSession;
-  const username = activeSession?.user?.username || "";
-  const userRole = activeSession?.user?.role || "contributor";
-  const userId = activeSession?.user?._id || "";
+  const user = { ...activeSession?.user, ...liveUser };
+  const username = user.username || "";
+  const userRole = user.role || "contributor";
+  const userId = user._id || "";
 
   // getServerSideProps reads this straight from the database on every request,
   // so it stays correct even if the JWT is stale from another device
-  const hasCompletedDemo = activeSession?.user?.hasCompletedTutorial === true;
+  const hasCompletedDemo = user.hasCompletedTutorial === true;
 
   useEffect(() => {
     // Picked client-side: choosing during SSR makes the server and client HTML
@@ -210,7 +218,7 @@ export default function ContributePage({ session }) {
                         {isLoadingSession ? "Loading..." : "Start Demo Tutorial"}
                       </Button>
                     </Link>
-                  ) : activeSession?.user?.isProfileIncomplete ? (
+                  ) : user.isProfileIncomplete ? (
                     <Link href="/complete-profile" className="flex-1 md:flex-none flex">
                       <Button fullWidth>Complete Profile to Start</Button>
                     </Link>
@@ -260,7 +268,10 @@ export default function ContributePage({ session }) {
 
         </Container>
       </section>
-      <DashboardInfo username={username} userId={userId} isAnnotator={userRole === "annotator"} />
+      {/* The lower dashboard (Recent Sessions, the distance banner, contribution
+          figures) is for contributors only. Annotators see none of it (6 Oct 2026).
+          userRole comes from the database, overlaid in getServerSideProps. */}
+      {userRole !== "annotator" && <DashboardInfo username={username} userId={userId} />}
     </Page>
   );
 }
@@ -271,25 +282,29 @@ export async function getServerSideProps(context) {
   const session = await getServerSession(context.req, context.res, authOptions);
 
   if (!session || !session.user?._id) {
-    return { props: { session: session ?? null } };
+    return { props: { session: session ?? null, liveUser: null } };
   }
+
+  let liveUser = null;
 
   try {
     const { db } = await connectToDatabase();
     const dbUser = await db.collection("users").findOne({ _id: new ObjectId(session.user._id) });
 
-    // Overlay the live values onto the session. The JWT is only refreshed at
-    // login or on an explicit update() call, so these three can be stale by
-    // days — and all three gate what the page offers. Finishing the tutorial in
+    // Read the live values. The JWT is only refreshed at login or on an
+    // explicit update() call, so these can be stale by days — and all of
+    // them gate what the page offers. Finishing the tutorial in
     // another tab should light up "Let's Annotate" here on the next load.
     if (dbUser) {
-      session.user.totalAnnotations = dbUser.totalAnnotations || 0;
-      session.user.hasCompletedTutorial = dbUser.hasCompletedTutorial || false;
-      session.user.role = dbUser.role || "contributor";
+      liveUser = {
+        totalAnnotations: dbUser.totalAnnotations || 0,
+        hasCompletedTutorial: dbUser.hasCompletedTutorial || false,
+        role: dbUser.role || "contributor",
+      };
+      if (dbUser.age) liveUser.isProfileIncomplete = false;
 
-      if (dbUser.age) {
-        session.user.isProfileIncomplete = false;
-      }
+      // Still overlaid on the session too, so SessionProvider's first copy matches
+      Object.assign(session.user, liveUser);
     }
   } catch (error) {
     // Fall through with the token's values — a stale dashboard beats an error
@@ -297,5 +312,5 @@ export async function getServerSideProps(context) {
     console.error("Failed to fetch live user stats in dashboard getServerSideProps:", error);
   }
 
-  return { props: { session } };
+  return { props: { session, liveUser } };
 }

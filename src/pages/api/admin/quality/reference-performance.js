@@ -10,10 +10,16 @@
  * recall, F1). Their obstruction, severity and scene answers are compared with
  * each annotator in turn and averaged. Until 2 Oct 2026 this compared every
  * contributor with the first annotator's answers only.
+ *
+ * Boxes under the minimum size (about 20 by 20 pixels at the model's 640 pixel
+ * size, the retraining export's rule) are left out on both sides from 6 Oct
+ * 2026, so the image's width and height are loaded. answerKey.boxesBelowMinimumSize
+ * counts the annotator boxes left out.
  */
 import { requireAdmin } from "@/util/adminAuth";
 import { ObjectId } from "mongodb";
 import {
+  IOU_THRESHOLD,
   buildReferenceStandard,
   computeReferencePerformanceAgainstTeam,
   latestAnnotatorEntries,
@@ -38,7 +44,7 @@ export default async function handler(req, res) {
     .collection("Image")
     .find(
       { isReference: true, referenceGroundTruth: { $exists: true, $ne: [] } },
-      { projection: { imageID: 1, referenceGroundTruth: 1 } }
+      { projection: { imageID: 1, referenceGroundTruth: 1, width: 1, height: 1 } }
     )
     .toArray();
 
@@ -49,15 +55,16 @@ export default async function handler(req, res) {
 
   // Answer key per image, built once from every annotator who annotated it.
   const teamByImage = new Map();
-  let objects = 0, uncertain = 0, ties = 0, minAnnotators = Infinity, maxAnnotators = 0;
+  let objects = 0, uncertain = 0, ties = 0, belowMinimumSize = 0, minAnnotators = Infinity, maxAnnotators = 0;
   for (const img of refImages) {
     const entries = latestAnnotatorEntries(img.referenceGroundTruth);
     if (entries.length === 0) continue;
-    const standard = buildReferenceStandard(entries);
+    const standard = buildReferenceStandard(entries, IOU_THRESHOLD, { width: img.width, height: img.height });
     teamByImage.set(img.imageID, { entries, standard });
     objects += standard.objects.length;
     uncertain += standard.uncertain.length;
     ties += standard.ties;
+    belowMinimumSize += standard.belowMinimumSize;
     minAnnotators = Math.min(minAnnotators, entries.length);
     maxAnnotators = Math.max(maxAnnotators, entries.length);
   }
@@ -120,6 +127,7 @@ export default async function handler(req, res) {
       objects,
       uncertain,
       categoryTies: ties,
+      boxesBelowMinimumSize: belowMinimumSize,
       annotatorsPerImage: teamByImage.size ? { min: minAnnotators, max: maxAnnotators } : null,
     },
   });

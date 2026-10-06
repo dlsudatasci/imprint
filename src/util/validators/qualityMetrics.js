@@ -1,4 +1,5 @@
 import { excludeNotAnObject } from "@/util/suggestionJudgment";
+import { isBelowMinimumSize } from "@/util/boxGeometry";
 
 /**
  * Quality-control metrics: IoU-based box matching, precision/recall/F1,
@@ -254,7 +255,23 @@ export function detectDegenerateFlags(annotations, telemetryEvents) {
  *     dashboard sets them aside and counts them). A contributor box on an
  *     uncertain object counts neither for nor against the contributor.
  * Not-an-object boxes are left out on every side.
+ *
+ * Boxes under the minimum size are also left out on every side (6 Oct 2026),
+ * by the same rule as the retraining export: under 400 square pixels once the
+ * image is scaled to the model's 640 pixel copy, about 20 by 20. Annotators may
+ * keep such boxes, but the model is not trained on them, so contributors are
+ * neither expected to box them nor penalized for doing so. The image size is
+ * passed to buildReferenceStandard and kept on the answer key, so the
+ * contributor side is filtered the same way. When it is unknown every box is
+ * kept, as before.
  * ------------------------------------------------------------------------- */
+
+/** The boxes that count for scoring: allBoxes without those under the minimum size. */
+function scorableBoxes(annotation, imageSize) {
+  return allBoxes(annotation).filter(
+    (box) => !isBelowMinimumSize(box.mark, imageSize?.width, imageSize?.height)
+  );
+}
 
 function normCategory(c) {
   return typeof c === "string" ? c.trim().toLowerCase().replace(/\s+/g, "_") : null;
@@ -271,11 +288,14 @@ function edges(mark) {
   return [x, y, x + (mark?.width ?? 0), y + (mark?.height ?? 0)];
 }
 
-export function buildReferenceStandard(annotatorAnnotations, threshold = IOU_THRESHOLD) {
+export function buildReferenceStandard(annotatorAnnotations, threshold = IOU_THRESHOLD, imageSize = null) {
   const annotatorCount = annotatorAnnotations.length;
   const boxes = [];
+  let belowMinimumSize = 0;
   annotatorAnnotations.forEach((ann, a) => {
-    for (const box of allBoxes(ann)) boxes.push({ a, box });
+    const kept = scorableBoxes(ann, imageSize);
+    belowMinimumSize += allBoxes(ann).length - kept.length;
+    for (const box of kept) boxes.push({ a, box });
   });
 
   const links = [];
@@ -334,18 +354,19 @@ export function buildReferenceStandard(annotatorAnnotations, threshold = IOU_THR
     objects.push({ mark, comment: leaders[0][0], votes });
   }
 
-  return { annotatorCount, objects, uncertain, ties };
+  return { annotatorCount, objects, uncertain, ties, belowMinimumSize, imageSize };
 }
 
 /**
  * Objective layer against the merged answer key (chapter_4.tex line 339): a
  * contributor box is a true positive when its IoU with an answer-key object is
  * at least 0.5 and its category matches. Unmatched contributor boxes on an
- * uncertain object are ignored. An image where both the answer key and the
+ * uncertain object are ignored, as are contributor boxes under the minimum
+ * size for the answer key's image. An image where both the answer key and the
  * contributor have no boxes gives null scores (nothing to score), not zero.
  */
 export function scoreAgainstStandard(contributorAnnotation, standard, threshold = IOU_THRESHOLD) {
-  const pred = allBoxes(contributorAnnotation);
+  const pred = scorableBoxes(contributorAnnotation, standard.imageSize);
   const candidates = [];
   pred.forEach((p, pi) => {
     standard.objects.forEach((o, oi) => {
@@ -394,15 +415,16 @@ function meanOrNull(values) {
  * one-to-one IoU of at least 0.5 regardless of category, since a wrong
  * category does not change whether that object obstructs. Annotators record
  * neither severity nor scene answers (methodology §7o, 3 Oct 2026), so those
- * are not compared.
+ * are not compared. Boxes under the minimum size are left out of the pairing
+ * too, on both sides.
  */
-export function computeReferencePerformanceAgainstTeam(contributorAnnotation, annotatorAnnotations, standard) {
-  const std = standard || buildReferenceStandard(annotatorAnnotations);
+export function computeReferencePerformanceAgainstTeam(contributorAnnotation, annotatorAnnotations, standard, imageSize = null) {
+  const std = standard || buildReferenceStandard(annotatorAnnotations, IOU_THRESHOLD, imageSize);
   const objective = scoreAgainstStandard(contributorAnnotation, std);
-  const pred = allBoxes(contributorAnnotation);
+  const pred = scorableBoxes(contributorAnnotation, std.imageSize);
 
   const perAnnotator = annotatorAnnotations.map((ann) => {
-    const { matched } = matchBoxesByIoU(pred, allBoxes(ann));
+    const { matched } = matchBoxesByIoU(pred, scorableBoxes(ann, std.imageSize));
     return computeObstructionAgreement(matched).rate;
   });
 

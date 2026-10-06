@@ -138,7 +138,42 @@ describe("GET /api/admin/quality/reference-performance", () => {
     await handler(createMockReq({ method: "GET" }), res);
     expect(res._status).toBe(200);
     expect(res._json.contributors[0].avgF1).toBe(1);
-    expect(res._json.answerKey).toEqual({ objects: 1, uncertain: 0, categoryTies: 0, annotatorsPerImage: { min: 3, max: 3 } });
+    expect(res._json.answerKey).toEqual({
+      objects: 1, uncertain: 0, categoryTies: 0, boxesBelowMinimumSize: 0, annotatorsPerImage: { min: 3, max: 3 },
+    });
+  });
+
+  it("leaves boxes under the minimum size out on both sides, using the image's size (6 Oct 2026)", async () => {
+    const b = (x, w, comment) => ({ mark: { x, y: 0, width: w, height: w }, comment, obstructs: false });
+    const entry = (userId) => ({
+      userId, source: "annotator", submittedAt: "2026-10-06T00:00:00Z", sceneLevel: null,
+      selectedObjectsID: [], newObjects: [b(0, 100, "bench"), b(500, 30, "tree")],
+    });
+    const { db } = setupAdminMocks({
+      refImages: [{
+        imageID: "img1", width: 1280, height: 960, // scaled by 0.5, so 30 by 30 is under the minimum
+        referenceGroundTruth: [entry("ann1"), entry("ann2"), entry("ann3")],
+      }],
+      annotations: [
+        {
+          imageID: "img1", userId: USER_A, source: "contributor", status: "completed",
+          sceneLevel: null, selectedObjectsID: [], newObjects: [b(0, 100, "bench")], // skipped the small tree
+        },
+        {
+          imageID: "img1", userId: USER_B, source: "contributor", status: "completed",
+          sceneLevel: null, selectedObjectsID: [], newObjects: [b(0, 100, "bench"), b(800, 30, "tree")],
+        },
+      ],
+      userDocs: [{ _id: new ObjectId(USER_A), username: "alice" }, { _id: new ObjectId(USER_B), username: "bob" }],
+    });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(res._status).toBe(200);
+    expect(db.collection("Image").find.mock.calls[0][1].projection).toMatchObject({ width: 1, height: 1 });
+    const byName = Object.fromEntries(res._json.contributors.map((c) => [c.username, c]));
+    expect(byName.alice).toMatchObject({ avgRecall: 1, avgF1: 1 });
+    expect(byName.bob).toMatchObject({ avgPrecision: 1, avgF1: 1 });
+    expect(res._json.answerKey).toMatchObject({ objects: 1, uncertain: 0, boxesBelowMinimumSize: 3 });
   });
 
   it("returns 403 for non-admin", async () => {

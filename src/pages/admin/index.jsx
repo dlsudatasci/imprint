@@ -416,7 +416,9 @@ function QualityTab() {
                   : `${refData.answerKey.annotatorsPerImage.min} to ${refData.answerKey.annotatorsPerImage.max}`
                 : 0} annotators per image: {refData.answerKey.objects} objects boxed by more than half of them,
               with {refData.answerKey.uncertain} uncertain objects set aside ({refData.answerKey.categoryTies} of them
-              category ties). Obstruction agreement is averaged across annotators.
+              category ties). Boxes smaller than about 20 by 20 pixels at the model&apos;s 640 pixel size are left out
+              on both sides ({refData.answerKey.boxesBelowMinimumSize ?? 0} annotator boxes). Obstruction agreement is
+              averaged across annotators.
             </>
           )}
         </p>

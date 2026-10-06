@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { normalizeMark } from "@/util/boxGeometry";
 import {
+  IOU_THRESHOLD,
   computeIoU,
   matchBoxesByIoU,
   computePRF1,
@@ -529,6 +530,18 @@ describe("computeReferencePerformanceAgainstTeam", () => {
     expect(r.annotatorCount).toBe(2);
   });
 
+  it("gives a numeric obstructionAgreement once annotators answer obstruction (Obstructions step, 4 Oct 2026)", () => {
+    // Both annotators box the tree. One says it obstructs, the other does not.
+    const team = [
+      ann([tree(0, { obstructs: true, severity: null })]),
+      ann([tree(0, { obstructs: false, severity: null })]),
+    ];
+    const contributor = ann([tree(0, { obstructs: true, severity: 3 })], scene(1));
+    const r = computeReferencePerformanceAgainstTeam(contributor, team);
+    expect(r.obstructionAgreement).toBe(0.5);
+    expect(r.f1).toBe(1);
+  });
+
   it("gives obstructionAgreement null while annotators have no obstruction answers, and still scores boxes (4 Oct 2026)", () => {
     const team = [
       ann([tree(0, { obstructs: null }), car(300, { obstructs: null })]),
@@ -565,5 +578,61 @@ describe("latestAnnotatorEntries", () => {
       { userId: "c", source: "contributor", submittedAt: "2026-10-01T00:00:00Z", tag: "c" },
     ];
     expect(latestAnnotatorEntries(rows).map((e) => e.tag).sort()).toEqual(["b", "new"]);
+  });
+});
+
+describe("minimum box size in the answer key (6 Oct 2026)", () => {
+  // A 1280 by 960 photo is scaled by 0.5 to the model's 640 pixel copy, so a
+  // box needs 40 by 40 pixels here to reach the minimum of 400 square pixels.
+  const size = { width: 1280, height: 960 };
+  const small = (x, extra = {}) => box(x, 0, 30, 30, { comment: "tree", obstructs: false, ...extra });
+  const team = () => [ann([small(500), car(0)]), ann([small(500), car(0)]), ann([small(500), car(0)])];
+
+  it("leaves annotator boxes under the minimum out of the answer key and counts them", () => {
+    const std = buildReferenceStandard(team(), IOU_THRESHOLD, size);
+    expect(std.objects).toEqual([expect.objectContaining({ comment: "car" })]);
+    expect(std.uncertain).toHaveLength(0);
+    expect(std.belowMinimumSize).toBe(3);
+  });
+
+  it("puts a box of exactly the minimum in the key and leaves one just under it out", () => {
+    const at = [0, 1, 2].map(() => ann([box(0, 0, 40, 40, { comment: "tree" })]));
+    const under = [0, 1, 2].map(() => ann([box(0, 0, 39, 40, { comment: "tree" })]));
+    expect(buildReferenceStandard(at, IOU_THRESHOLD, size).objects).toHaveLength(1);
+    expect(buildReferenceStandard(under, IOU_THRESHOLD, size).objects).toHaveLength(0);
+  });
+
+  it("does not lower the recall of a contributor who left the small object unboxed", () => {
+    const std = buildReferenceStandard(team(), IOU_THRESHOLD, size);
+    const r = scoreAgainstStandard(ann([car(0)]), std);
+    expect(r).toMatchObject({ truePositives: 1, falseNegatives: 0, recall: 1 });
+  });
+
+  it("neither rewards nor penalizes a contributor box under the minimum", () => {
+    const std = buildReferenceStandard([ann([car(0)]), ann([car(0)]), ann([car(0)])], IOU_THRESHOLD, size);
+    const r = scoreAgainstStandard(ann([car(0), small(500)]), std);
+    expect(r).toMatchObject({ truePositives: 1, falsePositives: 0, ignoredOnUncertain: 0, precision: 1 });
+  });
+
+  it("leaves boxes under the minimum out of the obstruction pairing", () => {
+    const annotators = [
+      ann([car(0), small(500, { obstructs: true })]),
+      ann([car(0), small(500, { obstructs: true })]),
+    ];
+    const contributor = ann([car(0), small(500, { obstructs: false })]);
+    // Only the car is compared, and both sides say it does not obstruct
+    expect(computeReferencePerformanceAgainstTeam(contributor, annotators, null, size).obstructionAgreement).toBe(1);
+    const std = buildReferenceStandard(annotators, IOU_THRESHOLD, size);
+    expect(computeReferencePerformanceAgainstTeam(contributor, annotators, std).obstructionAgreement).toBe(1);
+  });
+
+  it("keeps every box when the image size is unknown, as before", () => {
+    for (const unknown of [undefined, null, { width: 0, height: 960 }, { width: 1280 }]) {
+      const std = buildReferenceStandard(team(), IOU_THRESHOLD, unknown);
+      expect(std.objects).toHaveLength(2);
+      expect(std.belowMinimumSize).toBe(0);
+    }
+    const contributor = ann([car(0), small(500, { obstructs: true })]);
+    expect(computeReferencePerformanceAgainstTeam(contributor, team()).obstructionAgreement).toBe(0.5);
   });
 });

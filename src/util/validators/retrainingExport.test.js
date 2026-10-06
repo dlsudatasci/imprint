@@ -7,7 +7,11 @@ import {
   toCsvRow,
   writeCsv,
   buildRetrainingRows,
+  isBelowMinimumSize,
+  MODEL_COPY_SIZE,
+  MIN_MODEL_AREA_PX,
 } from "./retrainingExport.mjs";
+import * as boxGeometry from "@/util/boxGeometry";
 import { TAXONOMY_CATEGORIES } from "@/util/taxonomy";
 import { NOT_AN_OBJECT as JUDGMENT_NOT_AN_OBJECT } from "@/util/suggestionJudgment";
 
@@ -77,6 +81,23 @@ describe("RETRAINING_CSV_KEYS", () => {
 });
 
 describe("buildRetrainingRows", () => {
+  it("exports annotator rows once annotators answer obstruction (Obstructions step, 4 Oct 2026)", () => {
+    const keptAnsweredNo = makeBox({
+      id: "s1", editable: false, selected: true, obstructs: false, severity: null,
+      initialState: { comment: "tree", mark: { x: 5, y: 5, width: 90, height: 190 } },
+    });
+    const drawnAnsweredYes = makeBox({ id: "d1", editable: true, comment: "bollard", obstructs: true, severity: null, confidence: undefined });
+    const annotations = [makeAnnotation({ source: "annotator", servedModelVersion: null, selectedObjectsID: [keptAnsweredNo], newObjects: [drawnAnsweredYes] })];
+    const { rows, summary } = buildRetrainingRows({ annotations, userMap: makeUserMap(), imageMap: makeImageMap({ 1: { isReference: false } }) });
+
+    expect(summary.excludedNoJudgment).toBe(0);
+    expect(rows).toHaveLength(2);
+    const kept = rows.find((r) => r.objectID === "s1");
+    expect(kept).toMatchObject({ source: "annotator", obstructs: false, featureSource: "pipeline", isCreatedBox: false, boxW: 90 });
+    const drawn = rows.find((r) => r.objectID === "d1");
+    expect(drawn).toMatchObject({ source: "annotator", obstructs: true, featureSource: "created", isCreatedBox: true, category: "bollard" });
+  });
+
   it("skips a box with no obstruction answer and counts it in excludedNoJudgment (4 Oct 2026)", () => {
     const annotations = [
       makeAnnotation({
@@ -347,5 +368,67 @@ describe("writeCsv", () => {
     expect(csv.startsWith("x,y\n")).toBe(true);
     expect(csv.endsWith("\n")).toBe(true);
     expect(csv).toBe("x,y\n1,2\n");
+  });
+});
+
+// Boxes under about 20 by 20 pixels are kept in the data but left out of the
+// export (6 Oct 2026)
+describe("minimum box size in the retraining export", () => {
+  const MAPILLARY = { isReference: false, width: 1280, height: 960 };
+  const ATLAS = { isReference: false, width: 640, height: 360 };
+  const rowsFor = (boxes, image, source = "annotator") => buildRetrainingRows({
+    annotations: [makeAnnotation({ source, selectedObjectsID: boxes })],
+    userMap: makeUserMap(),
+    imageMap: makeImageMap({ 1: image }),
+  });
+  const sized = (id, width, height, extra = {}) => makeBox({ id, mark: { x: 10, y: 10, width, height }, ...extra });
+
+  it("uses the same rule as src/util/boxGeometry.js", () => {
+    expect(MODEL_COPY_SIZE).toBe(boxGeometry.MODEL_COPY_SIZE);
+    expect(MIN_MODEL_AREA_PX).toBe(boxGeometry.MIN_MODEL_AREA_PX);
+    const samples = [
+      [{ width: 40, height: 40 }, 1280, 960], [{ width: 39, height: 40 }, 1280, 960],
+      [{ width: 20, height: 20 }, 640, 360], [{ width: 19, height: 20 }, 640, 360],
+      [{ width: 8, height: 60 }, 640, 360], [{ width: -19, height: 20 }, 640, 360],
+      [{ width: 1, height: 1 }, undefined, undefined],
+    ];
+    for (const [mark, w, h] of samples) {
+      expect(isBelowMinimumSize(mark, w, h)).toBe(boxGeometry.isBelowMinimumSize(mark, w, h));
+    }
+  });
+
+  it("leaves out a box under 400 square pixels in the model copy and counts it", () => {
+    const { rows, summary } = rowsFor([sized("big", 40, 40), sized("small", 39, 40)], MAPILLARY);
+    expect(rows.map((r) => r.objectID)).toEqual(["big"]);
+    expect(summary.excludedBelowMinimumSize).toBe(1);
+  });
+
+  it("keeps a thin pole, since the minimum is an area", () => {
+    const { rows, summary } = rowsFor([sized("pole", 8, 60)], ATLAS);
+    expect(rows).toHaveLength(1);
+    expect(summary.excludedBelowMinimumSize).toBe(0);
+  });
+
+  it("measures the box as finally drawn or kept, not the pipeline's original", () => {
+    const shrunk = sized("s1", 10, 10, { initialState: { comment: "tree", mark: { x: 0, y: 0, width: 100, height: 100 } } });
+    const { rows, summary } = rowsFor([shrunk], ATLAS);
+    expect(rows).toEqual([]);
+    expect(summary.excludedBelowMinimumSize).toBe(1);
+  });
+
+  it("applies to drawn boxes and to contributors as well", () => {
+    const drawnTiny = sized("d1", 12, 12, { editable: true });
+    expect(rowsFor([drawnTiny], ATLAS).summary.excludedBelowMinimumSize).toBe(1);
+    expect(rowsFor([sized("c1", 12, 12)], ATLAS, "contributor").summary.excludedBelowMinimumSize).toBe(1);
+  });
+
+  it("keeps the box when the image size is unknown", () => {
+    const { rows, summary } = rowsFor([sized("small", 5, 5)], { isReference: false });
+    expect(rows).toHaveLength(1);
+    expect(summary.excludedBelowMinimumSize).toBe(0);
+  });
+
+  it("starts the count at zero", () => {
+    expect(rowsFor([sized("big", 100, 100)], MAPILLARY).summary.excludedBelowMinimumSize).toBe(0);
   });
 });

@@ -9,6 +9,26 @@ export const RETRAINING_TAXONOMY = new Set([
 
 export const NOT_AN_OBJECT = "not_an_object";
 
+/**
+ * Objects smaller than about 20 by 20 pixels are not annotated (codebook,
+ * chapter_4.tex line 61). The tool only warns about such boxes, so they are
+ * stored, and this export leaves them out (decided 6 Oct 2026). The rule is the
+ * one pipeline Step 3 applied to the suggestions: under 400 square pixels in
+ * the 640 by 640 model copy. Copied from src/util/boxGeometry.js, which this
+ * plain .mjs cannot import under Node. A test checks the two agree.
+ */
+export const MODEL_COPY_SIZE = 640;
+export const MIN_MODEL_AREA_PX = 400;
+
+const isPositiveFinite = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+
+/** True when the box is under the minimum size. False if the box or image size is unknown. */
+export function isBelowMinimumSize(mark, imageWidth, imageHeight) {
+  if (!mark || !isPositiveFinite(imageWidth) || !isPositiveFinite(imageHeight)) return false;
+  const scale = MODEL_COPY_SIZE / Math.max(imageWidth, imageHeight);
+  return Math.abs(mark.width) * Math.abs(mark.height) * scale * scale < MIN_MODEL_AREA_PX;
+}
+
 export const RETRAINING_CSV_KEYS = [
   "imageID", "objectKey", "objectID", "source", "isCreatedBox", "featureSource",
   "category", "boxX", "boxY", "boxW", "boxH", "confidence",
@@ -51,6 +71,7 @@ export function buildRetrainingRows({ annotations, userMap, imageMap }) {
     excludedFreeText: 0,
     excludedNonTaxonomyFeatureCategory: 0,
     excludedNoJudgment: 0,
+    excludedBelowMinimumSize: 0,
   };
 
   const rows = [];
@@ -108,6 +129,13 @@ export function buildRetrainingRows({ annotations, userMap, imageMap }) {
       // from 4 Oct 2026 until the obstruction step exists.
       if (typeof box.obstructs !== "boolean") {
         summary.excludedNoJudgment++;
+        continue;
+      }
+
+      // Too small to annotate (about 20 by 20 pixels), measured on the box as
+      // finally drawn or kept. Kept in the stored data, left out here.
+      if (isBelowMinimumSize(box.mark, img?.width, img?.height)) {
+        summary.excludedBelowMinimumSize++;
         continue;
       }
 

@@ -29,7 +29,7 @@ export default function AnnotateForm({
       <ConfirmDialog
         open={showPauseModal}
         title="Pause Session?"
-        description="Your submitted images are already saved. You can resume this session anytime — you'll pick up right where you left off."
+        description="Your submitted images are saved, and so is your work on this image on this device. Resume from the dashboard to pick up where you left off."
         confirmLabel="Pause & Exit"
         onCancel={() => setShowPauseModal(false)}
         onConfirm={async () => {
@@ -39,7 +39,9 @@ export default function AnnotateForm({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ currentAnnotationCount: current }),
             });
-            clearSession();
+            // The session cache is kept (8 Oct 2026): it holds the current
+            // image's unsubmitted boxes and answers, which Resume restores on
+            // this device. The tool saves a waiting edit as the page is left.
             window.location.href = "/contribute";
           } catch (e) {
             console.error(e);

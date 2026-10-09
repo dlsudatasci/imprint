@@ -17,16 +17,20 @@
  * Next: Sidewalk), five in Sidewalk (canvas, drawing tools, What Counts as
  * Walking Space, Sidewalk Outline, Next: Obstructions) and four in Obstructions
  * (canvas, What Counts as an Obstruction, the list and confirmation, Submit).
- * Contributors have one tour of five steps.
+ * Contributors have one tour of five steps. From 7 Oct 2026 its second step,
+ * "Your Answers", points at the lists under the photo (Not obstructions and
+ * Obstructions), where every answered object is listed.
  *
  * tourTargets(), tourStepCount() and tourBeaconPlacements() take the role and
  * the annotator step, so the beacons and the "Step n of N" counter match the
  * tour on screen.
  */
+// The severity step points at the photo (8 Oct 2026): the severity scale opens
+// on the photo beside the box after a Yes, not in the lists under it
 const CONTRIBUTOR_TARGETS = Object.freeze([
   ".rp-stage",
   "#box-review-section",
-  "#box-review-section",
+  ".rp-stage",
   "#scene-level-section",
   "button[type='submit']",
 ]);
@@ -40,18 +44,19 @@ const ANNOTATOR_TARGETS = Object.freeze([
   "button[type='submit']",
 ]);
 
-const CONTRIBUTOR_PLACEMENTS = ["bottom", "top", "top", "top", "top"];
+const CONTRIBUTOR_PLACEMENTS = ["bottom", "top", "bottom", "top", "top"];
 const ANNOTATOR_PLACEMENTS = ["bottom", "left", "top", "top"];
 
 // Where each step's pulsing beacon sits against its target: above it, below
-// it, or to its left. When two steps share a target (the contributor box and
-// severity steps) the second beacon sits below so they don't overlap.
-const CONTRIBUTOR_BEACONS = ["top", "top", "bottom", "top", "top"];
+// it, or to its left. When two steps share a target (the contributor canvas and
+// severity steps, both on the photo) the second beacon sits beside the photo's
+// left edge, level with its middle, as the Sidewalk tour's photo beacon does.
+const CONTRIBUTOR_BEACONS = ["top", "top", "left", "top", "top"];
 const ANNOTATOR_BEACONS = ["top", "top", "top", "top"];
 
 const SEVERITY_STEP = {
   title: "Severity",
-  content: "When an object does obstruct, rate how severely it blocks passage on a 1 to 5 scale. A score of 1 means it is a minor inconvenience; 5 means it completely blocks the path.",
+  content: "When you answer Yes, a scale opens on the photo beside the box. Rate how severely the object blocks passage, from 1 (a minor inconvenience) to 5 (it completely blocks the path), then click Confirm. To change it later, open the box and click Change.",
 };
 
 const SCENE_STEP = {
@@ -76,11 +81,11 @@ const ANNOTATOR_SUBMIT_STEP = {
 const CONTRIBUTOR = [
   {
     title: "Annotation Canvas",
-    content: "Dashed yellow boxes are model suggestions. Click each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, choose 'Not an object' from the list. You can also draw your own boxes by clicking and dragging to label objects the model missed.",
+    content: "Dashed yellow boxes are model suggestions. Click each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, click Not an object. You can also draw your own boxes by clicking and dragging to label objects the model missed.",
   },
   {
-    title: "Box vs. Obstruction",
-    content: "Drawing a box records that an object is on or beside the walking space. The obstruction question is separate: for each box, decide whether it blocks the sidewalk for you, traveling as you normally do. Answering 'No' is just as valuable as answering 'Yes'. It tells us the object is there but does not get in the way.",
+    title: "Your Answers",
+    content: "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you draw are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Click any object to change its answer. Click the eye beside an object to hide its box on the photo while you work on boxes around it.",
   },
   SEVERITY_STEP,
   SCENE_STEP,
@@ -98,7 +103,7 @@ const ANNOTATOR = [
   },
   {
     title: "Objects in This Image",
-    content: "This list shows every box in the image and which suggestions you still need to decide. Click a box in the list to select it.",
+    content: "This list shows every box in the image and which suggestions you still need to decide. Click a box in the list to select it. Click the eye beside an object to hide its box on the photo while you work on boxes around it.",
   },
   ANNOTATOR_SUBMIT_STEP,
 ];

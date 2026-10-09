@@ -92,6 +92,19 @@ module.exports = {
       // button hover-lift — elevation is border-led now, and the only shadow
       // still in use is Tailwind's own shadow-2xl on true overlays. See
       // docs/design-system/DECISIONS.md D6.
+
+      // The one motion in the contributor answer trays (7 Oct 2026): a tile
+      // lands in its tray. Used as motion-safe:animate-tray-land, so it is off
+      // for people who ask for reduced motion.
+      keyframes: {
+        "tray-land": {
+          from: { transform: "scale(.92)", opacity: ".4" },
+          to: { transform: "none", opacity: "1" },
+        },
+      },
+      animation: {
+        "tray-land": "tray-land 180ms ease-out both",
+      },
     },
   },
   plugins: [],

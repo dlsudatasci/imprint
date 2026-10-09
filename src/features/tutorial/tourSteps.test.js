@@ -7,14 +7,14 @@ describe("tour steps", () => {
     expect([...tourTargets(false)]).toEqual([
       ".rp-stage",
       "#box-review-section",
-      "#box-review-section",
+      ".rp-stage",
       "#scene-level-section",
       "button[type='submit']",
     ]);
     const steps = buildTourSteps(false);
     expect(steps.map((s) => s.title)).toEqual([
       "Annotation Canvas",
-      "Box vs. Obstruction",
+      "Your Answers",
       "Severity",
       "Scene-Level Assessment",
       "Submit",
@@ -66,6 +66,8 @@ describe("tour steps", () => {
     expect(guide.content).toMatch(/18 categories and the rules/);
     expect(objects.content).toMatch(/which suggestions you still need to decide/);
     expect(objects.content).toMatch(/Click a box in the list to select it/);
+    // Hiding boxes on the photo (8 Oct 2026)
+    expect(objects.content).toContain("Click the eye beside an object to hide its box on the photo");
     // The "Next suggestion to decide" button was removed (6 Oct 2026)
     expect(objects.content).not.toMatch(/Next suggestion to decide/);
   });
@@ -80,10 +82,34 @@ describe("tour steps", () => {
     for (const s of buildTourSteps(true)) expect(s.content).not.toMatch(/[Rr]eference/);
   });
 
-  it("keeps the contributor wording for the canvas and box steps", () => {
-    const [canvas, boxVsObstruction] = buildTourSteps(false);
+  it("keeps the contributor wording for the canvas step", () => {
+    const [canvas] = buildTourSteps(false);
     expect(canvas.content).toMatch(/^Dashed yellow boxes are model suggestions\./);
-    expect(boxVsObstruction.content).toMatch(/^Drawing a box records that an object is on or beside the walking space\./);
+  });
+
+  it("points contributors' second step at the lists of answers (7 Oct 2026)", () => {
+    const answers = buildTourSteps(false)[1];
+    expect(answers.target).toBe("#box-review-section");
+    expect(answers.title).toBe("Your Answers");
+    expect(answers.content).toBe(
+      "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you draw are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Click any object to change its answer. Click the eye beside an object to hide its box on the photo while you work on boxes around it."
+    );
+  });
+
+  it("points the contributor severity step at the photo, where the scale opens (8 Oct 2026)", () => {
+    const severity = buildTourSteps(false)[2];
+    expect(severity.title).toBe("Severity");
+    expect(severity.target).toBe(".rp-stage");
+    expect(severity.placement).toBe("bottom");
+    expect(severity.content).toContain("a scale opens on the photo beside the box");
+    expect(severity.content).toContain("Confirm");
+    expect(severity.content).not.toContain(";");
+  });
+
+  it("tells contributors that Not an object is a button, not a category (7 Oct 2026)", () => {
+    const [canvas] = buildTourSteps(false);
+    expect(canvas.content).toContain("click Not an object");
+    expect(canvas.content).not.toContain("from the list. You can");
   });
 
   it("names what each role's last step needs and never says the button is disabled", () => {
@@ -170,7 +196,8 @@ describe("annotator tours for Sidewalk and Obstructions", () => {
     expect(tourBeaconPlacements(true, "sidewalk")).toEqual(["left", "left", "top", "top", "top"]);
     expect(tourBeaconPlacements(true, "obstructions")).toEqual(["top", "top", "top", "top"]);
     expect(tourBeaconPlacements(true, "objects")).toEqual(["top", "top", "top", "top"]);
-    expect(tourBeaconPlacements(false)).toEqual(["top", "top", "bottom", "top", "top"]);
+    // The severity step's beacon sits beside the photo's left edge (8 Oct 2026)
+    expect(tourBeaconPlacements(false)).toEqual(["top", "top", "left", "top", "top"]);
   });
 
   it("has one beacon and one target per tour step for every tour", () => {

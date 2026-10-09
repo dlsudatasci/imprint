@@ -14,6 +14,8 @@ import {
   MODEL_COPY_SIZE,
   MIN_MODEL_AREA_PX,
   MIN_DRAWN_BOX_CANVAS_PX,
+  clampPointToImage,
+  keepMarkInside,
 } from "./boxGeometry.js";
 
 describe("normalizeMark", () => {
@@ -209,5 +211,40 @@ describe("pickNearSmallBox", () => {
     const other = { x: 110, y: 100, width: 2, height: 30 };
     expect(pickNearSmallBox([sliver, other], 104, 110, 1)).toBe(0);
     expect(pickNearSmallBox([sliver, other], 108, 110, 1)).toBe(1);
+  });
+});
+
+// Keeping boxes on the photo (8 Oct 2026)
+describe("clampPointToImage", () => {
+  it("moves a point in the band beside the photo onto its edge, and leaves an inside point alone", () => {
+    expect(clampPointToImage(-30, -12, 640, 360)).toEqual({ x: 0, y: 0 });
+    expect(clampPointToImage(700, 400, 640, 360)).toEqual({ x: 640, y: 360 });
+    expect(clampPointToImage(100, -5, 640, 360)).toEqual({ x: 100, y: 0 });
+    expect(clampPointToImage(320, 180, 640, 360)).toEqual({ x: 320, y: 180 });
+  });
+
+  it("leaves the point alone when the image size is unknown", () => {
+    expect(clampPointToImage(-30, 900, undefined, 360)).toEqual({ x: -30, y: 900 });
+  });
+});
+
+describe("keepMarkInside", () => {
+  const m = (x, y, width, height) => ({ x, y, width, height, type: "RECT" });
+
+  it("moves a box dragged past an edge back inside at its full size", () => {
+    expect(keepMarkInside(m(-20, 10, 100, 50), 640, 360)).toMatchObject({ x: 0, y: 10, width: 100, height: 50 });
+    expect(keepMarkInside(m(600, 340, 100, 50), 640, 360)).toMatchObject({ x: 540, y: 310, width: 100, height: 50 });
+    expect(keepMarkInside(m(50, -80, 100, 50), 640, 360)).toMatchObject({ x: 50, y: 0 });
+  });
+
+  it("leaves a box inside the photo where it is, normalizing a flipped box", () => {
+    expect(keepMarkInside(m(10, 20, 100, 50), 640, 360)).toMatchObject({ x: 10, y: 20, width: 100, height: 50 });
+    expect(keepMarkInside(m(110, 70, -100, -50), 640, 360)).toMatchObject({ x: 10, y: 20, width: 100, height: 50 });
+  });
+
+  it("keeps a box larger than the photo to the top-left, and leaves it alone for an unknown size", () => {
+    expect(keepMarkInside(m(-50, -50, 700, 400), 640, 360)).toMatchObject({ x: 0, y: 0, width: 700, height: 400 });
+    const box = m(-20, 0, 10, 10);
+    expect(keepMarkInside(box, 0, 360)).toBe(box);
   });
 });

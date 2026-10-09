@@ -51,6 +51,7 @@ const handler = async (req, res) => {
       servedModelVersion,
       currentAnnotationCount,
       telemetry,
+      canvasVersion,
     } = req.body;
     let { sceneLevel, selectedObjectsID, newObjects, sidewalkMask } = req.body;
 
@@ -186,6 +187,10 @@ const handler = async (req, res) => {
             newObjects,
             // Annotators only. Contributors get no sidewalkMask field at all.
             ...(isAnnotator ? { sidewalkMask } : {}),
+            // Marks drawn after the photo frame fix (9 Oct 2026). Only the
+            // exact value 2 is stored. Anything else stores nothing, so the
+            // analysis treats the marks as made on the old, offset canvas.
+            ...(canvasVersion === 2 ? { canvasVersion: 2 } : {}),
             status: "pending",
           },
         },

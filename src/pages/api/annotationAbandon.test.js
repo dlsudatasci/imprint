@@ -94,6 +94,24 @@ describe("POST /api/annotationAbandon", () => {
     expect(op.updateOne.update.$push.referenceGroundTruth).not.toHaveProperty("sidewalkMask");
   });
 
+  // Photo frame fix (9 Oct 2026): same marker as annotationComplete
+  it("carries canvasVersion into the referenceGroundTruth entry only when the annotation has it", async () => {
+    const pushed = async (extra) => {
+      vi.clearAllMocks();
+      const m = setupMocks({
+        activeSession: { _id: "session-1", userId: MOCK_USER_ID, status: "active", imageIDs: ["ref-oid"], completedImageIDs: [42] },
+      });
+      m.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: "ref-oid", imageID: 42 }]) });
+      const ann = { imageID: 42, source: "annotator", sceneLevel: null, selectedObjectsID: [], newObjects: [], ...extra };
+      m.annotationsCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([ann]) });
+      m.imageCol.bulkWrite = vi.fn().mockResolvedValue({});
+      await handler(createMockReq({ body: {} }), createMockRes());
+      return m.imageCol.bulkWrite.mock.calls[0][0][0].updateOne.update.$push.referenceGroundTruth;
+    };
+    expect((await pushed({ canvasVersion: 2 })).canvasVersion).toBe(2);
+    expect(await pushed({})).not.toHaveProperty("canvasVersion");
+  });
+
   it("returns 200 when abandoning a session with completed images", async () => {
     setupMocks();
     const req = createMockReq({ body: {} });

@@ -140,6 +140,22 @@ describe("GET /api/admin/annotator-reference-progress", () => {
     expect(res._json.annotators[1].percentage).toBe(30);
   });
 
+  it("counts each reference image once per annotator, however many rows they have for it (8 Oct 2026)", async () => {
+    const { annotationsCol } = setupAdminMocks({
+      refImageIDs: [1, 2, 3],
+      annotators: [{ _id: new ObjectId(ANNOTATOR_ID_1), username: "annotator1" }],
+      completionCounts: [{ _id: ANNOTATOR_ID_1, completed: 2 }],
+    });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    const [pipeline] = annotationsCol.aggregate.mock.calls[0];
+    expect(pipeline[0]).toEqual({ $match: { imageID: { $in: [1, 2, 3] }, status: "completed" } });
+    // Grouped by annotator and image first, so duplicates collapse, then counted per annotator
+    expect(pipeline[1]).toEqual({ $group: { _id: { userId: "$userId", imageID: "$imageID" } } });
+    expect(pipeline[2]).toEqual({ $group: { _id: "$_id.userId", completed: { $sum: 1 } } });
+    expect(res._json.annotators[0].completed).toBe(2);
+  });
+
   it("returns zero completion for annotators with no reference annotations", async () => {
     setupAdminMocks({
       refImageCount: 150,

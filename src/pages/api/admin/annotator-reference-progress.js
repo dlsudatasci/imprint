@@ -3,7 +3,12 @@
  * through the reference image set.
  *
  * Returns the total reference image count and per-annotator completion
- * counts, sorted by percentage descending.
+ * counts, sorted by percentage descending. Shown at the top of the admin
+ * Quality tab (8 Oct 2026).
+ *
+ * A reference image counts once per annotator, however many completed
+ * annotation rows they have for it: the rows are grouped by annotator and image
+ * before counting, so a repeated save can never push anyone past the total.
  */
 import { requireAdmin } from "@/util/adminAuth";
 
@@ -36,7 +41,8 @@ export default async function handler(req, res) {
     .collection("annotations")
     .aggregate([
       { $match: { imageID: { $in: refImageIDs }, status: "completed" } },
-      { $group: { _id: "$userId", completed: { $sum: 1 } } },
+      { $group: { _id: { userId: "$userId", imageID: "$imageID" } } },
+      { $group: { _id: "$_id.userId", completed: { $sum: 1 } } },
     ])
     .toArray();
 

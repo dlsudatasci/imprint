@@ -1,6 +1,5 @@
 import ReactPictureAnnotation from "../ReactPictureAnnotation";
 import { RectShape } from "../Shape";
-import Transformer from "../Transformer";
 import randomId from "../utils/randomId";
 import { IAnnotationState } from "./AnnotationState";
 import { pickNearSmallBox } from "@/util/boxGeometry";
@@ -46,8 +45,12 @@ export class DefaultAnnotationState implements IAnnotationState {
     // Boxes overlap constantly on a busy sidewalk — a tree inside a planter
     // inside a wide "cracked pavement" region. Collect everything under the
     // cursor rather than taking the first hit.
+    // A box hidden on the photo (Step 1, 8 Oct 2026) cannot be clicked, so a
+    // box can be drawn or fitted underneath it
+    const hidden = (i: number) => this.context.isBoxHidden(shapes[i].getAnnotationData().id);
     const intersectingShapes = [];
     for (let i = shapes.length - 1; i >= 0; i--) {
+      if (hidden(i)) continue;
       if (shapes[i].checkBoundary(positionX, positionY)) {
         const mark = shapes[i].getAnnotationData().mark;
         intersectingShapes.push({
@@ -63,7 +66,7 @@ export class DefaultAnnotationState implements IAnnotationState {
     // pixels rather than starting a new box (6 Oct 2026).
     if (intersectingShapes.length === 0) {
       const near = pickNearSmallBox(
-        shapes.map((shape) => shape.getAnnotationData().mark),
+        shapes.map((shape, i) => (hidden(i) ? null : shape.getAnnotationData().mark)),
         positionX,
         positionY,
         this.context.scaleState.scale
@@ -80,16 +83,11 @@ export class DefaultAnnotationState implements IAnnotationState {
       intersectingShapes.sort((a, b) => a.area - b.area);
       const target = intersectingShapes[0];
 
-      this.context.selectedId = target.shape.getAnnotationData().id;
-      this.context.currentTransformer = new Transformer(
-        target.shape,
-        this.context.scaleState.scale
-      );
-
-      // Move it to the end of the array so it paints last (on top) — and so
-      // DraggingAnnotationState, which drags shapes[length - 1], gets this one
-      const [selectedShape] = shapes.splice(target.originalIndex, 1);
-      shapes.push(selectedShape);
+      // Selects it, gives it resize handles and moves it to the end of the
+      // array, so DraggingAnnotationState (which drags shapes[length - 1]) gets
+      // this one. Shared with selectBoxById, which selects a box from the
+      // contributor's answer chips or the annotators' list without a click.
+      const selectedShape = this.context.selectShapeAt(target.originalIndex);
 
       selectedShape.onDragStart(positionX, positionY);
       onShapeChange();
@@ -99,19 +97,25 @@ export class DefaultAnnotationState implements IAnnotationState {
 
     // Empty canvas — start drawing. The box has zero size until the drag
     // moves; CreatingAnnotationState throws it away if the user just clicked.
+    // A press in the band beside the photo starts on the photo's edge (8 Oct 2026).
+    const start = this.context.clampToPhoto(positionX, positionY);
     this.context.shapes.push(
       new RectShape(
         {
           id: randomId(),
           mark: {
-            x: positionX,
-            y: positionY,
+            x: start.x,
+            y: start.y,
             width: 0,
             height: 0,
             type: "RECT",
           },
           editable: true,
           selected: false,
+          // When it was drawn, so same-category boxes are numbered in the
+          // order drawn (8 Oct 2026). Kept on screen and in the session copy,
+          // never submitted.
+          drawnOrder: Date.now(),
         },
         onShapeChange,
         {

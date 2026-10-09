@@ -320,6 +320,7 @@ function NasaTlxTab() {
 }
 
 function QualityTab() {
+  const [progressData, setProgressData] = useState(null);
   const [refData, setRefData] = useState(null);
   const [degData, setDegData] = useState(null);
   const [agrData, setAgrData] = useState(null);
@@ -330,8 +331,10 @@ function QualityTab() {
       fetch("/api/admin/quality/reference-performance").then((r) => r.json()),
       fetch("/api/admin/quality/degenerate").then((r) => r.json()),
       fetch("/api/admin/quality/agreement").then((r) => r.json()),
+      fetch("/api/admin/annotator-reference-progress").then((r) => r.json()),
     ])
-      .then(([ref, deg, agr]) => {
+      .then(([ref, deg, agr, progress]) => {
+        setProgressData(progress);
         setRefData(ref);
         setDegData(deg);
         setAgrData(agr);
@@ -360,6 +363,67 @@ function QualityTab() {
 
   return (
     <div className="space-y-8">
+      {/* How far each annotator is through the reference images (8 Oct 2026) */}
+      <div>
+        <h3 className="font-display text-lg font-bold text-ink mb-1">Annotator Reference Progress</h3>
+        <p className="text-muted text-sm mb-3">
+          Reference images each annotator has finished, out of {progressData?.referenceImageCount ?? 0}. Annotators
+          finish every reference image before they get model-development images.
+        </p>
+        {progressData?.annotators?.length > 0 ? (
+          <Card padding="none">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left">
+                    <th className="px-4 py-3 font-semibold text-muted">Annotator</th>
+                    <th className="px-4 py-3 font-semibold text-muted text-right">Finished</th>
+                    <th className="px-4 py-3 font-semibold text-muted w-1/3">Progress</th>
+                    <th className="px-4 py-3 font-semibold text-muted text-right">Left</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {progressData.annotators.map((a) => (
+                    <tr key={a.userId} className="border-b border-line-card last:border-0">
+                      <td className="px-4 py-3 font-medium text-ink">{a.username}</td>
+                      <td className="px-4 py-3 text-right text-body tabular-nums">
+                        {a.completed} of {a.total}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div
+                          role="progressbar"
+                          aria-label={`${a.username}: ${a.completed} of ${a.total} reference images`}
+                          aria-valuenow={a.completed}
+                          aria-valuemin={0}
+                          aria-valuemax={a.total}
+                          className="h-2 rounded-full bg-line overflow-hidden"
+                        >
+                          <div
+                            className={a.completed >= a.total && a.total > 0 ? "h-full bg-success" : "h-full bg-primary"}
+                            style={{ width: `${Math.min(100, a.percentage)}%` }}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right text-body tabular-nums">
+                        {a.completed >= a.total && a.total > 0 ? (
+                          <Badge tone="success">Done</Badge>
+                        ) : (
+                          Math.max(0, a.total - a.completed)
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        ) : (
+          <Card padding="md">
+            <p className="text-muted text-sm">No annotator accounts yet.</p>
+          </Card>
+        )}
+      </div>
+
       {/* Degenerate flags */}
       <div>
         <h3 className="font-display text-lg font-bold text-ink mb-3">Degenerate Behavior Flags</h3>

@@ -104,6 +104,30 @@ describe("POST /api/annotationComplete", () => {
     expect(op.updateOne.update.$push.referenceGroundTruth).not.toHaveProperty("sidewalkMask");
   });
 
+  // Photo frame fix (9 Oct 2026): reference answers carry the canvas marker
+  // so the analysis corrects only the ones drawn on the old, offset canvas
+  it("carries canvasVersion into the referenceGroundTruth entry only when the annotation has it", async () => {
+    const pushed = async (extra) => {
+      vi.clearAllMocks();
+      const m = setupMocks();
+      m.sessionsCol.findOne.mockResolvedValue({
+        _id: new ObjectId("cccccccccccccccccccccccc"),
+        userId: MOCK_USER_ID,
+        completedAt: new Date(),
+        imageIDs: ["ref-oid"],
+        completedImageIDs: [7],
+      });
+      m.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: "ref-oid", imageID: 7 }]) });
+      const ann = { imageID: 7, source: "annotator", sceneLevel: null, selectedObjectsID: [], newObjects: [], ...extra };
+      m.annotationsCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([ann]) });
+      m.imageCol.bulkWrite = vi.fn().mockResolvedValue({});
+      await handler(createMockReq({ body: { total: 10 } }), createMockRes());
+      return m.imageCol.bulkWrite.mock.calls[0][0][0].updateOne.update.$push.referenceGroundTruth;
+    };
+    expect((await pushed({ canvasVersion: 2 })).canvasVersion).toBe(2);
+    expect(await pushed({})).not.toHaveProperty("canvasVersion");
+  });
+
   it("writes nothing onto a reference image when a contributor finishes a session", async () => {
     const m = setupMocks();
     m.sessionsCol.findOne.mockResolvedValue({

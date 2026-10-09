@@ -107,6 +107,8 @@ const handler = async (req, res) => {
                                         sceneLevel: ann.sceneLevel,
                                         selectedObjectsID: ann.selectedObjectsID,
                                         newObjects: ann.newObjects,
+                                        // Made on the fixed canvas (9 Oct 2026)
+                                        ...(ann.canvasVersion === 2 ? { canvasVersion: 2 } : {}),
                                         submittedAt: date,
                                     },
                                 },

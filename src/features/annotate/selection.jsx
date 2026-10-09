@@ -75,7 +75,10 @@ export default function AnnotationSessionSelection() {
         return;
       }
 
-      writeSession({ total: selected, current: 1, data: annotationJson });
+      // The session's length is the images actually served, which can be fewer
+      // than chosen when the pool runs short, as a resume already counts it.
+      // Recording the size chosen made the last position point past the end.
+      writeSession({ total: annotationJson.imgRecords.length, current: 1, data: annotationJson });
 
       window.sessionStorage.setItem("isNavigatingImages", "true");
       router.reload();

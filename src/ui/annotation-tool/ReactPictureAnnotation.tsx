@@ -22,9 +22,12 @@ import {
   isDecidedForObjects,
 } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
-import { isBelowMinimumSize, pointInsideMark } from "@/util/boxGeometry";
+import { isBelowMinimumSize, clampPointToImage, keepMarkInside, markArea } from "@/util/boxGeometry";
 import { normalizeSubmittedMarks } from "@/util/validators/annotationSubmit";
 import { findNearDuplicates } from "@/features/annotate/objectStep";
+import { buildTrays, TRAY_COPY } from "@/features/annotate/objectTrays";
+import { toggleHiddenId, withoutHiddenId, BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
+import { createEditSaver } from "@/util/editSaver";
 import { TAXONOMY_GUIDE, TAXONOMY_RULES } from "@/features/annotate/taxonomyGuide";
 import {
   isRealObject,
@@ -47,6 +50,7 @@ import SidewalkAnnotationState from "./annotation/SidewalkAnnotationState";
 import { paintSidewalk } from "./paintSidewalk";
 import DefaultInputSection from "./DefaultInputSection";
 import ObjectInputSection from "./ObjectInputSection";
+import ObjectTrays from "./ObjectTrays";
 import {
   defaultShapeStyle,
   IShape,
@@ -58,7 +62,6 @@ import {
 import Transformer, { ITransformer } from "./Transformer";
 import {
   readSessionData,
-  readCurrentCount,
   writeSession,
   writeCurrentCount,
 } from "@/util/sessionCache";
@@ -67,7 +70,14 @@ import { H2 } from "../Typography";
 import { H3 } from "../Typography";
 import Container from '../Container';
 import Checkbox from '../Checkbox';
-import { buildDisplayLabels, formatLabel } from "@/util/buildDisplayLabels";
+import { EyeIcon, EyeOffIcon } from '../icons';
+import { buildDisplayLabelsInOrder, orderOfAppearance, formatLabel } from "@/util/buildDisplayLabels";
+
+// Sent with every submit so the analysis can tell marks made on the fixed
+// canvas from those made while .rp-image had a 5px border that put the photo
+// up to 5 stage px away from the boxes (IMPRINT_photo_frame_fix.md, 9 Oct 2026).
+// A page loaded before that deploy sends no canvasVersion.
+export const CANVAS_VERSION = 2;
 
 interface IReactPictureAnnotationProps {
   annotationData?: IAnnotation[];
@@ -103,6 +113,10 @@ interface IReactPictureAnnotationProps {
     severity: number | null | undefined,
     onMarkNotAnObject: () => void,
     askSeverity: boolean,
+    onClose: () => void,
+    onClearObstruction: () => void,
+    onRestoreObject: () => void,
+    originalComment: string,
   ) => React.ReactElement;
   totalAnnotationCount?: number;
   // Annotators give no severity and answer no scene-level questions (decided
@@ -463,6 +477,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       severity: number | null | undefined,
       onMarkNotAnObject: () => void,
       askSeverity: boolean,
+      onClose: () => void,
+      onClearObstruction: () => void,
+      onRestoreObject: () => void,
+      originalComment: string,
     ) => (
       <DefaultInputSection
         key={id}
@@ -480,6 +498,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         obstructs={obstructs}
         severity={severity}
         askSeverity={askSeverity}
+        onClose={onClose}
+        onClearObstruction={onClearObstruction}
+        onRestoreObject={onRestoreObject}
+        originalComment={originalComment}
       />
     ),
     isAnnotator: false,
@@ -492,6 +514,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     } as Record<string, number>,
     showInput: false,
     inputComment: "",
+    // The model's own category for the selected suggestion, for the Not an
+    // object panel (8 Oct 2026)
+    originalComment: "",
     editable: false,
     selected: false,
     sliderValue: 5,
@@ -515,6 +540,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     showSidewalkBoxes: true,
     hideSidewalkFill: false,
     showSidewalkOverlay: true,
+    // Step 1, both roles (8 Oct 2026): boxes hidden on the photo from the list
+    // under it, so crowded boxes can be drawn and fitted. A view setting only.
+    hiddenBoxIds: [] as string[],
+    // True while an image is being sent, so the button cannot send it twice
+    submitting: false,
   };
 
   set selectedId(value: string | null) {
@@ -551,6 +581,21 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   // currentAnnotationData is the plain data mirrored out of it for submission.
   private currentAnnotationData: IAnnotation[] = [];
   private hiddenSuggestions: IAnnotation[] = [];
+  // Unsubmitted edits are saved to the session cache shortly after they stop
+  // (8 Oct 2026), so a refresh or a pause keeps them. Not before the image's
+  // boxes and cached answers have been restored, or an empty first paint
+  // would overwrite them.
+  private editsRestored = false;
+  // Set from the moment an image is sent until the page moves on
+  private submitInFlight = false;
+  private editSaver = createEditSaver(() => this.cacheCurrentImageEdits(), 400);
+  private flushEdits = () => this.editSaver.flush();
+  private onVisibilityChange = () => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") this.editSaver.flush();
+  };
+  private scheduleEditSave() {
+    if (this.editsRestored) this.editSaver.schedule();
+  }
   private selectedIdTrueValue: string | null;
   private canvasRef = React.createRef<HTMLCanvasElement>();
   private canvas2D?: CanvasRenderingContext2D | null;
@@ -605,6 +650,14 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private get askSidewalk() {
     return this.annotatorObjectStep && this.props.askSidewalk === true;
   }
+
+  /** Step 1 for either role: boxes can be edited, and hidden from the list. */
+  private get inBoxStep() {
+    return !this.inSidewalkStep && !this.inObstructionStep;
+  }
+
+  /** True for a box hidden on the photo. Only in Step 1: every box shows in the other steps. */
+  public isBoxHidden = (id: string) => this.inBoxStep && this.state.hiddenBoxIds.includes(id);
 
   /** The step list for this image: Sidewalk only on model-development images. */
   private get annotatorSteps() {
@@ -732,13 +785,21 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     } else if (this.annotatorObjectStep && savedAnnotatorStep === "obstructions") {
       this.enterObstructionStep({ restoring: true });
     }
-    if (typeof window !== "undefined") window.addEventListener("keydown", this.onSidewalkKeyDown);
+    if (typeof window !== "undefined") {
+      window.addEventListener("keydown", this.onSidewalkKeyDown);
+      // Save a waiting edit when the page is left, reloaded or hidden
+      window.addEventListener("pagehide", this.flushEdits);
+      document.addEventListener("visibilitychange", this.onVisibilityChange);
+    }
     this.syncSelectedId();
     this.setupCanvasScaling();
+    this.editsRestored = true;
   };
 
-  public componentDidUpdate = (preProps: IReactPictureAnnotationProps) => {
+  public componentDidUpdate = (preProps: IReactPictureAnnotationProps, prevState: this["state"]) => {
     const { width, height, image } = this.props;
+    // Contributors' Step 2 answers are saved as they change, like the boxes
+    if (prevState && prevState.sceneLevel !== this.state.sceneLevel) this.scheduleEditSave();
     if (preProps.width !== width || preProps.height !== height) {
       this.setCanvasDPI();
       this.onShapeChange();
@@ -763,7 +824,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   public componentWillUnmount = () => {
     this.resizeObserver?.disconnect();
-    if (typeof window !== "undefined") window.removeEventListener("keydown", this.onSidewalkKeyDown);
+    this.editSaver.flush();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("keydown", this.onSidewalkKeyDown);
+      window.removeEventListener("pagehide", this.flushEdits);
+      document.removeEventListener("visibilitychange", this.onVisibilityChange);
+    }
   };
 
   /**
@@ -841,14 +907,13 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       severity,
     } = this.state;
 
-    // Copy before sorting: Array#sort is in-place, and reordering
-    // currentAnnotationData here would quietly reshuffle the same array the
-    // canvas and the submit handler read from.
-    const sortedAnnotations = [...this.currentAnnotationData].sort((a, b) =>
-      a.id.localeCompare(b.id)
-    );
+    // The lists show the boxes in order of appearance: suggestions in the
+    // model's order, then drawn boxes in the order drawn (8 Oct 2026). A copy,
+    // so the array the canvas and the submit handler read is never reordered.
+    const sortedAnnotations = orderOfAppearance(this.currentAnnotationData);
 
-    const displayLabels = buildDisplayLabels(sortedAnnotations);
+    // The same numbering as the labels drawn on the photo
+    const displayLabels = buildDisplayLabelsInOrder(sortedAnnotations);
 
     const { canvasScale } = this.state;
     const { askScene, askSeverity, annotatorObjectStep, inObstructionStep, inSidewalkStep, askSidewalk } = this;
@@ -860,219 +925,162 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // Objects step submits straight away
     const hasRealObjects = realObjects(this.currentAnnotationData).length > 0;
 
+    // The canvas, the same in both layouts below
+    const canvasArea = (
+      <div ref={this.canvasWrapperRef} className="w-full overflow-hidden">
+        <div style={{
+          width: width * canvasScale,
+          height: height * canvasScale,
+          margin: '0 auto',
+        }}>
+          <div className="rp-stage relative" style={{
+            width, height,
+            transform: `scale(${canvasScale})`,
+            transformOrigin: 'top left',
+          }}>
+            <canvas
+              style={{ width, height }}
+              className="rp-image"
+              ref={this.imageCanvasRef}
+              width={width * 2}
+              height={height * 2}
+            />
+            <canvas
+              className="rp-shapes"
+              style={{ width, height }}
+              ref={this.canvasRef}
+              width={width * 2}
+              height={height * 2}
+              onMouseDown={this.onMouseDown}
+              onMouseMove={this.onMouseMove}
+              onMouseUp={this.onMouseUp}
+              onMouseLeave={this.onMouseLeave}
+            />
+            {showInput && (
+              <div
+                className="rp-selected-input"
+                style={inputPosition}
+                onMouseDown={(e) => e.stopPropagation()}
+                onMouseUp={(e) => e.stopPropagation()}
+                onMouseMove={(e) => e.stopPropagation()}
+              >
+                {annotatorObjectStep ? (
+                  <ObjectInputSection
+                    key={this.selectedId || ""}
+                    value={inputComment}
+                    mode={getObjectPanelMode({ editable, selected, comment: inputComment })}
+                    onChange={this.onInputCommentChange}
+                    onKeep={this.onKeep}
+                    onMarkNotAnObject={this.onMarkNotAnObject}
+                    onDelete={this.onDelete}
+                    onClose={this.onClose}
+                    belowMinimumSize={this.selectedBelowMinimumSize()}
+                  />
+                ) : inputElement(
+                  inputComment,
+                  this.onInputCommentChange,
+                  this.onDelete,
+                  this.onSelectObstruction,
+                  this.onUnselectObstruction,
+                  editable,
+                  selected,
+                  isRejected,
+                  this.selectedId || "",
+                  this.onSetSeverity,
+                  this.onSetObstructs,
+                  obstructs,
+                  severity,
+                  this.onMarkNotAnObject,
+                  askSeverity,
+                  this.onClose,
+                  this.onClearObstruction,
+                  this.onRestoreObject,
+                  this.state.originalComment,
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+    // Contributors get the one-card layout with their answers under the photo (7 Oct 2026). Annotator steps keep theirs.
+    const contributorLayout = !annotatorObjectStep;
+
     return (
       <Container as="section" width="wide" className="annotation-container">
         <div className="flex flex-row gap-6">
 
           {/* ── Left: Step 1 (65%, or the full width when there is no Step 2) ── */}
           <div style={{ flex: '65 1 0%' }} className="min-w-0">
-            <div className="mb-3">
-              {inObstructionStep ? (
-                <>
-                  <H2 className="text-lg font-bold text-ink mb-1">{annotatorStepHeading("obstructions", steps)}</H2>
-                  <P className="text-body text-sm">
-                    Click every object that obstructs the sidewalk for you, traveling as you normally do.
-                    Click it again to unmark it. Leave the others unmarked, then confirm below that they do not obstruct.
-                  </P>
-                </>
-              ) : inSidewalkStep ? (
-                <>
-                  <H2 className="text-lg font-bold text-ink mb-1">{annotatorStepHeading("sidewalk", steps)}</H2>
-                  <P className="text-body text-sm">
-                    Outline the walking space in this image. Click points around the sidewalk and click the first point again to close the shape.
-                    Draw under any object standing on the sidewalk, as if it were not there.
-                  </P>
-                </>
-              ) : annotatorObjectStep ? (
-                <>
-                  <H2 className="text-lg font-bold text-ink mb-1">{annotatorStepHeading("objects", steps)}</H2>
-                  <P className="text-body text-sm">
-                    Box every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not.
-                    For each dashed yellow suggestion, check its category, fix the box if it is loose, then click Keep,
-                    or click Not an object if it marks nothing real. Draw a box for every object the suggestions missed.
-                  </P>
-                </>
-              ) : (
-                <>
+            {contributorLayout ? (
+              // Contributors (7 Oct 2026): the heading, the photo and the answers
+              // sit in one card, so Step 1 reads as one unit
+              <div className="mb-6 bg-surface rounded-card border border-line shadow-sm overflow-hidden">
+                <div className="p-4 pb-3">
                   <H2 className="text-lg font-bold text-ink mb-1">Step 1: Identify Objects</H2>
                   <P className="text-body text-sm">
                     Review objects <span className="font-semibold text-ink">on or beside the sidewalk</span>.
                     For each dashed yellow box, decide whether it obstructs the path for <strong>you</strong>, traveling as you normally do.
-                    Draw new boxes to label any missed objects.
+                    Draw new boxes to label any missed objects. {TRAY_COPY.stepHint}
                   </P>
-                </>
-              )}
-            </div>
+                </div>
+                <div className="bg-surface-subtle p-2 border-y border-line">
+                  {canvasArea}
+                </div>
+                <ObjectTrays
+                  trays={buildTrays(sortedAnnotations, { labels: displayLabels })}
+                  selectedId={showInput ? this.selectedId : null}
+                  hiddenIds={this.state.hiddenBoxIds}
+                  onOpen={this.openTrayItem}
+                  onToggleHidden={this.toggleBoxHidden}
+                  onShowAll={this.showAllBoxes}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="mb-3">
+                  {inObstructionStep ? (
+                    <>
+                      <H2 className="text-lg font-bold text-ink mb-1">{annotatorStepHeading("obstructions", steps)}</H2>
+                      <P className="text-body text-sm">
+                        Click every object that obstructs the sidewalk for you, traveling as you normally do.
+                        Click it again to unmark it. Leave the others unmarked, then confirm below that they do not obstruct.
+                      </P>
+                    </>
+                  ) : inSidewalkStep ? (
+                    <>
+                      <H2 className="text-lg font-bold text-ink mb-1">{annotatorStepHeading("sidewalk", steps)}</H2>
+                      <P className="text-body text-sm">
+                        Outline the walking space in this image. Click points around the sidewalk and click the first point again to close the shape.
+                        Draw under any object standing on the sidewalk, as if it were not there.
+                      </P>
+                    </>
+                  ) : (
+                    <>
+                      <H2 className="text-lg font-bold text-ink mb-1">{annotatorStepHeading("objects", steps)}</H2>
+                      <P className="text-body text-sm">
+                        Box every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not.
+                        For each dashed yellow suggestion, check its category, fix the box if it is loose, then click Keep,
+                        or click Not an object if it marks nothing real. Draw a box for every object the suggestions missed.
+                      </P>
+                    </>
+                  )}
+                </div>
 
-            {inSidewalkStep && this.renderSidewalkToolbar()}
+                {inSidewalkStep && this.renderSidewalkToolbar()}
 
-            <div className="flex flex-col gap-4 mb-6">
-              <div className="w-full bg-surface-subtle rounded-card border border-line shadow-sm p-2">
-                <div ref={this.canvasWrapperRef} className="w-full overflow-hidden">
-                  <div style={{
-                    width: width * canvasScale,
-                    height: height * canvasScale,
-                    margin: '0 auto',
-                  }}>
-                    <div className="rp-stage relative" style={{
-                      width, height,
-                      transform: `scale(${canvasScale})`,
-                      transformOrigin: 'top left',
-                    }}>
-                      <canvas
-                        style={{ width, height }}
-                        className="rp-image"
-                        ref={this.imageCanvasRef}
-                        width={width * 2}
-                        height={height * 2}
-                      />
-                      <canvas
-                        className="rp-shapes"
-                        style={{ width, height }}
-                        ref={this.canvasRef}
-                        width={width * 2}
-                        height={height * 2}
-                        onMouseDown={this.onMouseDown}
-                        onMouseMove={this.onMouseMove}
-                        onMouseUp={this.onMouseUp}
-                        onMouseLeave={this.onMouseLeave}
-                      />
-                      {showInput && (
-                        <div
-                          className="rp-selected-input"
-                          style={inputPosition}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onMouseUp={(e) => e.stopPropagation()}
-                          onMouseMove={(e) => e.stopPropagation()}
-                        >
-                          {annotatorObjectStep ? (
-                            <ObjectInputSection
-                              key={this.selectedId || ""}
-                              value={inputComment}
-                              mode={getObjectPanelMode({ editable, selected, comment: inputComment })}
-                              onChange={this.onInputCommentChange}
-                              onKeep={this.onKeep}
-                              onMarkNotAnObject={this.onMarkNotAnObject}
-                              onDelete={this.onDelete}
-                              onClose={this.onClose}
-                              belowMinimumSize={this.selectedBelowMinimumSize()}
-                            />
-                          ) : inputElement(
-                            inputComment,
-                            this.onInputCommentChange,
-                            this.onDelete,
-                            this.onSelectObstruction,
-                            this.onUnselectObstruction,
-                            editable,
-                            selected,
-                            isRejected,
-                            this.selectedId || "",
-                            this.onSetSeverity,
-                            this.onSetObstructs,
-                            obstructs,
-                            severity,
-                            this.onMarkNotAnObject,
-                            askSeverity,
-                          )}
-                        </div>
-                      )}
-                    </div>
+                <div className="flex flex-col gap-4 mb-6">
+                  <div className="w-full bg-surface-subtle rounded-card border border-line shadow-sm p-2">
+                    {canvasArea}
+                    {/* Sidewalk messages, under the photo where the outline is drawn */}
+                    {inSidewalkStep && this.state.sidewalk.message && (
+                      <p role="status" className="text-xs text-muted px-1 pt-2">{this.state.sidewalk.message}</p>
+                    )}
                   </div>
+                  {inSidewalkStep ? this.renderSidewalkShapesCard() : inObstructionStep ? this.renderObstructionsCard(displayLabels) : this.renderObjectsCard(sortedAnnotations, displayLabels)}
                 </div>
-              </div>
-              {inSidewalkStep ? this.renderSidewalkShapesCard() : inObstructionStep ? this.renderObstructionsCard(displayLabels) : annotatorObjectStep ? this.renderObjectsCard(sortedAnnotations, displayLabels) : (
-              <div id="box-review-section" className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-                <div className="bg-surface rounded-card border border-line shadow-sm p-4">
-                  <H3><span className="text-lg font-bold text-ink">Confirmed Obstructions</span></H3>
-                  <p className="text-xs text-muted mb-2">Suggestions you said obstruct the sidewalk.</p>
-                  <ul className="flex flex-wrap gap-2">
-                    {sortedAnnotations
-                      .map((data) => {
-                        if (!data.editable && data.selected) {
-                          return (
-                            <li
-                              className="group border border-line rounded-control bg-surface hover:border-primary hover:shadow-md transition-all cursor-pointer flex items-center gap-1 pl-2 pr-1 py-1"
-                              key={data.id}
-                              onClick={() => {
-                                const inside = pointInsideMark(data.mark);
-                                this.currentAnnotationState.onMouseDown(inside.x, inside.y);
-                                this.currentAnnotationState.onMouseUp();
-                              }}
-                            >
-                              <span className="text-xs font-semibold text-ink whitespace-nowrap">
-                                {displayLabels.get(data.id) ?? formatLabel(data.comment) ?? ""}
-                              </span>
-                              <button
-                                className="shrink-0 bg-surface border border-line hover:bg-danger-soft hover:text-danger text-muted rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold transition-colors"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  this.selectedId = data.id;
-                                  this.onUnselectObstruction();
-                                }}
-                              >
-                                ×
-                              </button>
-                            </li>
-                          );
-                        } else {
-                          return <div key={data.id} className="hidden" />;
-                        }
-                      })}
-                  </ul>
-                </div>
-                <div className="bg-surface rounded-card border border-line shadow-sm p-4">
-                  <H3><span className="text-lg font-bold text-ink">Your Drawn Obstructions</span></H3>
-                  <p className="text-xs text-muted mb-2">Objects you drew. Answer Yes or No for each.</p>
-                  <ul className="flex flex-wrap gap-2">
-                    {sortedAnnotations
-                      .map((data) => {
-                        if (data.editable) {
-                          return (
-                            <li
-                              className="group border border-line rounded-control bg-surface hover:border-primary hover:shadow-md transition-all cursor-pointer flex items-center gap-1 pl-2 pr-1 py-1"
-                              key={data.id}
-                              onClick={() => {
-                                const inside = pointInsideMark(data.mark);
-                                this.currentAnnotationState.onMouseDown(inside.x, inside.y);
-                                this.currentAnnotationState.onMouseUp();
-                              }}
-                            >
-                              <span className="text-xs font-semibold text-ink whitespace-nowrap">
-                                {displayLabels.get(data.id) ?? "Select Option"}
-                              </span>
-                              {/* The obstruction answer, so an unanswered box shows before submitting */}
-                              <span
-                                className={`text-[10px] font-bold rounded-control px-1 ${data.obstructs === true
-                                  ? "bg-primary text-white"
-                                  : data.obstructs === false
-                                    ? "bg-surface-subtle text-body border border-line"
-                                    : "bg-danger-soft text-danger"
-                                  }`}
-                                title={data.obstructs == null ? "Not answered yet" : "Obstructs the sidewalk?"}
-                              >
-                                {data.obstructs === true ? "Yes" : data.obstructs === false ? "No" : "?"}
-                              </span>
-                              <button
-                                className="shrink-0 bg-surface border border-line hover:bg-danger-soft hover:text-danger text-muted rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold transition-colors"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  this.selectedId = data.id;
-                                  this.onDelete();
-                                }}
-                              >
-                                ×
-                              </button>
-                            </li>
-                          );
-                        } else {
-                          return <div key={data.id} className="hidden" />;
-                        }
-                      })}
-                  </ul>
-                </div>
-              </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
 
           {/* ── Right: Step 2 (35%) for contributors, the "What to Box" list for annotators ── */}
@@ -1302,16 +1310,16 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
           {/* Stays the submit button in every step, the tutorial's target */}
           {inSidewalkStep ? (
-            <Button submit onClick={this.onSidewalkNext} className="whitespace-nowrap">
-              {hasRealObjects ? "Next: Obstructions" : finishLabel}
+            <Button submit onClick={this.onSidewalkNext} disabled={this.state.submitting} className="whitespace-nowrap">
+              {this.state.submitting ? "Saving..." : hasRealObjects ? "Next: Obstructions" : finishLabel}
             </Button>
           ) : annotatorObjectStep && !inObstructionStep ? (
-            <Button submit onClick={this.onObjectsNext} className="whitespace-nowrap">
-              {askSidewalk ? "Next: Sidewalk" : hasRealObjects ? "Next: Obstructions" : finishLabel}
+            <Button submit onClick={this.onObjectsNext} disabled={this.state.submitting} className="whitespace-nowrap">
+              {this.state.submitting ? "Saving..." : askSidewalk ? "Next: Sidewalk" : hasRealObjects ? "Next: Obstructions" : finishLabel}
             </Button>
           ) : (
-            <Button submit onClick={this.submit} className="whitespace-nowrap">
-              {finishLabel}
+            <Button submit onClick={this.submit} disabled={this.state.submitting} className="whitespace-nowrap">
+              {this.state.submitting ? "Saving..." : finishLabel}
             </Button>
           )}
         </div>
@@ -1327,6 +1335,26 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     };
   }
 
+  /**
+   * Step 1, both roles (8 Oct 2026): a point in the empty band beside the
+   * photo is moved onto its edge, so boxes are drawn and resized on the photo
+   * only. Unchanged before the image has loaded.
+   */
+  public clampToPhoto = (x: number, y: number) => {
+    const { width, height } = this.imageSize();
+    return clampPointToImage(x, y, width, height);
+  };
+
+  /** Moves a box dragged past the photo's edge back onto it, at its full size. */
+  public keepShapeInsidePhoto = (shape: IShape) => {
+    const { width, height } = this.imageSize();
+    const { mark } = shape.getAnnotationData();
+    const inside = keepMarkInside(mark, width, height);
+    if (inside === mark || (inside.x === mark.x && inside.y === mark.y && inside.width === mark.width && inside.height === mark.height)) return;
+    Object.assign(mark, inside);
+    this.onShapeChange();
+  };
+
   /** Copies with marks normalized and clipped to the image, as the server stores them. */
   private tidyMarks(boxes: IAnnotation[]) {
     const { width, height } = this.imageSize();
@@ -1340,11 +1368,64 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     return isBelowMinimumSize(box.mark, width, height);
   }
 
-  /** Selects a box as if it had been clicked, which opens its panel. */
-  private selectBox = (box: IAnnotation) => {
-    const inside = pointInsideMark(box.mark);
-    this.currentAnnotationState.onMouseDown(inside.x, inside.y);
+  /**
+   * What a press on a box does to select it: it becomes the selected box, gets
+   * resize handles, and moves to the end of the list so it paints on top (and
+   * so DraggingAnnotationState drags it). Shared by DefaultAnnotationState and
+   * selectBoxById. Returns the shape.
+   */
+  public selectShapeAt = (index: number) => {
+    const shape = this.shapes[index];
+    this.selectedId = shape.getAnnotationData().id;
+    this.currentTransformer = new Transformer(shape, this.scaleState.scale);
+    this.shapes.splice(index, 1);
+    this.shapes.push(shape);
+    return shape;
+  };
+
+  /**
+   * Selects the box with this id and opens its panel, as a click on it does,
+   * wherever it sits among other boxes (7 Oct 2026). Selecting by a simulated
+   * click at a point just inside the box's corner opened the wrong panel when
+   * a smaller box covered that corner, such as a pole over the corner of a car,
+   * since a click picks the smallest box under it.
+   */
+  public selectBoxById = (id: string) => {
+    const index = this.shapes.findIndex((shape) => shape.getAnnotationData().id === id);
+    if (index < 0) return;
+    // Opening a hidden object shows its box again
+    if (this.state.hiddenBoxIds.includes(id)) {
+      this.setState({ hiddenBoxIds: withoutHiddenId(this.state.hiddenBoxIds, id) }, () => this.selectBoxById(id));
+      return;
+    }
+    // Settle any gesture in flight first
     this.currentAnnotationState.onMouseUp();
+    this.selectShapeAt(index);
+    this.setAnnotationState(new DefaultAnnotationState(this));
+    this.onShapeChange();
+  };
+
+  /** Contributors: a chip under the photo opens its box's panel (7 Oct 2026). */
+  private openTrayItem = (id: string) => {
+    if (this.annotatorObjectStep) return;
+    this.selectBoxById(id);
+  };
+
+  /** Step 1, both roles: hides or shows one box on the photo (8 Oct 2026). */
+  private toggleBoxHidden = (id: string) => {
+    if (!this.inBoxStep) return;
+    const hiddenBoxIds = toggleHiddenId(this.state.hiddenBoxIds, id);
+    // Hiding the open box closes its panel
+    if (hiddenBoxIds.includes(id) && this.selectedId === id) {
+      this.currentAnnotationState.onMouseUp();
+      this.selectedId = null;
+      this.setAnnotationState(new DefaultAnnotationState(this));
+    }
+    this.setState({ hiddenBoxIds }, () => this.onShapeChange());
+  };
+
+  private showAllBoxes = () => {
+    this.setState({ hiddenBoxIds: [] }, () => this.onShapeChange());
   };
 
   /**
@@ -1361,22 +1442,52 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       return { text: "To decide", className: "bg-danger-soft text-danger" };
     };
 
+    const hidden = this.state.hiddenBoxIds;
+    const hiddenCount = sortedAnnotations.filter((box) => hidden.includes(box.id)).length;
+
     return (
       <div id="box-review-section" className="bg-surface rounded-card border border-line shadow-sm p-4 w-full">
-        <div className="mb-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <H3><span className="text-lg font-bold text-ink">Objects in This Image</span></H3>
+          {/* Boxes hidden on the photo (8 Oct 2026) */}
+          {hiddenCount > 0 && (
+            <span className="inline-flex items-center gap-2 text-xs text-muted whitespace-nowrap">
+              {BOX_VISIBILITY_COPY.hiddenCount(hiddenCount)}
+              <button type="button" onClick={this.showAllBoxes} className="font-semibold text-primary hover:underline">
+                {BOX_VISIBILITY_COPY.showAll}
+              </button>
+            </span>
+          )}
         </div>
         <ul className="flex flex-wrap gap-2">
           {sortedAnnotations.map((box) => {
             const tag = tagFor(box);
+            const isHidden = hidden.includes(box.id);
+            const eyeLabel = isHidden ? BOX_VISIBILITY_COPY.show(labelOf(box)) : BOX_VISIBILITY_COPY.hide(labelOf(box));
             return (
               <li
                 key={box.id}
-                className="group border border-line rounded-control bg-surface hover:border-primary hover:shadow-md transition-all cursor-pointer flex items-center gap-1.5 pl-2 pr-1 py-1"
-                onClick={() => this.selectBox(box)}
+                className={`group border border-line rounded-control bg-surface hover:border-primary hover:shadow-md transition-all flex items-stretch ${isHidden ? "opacity-60" : ""}`}
               >
-                <span className="text-xs font-semibold text-ink whitespace-nowrap">{labelOf(box)}</span>
-                <span className={`text-[10px] font-bold rounded-control px-1 whitespace-nowrap ${tag.className}`}>{tag.text}</span>
+                {/* The name opens the box, the eye hides it on the photo */}
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 pl-2 pr-1 py-1 cursor-pointer rounded-control"
+                  onClick={() => this.selectBoxById(box.id)}
+                >
+                  <span className="text-xs font-semibold text-ink whitespace-nowrap">{labelOf(box)}</span>
+                  <span className={`text-[10px] font-bold rounded-control px-1 whitespace-nowrap ${tag.className}`}>{tag.text}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={eyeLabel}
+                  aria-pressed={isHidden}
+                  title={eyeLabel}
+                  onClick={() => this.toggleBoxHidden(box.id)}
+                  className="grid place-items-center pl-0.5 pr-2 rounded-control text-subtle hover:text-ink transition-colors"
+                >
+                  {isHidden ? <EyeOffIcon size={14} /> : <EyeIcon size={14} />}
+                </button>
               </li>
             );
           })}
@@ -1457,7 +1568,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.setAnnotationState(new JudgingAnnotationState(this));
     this.obstructionStepStartMs = Date.now();
     this.setState(
-      { annotatorStep: "obstructions", obstructionsConfirmed: false, error: null, showInput: false },
+      // Every box shows again outside Step 1
+      { annotatorStep: "obstructions", obstructionsConfirmed: false, error: null, showInput: false, hiddenBoxIds: [] },
       () => {
         this.onShapeChange();
         this.canvasWrapperRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
@@ -1510,7 +1622,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.setAnnotationState(new SidewalkAnnotationState(this));
     this.sidewalkStepStartMs = Date.now();
     this.obstructionStepStartMs = null;
-    this.setState({ annotatorStep: "sidewalk", error: null, showInput: false }, () => {
+    this.setState({ annotatorStep: "sidewalk", error: null, showInput: false, hiddenBoxIds: [] }, () => {
       this.onShapeChange();
       this.canvasWrapperRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
       if (!restoring) this.cacheCurrentImageEdits();
@@ -1564,7 +1676,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.cacheCurrentImageEdits();
   };
 
-  /** Annotators, Sidewalk step: the toolbar above the canvas. */
+  /**
+   * Annotators, Sidewalk step: the toolbar above the canvas. Its messages
+   * (a refused shape, an undone drag) show under the photo instead, next to
+   * where the drawing happens (8 Oct 2026).
+   */
   private renderSidewalkToolbar() {
     const { sidewalk, showSidewalkBoxes, hideSidewalkFill } = this.state;
     const drawing = Boolean(sidewalk.draft);
@@ -1588,7 +1704,6 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             Show photo only
           </Button>
         </div>
-        {sidewalk.message && <p className="text-xs text-muted mt-2">{sidewalk.message}</p>}
       </div>
     );
   }
@@ -1779,8 +1894,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // 2. Save User Edits Locally (Just in case they drew something before going back)
     this.cacheCurrentImageEdits();
 
-    // 3. Decrement the counter in Local Storage
-    const newCount = (readCurrentCount() ?? 1) - 1;
+    // 3. Decrement the counter in Local Storage. From the image on screen, so
+    // a double click lands on the same previous image rather than two back.
+    const newCount = this.props.currentAnnotationCount - 1;
     writeCurrentCount(newCount);
 
     // 4. Update the DB Session so logouts resume correctly
@@ -1803,6 +1919,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * will ever come back to fill.
    */
   private submit = async () => {
+    // One submit at a time (8 Oct 2026). A double click on Next Image, or Enter
+    // and a click, used to send the image twice, and each success moved the
+    // position on by one, so the next image was skipped and a 50-image session
+    // ended after 49.
+    if (this.submitInFlight) return;
     const durationMs = Date.now() - this.mountTime;
 
     const username = this.props.username;
@@ -1827,7 +1948,20 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // Both roles: marks normalized (positive width and height) and clipped to
     // the image before sending. initialState is left alone.
     const selectedObjects = this.tidyMarks(decidedSuggestions);
-    const newObjects = this.tidyMarks(drawnBoxes);
+    // drawnOrder only numbers boxes on screen, so it is not submitted
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
+    const newObjects = this.tidyMarks(drawnBoxes).map(({ drawnOrder, ...box }) => box);
+
+    // A box with no area on the photo (one left wholly in the band beside it
+    // before 8 Oct 2026) would be refused by the server. Say which.
+    const offPhoto = [...selectedObjects, ...newObjects].find(
+      (box) => box?.mark && box.comment !== NOT_AN_OBJECT && !(markArea(box.mark) > 0)
+    );
+    if (offPhoto) {
+      const label = buildDisplayLabelsInOrder(this.currentAnnotationData).get(offPhoto.id) || "A box";
+      this.setState({ error: `${label} is outside the photo. Move it onto the photo or delete it.` });
+      return;
+    }
 
     const counts = buildSubmissionCounts(answered);
     const {
@@ -1920,13 +2054,26 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       selectedObjectsID: selectedObjects,
       newObjects: newObjects,
       currentAnnotationCount: this.props.currentAnnotationCount + 1,
+      canvasVersion: CANVAS_VERSION,
       telemetry: telemetryPayload,
     };
-    const res = await fetch("/api/annotationSubmit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    this.submitInFlight = true;
+    this.setState({ submitting: true });
+    let res: Response;
+    try {
+      res = await fetch("/api/annotationSubmit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      this.submitInFlight = false;
+      this.setState({
+        submitting: false,
+        error: "We couldn't save that annotation. Check your connection and try again.",
+      });
+      return;
+    }
     if (res.status === 200) {
       // Fold the current UI state into the cached batch so 'Previous' can
       // restore it without another round trip. An annotator's finished image
@@ -1935,15 +2082,30 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         objectStep ? { annotatorStep: "objects", annotations: answered, sidewalkMask: submittedMask } : {}
       );
 
-      const newCount = (readCurrentCount() ?? this.props.currentAnnotationCount) + 1;
+      // The image after the one on screen, never one more than whatever the
+      // cache holds: a repeated success then lands on the same image
+      const newCount = this.props.currentAnnotationCount + 1;
       writeCurrentCount(newCount);
 
       sessionStorage.setItem("isNavigatingImages", "true");
       Router.reload();
       window.scrollTo(0, 0);
     } else {
+      // The server explains a refusal (422 and the like). Anything else is
+      // most likely the connection.
+      let message: string | null = null;
+      if (res.status >= 400 && res.status < 500) {
+        try {
+          const json = await res.json();
+          if (typeof json?.message === "string" && json.message) message = json.message;
+        } catch {
+          message = null;
+        }
+      }
+      this.submitInFlight = false;
       this.setState({
-        error: "We couldn't save that annotation. Check your connection and try again.",
+        submitting: false,
+        error: message || "We couldn't save that annotation. Check your connection and try again.",
       });
     }
   };
@@ -1982,10 +2144,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   public selectAnnotation = (data) => {
-    const labels = buildDisplayLabels(this.currentAnnotationData);
+    // Numbered in the lists' order, not drawing order
+    const labels = buildDisplayLabelsInOrder(this.currentAnnotationData);
     this.paintSidewalkLayer();
     const variant = this.paintVariant;
     for (const item of this.shapes) {
+      if (this.isBoxHidden(item.getAnnotationData().id)) continue;
       const isSelected = variant === "default" && item.getAnnotationData().id === data.id;
       const { x, y, width: boxW } = item.paint(
         this.canvas2D,
@@ -2021,6 +2185,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           showInput: true,
           inputPosition: { left: useLeft ? leftLeft : rightLeft, top: popupTop },
           inputComment: item.getAnnotationData().comment || "",
+          originalComment: item.getAnnotationData().initialState?.comment || "",
           editable: item.getAnnotationData().editable || false,
           selected: item.getAnnotationData().selected || false,
           isRejected: item.getAnnotationData().isRejected || false,
@@ -2046,7 +2211,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       );
 
       let hasSelectedItem = false;
-      const labels = buildDisplayLabels(this.currentAnnotationData);
+      // Numbered in the lists' order, not drawing order, which changes on every
+      // click: "Lamp Post #2" is the same box on the photo and in the list
+      const labels = buildDisplayLabelsInOrder(this.currentAnnotationData);
 
       // The sidewalk outline goes under the boxes
       this.paintSidewalkLayer();
@@ -2057,6 +2224,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       const skipBoxes = this.inSidewalkStep && !this.state.showSidewalkBoxes;
       for (const item of this.shapes) {
         if (skipBoxes) continue;
+        if (this.isBoxHidden(item.getAnnotationData().id)) continue;
         const isSelected = variant === "default" && item.getAnnotationData().id === this.selectedId;
         const { x, y, width: boxW } = item.paint(
           this.canvas2D,
@@ -2094,6 +2262,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             showInput: true,
             inputPosition: { left: useLeft ? leftLeft : rightLeft, top: popupTop },
             inputComment: item.getAnnotationData().comment || "",
+            originalComment: item.getAnnotationData().initialState?.comment || "",
             editable: item.getAnnotationData().editable || false,
             selected: item.getAnnotationData().selected || false,
             isRejected: item.getAnnotationData().isRejected || false,
@@ -2119,6 +2288,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     );
     const { onChange } = this.props;
     onChange(this.currentAnnotationData);
+    // Every box edit is saved shortly after it stops (8 Oct 2026). A quiet
+    // repaint is a pointer moving over the sidewalk outline, not an edit.
+    if (!quiet) this.scheduleEditSave();
   };
 
   /**
@@ -2183,6 +2355,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (deleteTarget >= 0) {
       if (this.shapes[deleteTarget].getAnnotationData().editable) {
         this.shapes.splice(deleteTarget, 1);
+        // Clear the selection, which also drops the deleted box's resize
+        // handles. Left in place, they swallowed the next press where the box
+        // had been (found 8 Oct 2026).
+        this.selectedId = null;
         this.onShapeChange();
       }
     }
@@ -2225,8 +2401,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
 
     if (!keepSelected) {
-      this.currentAnnotationState.onMouseDown(-1, -1);
-      this.currentAnnotationState.onMouseUp();
+      this.closePanel();
     }
   };
 
@@ -2248,8 +2423,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       }
     }
 
-    this.currentAnnotationState.onMouseDown(-1, -1);
-    this.currentAnnotationState.onMouseUp();
+    this.closePanel();
   };
 
   private onMarkNotAnObject = () => {
@@ -2267,8 +2441,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.onShapeChange();
     }
 
-    this.currentAnnotationState.onMouseDown(-1, -1);
-    this.currentAnnotationState.onMouseUp();
+    this.closePanel();
   };
 
   /**
@@ -2286,14 +2459,25 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.setState({ selected: true, isRejected: false, obstructs: null, severity: null });
     this.onShapeChange();
 
-    this.currentAnnotationState.onMouseDown(-1, -1);
-    this.currentAnnotationState.onMouseUp();
+    this.closePanel();
   };
 
   /** Closes the panel without changing the box (the check button). */
   private onClose = () => {
-    this.currentAnnotationState.onMouseDown(-1, -1);
-    this.currentAnnotationState.onMouseUp();
+    this.closePanel();
+  };
+
+  /**
+   * Deselects the box, which closes its panel (8 Oct 2026). This used to be a
+   * simulated click at (-1, -1), just off the photo's top-left corner. For a
+   * box touching that corner the click landed on the box's own resize handle,
+   * so No, Not an object, Keep or Close left the panel open. In Sidewalk and
+   * Obstructions the step keeps its own click handling.
+   */
+  private closePanel = () => {
+    this.selectedId = null;
+    if (this.inBoxStep) this.setAnnotationState(new DefaultAnnotationState(this));
+    this.onShapeChange();
   };
 
   private onSetObstructs = (obstructs: boolean) => {
@@ -2305,12 +2489,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (selectTarget >= 0) {
       const data = this.shapes[selectTarget].getAnnotationData();
       data.obstructs = obstructs;
-      if (!obstructs) {
-        data.severity = null;
-      } else if (this.askSeverity && (data.severity === undefined || data.severity === null)) {
-        // Contributors rate a drawn obstruction, starting the slider at 3
-        data.severity = 3;
-      }
+      // A No clears the severity. A first Yes leaves it empty, so the panel
+      // shows the severity picker, as it does for suggestions (7 Oct 2026).
+      if (!obstructs || !this.askSeverity) data.severity = null;
       this.setState({ obstructs, severity: data.severity ?? null });
       this.onShapeChange();
     }
@@ -2326,18 +2507,57 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     if (selectTarget >= 0) {
       const data = this.shapes[selectTarget].getAnnotationData();
-      const wasFirstConfirmation = data.severity === null || data.severity === undefined;
       data.severity = severity as 1 | 2 | 3 | 4 | 5;
       data.obstructs = true;
       this.setState({ severity, obstructs: true });
       this.onShapeChange();
 
-      // Only dismiss on first confirmation, not when editing existing severity
-      if (wasFirstConfirmation && !data.editable) {
-        this.currentAnnotationState.onMouseDown(-1, -1);
-        this.currentAnnotationState.onMouseUp();
-      }
+      // Severity is only set from the severity picker's Confirm, which
+      // finishes the box, so the panel closes for suggestions and drawn boxes
+      // alike (7 Oct 2026)
+      this.onClose();
     }
+  };
+
+  /**
+   * Contributors: the severity picker's Go back after a first Yes. Takes the
+   * Yes back so the box is unanswered again and the panel shows the question
+   * (7 Oct 2026). Before, Go back on a suggestion recorded a No.
+   */
+  private onClearObstruction = () => {
+    if (this.annotatorObjectStep) return;
+    const target = this.shapes.find((shape) => shape.getAnnotationData().id === this.selectedId);
+    if (!target) return;
+    const data = target.getAnnotationData();
+    data.obstructs = undefined;
+    data.severity = null;
+    if (!data.editable) {
+      data.selected = false;
+      data.isRejected = false;
+    }
+    this.setState({ obstructs: undefined, severity: null, selected: data.selected || false, isRejected: data.isRejected || false });
+    this.onShapeChange();
+  };
+
+  /**
+   * Contributors: Undo on a suggestion marked Not an object. It gets the
+   * model's category back and no answer, so it is still to decide (7 Oct 2026).
+   */
+  private onRestoreObject = () => {
+    if (this.annotatorObjectStep) return;
+    const target = this.shapes.find((shape) => shape.getAnnotationData().id === this.selectedId);
+    if (!target) return;
+    const data = target.getAnnotationData();
+    if (data.editable || data.comment !== NOT_AN_OBJECT) return;
+    const original = data.initialState?.comment;
+    const comment = original && original !== NOT_AN_OBJECT ? original : "---";
+    data.comment = comment;
+    data.selected = false;
+    data.isRejected = false;
+    data.obstructs = undefined;
+    data.severity = null;
+    this.setState({ inputComment: comment, selected: false, isRejected: false, obstructs: undefined, severity: null });
+    this.onShapeChange();
   };
 
   private setCanvasDPI = () => {
@@ -2455,6 +2675,13 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       offsetX,
       offsetY
     );
+    // Step 1: drawing and resizing stop at the photo's edge (8 Oct 2026). The
+    // Sidewalk step keeps its own snapping to the edge.
+    if (this.inBoxStep) {
+      const { x, y } = this.clampToPhoto(positionX, positionY);
+      this.currentAnnotationState.onMouseMove(x, y);
+      return;
+    }
     this.currentAnnotationState.onMouseMove(positionX, positionY);
   };
 
@@ -2465,23 +2692,6 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private onMouseLeave: MouseEventHandler<HTMLCanvasElement> = () => {
     this.currentAnnotationState.onMouseLeave();
   };
-
-  /**
-   * Fires a complete synthetic click at the given image coordinates.
-   *
-   * Used to select a box programmatically — after drawing a new one, or when
-   * clicking its thumbnail in the summary list. Running it through the same
-   * state machine as a real click means selection behaves identically either
-   * way, instead of needing a parallel path that could drift.
-   *
-   * The leading mouse-up settles whatever gesture was in flight, so the click
-   * lands on a state machine that's actually idle.
-   */
-  public onMouseDownHack(positionX, positionY) {
-    this.currentAnnotationState.onMouseUp();
-    this.currentAnnotationState.onMouseDown(positionX, positionY);
-    this.currentAnnotationState.onMouseUp();
-  }
 
   private surfaceTypeText = (surfaceType) => {
     switch (surfaceType) {

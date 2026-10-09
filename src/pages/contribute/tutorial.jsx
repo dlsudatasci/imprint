@@ -384,8 +384,9 @@ export default function TutorialPage({ isAnnotator = false }) {
 function TutorialBeacons({ isAnnotator = false, annotatorStep = "objects", onBeaconClick }) {
   // One beacon per step of the tour on screen, so a beacon's index is its step.
   // Each tour says where its beacons sit (tourBeaconPlacements): above the
-  // target by default, below it when two steps share a target, and to its left
-  // in the Sidewalk step, where the toolbar sits right above the photo.
+  // target by default, and to its left beside the photo for the contributor
+  // severity step and in the Sidewalk step, where the toolbar sits right above
+  // the photo.
   const placements = tourBeaconPlacements(isAnnotator, annotatorStep);
   const targets = tourTargets(isAnnotator, annotatorStep).map((sel, i) => ({
     sel,

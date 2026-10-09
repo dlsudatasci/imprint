@@ -112,6 +112,17 @@ describe("getSuggestionPanelMode", () => {
     expect(getSuggestionPanelMode({ ...yesNoSeverity, askSeverity: true })).toBe("severity");
   });
 
+  it("sends a drawn box answered Yes with no severity to the severity picker, like a suggestion (7 Oct 2026)", () => {
+    expect(getSuggestionPanelMode({ editable: true, selected: false, obstructs: true, severity: null, comment: "bollard" })).toBe("severity");
+    expect(getSuggestionPanelMode({ editable: true, selected: false, obstructs: true, severity: undefined, comment: "bollard" })).toBe("severity");
+    // Rated, answered No, or not yet answered: the drawn panel
+    expect(getSuggestionPanelMode({ editable: true, selected: false, obstructs: true, severity: 2, comment: "bollard" })).toBe("drawn");
+    expect(getSuggestionPanelMode({ editable: true, selected: false, obstructs: false, severity: null, comment: "bollard" })).toBe("drawn");
+    expect(getSuggestionPanelMode({ editable: true, selected: false, obstructs: null, severity: null, comment: "bollard" })).toBe("drawn");
+    // Never for annotators
+    expect(getSuggestionPanelMode({ editable: true, selected: false, obstructs: true, severity: null, comment: "bollard", askSeverity: false })).toBe("drawn");
+  });
+
   it("leaves every other mode unchanged for annotators", () => {
     expect(getSuggestionPanelMode({ editable: true, selected: false, obstructs: undefined, severity: undefined, comment: "tree", askSeverity: false })).toBe("drawn");
     expect(getSuggestionPanelMode({ editable: false, selected: false, obstructs: undefined, severity: undefined, comment: "tree", askSeverity: false })).toBe("judge");

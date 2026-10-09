@@ -1,5 +1,5 @@
 import { ReactPictureAnnotation } from "../index";
-import { normalizeMark, isTooSmallToKeep, pointInsideMark } from "@/util/boxGeometry";
+import { normalizeMark, isTooSmallToKeep } from "@/util/boxGeometry";
 import { IShape } from "../Shape";
 import { IAnnotationState } from "./AnnotationState";
 import { DefaultAnnotationState } from "./DefaultAnnotationState";
@@ -70,20 +70,18 @@ export default class CreatingAnnotationState implements IAnnotationState {
     }
     setAnnotationState(new DefaultAnnotationState(this.context));
 
-    // Synthesise a click just inside the box we just finished, which runs it
-    // back through Default's hit-testing and opens the label popup. Saves the
+    // Select the box just finished and open its label panel, which saves the
     // user a second click, since a new box always needs a label anyway.
-    //
-    // Has to happen after the state swap — Creating ignores mousedown, so the
-    // synthetic event would go nowhere if it fired first.
     if (makeNewBox) {
       // A box drawn up or to the left keeps its start corner as x, y with a
-      // negative size, so the click below would land outside it. Normalize the
-      // mark in place first (4 Oct 2026, both roles).
-      const { mark } = data.getAnnotationData();
+      // negative size. Normalize the mark in place (4 Oct 2026, both roles).
+      const { mark, id } = data.getAnnotationData();
       Object.assign(mark, normalizeMark(mark));
-      const inside = pointInsideMark(mark);
-      this.context.onMouseDownHack(inside.x, inside.y);
+      // By id (8 Oct 2026). A simulated click just inside the new box's corner
+      // selected the smallest box under that point, so a box drawn with its
+      // corner over a smaller box (a car box over the foot of a pole) opened
+      // the pole's panel instead of its own.
+      this.context.selectBoxById(id);
     }
   };
 

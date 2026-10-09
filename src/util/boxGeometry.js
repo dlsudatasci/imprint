@@ -47,6 +47,30 @@ export function clampMark(mark, imageWidth, imageHeight) {
   return { ...m, x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
 }
 
+/**
+ * The point moved onto the photo when it lies outside it (8 Oct 2026). The
+ * photo is fitted inside a fixed canvas, which leaves empty bands beside it,
+ * and a box drawn or resized into a band was clipped when saved or, wholly in
+ * a band, refused by the server. Unchanged when the image size is unknown.
+ */
+export function clampPointToImage(x, y, imageWidth, imageHeight) {
+  if (!isPositiveFinite(imageWidth) || !isPositiveFinite(imageHeight)) return { x, y };
+  return { x: Math.min(Math.max(x, 0), imageWidth), y: Math.min(Math.max(y, 0), imageHeight) };
+}
+
+/**
+ * The box moved, not resized, so it lies inside the photo: a box dragged past
+ * an edge stops at it at its full size. A box larger than the photo keeps to
+ * the top-left. Normalized first. Unchanged when the image size is unknown.
+ */
+export function keepMarkInside(mark, imageWidth, imageHeight) {
+  if (!mark || !isPositiveFinite(imageWidth) || !isPositiveFinite(imageHeight)) return mark;
+  const m = normalizeMark(mark);
+  const x = Math.min(Math.max(m.x, 0), Math.max(0, imageWidth - m.width));
+  const y = Math.min(Math.max(m.y, 0), Math.max(0, imageHeight - m.height));
+  return { ...m, x, y };
+}
+
 export function markArea(mark) {
   return Math.abs(mark.width) * Math.abs(mark.height);
 }

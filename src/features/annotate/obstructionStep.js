@@ -1,5 +1,6 @@
 import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
 import { normalizeMark, markArea } from "@/util/boxGeometry";
+import { compareAppearance } from "@/util/buildDisplayLabels";
 
 /**
  * The annotator's Obstructions step (decided 4 Oct 2026). For every object
@@ -19,10 +20,12 @@ export function isRealObject(box) {
 }
 
 // Same order as the tool's sortedAnnotations
-const byId = (a, b) => String(a.id).localeCompare(String(b.id));
+// The same order as the other lists and the numbers on the photo: suggestions
+// in the model's order, then drawn boxes in the order drawn (8 Oct 2026)
+const byAppearance = compareAppearance;
 
 export function realObjects(annotations = []) {
-  return (annotations || []).filter(isRealObject).sort(byId);
+  return (annotations || []).filter(isRealObject).sort(byAppearance);
 }
 
 export function summarizeObstructionStep(annotations = []) {

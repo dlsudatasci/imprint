@@ -2,6 +2,17 @@ import React, { useState, useEffect, useRef } from "react";
 import { NOT_AN_OBJECT, getSuggestionPanelMode } from "@/util/suggestionJudgment";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 
+/**
+ * The box panel for contributors, Step 1.
+ *
+ * One panel for every box (7 Oct 2026): pick or check the category, then answer
+ * Yes or No. No closes the panel. Yes opens the severity picker, and confirming
+ * a severity closes it. A suggestion and a box the contributor drew behave the
+ * same way, except that a drawn box can be deleted and a suggestion can be
+ * marked Not an object, each from a button at the foot of the panel. The panel
+ * offers a close button only once the box is fully answered, so a new box is
+ * never left half done by accident.
+ */
 const SEVERITY_LEVELS = [
   { value: 1, label: "Minor inconvenience" },
   { value: 2, label: "Noticeable reduction" },
@@ -9,6 +20,9 @@ const SEVERITY_LEVELS = [
   { value: 4, label: "Difficult to pass" },
   { value: 5, label: "Impassable" },
 ];
+
+export const severityLabel = (value: number | null | undefined) =>
+  SEVERITY_LEVELS.find((l) => l.value === value)?.label ?? "";
 
 export interface IDefaultInputSection {
   value: string;
@@ -20,14 +34,26 @@ export interface IDefaultInputSection {
   onMarkNotAnObject: () => void;
   onSetSeverity: (severity: number) => void;
   onSetObstructs: (obstructs: boolean) => void;
+  /** Closes the panel without changing the box */
+  onClose: () => void;
+  /** Takes back a Yes that has no severity yet, back to the question */
+  onClearObstruction: () => void;
+  /** Restores a box marked Not an object: the model's category back, no answer */
+  onRestoreObject: () => void;
+  /** The model's own category for a suggestion, named in the Not an object panel */
+  originalComment?: string;
   editable: boolean;
   selected: boolean;
   isRejected: boolean;
-  obstructs?: boolean;
+  obstructs?: boolean | null;
   severity?: number | null;
   // False for annotators, who give no severity (decided 3 Oct 2026)
   askSeverity?: boolean;
 }
+
+const PANEL_CLASS = "bg-surface rounded-control shadow-2xl border border-line p-3 w-[280px] pointer-events-auto";
+const SECONDARY_BUTTON = "px-2.5 py-1.5 rounded-control text-xs font-semibold border border-line bg-surface-subtle text-ink hover:bg-line transition-colors";
+const stop = (e: React.MouseEvent) => e.stopPropagation();
 
 function SeveritySlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const [local, setLocal] = useState(value);
@@ -36,11 +62,7 @@ function SeveritySlider({ value, onChange }: { value: number; onChange: (v: numb
   useEffect(() => { setLocal(value); }, [value]);
 
   return (
-    <div
-      className="w-full"
-      onMouseDown={(e) => e.stopPropagation()}
-      onMouseUp={(e) => e.stopPropagation()}
-    >
+    <div className="w-full" onMouseDown={stop} onMouseUp={stop}>
       <style>{`
         .severity-range { -webkit-appearance: none; appearance: none; width: 100%; height: 8px; border-radius: 9999px; background: linear-gradient(to right, #dbeafe, #fde68a, #fca5a5); outline: none; cursor: pointer; }
         .severity-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--color-primary, #3b82f6); border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); cursor: grab; }
@@ -54,6 +76,8 @@ function SeveritySlider({ value, onChange }: { value: number; onChange: (v: numb
         max={5}
         step={1}
         value={local}
+        aria-label="Severity"
+        aria-valuetext={`${local}, ${severityLabel(local)}`}
         className="severity-range"
         onInput={(e) => {
           const v = Number((e.target as HTMLInputElement).value);
@@ -69,7 +93,7 @@ function SeveritySlider({ value, onChange }: { value: number; onChange: (v: numb
       />
       <div className="flex justify-between items-center mt-1">
         <span className="text-[10px] text-muted">1</span>
-        <span className="text-xs font-semibold text-primary">{local} — {SEVERITY_LEVELS.find(l => l.value === local)?.label}</span>
+        <span className="text-xs font-semibold text-primary">{local} · {severityLabel(local)}</span>
         <span className="text-[10px] text-muted">5</span>
       </div>
     </div>
@@ -84,11 +108,7 @@ function SeverityPicker({ initialValue, onConfirm, onBack }: {
   const [localSeverity, setLocalSeverity] = useState(initialValue ?? 3);
 
   return (
-    <div
-      className="bg-surface rounded-control shadow-2xl border border-line p-4 w-[260px] pointer-events-auto"
-      onMouseDown={(e) => e.stopPropagation()}
-      onMouseUp={(e) => e.stopPropagation()}
-    >
+    <div className="bg-surface rounded-control shadow-2xl border border-line p-4 w-[260px] pointer-events-auto" onMouseDown={stop} onMouseUp={stop}>
       <p className="text-sm font-semibold text-ink mb-3 text-center">How severe is this obstruction?</p>
       <SeveritySlider value={localSeverity} onChange={setLocalSeverity} />
       <button
@@ -107,38 +127,31 @@ function SeverityPicker({ initialValue, onConfirm, onBack }: {
   );
 }
 
-function CategoryDropdown({
-  value,
-  isCustom,
-  setIsCustom,
-  onChange,
-  showNotAnObject,
-}: {
+function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      className="shrink-0 w-9 h-9 grid place-items-center rounded-control text-muted hover:text-ink hover:bg-surface-subtle transition-colors"
+      onClick={() => onClose()}
+      title="Close"
+      aria-label="Close"
+    >
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.25" d="M6 6l12 12M18 6L6 18" /></svg>
+    </button>
+  );
+}
+
+/** The category list, plus "Other..." for a label typed in. Not an object is a button, not a category. */
+function CategoryField({ value, isCustom, setIsCustom, onChange }: {
   value: string;
   isCustom: boolean;
   setIsCustom: (v: boolean) => void;
   onChange: (v: string) => void;
-  showNotAnObject: boolean;
 }) {
-  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedVal = e.target.value;
-    if (selectedVal === "OTHER_CUSTOM") {
-      setIsCustom(true);
-      onChange("");
-    } else if (selectedVal === NOT_AN_OBJECT) {
-      setIsCustom(false);
-      onChange(NOT_AN_OBJECT);
-    } else {
-      setIsCustom(false);
-      onChange(selectedVal);
-    }
-  };
-
   if (isCustom) {
     return (
       <input
         autoFocus
-        className="w-full bg-surface-subtle border border-line rounded-control px-3 py-2 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder-gray-400"
+        className="flex-1 min-w-0 bg-surface-subtle border border-line rounded-control px-3 py-2 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder-gray-400"
         placeholder="Type label name..."
         value={value === "---" ? "" : value}
         onChange={(e) => onChange(e.target.value)}
@@ -147,33 +160,56 @@ function CategoryDropdown({
   }
 
   return (
-    <div className="relative w-full">
+    <div className="relative flex-1 min-w-0">
       <select
+        aria-label="Category"
         className="w-full bg-surface-subtle border border-line rounded-control px-3 py-2 pr-8 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
-        value={value === NOT_AN_OBJECT ? NOT_AN_OBJECT : (value || "---")}
-        onChange={handleSelectChange}
+        value={value && value !== NOT_AN_OBJECT ? value : "---"}
+        onChange={(e) => {
+          if (e.target.value === "OTHER_CUSTOM") {
+            setIsCustom(true);
+            onChange("");
+          } else {
+            setIsCustom(false);
+            onChange(e.target.value);
+          }
+        }}
       >
         <option value="---" disabled>
-          Select your option
+          Select a category
         </option>
         {CATEGORY_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
           </option>
         ))}
-        <option value="OTHER_CUSTOM" style={{ fontWeight: "bold" }}>
-          Other...
-        </option>
-        {showNotAnObject && (
-          <option value={NOT_AN_OBJECT} style={{ fontWeight: "bold" }}>
-            Not an object (wrong box)
-          </option>
-        )}
+        <option value="OTHER_CUSTOM">Other...</option>
       </select>
       <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-muted">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
       </div>
     </div>
+  );
+}
+
+function AnswerButton({ active, disabled, onClick, children }: {
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      className={`py-2 rounded-control text-sm font-bold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${active
+        ? "border-primary bg-primary text-white"
+        : "border-line bg-surface text-ink hover:bg-surface-subtle"
+        }`}
+      disabled={disabled}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -186,13 +222,20 @@ const DefaultInputSection = ({
   onMarkNotAnObject,
   onSetSeverity,
   onSetObstructs,
+  onClose,
+  onClearObstruction,
+  onRestoreObject,
+  originalComment = "",
   editable,
   selected,
+  isRejected,
   obstructs,
   severity,
   askSeverity = true,
 }: IDefaultInputSection) => {
   const [isCustom, setIsCustom] = useState(false);
+  // Changing the severity of a box already answered Yes
+  const [adjustingSeverity, setAdjustingSeverity] = useState(false);
 
   useEffect(() => {
     if (value === NOT_AN_OBJECT) {
@@ -223,210 +266,116 @@ const DefaultInputSection = ({
     }
   }, [value, onChange]);
 
-  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedVal = e.target.value;
-    if (selectedVal === "OTHER_CUSTOM") {
-      setIsCustom(true);
-      onChange("");
-    } else {
-      onChange(selectedVal);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      onSelectObstruction();
-    }
-  };
-
   const mode = getSuggestionPanelMode({ editable, selected, obstructs, severity, comment: value, askSeverity });
 
   if (mode === "severity") {
+    // A first Yes: Go back takes the Yes back, so nothing is recorded
+    return <SeverityPicker initialValue={severity} onConfirm={onSetSeverity} onBack={onClearObstruction} />;
+  }
+
+  if (adjustingSeverity) {
     return (
       <SeverityPicker
         initialValue={severity}
-        onConfirm={onSetSeverity}
-        onBack={onUnselectObstruction}
+        onConfirm={(v) => { setAdjustingSeverity(false); onSetSeverity(v); }}
+        onBack={() => setAdjustingSeverity(false)}
       />
     );
   }
 
+  // Laid out like the question panel (8 Oct 2026): a title with the close
+  // button, one line on which box this is, and the way back in the footer,
+  // mirroring "No real object in this box?" there. Restore, not Undo, since
+  // the panel is often reopened long after the box was marked.
   if (mode === "not_an_object") {
+    const suggested = originalComment && originalComment !== NOT_AN_OBJECT ? translateValue(originalComment) : "";
     return (
-      <div
-        className="bg-surface rounded-control shadow-2xl border border-line p-4 w-[260px] pointer-events-auto"
-        onMouseDown={(e) => e.stopPropagation()}
-        onMouseUp={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3">
-          <CategoryDropdown
-            value={value}
-            isCustom={isCustom}
-            setIsCustom={setIsCustom}
-            onChange={onChange}
-            showNotAnObject={true}
-          />
-        </div>
-        <p className="text-xs text-muted mb-3 text-center">
-          This box does not mark a real object. It will be left out of the data.
-        </p>
-        <button
-          className="w-full py-2 rounded-control font-bold text-sm transition-all shadow-sm border border-line bg-surface-subtle hover:bg-line text-body"
-          onClick={() => onMarkNotAnObject()}
-        >
-          Confirm: not an object
-        </button>
-      </div>
-    );
-  }
-
-  if (mode === "drawn" || mode === "confirmed") {
-    const deleteAction = editable ? onDelete : onUnselectObstruction;
-
-    return (
-      <div
-        className="bg-surface rounded-control shadow-2xl border border-line p-2 w-[280px] pointer-events-auto"
-        onMouseDown={(e) => e.stopPropagation()}
-        onMouseUp={(e) => e.stopPropagation()}
-      >
-        {/* Label picker */}
+      <div className={PANEL_CLASS} onMouseDown={stop} onMouseUp={stop}>
         <div className="flex items-center gap-2">
-          {isCustom ? (
-            <input
-              autoFocus
-              className="flex-1 min-w-0 bg-surface-subtle border border-line rounded-control px-3 py-2 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder-gray-400"
-              placeholder="Type label name..."
-              value={value === "---" ? "" : value}
-              onChange={(e) => onChange(e.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-          ) : (
-            <div className="relative flex-1 min-w-0">
-              <select
-                className="w-full bg-surface-subtle border border-line rounded-control px-3 py-2 pr-8 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
-                value={value || "---"}
-                onChange={handleSelectChange}
-              >
-                <option value="---" disabled>
-                  Select your option
-                </option>
-                {CATEGORY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-                <option value="OTHER_CUSTOM" style={{ fontWeight: "bold" }}>
-                  Other...
-                </option>
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-muted">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-              </div>
-            </div>
-          )}
-
-          <button
-            className="shrink-0 w-9 h-9 flex items-center justify-center rounded-control bg-blue-50 hover:bg-blue-100 text-primary transition-colors shadow-sm border border-blue-200"
-            onClick={() => onSelectObstruction()}
-            title="Confirm"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
-          </button>
-
-          <button
-            className="shrink-0 w-9 h-9 flex items-center justify-center rounded-control bg-surface-subtle hover:bg-line text-body transition-colors shadow-sm border border-line"
-            onClick={() => deleteAction()}
-            title="Delete / Reject"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+          <span className="flex-1 pl-1 text-sm font-semibold text-ink">Not an object</span>
+          <CloseButton onClose={onClose} />
+        </div>
+        <span className="block px-1 text-xs text-muted">
+          {suggested ? `Suggested as ${suggested}. ` : ""}This box won&apos;t be counted.
+        </span>
+        <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-2">
+          <span className="text-xs text-muted">A real object after all?</span>
+          <button className={SECONDARY_BUTTON} onClick={() => onRestoreObject()}>
+            Restore
           </button>
         </div>
-
-        {/* Obstruction question for a drawn box, asked of every box like the
-            suggestions (thesis Chapter 4). Waits for a category. */}
-        {editable && (() => {
-          const hasCategory = Boolean(value) && value !== "---";
-          const answerClass = (active: boolean) =>
-            `flex-1 py-1.5 rounded-control font-bold text-sm transition-all shadow-sm border disabled:opacity-50 disabled:cursor-not-allowed ${active
-              ? "border-primary bg-primary text-white"
-              : "border-line bg-surface-subtle hover:bg-line text-body"
-            }`;
-          return (
-            <div className="mt-2 pt-2 border-t border-line px-1">
-              <p className="text-sm font-semibold text-ink mb-2 text-center">
-                Does <span className="text-primary">{hasCategory ? translateValue(value) : "this object"}</span> obstruct the sidewalk?
-              </p>
-              <div className="flex gap-2">
-                <button
-                  className={answerClass(obstructs === true)}
-                  disabled={!hasCategory}
-                  aria-pressed={obstructs === true}
-                  onClick={() => onSetObstructs(true)}
-                >
-                  Yes
-                </button>
-                <button
-                  className={answerClass(obstructs === false)}
-                  disabled={!hasCategory}
-                  aria-pressed={obstructs === false}
-                  onClick={() => onSetObstructs(false)}
-                >
-                  No
-                </button>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Severity for a drawn box answered Yes (contributors only) */}
-        {editable && askSeverity && obstructs === true && (
-          <div className="mt-2 pt-2 border-t border-line px-1">
-            <p className="text-xs text-muted mb-1.5 text-center">Severity:</p>
-            <SeveritySlider value={severity ?? 3} onChange={onSetSeverity} />
-          </div>
-        )}
-
-        {/* Editable severity for already-confirmed model suggestions */}
-        {!editable && askSeverity && severity != null && (
-          <div className="mt-2 pt-2 border-t border-line px-1">
-            <p className="text-xs text-muted mb-1.5 text-center">Severity:</p>
-            <SeveritySlider value={severity} onChange={onSetSeverity} />
-          </div>
-        )}
       </div>
     );
   }
 
-  // "judge" mode — untouched suggestion or one answered No
+  // "judge", "confirmed" or "drawn": the question
+  const answer = editable
+    ? obstructs === true ? "yes" : obstructs === false ? "no" : null
+    : selected ? "yes" : isRejected ? "no" : null;
+  const hasCategory = Boolean(value) && value !== "---";
+  const answered = answer === "no" || (answer === "yes" && (!askSeverity || severity != null));
+
+  const onYes = () => {
+    if (answer === "yes") {
+      if (askSeverity) setAdjustingSeverity(true);
+      else onClose();
+      return;
+    }
+    if (editable) onSetObstructs(true);
+    else onSelectObstruction();
+  };
+
+  const onNo = () => {
+    if (editable) {
+      onSetObstructs(false);
+      onClose();
+    } else {
+      onUnselectObstruction();
+    }
+  };
+
   return (
-    <div
-      className="bg-surface rounded-control shadow-2xl border border-line p-4 w-[260px] pointer-events-auto"
-      onMouseDown={(e) => e.stopPropagation()}
-      onMouseUp={(e) => e.stopPropagation()}
-    >
-      <div className="mb-3">
-        <CategoryDropdown
-          value={value}
-          isCustom={isCustom}
-          setIsCustom={setIsCustom}
-          onChange={onChange}
-          showNotAnObject={true}
-        />
+    <div className={PANEL_CLASS} onMouseDown={stop} onMouseUp={stop}>
+      <div className="flex items-center gap-2">
+        <CategoryField value={value} isCustom={isCustom} setIsCustom={setIsCustom} onChange={onChange} />
+        {answered && <CloseButton onClose={onClose} />}
       </div>
-      <p className="text-sm font-semibold text-ink mb-3 text-center">Does <span className="text-primary">{translateValue(value)}</span> obstruct the sidewalk?</p>
-      <div className="flex gap-2">
-        <button
-          className="flex-1 py-2 rounded-control font-bold text-sm transition-all shadow-sm border border-blue-200 bg-blue-50 hover:bg-blue-100 text-primary"
-          onClick={() => onSelectObstruction()}
-        >
-          Yes
-        </button>
-        <button
-          className="flex-1 py-2 rounded-control font-bold text-sm transition-all shadow-sm border bg-surface-subtle border-line hover:bg-surface-subtle text-body"
-          onClick={() => onUnselectObstruction()}
-        >
-          No
-        </button>
+
+      <p className="text-sm text-body mt-3 mb-2">
+        Does <span className="font-semibold text-ink">{hasCategory ? translateValue(value) : "this object"}</span> obstruct the sidewalk?
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <AnswerButton active={answer === "yes"} disabled={!hasCategory} onClick={onYes}>Yes</AnswerButton>
+        <AnswerButton active={answer === "no"} disabled={!hasCategory} onClick={onNo}>No</AnswerButton>
+      </div>
+
+      {/* The severity number only, styled like "Drawn by you". Its wording is on
+          the picker. */}
+      {answer === "yes" && askSeverity && severity != null && (
+        <div className="flex items-center justify-between gap-2 mt-3">
+          <span className="text-xs text-muted">Severity {severity}</span>
+          <button className="text-xs font-semibold text-primary hover:underline" onClick={() => setAdjustingSeverity(true)}>
+            Change
+          </button>
+        </div>
+      )}
+
+      <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-2">
+        {editable ? (
+          <>
+            <span className="text-xs text-muted">Drawn by you</span>
+            <button className={`${SECONDARY_BUTTON} hover:text-danger`} onClick={() => onDelete()}>
+              Delete box
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="text-xs text-muted">No real object in this box?</span>
+            <button className={SECONDARY_BUTTON} onClick={() => onMarkNotAnObject()}>
+              Not an object
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

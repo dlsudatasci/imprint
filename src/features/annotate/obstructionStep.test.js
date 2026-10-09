@@ -23,9 +23,9 @@ describe("isRealObject and realObjects", () => {
     expect(isRealObject(undefined)).toBe(false);
   });
 
-  it("lists the real objects sorted by id", () => {
-    const boxes = [kept("s9"), notAnObject("s1"), drawn("d2"), undecided("s5"), kept("s3")];
-    expect(realObjects(boxes).map((b) => b.id)).toEqual(["d2", "s3", "s9"]);
+  it("lists the real objects in order of appearance: suggestions, then drawn boxes as drawn (8 Oct 2026)", () => {
+    const boxes = [kept("pred-10"), notAnObject("pred-1"), drawn("zz", { drawnOrder: 200 }), undecided("pred-5"), kept("pred-2"), drawn("aa", { drawnOrder: 300 })];
+    expect(realObjects(boxes).map((b) => b.id)).toEqual(["pred-2", "pred-10", "zz", "aa"]);
     expect(realObjects(undefined)).toEqual([]);
   });
 });

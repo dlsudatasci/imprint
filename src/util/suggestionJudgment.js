@@ -14,8 +14,10 @@ export function excludeNotAnObject(boxes) {
 }
 
 // askSeverity is false for annotators, who record no severity (decided 3 Oct 2026).
+// From 7 Oct 2026 a drawn box answered Yes goes to the same severity picker as
+// a suggestion, instead of a slider inside its panel.
 export function getSuggestionPanelMode({ editable, selected, obstructs, severity, comment, askSeverity = true }) {
-  if (askSeverity && !editable && selected && obstructs === true && severity == null) return "severity";
+  if (askSeverity && obstructs === true && severity == null && (editable || selected)) return "severity";
   if (editable) return "drawn";
   if (selected) return "confirmed";
   if (comment === NOT_AN_OBJECT) return "not_an_object";

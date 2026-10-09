@@ -23,6 +23,8 @@ export default class DraggingAnnotationState implements IAnnotationState {
     // shape it picked to the end of the array before handing over here
     const currentShape = shapes[shapes.length - 1];
     currentShape.onDrag(positionX, positionY);
+    // A box dragged past the photo's edge stops at it (8 Oct 2026)
+    this.context.keepShapeInsidePhoto(currentShape);
   };
 
   public onMouseUp = () => {

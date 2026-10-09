@@ -37,4 +37,6 @@ export interface IAnnotation<T = IShapeData> {
   severity?: 1 | 2 | 3 | 4 | 5 | null;
   confidence?: number | null;
   initialState?: { comment?: string; mark: T };
+  /** A drawn box: when it was drawn, for numbering on screen only. Not submitted. */
+  drawnOrder?: number;
 }

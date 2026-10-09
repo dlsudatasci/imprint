@@ -73,6 +73,12 @@ import Checkbox from '../Checkbox';
 import { EyeIcon, EyeOffIcon } from '../icons';
 import { buildDisplayLabelsInOrder, orderOfAppearance, formatLabel } from "@/util/buildDisplayLabels";
 
+// Sent with every submit so the analysis can tell marks made on the fixed
+// canvas from those made while .rp-image had a 5px border that put the photo
+// up to 5 stage px away from the boxes (IMPRINT_photo_frame_fix.md, 9 Oct 2026).
+// A page loaded before that deploy sends no canvasVersion.
+export const CANVAS_VERSION = 2;
+
 interface IReactPictureAnnotationProps {
   annotationData?: IAnnotation[];
   selectedId?: string | null;
@@ -2048,6 +2054,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       selectedObjectsID: selectedObjects,
       newObjects: newObjects,
       currentAnnotationCount: this.props.currentAnnotationCount + 1,
+      canvasVersion: CANVAS_VERSION,
       telemetry: telemetryPayload,
     };
     this.submitInFlight = true;

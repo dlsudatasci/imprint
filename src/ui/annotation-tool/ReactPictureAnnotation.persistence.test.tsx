@@ -373,6 +373,22 @@ describe("moving on from an image (8 Oct 2026)", () => {
     expect(typeof box(drawnId).drawnOrder).toBe("number");
   });
 
+  it("marks the image as drawn on the fixed canvas (photo frame fix, 9 Oct 2026)", async () => {
+    const tool = mount();
+    ready(tool);
+    const { fetchMock, respond } = slowServer();
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = tool.submit();
+    });
+    await act(async () => {
+      respond(200);
+      await pending;
+    });
+    const call = fetchMock.mock.calls.find(([url]) => url === "/api/annotationSubmit") as unknown as [string, { body: string }];
+    expect(JSON.parse(call[1].body).canvasVersion).toBe(2);
+  });
+
   it("lets a failed send be tried again", async () => {
     const tool = mount();
     ready(tool);

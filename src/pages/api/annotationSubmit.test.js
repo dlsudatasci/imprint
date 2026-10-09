@@ -607,4 +607,31 @@ describe("POST /api/annotationSubmit", () => {
       expect(stored(mocks)).not.toHaveProperty("sidewalkMask");
     });
   });
+
+  // Photo frame fix (9 Oct 2026): pages loaded after it send canvasVersion 2,
+  // so the analysis knows these marks need no frame offset correction
+  describe("canvas version", () => {
+    const CONTRIBUTOR_IMAGE = { city: "makati", width: 1280, height: 960 };
+
+    async function submit({ role, canvasVersion }) {
+      const mocks = setupMocks({ userRole: role });
+      mocks.imageCol.findOne.mockResolvedValue(role === "annotator" ? ANNOTATOR_IMAGE : CONTRIBUTOR_IMAGE);
+      const body = role === "annotator" ? annotatorBody() : { ...validBody };
+      if (canvasVersion !== undefined) body.canvasVersion = canvasVersion;
+      const res = createMockRes();
+      await handler(createMockReq({ body }), res);
+      expect(res._status).toBe(200);
+      return mocks.annotationsCol.updateOne.mock.calls[0][1].$set;
+    }
+
+    for (const role of ["user", "annotator"]) {
+      it(`stores canvasVersion 2, and nothing for 3, "2" or a missing value (${role === "user" ? "contributor" : "annotator"})`, async () => {
+        expect((await submit({ role, canvasVersion: 2 })).canvasVersion).toBe(2);
+        for (const canvasVersion of [3, "2", undefined]) {
+          vi.clearAllMocks();
+          expect(await submit({ role, canvasVersion })).not.toHaveProperty("canvasVersion");
+        }
+      });
+    }
+  });
 });

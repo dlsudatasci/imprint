@@ -4,7 +4,8 @@
  * When boxes crowd one area it is hard to draw or fit a box exactly, and a
  * press inside an existing box selects it instead of starting a new one. Each
  * object in the list under the photo can be hidden: its box is not drawn and
- * cannot be clicked until it is shown again. Opening a hidden object from the
+ * cannot be clicked until it is shown again. From 10 Oct 2026 the open box can
+ * also be hidden from its panel, and every box at once with Hide all. Opening a hidden object from the
  * list shows it again. Hiding is a view setting only. Nothing is stored or
  * submitted, and every box shows again in the Sidewalk and Obstructions steps
  * and on the next image.
@@ -27,4 +28,7 @@ export const BOX_VISIBILITY_COPY = Object.freeze({
   show: (label) => `Show ${label} on the photo`,
   hiddenCount: (n) => (n === 1 ? "1 box hidden" : `${n} boxes hidden`),
   showAll: "Show all",
+  // 10 Oct 2026: every box hidden at once, and the open box hidden from its panel
+  hideAll: "Hide all",
+  hideOpen: "Hide this box on the photo",
 });

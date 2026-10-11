@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTourSteps, tourTargets, tourStepCount, tourBeaconPlacements } from "./tourSteps";
+import { buildTourSteps, tourTargets, tourStepCount, tourBeaconPlacements, tourBeaconTargets } from "./tourSteps";
 
 describe("tour steps", () => {
   it("gives contributors five steps at the five targets", () => {
@@ -228,4 +228,67 @@ describe("annotator tours for Sidewalk and Obstructions", () => {
       }
     }
   });
+});
+
+// Contributors on a phone or tablet (9 Oct 2026)
+describe("the touch tour", () => {
+  it("gives contributors six steps at six targets, and leaves the other tours as they were", () => {
+    expect(tourStepCount(false, "objects", "touch")).toBe(6);
+    expect([...tourTargets(false, "objects", "touch")]).toEqual([
+      ".rp-stage",
+      "#add-box-button",
+      "#box-review-section-peek",
+      "#box-review-obstructions-peek",
+      "#scene-level-section",
+      "button[type='submit']",
+    ]);
+    const steps = buildTourSteps(false, "objects", "touch");
+    expect(steps.map((s) => s.title)).toEqual([
+      "Annotation Canvas",
+      "Add a Box",
+      "Your Answers",
+      "Severity",
+      "Scene-Level Assessment",
+      "Submit",
+    ]);
+    expect(steps.map((s) => s.target)).toEqual([...tourTargets(false, "objects", "touch")]);
+    expect(tourBeaconPlacements(false, "objects", "touch")).toHaveLength(6);
+    // The pointer tour is as it was
+    expect(buildTourSteps(false, "objects", "pointer")).toEqual(buildTourSteps(false));
+    expect(tourStepCount(false, "objects", "pointer")).toBe(5);
+    // So is every annotator tour, on either input
+    for (const step of ["objects", "sidewalk", "obstructions"]) {
+      expect(buildTourSteps(true, step, "touch")).toEqual(buildTourSteps(true, step));
+      expect(tourBeaconPlacements(true, step, "touch")).toEqual(tourBeaconPlacements(true, step));
+      expect([...tourTargets(true, step, "touch")]).toEqual([...tourTargets(true, step)]);
+    }
+  });
+
+  it("explains Add box, the corners, the magnifier and pinch to zoom", () => {
+    const text = buildTourSteps(false, "objects", "touch").map((s) => s.content).join(" ");
+    expect(text).toContain("tap Add box");
+    expect(text).toContain("four corners");
+    expect(text).toContain("magnifier");
+    expect(text).toContain("Pinch to zoom");
+    expect(text).toContain("bottom of the screen");
+  });
+
+  it("puts no beacon beside its target", () => {
+    expect(tourBeaconPlacements(false, "objects", "touch").every((p) => p === "top" || p === "bottom")).toBe(true);
+  });
+
+  it("never says click, and has no em dash or semicolon", () => {
+    for (const s of buildTourSteps(false, "objects", "touch")) {
+      expect(`${s.title} ${s.content}`).not.toMatch(/click/i);
+      expect(`${s.title} ${s.content}`).not.toMatch(/[—;]/);
+    }
+  });
+
+  it("measures the Step 2 beacon on the sheet's Step 2 line when there is one", () => {
+    const beaconTargets = tourBeaconTargets(false, "objects", "touch");
+    expect(beaconTargets).toHaveLength(6);
+    expect(beaconTargets[4]).toBe("#scene-level-peek, #scene-level-section");
+    expect([...tourBeaconTargets(false)]).toEqual([...tourTargets(false)]);
+  });
+
 });

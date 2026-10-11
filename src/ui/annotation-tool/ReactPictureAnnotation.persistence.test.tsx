@@ -69,33 +69,40 @@ beforeAll(() => {
 let root: Root | null = null;
 let host: HTMLDivElement;
 
-function mount({ isAnnotator = false, current = 1 } = {}) {
+let toolRef = React.createRef<Tool>();
+
+function element({ isAnnotator = false, current = 1, layout = "desktop" as "desktop" | "sheet" } = {}) {
   const data = readSessionData();
   const rec = data.imgRecords[current - 1];
-  const ref = React.createRef<Tool>();
+  return (
+    <ReactPictureAnnotation
+      ref={toolRef as unknown as React.Ref<ReactPictureAnnotation>}
+      image={rec.url}
+      onSelect={() => undefined}
+      onChange={() => undefined}
+      width={960}
+      height={600}
+      annotationData={rec.annotationList}
+      imageID={rec.imageID}
+      city={rec.city}
+      currentAnnotationCount={current}
+      totalAnnotationCount={data.imgRecords.length}
+      username="test"
+      isAnnotator={isAnnotator}
+      layout={layout}
+    />
+  );
+}
+
+function mount(options: { isAnnotator?: boolean; current?: number; layout?: "desktop" | "sheet" } = {}) {
+  toolRef = React.createRef<Tool>();
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
   act(() => {
-    root!.render(
-      <ReactPictureAnnotation
-        ref={ref as unknown as React.Ref<ReactPictureAnnotation>}
-        image={rec.url}
-        onSelect={() => undefined}
-        onChange={() => undefined}
-        width={960}
-        height={600}
-        annotationData={rec.annotationList}
-        imageID={rec.imageID}
-        city={rec.city}
-        currentAnnotationCount={current}
-        totalAnnotationCount={data.imgRecords.length}
-        username="test"
-        isAnnotator={isAnnotator}
-      />
-    );
+    root!.render(element(options));
   });
-  return ref.current as unknown as Tool;
+  return toolRef.current as unknown as Tool;
 }
 
 function unmount() {
@@ -247,6 +254,58 @@ describe("hiding boxes on the photo (8 Oct 2026)", () => {
     expect(tool.state.annotatorStep).toBe("obstructions");
     expect(tool.state.hiddenBoxIds).toEqual([]);
     expect(tool.isBoxHidden("a-car")).toBe(false);
+  });
+});
+
+// 10 Oct 2026: hiding the open box from its panel, Hide all, and the open
+// object's chip highlighted, for both roles
+describe("hiding from the panel and Hide all (10 Oct 2026)", () => {
+  const button = (root: Element | null, text: string) =>
+    Array.from(root?.querySelectorAll("button") ?? []).find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined;
+
+  it("hides the open box from its panel's eye, which closes the panel", () => {
+    for (const isAnnotator of [false, true]) {
+      window.localStorage.clear();
+      writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator } });
+      const tool = mount({ isAnnotator });
+      act(() => tool.selectBoxById("a-car"));
+      const eye = host.querySelector('.rp-selected-input button[aria-label="Hide this box on the photo"]') as HTMLButtonElement;
+      expect(eye).not.toBeNull();
+      act(() => eye.click());
+      expect(tool.isBoxHidden("a-car")).toBe(true);
+      expect(tool.selectedId).toBeNull();
+      expect(host.querySelector(".rp-selected-input")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("hides every box with Hide all and shows them with Show all, for both roles", () => {
+    for (const isAnnotator of [false, true]) {
+      window.localStorage.clear();
+      writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator } });
+      const tool = mount({ isAnnotator });
+      act(() => tool.selectBoxById("b-pole"));
+      const list = () => host.querySelector("#box-review-section");
+      act(() => button(list(), "Hide all")!.click());
+      for (const id of ["a-car", "b-pole", "c-tree"]) expect(tool.isBoxHidden(id)).toBe(true);
+      expect(tool.selectedId).toBeNull();
+      expect(button(list(), "Hide all")).toBeUndefined();
+      expect(list()!.textContent).toContain("3 boxes hidden");
+      act(() => button(list(), "Show all")!.click());
+      expect(tool.state.hiddenBoxIds).toEqual([]);
+      unmount();
+    }
+  });
+
+  it("highlights the open object's chip in the annotators' Objects in This Image", () => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+    const tool = mount({ isAnnotator: true });
+    act(() => tool.selectBoxById("c-tree"));
+    const current = host.querySelectorAll('#box-review-section [aria-current="true"]');
+    expect(current).toHaveLength(1);
+    expect(current[0].textContent).toContain("Tree #1");
+    expect(current[0].closest("li")!.className).toContain("bg-primary-50");
   });
 });
 
@@ -506,6 +565,39 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
     expect(markOf(tool, "a-car")).toMatchObject({ x: 100, y: 100, width: 540, height: 260 });
   });
 
+  // The same magnifier as on touch, while a handle is dragged with the mouse
+  // (10 Oct 2026), for contributors and annotators
+  it("shows the magnifier while a corner or edge handle is dragged with the mouse, for both roles", () => {
+    for (const isAnnotator of [false, true]) {
+      window.localStorage.clear();
+      writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator } });
+      const tool = mount({ isAnnotator });
+      tool.currentImageElement = { width: 640, height: 360 };
+      const loupe = () => (tool.state as unknown as { loupe: { left: number; top: number } | null }).loupe;
+      act(() => tool.selectBoxById("a-car"));
+      // The bottom-right corner handle, (300, 220)
+      act(() => tool.onMouseDown(at(300, 220)));
+      expect(loupe()).toBeNull();
+      act(() => tool.onMouseMove(at(330, 240)));
+      expect(loupe()).toEqual({ left: expect.any(Number), top: expect.any(Number) });
+      act(() => tool.onMouseUp());
+      expect(loupe()).toBeNull();
+      expect(markOf(tool, "a-car")).toMatchObject({ width: 230, height: 140 });
+      // The right edge's middle handle, now at (330, 170)
+      act(() => tool.onMouseDown(at(330, 170)));
+      act(() => tool.onMouseMove(at(360, 170)));
+      expect(loupe()).toEqual({ left: expect.any(Number), top: expect.any(Number) });
+      act(() => (tool as unknown as { onMouseLeave(): void }).onMouseLeave());
+      expect(loupe()).toBeNull();
+      // Drawing a new box, or moving one, shows none
+      act(() => tool.onMouseDown(at(200, 160)));
+      act(() => tool.onMouseMove(at(220, 170)));
+      expect(loupe()).toBeNull();
+      act(() => tool.onMouseUp());
+      unmount();
+    }
+  });
+
   it("refuses to send a box left wholly off the photo, and says which", async () => {
     window.localStorage.clear();
     const rec = record();
@@ -526,7 +618,7 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
       await tool.submit();
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(tool.state.error).toBe("Bollard is outside the photo. Move it onto the photo or delete it.");
+    expect(tool.state.error).toBe("Bollard #1 is outside the photo. Move it onto the photo or delete it.");
   });
 
   it("shows the server's own reason when it refuses an image", async () => {
@@ -543,5 +635,143 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
       await tool.submit();
     });
     expect(tool.state.error).toBe("A box has no area inside the image.");
+  });
+});
+
+// Contributors on phones and tablets (9 Oct 2026): real pointer events from a
+// finger on the photo, in the sheet layout. The canvas is the 960 by 600 stage
+// shown at its own size, so a CSS px on it is an image px here.
+describe("touch on the photo (9 Oct 2026)", () => {
+  const realMatchMedia = window.matchMedia;
+  const realRect = HTMLCanvasElement.prototype.getBoundingClientRect;
+
+  beforeEach(() => {
+    // A phone: a finger is the primary pointer, and no animation
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes("coarse") || query.includes("prefers-reduced-motion"),
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+    HTMLCanvasElement.prototype.getBoundingClientRect = function () {
+      return { left: 0, top: 0, width: 960, height: 600, right: 960, bottom: 600, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    };
+  });
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    HTMLCanvasElement.prototype.getBoundingClientRect = realRect;
+  });
+
+  function onPhone() {
+    const tool = mount({ layout: "sheet" });
+    tool.currentImageElement = { width: 640, height: 360 };
+    return tool;
+  }
+  const canvas = () => host.querySelector("canvas.rp-shapes") as HTMLCanvasElement;
+  const fire = (type: string, x: number, y: number, { id = 1, pointerType = "touch" } = {}) =>
+    act(() => {
+      canvas().dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType, clientX: x, clientY: y }));
+    });
+  const markOf = (tool: Tool, id: string) =>
+    ({ ...(tool.shapes.find((sh) => sh.getAnnotationData().id === id)!.getAnnotationData() as unknown as { mark: Record<string, number> }).mark });
+  const CAR = { x: 100, y: 100, width: 200, height: 120 };
+
+  it("selects a suggestion on a tap and leaves its mark as it was, and leaves a mouse's pointer events to the mouse handlers", () => {
+    const tool = onPhone();
+    fire("pointerdown", 200, 160, { pointerType: "mouse" });
+    fire("pointerup", 200, 160, { pointerType: "mouse" });
+    expect(tool.selectedId).toBeNull();
+    fire("pointerdown", 200, 160);
+    fire("pointermove", 203, 162);
+    fire("pointerup", 203, 162);
+    expect(tool.selectedId).toBe("a-car");
+    expect(markOf(tool, "a-car")).toMatchObject(CAR);
+  });
+
+  it("moves the selected box on a drag past the slop, and saves the edit", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    fire("pointerdown", 200, 160);
+    fire("pointermove", 204, 160);
+    expect(markOf(tool, "a-car")).toMatchObject(CAR);
+    fire("pointermove", 230, 170);
+    fire("pointerup", 230, 170);
+    expect(markOf(tool, "a-car")).toMatchObject({ x: 130, y: 110, width: 200, height: 120 });
+    act(() => vi.advanceTimersByTime(500));
+    expect(box("a-car").mark).toMatchObject({ x: 130, y: 110 });
+  });
+
+  it("resizes the selected box from the corner dragged, showing the magnifier while it moves", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    // The bottom-right corner is at (300, 220)
+    fire("pointerdown", 305, 224);
+    fire("pointermove", 345, 254);
+    expect((tool.state as unknown as { loupe: unknown }).loupe).not.toBeNull();
+    fire("pointerup", 345, 254);
+    expect(markOf(tool, "a-car")).toMatchObject({ x: 100, y: 100, width: 240, height: 150 });
+    expect((tool.state as unknown as { loupe: unknown }).loupe).toBeNull();
+  });
+
+  it("puts the box back when a second finger lands mid-drag", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    fire("pointerdown", 200, 160);
+    fire("pointermove", 240, 180);
+    expect(markOf(tool, "a-car").x).toBe(140);
+    fire("pointerdown", 400, 300, { id: 2 });
+    expect(markOf(tool, "a-car")).toMatchObject(CAR);
+    fire("pointerup", 240, 180);
+    fire("pointerup", 400, 300, { id: 2 });
+    expect(markOf(tool, "a-car")).toMatchObject(CAR);
+  });
+
+  it("puts the box back on a pointercancel", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    fire("pointerdown", 200, 160);
+    fire("pointermove", 240, 180);
+    expect(markOf(tool, "a-car").x).toBe(140);
+    fire("pointercancel", 240, 180);
+    expect(markOf(tool, "a-car")).toMatchObject(CAR);
+  });
+
+  it("adds an editable box with Add box, selects it, and lists it as still to decide", () => {
+    const tool = onPhone();
+    const button = host.querySelector("#add-box-button") as HTMLButtonElement;
+    expect(button.textContent).toContain("Add box");
+    act(() => button.click());
+    const added = tool.shapes.map((sh) => sh.getAnnotationData()).find((d) => d.editable);
+    expect(added).toBeDefined();
+    expect(tool.selectedId).toBe(added!.id);
+    // Centred on the photo, 30% of it each way
+    expect(markOf(tool, added!.id)).toMatchObject({ x: 224, y: 126, width: 192, height: 108 });
+    expect(host.textContent).toContain("Drag the corners to fit the object.");
+    // Closed without an answer, it waits under Still to decide with the three suggestions
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    const peek = host.querySelector("#box-review-section-peek")!;
+    expect(peek.textContent).toContain("Still to decide 4");
+    expect(host.querySelector("#box-review-section")!.textContent).toContain("Still to decide 4");
+    expect(host.querySelector('#box-review-section [data-tray="toDecide"][title="Drawn by you"]')!.textContent).toContain("Select a category");
+  });
+
+  it("renders the box panel in the answers sheet, not over the photo", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    expect(host.querySelector(".rp-selected-input")).toBeNull();
+    expect(host.querySelector("#answer-sheet")!.textContent).toContain("obstruct the sidewalk?");
+  });
+
+  it("keeps every box and the selection when the layout switches to desktop", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    const count = tool.shapes.length;
+    act(() => root!.render(element({ layout: "desktop" })));
+    expect(toolRef.current).toBe(tool);
+    expect(tool.shapes).toHaveLength(count);
+    expect(tool.selectedId).toBe("a-car");
+    expect(host.querySelector(".rp-selected-input")!.textContent).toContain("obstruct the sidewalk?");
+    expect(host.querySelector("#answer-sheet")).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import React from "react";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 import { isTaxonomyCategory } from "@/util/taxonomy";
+import { HideButton } from "./DefaultInputSection";
 
 /**
  * The box panel for annotators, Step 1 Objects (decided 4 Oct 2026).
@@ -24,6 +25,8 @@ export interface IObjectInputSection {
   onDelete: () => void;
   onClose: () => void;
   belowMinimumSize?: boolean;
+  /** Hides this box on the photo, which closes the panel (10 Oct 2026) */
+  onHide?: () => void;
 }
 
 const PANEL_CLASS = "bg-surface rounded-control shadow-2xl border border-line p-3 w-[280px] pointer-events-auto";
@@ -95,8 +98,16 @@ const ObjectInputSection = ({
   onDelete,
   onClose,
   belowMinimumSize = false,
+  onHide,
 }: IObjectInputSection) => {
   const hasCategory = isTaxonomyCategory(value);
+  // The category list, with the hide button beside it when the box can be hidden
+  const categoryRow = (
+    <div className="flex items-center gap-2">
+      <CategorySelect value={value} onChange={onChange} />
+      {onHide && <HideButton onHide={onHide} />}
+    </div>
+  );
 
   if (mode === "not_an_object") {
     return (
@@ -104,7 +115,7 @@ const ObjectInputSection = ({
         <p className="text-xs text-muted mb-2 text-center">
           This box does not mark a real object. It is left out of the data.
         </p>
-        <CategorySelect value={value} onChange={onChange} />
+        {categoryRow}
       </div>
     );
   }
@@ -112,7 +123,7 @@ const ObjectInputSection = ({
   if (mode === "decide") {
     return (
       <div className={PANEL_CLASS} onMouseDown={stop} onMouseUp={stop}>
-        <CategorySelect value={value} onChange={onChange} />
+        {categoryRow}
         <SizeNote show={belowMinimumSize} />
         <div className="flex gap-2 mt-3">
           <button
@@ -133,6 +144,7 @@ const ObjectInputSection = ({
     <div className={PANEL_CLASS} onMouseDown={stop} onMouseUp={stop}>
       <div className="flex items-center gap-2">
         <CategorySelect value={value} onChange={onChange} />
+        {onHide && <HideButton onHide={onHide} />}
         <CloseButton onClose={onClose} />
         {mode === "drawn" && (
           <button

@@ -38,3 +38,12 @@ describe("BOX_VISIBILITY_COPY", () => {
     }
   });
 });
+
+// 10 Oct 2026: Hide all, and hiding the open box from its panel
+describe("BOX_VISIBILITY_COPY for Hide all and the panel's eye", () => {
+  it("has the two new strings, with no em dash or semicolon", () => {
+    expect(BOX_VISIBILITY_COPY.hideAll).toBe("Hide all");
+    expect(BOX_VISIBILITY_COPY.hideOpen).toBe("Hide this box on the photo");
+    for (const s of [BOX_VISIBILITY_COPY.hideAll, BOX_VISIBILITY_COPY.hideOpen]) expect(s).not.toMatch(/—|;/);
+  });
+});

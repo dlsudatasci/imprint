@@ -2,6 +2,7 @@ import { Plus_Jakarta_Sans, Ysabeau } from 'next/font/google';
 import './_app/globals.scss';
 import "@/ui/annotation-tool/Toolstyles.css";
 import { SessionProvider } from 'next-auth/react';
+import Head from 'next/head';
 
 // Body and UI face. Variable weight 200-800.
 const jakarta = Plus_Jakarta_Sans({
@@ -32,6 +33,12 @@ const ysabeau = Ysabeau({
 export default function App({ Component, pageProps: { session, ...pageProps } }) {
   return (
     <SessionProvider session={session}>
+      {/* One viewport tag for every page (9 Oct 2026). viewport-fit=cover lets
+          the annotation screen reach under a phone's notch and home indicator,
+          which it pads with the safe-area insets. Page zoom stays allowed. */}
+      <Head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" key="viewport" />
+      </Head>
       <main className={`${jakarta.variable} ${ysabeau.variable} font-sans min-h-screen flex flex-col`}>
         <Component {...pageProps} />
       </main>

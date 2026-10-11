@@ -15,6 +15,9 @@ import {
   readSessionData,
   writeSession,
 } from "@/util/sessionCache";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
+import { isAnnotatorUser } from "@/util/userRole";
 
 /**
  * The annotation flow — where contributors do the actual work.
@@ -25,21 +28,25 @@ import {
  *   no session          → choose a batch size
  *   current <= total    → annotate the current image
  *   current > total     → finished; finalise and celebrate
- *   no mouse or trackpad → desktop-only notice, whatever the above says
+ *   an annotator on a phone or tablet → desktop-only notice, whatever the above says
  *
  * Session state is read from the local cache first and only fetched from the
  * server when nothing is cached. That is what lets the flow survive a page
  * reload, which matters because the annotation tool reloads the page between
  * every image.
  *
- * The device check runs before the session logic, so nobody on a phone can open
- * a batch they then can't work through. See hooks/useCanAnnotate.
+ * Contributors can annotate on any device (9 Oct 2026). Annotators stay on
+ * desktops and laptops. The device check runs before the session logic, so an
+ * annotator on a phone is never offered a batch they then can't work through.
+ * The role comes from the database (getServerSideProps below), since the
+ * session token carries none and the cached session only has it once a batch
+ * exists. See hooks/useCanAnnotate.
  */
-export default function AnnotatePage() {
+export default function AnnotatePage({ isAnnotator = false }) {
   const { data: session, status } = useSession(); // Add this line
   const loading = status === "loading";
   // null until the device check runs in the browser; see the skeleton below.
-  const canAnnotate = useCanAnnotate();
+  const canAnnotate = useCanAnnotate(isAnnotator);
 
   const [state, setState] = React.useState({
     annotationTotalCount: null,
@@ -184,7 +191,7 @@ export default function AnnotatePage() {
   }
 
   const renderComponent = () => {
-    /* If the device can't drive the canvas */
+    /* An annotator on a phone or tablet */
     if (!canAnnotate) {
       return <DesktopOnly />;
     }
@@ -243,4 +250,13 @@ export default function AnnotatePage() {
       {renderComponent()}
     </Page>
   );
+}
+/**
+ * The person's role, read from the database, for the device check: annotators
+ * stay on desktops and laptops (9 Oct 2026).
+ */
+export async function getServerSideProps(context) {
+  const session = await getServerSession(context.req, context.res, authOptions);
+  const isAnnotator = await isAnnotatorUser(session);
+  return { props: { session: session ?? null, isAnnotator } };
 }

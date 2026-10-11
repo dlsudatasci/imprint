@@ -24,6 +24,13 @@
  * tourTargets(), tourStepCount() and tourBeaconPlacements() take the role and
  * the annotator step, so the beacons and the "Step n of N" counter match the
  * tour on screen.
+ *
+ * They also take the input (9 Oct 2026): "pointer" (the default, the tours
+ * above) or "touch", for contributors on a phone or tablet. The touch tour has
+ * six steps: the photo, Add box, the answers at the bottom of the screen, the
+ * severity scale, Step 2 and Submit. It says "tap", never "click", and its
+ * beacons sit above or below their targets, never beside them. Annotators keep
+ * their tours on either input.
  */
 // The severity step points at the photo (8 Oct 2026): the severity scale opens
 // on the photo beside the box after a Yes, not in the lists under it
@@ -122,7 +129,7 @@ const SIDEWALK_TOUR = Object.freeze({
     },
     {
       title: "Drawing Tools",
-      content: "Finish shape closes the shape you are drawing, and Undo point and Cancel shape fix mistakes. Click a finished shape to select it, then drag its points, drag the handle in the middle of an edge to add a point, or delete a point or the whole shape. Show object boxes and Show photo only help you check the edges.",
+      content: "Finish shape closes the shape you are drawing, and Undo point and Cancel shape fix mistakes. Click a finished shape to select it, then drag its points, drag the handle in the middle of an edge to add a point, or delete a point or the whole shape. Show photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.",
     },
     {
       title: "What Counts as Walking Space",
@@ -171,6 +178,59 @@ const CONTRIBUTOR_TOUR = Object.freeze({
   copy: CONTRIBUTOR,
 });
 
+// Contributors on a phone or tablet (9 Oct 2026). The answers sit in a sheet at
+// the bottom of the screen, whose top part (#box-review-section-peek) is always
+// in view. Step 2 is in the part pulled up: the tutorial moves the sheet up
+// before that step, and its beacon sits on the Step 2 line in the sheet's top
+// part when there is one (beaconTargets).
+const SCENE_SECTION = "#scene-level-section";
+const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
+  targets: Object.freeze([
+    ".rp-stage",
+    "#add-box-button",
+    "#box-review-section-peek",
+    "#box-review-obstructions-peek",
+    SCENE_SECTION,
+    "button[type='submit']",
+  ]),
+  beaconTargets: Object.freeze([
+    ".rp-stage",
+    "#add-box-button",
+    "#box-review-section-peek",
+    "#box-review-obstructions-peek",
+    `#scene-level-peek, ${SCENE_SECTION}`,
+    "button[type='submit']",
+  ]),
+  placements: ["bottom", "top", "top", "top", "top", "top"],
+  beacons: ["top", "top", "top", "top", "top", "top"],
+  copy: [
+    {
+      title: "Annotation Canvas",
+      content: "Dashed yellow boxes are model suggestions. Tap each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, tap Not an object. Pinch to zoom in on small objects.",
+    },
+    {
+      title: "Add a Box",
+      content: "To label an object the model missed, tap Add box. A box appears in the middle of the photo. Drag its four corners to fit the object. A magnifier shows exactly where the corner sits.",
+    },
+    {
+      title: "Your Answers",
+      content: "Every answer is listed at the bottom of the screen, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. Pull the list up to see everything, and tap any object to change its answer.",
+    },
+    {
+      title: "Severity",
+      content: "When you answer Yes, a scale opens at the bottom of the screen. Rate how severely the object blocks passage, from 1 (a minor inconvenience) to 5 (it completely blocks the path), then tap Confirm. To change it later, open the box and tap Change.",
+    },
+    {
+      title: "Scene-Level Assessment",
+      content: "Pull the list up to answer four questions about the sidewalk as a whole: its width, its surface condition, how comfortable it looks for walking, and whether you could personally get along it. If there is no sidewalk, choose None and the other three are skipped.",
+    },
+    {
+      title: "Submit",
+      content: "Tap Submit when every suggested box has been decided (Yes, No, or Not an object), every box has a category, and all four scene-level questions are answered. If something is missing, a message tells you what to finish.",
+    },
+  ],
+});
+
 const ANNOTATOR_TOURS = Object.freeze({
   objects: Object.freeze({ targets: ANNOTATOR_TARGETS, placements: ANNOTATOR_PLACEMENTS, beacons: ANNOTATOR_BEACONS, copy: ANNOTATOR }),
   sidewalk: SIDEWALK_TOUR,
@@ -178,30 +238,41 @@ const ANNOTATOR_TOURS = Object.freeze({
 });
 
 /**
- * The tour for this person and annotator step. Contributors have one tour
- * whatever the step. An unknown step falls back to the Objects tour.
+ * The tour for this person, annotator step and input. Contributors have one
+ * tour whatever the step, and a touch version of it. An unknown step falls
+ * back to the Objects tour.
  */
-function tourFor(isAnnotator, step) {
-  if (!isAnnotator) return CONTRIBUTOR_TOUR;
+function tourFor(isAnnotator, step, input = "pointer") {
+  if (!isAnnotator) return input === "touch" ? CONTRIBUTOR_TOUCH_TOUR : CONTRIBUTOR_TOUR;
   return ANNOTATOR_TOURS[step] || ANNOTATOR_TOURS.objects;
 }
 
-export function tourTargets(isAnnotator = false, step = "objects") {
-  return tourFor(isAnnotator, step).targets;
+export function tourTargets(isAnnotator = false, step = "objects", input = "pointer") {
+  return tourFor(isAnnotator, step, input).targets;
 }
 
-export function tourStepCount(isAnnotator = false, step = "objects") {
-  return tourTargets(isAnnotator, step).length;
+/**
+ * What each step's beacon is measured against: the step's target, or for the
+ * touch tour's Step 2 the Step 2 line at the top of the sheet when there is
+ * one, since the section itself is in the part of the sheet pulled down.
+ */
+export function tourBeaconTargets(isAnnotator = false, step = "objects", input = "pointer") {
+  const tour = tourFor(isAnnotator, step, input);
+  return tour.beaconTargets || tour.targets;
+}
+
+export function tourStepCount(isAnnotator = false, step = "objects", input = "pointer") {
+  return tourTargets(isAnnotator, step, input).length;
 }
 
 /** Where each step's beacon sits against its target: "top", "bottom" or "left". */
-export function tourBeaconPlacements(isAnnotator = false, step = "objects") {
-  return [...tourFor(isAnnotator, step).beacons];
+export function tourBeaconPlacements(isAnnotator = false, step = "objects", input = "pointer") {
+  return [...tourFor(isAnnotator, step, input).beacons];
 }
 
-/** The react-joyride steps for this person and annotator step. */
-export function buildTourSteps(isAnnotator = false, step = "objects") {
-  const { copy, targets, placements } = tourFor(isAnnotator, step);
+/** The react-joyride steps for this person, annotator step and input. */
+export function buildTourSteps(isAnnotator = false, step = "objects", input = "pointer") {
+  const { copy, targets, placements } = tourFor(isAnnotator, step, input);
   return copy.map((entry, i) => ({
     target: targets[i],
     title: entry.title,

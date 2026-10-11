@@ -138,17 +138,19 @@ export function distanceToMark(mark, x, y) {
 
 /**
  * Index of the small box nearest to a click that missed every box, within the
- * tolerance, or null. `scale` is the image-to-canvas scale.
+ * tolerance, or null. `scale` is the image-to-canvas scale. A finger passes
+ * its own, larger tolerances (`nearPx`, `smallPx`, canvas px, 9 Oct 2026). The
+ * mouse keeps the defaults.
  */
-export function pickNearSmallBox(marks, x, y, scale = 1) {
+export function pickNearSmallBox(marks, x, y, scale = 1, { nearPx = NEAR_HIT_CANVAS_PX, smallPx = SMALL_BOX_CANVAS_PX } = {}) {
   const s = Number.isFinite(scale) && scale > 0 ? scale : 1;
-  const tolerance = NEAR_HIT_CANVAS_PX / s;
+  const tolerance = nearPx / s;
   let best = null;
   let bestDistance = Infinity;
   (marks || []).forEach((mark, index) => {
     if (!mark) return;
     const shorterSide = Math.min(Math.abs(mark.width), Math.abs(mark.height)) * s;
-    if (shorterSide >= SMALL_BOX_CANVAS_PX) return;
+    if (shorterSide >= smallPx) return;
     const d = distanceToMark(mark, x, y);
     if (d <= tolerance && d < bestDistance) {
       best = index;

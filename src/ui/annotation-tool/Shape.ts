@@ -3,12 +3,9 @@ import { IAnnotation } from "./Annotation";
 /**
  * "obstructions" is the annotator's Obstructions step (4 Oct 2026): Not an
  * object boxes are hidden, marked objects are red and the rest grey.
- * "context" is the annotator's Sidewalk step (6 Oct 2026): every real box as a
- * thin grey outline with no label, so the annotator can see what stands on the
- * sidewalk while outlining it.
  * "default" is every other view, contributors and the Objects step included.
  */
-export type PaintVariant = "default" | "obstructions" | "context";
+export type PaintVariant = "default" | "obstructions";
 
 
 export const defaultShapeStyle: IShapeStyle = {
@@ -26,6 +23,28 @@ export const defaultShapeStyle: IShapeStyle = {
   transformerBackground: "#111827",
   transformerSize: 10,
 };
+
+/**
+ * The style of a box drawn by the contributor or annotator. Shared by a box
+ * dragged out with the mouse (DefaultAnnotationState) and one placed with Add
+ * box on touch (9 Oct 2026), so the two look the same.
+ */
+export const drawnBoxStyle: IShapeStyle = {
+  ...defaultShapeStyle,
+  shapeStrokeStyle: "#16a34a",
+};
+
+/**
+ * A box's outline colour in the default view, which encodes its status:
+ * blue drawn by the user, green confirmed, amber rejected or undecided. The
+ * touch corner handles are ringed in the same colour.
+ */
+export function boxStrokeColor({ selected, isRejected, editable }: { selected?: boolean; isRejected?: boolean; editable?: boolean }) {
+  if (editable) return "#004aad"; // blue — user-drawn box
+  if (selected) return "#16a34a"; // green — confirmed
+  if (isRejected) return "#d97706"; // warning — rejected
+  return "#d97706";
+}
 
 export interface IShapeStyle {
   paddingX: number;
@@ -176,10 +195,6 @@ export class RectShape implements IShape {
    *   grey solid     not marked
    *   (hidden)       Not an object; still returns its position for callers
    *
-   * In the "context" variant (the annotator's Sidewalk step) every real box is
-   * a thin light grey outline with no label or fill, and Not an object boxes
-   * are hidden.
-   *
    * `selectedAnnotation` means "currently clicked", which is different from the
    * annotation's own `selected` flag — that one is the user's verdict. When a
    * box is clicked its label is suppressed in favour of a fill, because the
@@ -201,17 +216,6 @@ export class RectShape implements IShape {
       }
       return { x, y, width, height };
     }
-    if (variant === "context") {
-      if (this.annotationData.comment !== "not_an_object") {
-        canvas2D.save();
-        canvas2D.setLineDash([]);
-        canvas2D.strokeStyle = "#9ca3af";
-        canvas2D.lineWidth = 1.5;
-        canvas2D.strokeRect(x, y, width, height);
-        canvas2D.restore();
-      }
-      return { x, y, width, height };
-    }
     // Paired with the restore() at the end. Shadow, dash, and fill settings are
     // all changed below and every shape paints onto the same shared context, so
     // leaving any of them set would bleed into the next box drawn.
@@ -228,22 +232,18 @@ export class RectShape implements IShape {
 
     const { selected, isRejected, editable, comment } = this.annotationData;
 
-    let strokeColor: string;
+    const strokeColor = boxStrokeColor(this.annotationData);
     let isSolid = false;
 
     if (editable) {
-      strokeColor = "#004aad"; // blue — user-drawn box
       if (comment) {
         isSolid = true;
       }
     } else if (selected) {
-      strokeColor = "#16a34a"; // green — confirmed
       isSolid = true;
     } else if (isRejected) {
-      strokeColor = "#d97706"; // warning — rejected
       isSolid = true;
     } else {
-      strokeColor = "#d97706";
       isSolid = false;
     }
 

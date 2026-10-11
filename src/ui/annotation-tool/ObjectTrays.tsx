@@ -22,6 +22,11 @@ import { EyeIcon, EyeOffIcon } from "../icons";
  * crowded boxes can be drawn and fitted. A line at the top counts the hidden
  * boxes, with Show all.
  *
+ * On a touch screen (9 Oct 2026) chips and their eyes are 40 px tall with
+ * 8 px between them, so a finger can hit them. On a phone or tablet the lists
+ * sit in the answers sheet, stacked in one column, and ObjectTraysPeek shows
+ * them at a glance in the sheet's top part, which is always in view.
+ *
  * Presentational: ReactPictureAnnotation passes the lists from buildTrays.
  * Keeps the box-review-section id, which the tutorial points at.
  */
@@ -40,6 +45,12 @@ export interface ObjectTraysProps {
   onToggleHidden?(id: string): void;
   /** Show every hidden box again */
   onShowAll?(): void;
+  /** Hide every box on the photo (10 Oct 2026) */
+  onHideAll?(): void;
+  /** One list under the other, for the answers sheet on a phone (9 Oct 2026) */
+  stacked?: boolean;
+  /** The ids the touch tour points at, when there is no answers sheet to carry them (a tablet held sideways) */
+  tourIds?: boolean;
 }
 
 type ChipActions = Pick<ObjectTraysProps, "selectedId" | "onOpen" | "onToggleHidden"> & { hidden: Set<string> };
@@ -50,6 +61,13 @@ const LIST_IDS = {
 } as const;
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50";
+// Touch screens (9 Oct 2026): chips and eyes 40 px tall, 8 px apart. A mouse keeps the 28 px chips.
+const CHIP_HEIGHT = "h-7 [@media(pointer:coarse)]:h-10";
+const CHIP_GAP = "gap-1.5 [@media(pointer:coarse)]:gap-2";
+
+// The open box's chip (10 Oct 2026): filled and outlined in blue, so it is
+// clear which object the panel is about
+const SELECTED_CHIP = "border-primary bg-primary-50 text-ink ring-2 ring-primary/40";
 
 const toneClass = (tone: Tone, drawn: boolean) => {
   switch (tone) {
@@ -99,15 +117,16 @@ function Chip({ item, tone, actions }: { item: TrayItem; tone: Tone; actions: Ch
   return (
     <li
       className={cn(
-        "inline-flex items-stretch h-7 rounded-control border text-xs font-semibold whitespace-nowrap transition-colors motion-safe:animate-tray-land",
-        toneClass(tone, item.drawn),
-        selectedId === item.id && "ring-2 ring-primary/40",
+        "inline-flex items-stretch shrink-0 rounded-control border text-xs font-semibold whitespace-nowrap transition-colors motion-safe:animate-tray-land",
+        CHIP_HEIGHT,
+        selectedId === item.id ? SELECTED_CHIP : toneClass(tone, item.drawn),
         isHidden && "opacity-60"
       )}
     >
       <button
         type="button"
         data-tray={tone}
+        aria-current={selectedId === item.id ? "true" : undefined}
         data-hidden={isHidden || undefined}
         title={item.drawn ? TRAY_COPY.drawnTitle : undefined}
         onMouseDown={stopPress}
@@ -133,12 +152,29 @@ function Chip({ item, tone, actions }: { item: TrayItem; tone: Tone; actions: Ch
             e.stopPropagation();
             onToggleHidden(item.id);
           }}
-          className={cn("grid place-items-center pl-0.5 pr-2 rounded-control text-subtle hover:text-ink transition-colors", FOCUS)}
+          className={cn("grid place-items-center pl-0.5 pr-2 [@media(pointer:coarse)]:px-2.5 rounded-control text-subtle hover:text-ink transition-colors", FOCUS)}
         >
           {isHidden ? <EyeOffIcon size={14} /> : <EyeIcon size={14} />}
         </button>
       )}
     </li>
+  );
+}
+
+/** Show all or Hide all, a text button at the right of the top line. */
+function VisibilityButton({ label, onPress }: { label: string; onPress(): void }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={stopPress}
+      onClick={(e) => {
+        e.stopPropagation();
+        onPress();
+      }}
+      className={cn("font-semibold text-primary hover:underline rounded [@media(pointer:coarse)]:min-h-[40px]", FOCUS)}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -148,26 +184,29 @@ function EmptySlot() {
     <li
       aria-hidden="true"
       data-slot="empty"
-      className="h-7 w-16 rounded-control border border-dashed border-line grid place-items-center text-sm leading-none text-subtle"
+      className={cn(CHIP_HEIGHT, "w-16 shrink-0 rounded-control border border-dashed border-line grid place-items-center text-sm leading-none text-subtle")}
     >
       +
     </li>
   );
 }
 
-function AnswerList({ tray, trays, actions }: {
+function AnswerList({ tray, trays, actions, tourId }: {
   tray: "notObstructions" | "obstructions";
   trays: Trays;
   actions: ChipActions;
+  tourId?: string;
 }) {
   const items = trays[tray];
   const id = LIST_IDS[tray];
   const slots = ghostSlotCount(items.length, trays.toDecide.length);
   return (
     <section id={id} aria-labelledby={`${id}-title`} className="min-w-0 rounded-card border border-line bg-surface-subtle px-3 pt-2.5 pb-3">
-      <h3 id={`${id}-title`} className="text-sm font-semibold text-ink mb-2">{TRAY_COPY[tray]}</h3>
+      <h3 id={`${id}-title`} className="text-sm font-semibold text-ink mb-2">
+        {tourId ? <span id={tourId}>{TRAY_COPY[tray]}</span> : TRAY_COPY[tray]}
+      </h3>
       {items.length > 0 || slots > 0 ? (
-        <ul className="flex flex-wrap gap-1.5">
+        <ul className={cn("flex flex-wrap", CHIP_GAP)}>
           {items.map((item) => (
             <Chip key={item.id} item={item} tone={tray} actions={actions} />
           ))}
@@ -180,16 +219,18 @@ function AnswerList({ tray, trays, actions }: {
   );
 }
 
-export default function ObjectTrays({ trays, selectedId, hiddenIds = [], onOpen, onToggleHidden, onShowAll }: ObjectTraysProps) {
+export default function ObjectTrays({ trays, selectedId, hiddenIds = [], onOpen, onToggleHidden, onShowAll, onHideAll, stacked = false, tourIds = false }: ObjectTraysProps) {
   const { toDecide, notObstructions, obstructions, removed, total } = trays;
   const hidden = new Set(hiddenIds);
   const actions: ChipActions = { selectedId, onOpen, onToggleHidden, hidden };
   // Only boxes still in the image count as hidden
-  const hiddenCount = [...toDecide, ...notObstructions, ...obstructions, ...removed].filter((item) => hidden.has(item.id)).length;
+  const everyItem = [...toDecide, ...notObstructions, ...obstructions, ...removed];
+  const hiddenCount = everyItem.filter((item) => hidden.has(item.id)).length;
+  const showHideAll = Boolean(onHideAll) && hiddenCount < everyItem.length;
 
   return (
     <div id="box-review-section" className="px-4 pt-3.5 pb-4">
-      <div className="flex flex-wrap items-center gap-1.5 min-h-[28px]">
+      <div id={tourIds ? "box-review-section-peek" : undefined} className={cn("flex flex-wrap items-center min-h-[28px]", CHIP_GAP)}>
         {toDecide.length > 0 ? (
           <>
             <span className="text-sm font-semibold text-ink mr-1">
@@ -206,31 +247,31 @@ export default function ObjectTrays({ trays, selectedId, hiddenIds = [], onOpen,
         ) : (
           <span className="text-sm text-muted">{TRAY_COPY.noObjects}</span>
         )}
-        {hiddenCount > 0 && onShowAll && (
-          <span data-hidden-summary className="ml-auto inline-flex items-center gap-2 pl-2 text-xs text-muted whitespace-nowrap">
-            {BOX_VISIBILITY_COPY.hiddenCount(hiddenCount)}
-            <button
-              type="button"
-              onMouseDown={stopPress}
-              onClick={(e) => {
-                e.stopPropagation();
-                onShowAll();
-              }}
-              className={cn("font-semibold text-primary hover:underline rounded", FOCUS)}
-            >
-              {BOX_VISIBILITY_COPY.showAll}
-            </button>
+        {((hiddenCount > 0 && onShowAll) || showHideAll) && (
+          <span data-hidden-summary className="ml-auto inline-flex items-center gap-3 pl-2 text-xs text-muted whitespace-nowrap">
+            {hiddenCount > 0 && onShowAll && (
+              <>
+                {BOX_VISIBILITY_COPY.hiddenCount(hiddenCount)}
+                <VisibilityButton label={BOX_VISIBILITY_COPY.showAll} onPress={onShowAll} />
+              </>
+            )}
+            {showHideAll && <VisibilityButton label={BOX_VISIBILITY_COPY.hideAll} onPress={onHideAll!} />}
           </span>
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mt-3">
+      <div className={cn("grid gap-3 mt-3", stacked ? "grid-cols-1" : "grid-cols-2")}>
         <AnswerList tray={TRAYS.notObstructions as "notObstructions"} trays={trays} actions={actions} />
-        <AnswerList tray={TRAYS.obstructions as "obstructions"} trays={trays} actions={actions} />
+        <AnswerList
+          tray={TRAYS.obstructions as "obstructions"}
+          trays={trays}
+          actions={actions}
+          tourId={tourIds ? "box-review-obstructions-peek" : undefined}
+        />
       </div>
 
       {removed.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 mt-3">
+        <div className={cn("flex flex-wrap items-center mt-3", CHIP_GAP)}>
           <span className="text-xs font-medium text-muted mr-1">{TRAY_COPY.removed}</span>
           <ul className="contents">
             {removed.map((item) => (
@@ -239,6 +280,89 @@ export default function ObjectTrays({ trays, selectedId, hiddenIds = [], onOpen,
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+export interface ObjectTraysPeekProps {
+  trays: Trays;
+  selectedId: string | null;
+  /** Select the box and open its panel */
+  onOpen(id: string): void;
+  /** Open the first object still to decide */
+  onNext(): void;
+  /** "Step 2: Rate the Sidewalk, 1 of 4 answered" */
+  sceneLine: string;
+  /** Show Step 2 */
+  onShowScene(): void;
+}
+
+/** One answer list as a row: its title and count, then its chips scrolling sideways. */
+function PeekRow({ tray, trays, actions, id }: {
+  tray: "notObstructions" | "obstructions";
+  trays: Trays;
+  actions: ChipActions;
+  id?: string;
+}) {
+  const items = trays[tray];
+  return (
+    <div id={id} className="h-11 flex items-center gap-2 min-w-0">
+      <span className="w-[7.5rem] shrink-0 text-xs font-semibold text-ink whitespace-nowrap">
+        {TRAY_COPY[tray]} <span className="font-medium text-muted tabular-nums">{items.length}</span>
+      </span>
+      <ul aria-label={TRAY_COPY[tray]} className={cn("flex-1 min-w-0 flex items-center overflow-x-auto overscroll-x-contain", CHIP_GAP)}>
+        {items.map((item) => (
+          <Chip key={item.id} item={item} tone={tray} actions={actions} />
+        ))}
+        {items.length === 0 && <EmptySlot />}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The top of the answers sheet on a phone or tablet (9 Oct 2026), always in
+ * view, like the driver card in Grab: how many objects are still to decide with
+ * Next, the two lists as rows of chips, and a line saying Step 2 is further
+ * up. Every row has a fixed height, so the sheet's collapsed height, and with
+ * it the photo's, does not change as objects are answered. The touch tour
+ * points at it (box-review-section-peek).
+ */
+export function ObjectTraysPeek({ trays, selectedId, onOpen, onNext, sceneLine, onShowScene }: ObjectTraysPeekProps) {
+  const { toDecide, total, removed } = trays;
+  const actions: ChipActions = { selectedId, onOpen, hidden: new Set() };
+  return (
+    <div id="box-review-section-peek" className="px-4 pb-2">
+      <div className="h-11 flex items-center justify-between gap-3">
+        {toDecide.length > 0 ? (
+          <>
+            <span className="text-sm font-semibold text-ink">
+              {TRAY_COPY.toDecideTitle} <span className="font-medium text-muted tabular-nums">{toDecide.length}</span>
+            </span>
+            <button
+              type="button"
+              onClick={onNext}
+              className={cn("h-11 px-4 rounded-control border border-primary bg-primary text-white text-sm font-bold", FOCUS)}
+            >
+              {TRAY_COPY.next}
+            </button>
+          </>
+        ) : total > 0 || removed.length > 0 ? (
+          <span className="text-sm font-semibold text-success">{TRAY_COPY.allAnswered}</span>
+        ) : (
+          <span className="text-xs text-muted line-clamp-2">{TRAY_COPY.noObjectsTouch}</span>
+        )}
+      </div>
+      <PeekRow tray="notObstructions" trays={trays} actions={actions} />
+      <PeekRow tray="obstructions" trays={trays} actions={actions} id="box-review-obstructions-peek" />
+      <button
+        type="button"
+        id="scene-level-peek"
+        onClick={onShowScene}
+        className={cn("mt-1 h-6 w-full text-left text-xs text-muted truncate rounded", FOCUS)}
+      >
+        {sceneLine}
+      </button>
     </div>
   );
 }

@@ -167,6 +167,36 @@ describe("validateAnnotationForSubmit", () => {
     expect(result.valid).toBe(false);
     expect(result.error).toContain("unlabeled");
   });
+
+  // Phones and tablets (9 Oct 2026): the failure says which part of the
+  // screen to show, and the message reads right on touch
+  it("asks for a Yes or No on every object without saying click", () => {
+    const result = validateAnnotationForSubmit(
+      makeInput({ existingAnnotations: [{ editable: false, selected: false, isRejected: false, comment: "car" }] })
+    );
+    expect(result.error).toBe("Please answer Yes or No for every object before submitting.");
+    expect(result.error.toLowerCase()).not.toContain("click");
+  });
+
+  it("names the objects section for a failure about a box", () => {
+    const failures = [
+      makeInput({ existingAnnotations: [{ editable: false, selected: false, isRejected: false, comment: "car" }] }),
+      makeInput({ newObjects: [{ comment: "---", obstructs: false }] }),
+      makeInput({ newObjects: [{ comment: "pole" }] }),
+      makeInput({ newObjects: [{ comment: "pole", obstructs: true, severity: null }] }),
+    ];
+    for (const input of failures) expect(validateAnnotationForSubmit(input).section).toBe("objects");
+  });
+
+  it("names the scene section for a failure about Step 2", () => {
+    const failures = [
+      makeInput({ sceneLevel: { ...validSceneLevel, sidewalkWidth: null } }),
+      makeInput({ sceneLevel: { ...validSceneLevel, surfaceCondition: null } }),
+      makeInput({ sceneLevel: { ...validSceneLevel, walkability: null } }),
+      makeInput({ sceneLevel: { ...validSceneLevel, overallAccessibility: null } }),
+    ];
+    for (const input of failures) expect(validateAnnotationForSubmit(input).section).toBe("scene");
+  });
 });
 
 // Annotators' Objects step (4 Oct 2026): every suggestion kept or marked Not an

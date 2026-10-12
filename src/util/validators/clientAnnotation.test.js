@@ -269,6 +269,18 @@ describe("validateObjectStep (exported, 4 Oct 2026)", () => {
     expect(validateObjectStep([{ ...kept, comment: "truck" }]).error)
       .toBe("Please choose a category from the list for every box.");
   });
+
+  // 12 Oct 2026: annotators on a phone or tablet were told to click
+  it("says tap on a phone or tablet, in the step and at submit, and click otherwise", () => {
+    const undecided = [{ id: "s3", editable: false, selected: false, comment: "tree" }];
+    const TAP = "Please tap Keep or Not an object on every suggested box.";
+    const CLICK = "Please click Keep or Not an object on every suggested box.";
+    expect(validateObjectStep(undecided, { words: "touch" }).error).toBe(TAP);
+    expect(validateObjectStep(undecided, { words: "pointer" }).error).toBe(CLICK);
+    const submit = (words) => validateAnnotationForSubmit({ existingAnnotations: undecided, newObjects: [], selectedObjects: [], sceneLevel: {}, isAnnotator: true, words }).error;
+    expect(submit("touch")).toBe(TAP);
+    expect(submit()).toBe(CLICK);
+  });
 });
 
 // Annotators' Obstructions step (4 Oct 2026): unmarked objects count as "does

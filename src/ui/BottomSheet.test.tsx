@@ -20,11 +20,12 @@ afterEach(() => {
   changes.length = 0;
 });
 
-function Harness() {
+function Harness({ compact = false }: { compact?: boolean }) {
   const [snap, setSnap] = useState<SheetSnap>("collapsed");
   return (
     <BottomSheet
       id="answer-sheet"
+      compact={compact}
       snap={snap}
       onSnapChange={(next) => {
         changes.push(next);
@@ -38,11 +39,11 @@ function Harness() {
   );
 }
 
-function mount() {
+function mount(compact = false) {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
-  act(() => root!.render(<Harness />));
+  act(() => root!.render(<Harness compact={compact} />));
 }
 
 const handle = () => host.querySelector("button[aria-expanded]") as HTMLButtonElement;
@@ -74,5 +75,22 @@ describe("BottomSheet", () => {
     mount();
     const header = handle().parentElement as HTMLElement;
     expect(header.style.touchAction).toBe("pan-x");
+  });
+
+  // The sheet under the full-screen photo (12 Oct 2026)
+  it("compact: the footer cannot be reached while the sheet is down, and can once it is up, in the same elements", () => {
+    mount(true);
+    const footer = host.querySelector("[data-part=footer]")!.parentElement as HTMLElement;
+    const section = host.querySelector("#answer-sheet");
+    expect(footer.hasAttribute("inert")).toBe(true);
+    act(() => handle().click());
+    expect(changes).toEqual(["half"]);
+    expect(footer.hasAttribute("inert")).toBe(false);
+    // The usual sheet's footer is always in reach, and switching rebuilds nothing
+    act(() => handle().click());
+    act(() => root!.render(<Harness />));
+    expect(host.querySelector("[data-part=footer]")!.parentElement).toBe(footer);
+    expect(host.querySelector("#answer-sheet")).toBe(section);
+    expect(footer.hasAttribute("inert")).toBe(false);
   });
 });

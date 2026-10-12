@@ -52,3 +52,31 @@ describe("nearestSnap", () => {
     expect(nearestSnap(260, -0.8, points, "collapsed")).toBe("collapsed");
   });
 });
+
+// The sheet under the full-screen photo (12 Oct 2026)
+describe("snapPoints, compact", () => {
+  it("rests on the handle alone, above the home indicator, with the footer left out", () => {
+    const p = snapPoints({ container: 844, header: 44, footer: 76, panel: 260, compact: true, inset: 34 });
+    expect(p.collapsed).toBe(78);
+    expect(p.full).toBe(836);
+    expect(p.half).toBe(422);
+    // A box's panel takes what it needs: the handle, the panel and the footer
+    expect(p.panel).toBe(380);
+  });
+
+  it("skips half on a phone held sideways, where it would show next to nothing", () => {
+    const p = snapPoints({ container: 390, header: 44, footer: 76, panel: 260, compact: true, inset: 21 });
+    expect(p.collapsed).toBe(65);
+    expect(p.half).toBe(p.full);
+    expect(p.full).toBe(382);
+    expect(p.panel).toBe(380);
+    // Half stays where it leaves at least 160 px to scroll
+    expect(snapPoints({ container: 560, header: 44, footer: 76, compact: true }).half).toBe(280);
+    expect(snapPoints({ container: 558, header: 44, footer: 76, compact: true }).half).toBe(550);
+  });
+
+  it("never puts a panel past full, and leaves the usual sheet as it was", () => {
+    expect(snapPoints({ container: 390, header: 44, footer: 76, panel: 900, compact: true }).panel).toBe(382);
+    expect(snapPoints({ container: 700, header: 180, footer: 80, panel: 200, inset: 34 })).toEqual(snapPoints({ container: 700, header: 180, footer: 80, panel: 200 }));
+  });
+});

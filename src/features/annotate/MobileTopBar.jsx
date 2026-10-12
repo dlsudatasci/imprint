@@ -1,5 +1,5 @@
 import { IconButton } from "@/ui";
-import { PauseIcon, StopIcon } from "@/ui/icons";
+import { PauseIcon, StopIcon, HelpIcon } from "@/ui/icons";
 
 /**
  * The top of the annotation screen on phones and tablets (contributors, 9 Oct
@@ -7,8 +7,11 @@ import { PauseIcon, StopIcon } from "@/ui/icons";
  * strip and the big "Sidewalk #n" title: which image this is, a thin bar for
  * the share of the session done, and Pause and Stop, which open the same
  * dialogs as on the desktop.
+ *
+ * In the tutorial it also has a ? button (12 Oct 2026) that shows the step's
+ * tour again, since the touch tours have no beacons to tap.
  */
-export default function MobileTopBar({ current, total, onPause, onStop, isTutorial = false }) {
+export default function MobileTopBar({ current, total, onPause, onStop, onShowTour, isTutorial = false }) {
   const done = total > 0 ? Math.min(1, Math.max(0, (current - 1) / total)) : 0;
   const stopLabel = isTutorial ? "Stop Tutorial" : "Stop Session";
   return (
@@ -32,6 +35,11 @@ export default function MobileTopBar({ current, total, onPause, onStop, isTutori
             <div className="h-full bg-primary rounded-full" style={{ width: `${done * 100}%` }} />
           </div>
         </div>
+        {onShowTour && (
+          <IconButton aria-label="Show the tour" title="Show the tour" onClick={onShowTour}>
+            <HelpIcon size={20} />
+          </IconButton>
+        )}
         <IconButton aria-label="Pause Session" title="Pause Session" onClick={onPause}>
           <PauseIcon size={18} />
         </IconButton>

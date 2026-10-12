@@ -7,12 +7,13 @@ import { validateSidewalkMask } from "@/util/validators/sidewalkMask";
  * The annotator's Objects step (decided 4 Oct 2026): every suggestion is kept
  * or marked Not an object, and every kept or drawn box has one of the 18
  * categories. Everything can be checked from existingAnnotations, which holds
- * every box on the canvas.
+ * every box on the canvas. `words` is "touch" on a phone or tablet, where the
+ * message says tap (12 Oct 2026).
  */
-export function validateObjectStep(existingAnnotations) {
+export function validateObjectStep(existingAnnotations, { words = "pointer" } = {}) {
   const boxes = existingAnnotations || [];
   if (boxes.some((box) => !box.editable && !isDecidedForObjects(box))) {
-    return { valid: false, error: "Please click Keep or Not an object on every suggested box." };
+    return { valid: false, error: `Please ${words === "touch" ? "tap" : "click"} Keep or Not an object on every suggested box.` };
   }
   const real = boxes.filter((box) => box.editable || box.selected === true);
   if (real.some((box) => !isTaxonomyCategory(box.comment))) {
@@ -67,9 +68,10 @@ export function validateAnnotationForSubmit({
   sidewalkDraftOpen = false,
   imageWidth,
   imageHeight,
+  words = "pointer",
 }) {
   if (isAnnotator) {
-    const objects = validateObjectStep(existingAnnotations);
+    const objects = validateObjectStep(existingAnnotations, { words });
     if (!objects.valid) return objects;
     const sidewalk = validateSidewalkStep({
       askSidewalk,

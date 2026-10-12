@@ -142,3 +142,82 @@ export function StopIcon(props: IconProps) {
     </Icon>
   );
 }
+
+/* Phones and tablets (12 Oct 2026) */
+
+export function HelpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      {/* A question mark in a wobbly circle: show the tour again */}
+      <path d="M12.1 3.4C17 3.3 20.7 7 20.6 12C20.7 16.9 17 20.7 12 20.6C7.1 20.7 3.3 17 3.4 12.1C3.3 7.1 7.1 3.3 12.1 3.4Z" />
+      <path d="M9.4 9.5C9.6 8.1 10.7 7.3 12.1 7.4C13.6 7.4 14.7 8.4 14.6 9.8C14.5 11.3 12.2 11.6 12.1 13.5" />
+      <path d="M12.05 16.5H12.1" />
+    </Icon>
+  );
+}
+
+export function ExpandIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      {/* Four corners pointing out: the photo full screen */}
+      <path d="M4.1 9.2C4 7.4 4.1 5.8 4.05 4.1C5.8 4 7.5 4.1 9.2 4.05" />
+      <path d="M14.8 4.05C16.5 4.1 18.2 4 19.9 4.1C20 5.8 19.9 7.5 19.95 9.2" />
+      <path d="M19.95 14.8C19.9 16.5 20 18.2 19.9 19.9C18.2 20 16.5 19.9 14.8 19.95" />
+      <path d="M9.2 19.95C7.5 19.9 5.8 20 4.1 19.9C4 18.2 4.1 16.5 4.05 14.8" />
+    </Icon>
+  );
+}
+
+export function ShrinkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      {/* Four corners pointing in: leave full screen */}
+      <path d="M4.1 9.1C5.8 9.2 7.5 9.1 9.15 9.15C9.2 7.5 9.1 5.8 9.15 4.1" />
+      <path d="M14.85 4.1C14.9 5.8 14.8 7.5 14.85 9.15C16.5 9.1 18.2 9.2 19.9 9.1" />
+      <path d="M19.9 14.9C18.2 14.8 16.5 14.9 14.85 14.85C14.8 16.5 14.9 18.2 14.85 19.9" />
+      <path d="M9.15 19.9C9.1 18.2 9.2 16.5 9.15 14.85C7.5 14.9 5.8 14.8 4.1 14.9" />
+    </Icon>
+  );
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.6 7.1C9.4 6.8 14.8 7.2 19.4 6.9" />
+      <path d="M9.4 6.9C9.5 5.9 9.4 5 9.6 4.2C11.2 4 12.9 4.1 14.4 4.2C14.6 5 14.5 5.9 14.6 6.9" />
+      <path d="M6.4 7.2C6.6 11.4 6.9 15.8 7.3 19.8C10.4 20.1 13.7 20 16.7 19.8C17.1 15.7 17.4 11.3 17.6 7.1" />
+      <path d="M10.2 10.6C10.25 12.6 10.3 14.6 10.4 16.4" />
+      <path d="M13.8 10.6C13.75 12.6 13.7 14.6 13.6 16.4" />
+    </Icon>
+  );
+}
+
+export function UndoIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8.3 5.4C6.9 6.9 5.5 8.3 4.2 9.6C5.6 11 7 12.3 8.4 13.8" />
+      <path d="M4.4 9.6C8 9.4 11.6 9.5 15 9.6C18 9.8 20 11.8 19.9 14.4C19.8 17 17.8 18.7 15.1 18.6C12.9 18.5 10.8 18.6 8.7 18.55" />
+    </Icon>
+  );
+}
+
+export function PhotoIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.1 5.6C9.3 5.3 14.8 5.7 19.9 5.4C20.2 9.6 19.9 14.3 20.1 18.5C14.8 18.8 9.4 18.4 4 18.6C3.8 14.3 4.1 9.8 4.1 5.6Z" />
+      <path d="M4.3 15.9C6 14.2 7.6 12.6 9.1 11.3C11 13 12.8 14.8 14.6 16.6" />
+      <path d="M13.2 14.9C14.3 13.9 15.3 13 16.3 12.2C17.6 13.3 18.8 14.5 19.9 15.7" />
+      <path d="M15.4 8.6H15.5" />
+    </Icon>
+  );
+}
+
+export function PointMinusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      {/* A point with a minus: delete the selected point of an outline */}
+      <path d="M12.1 5.1C16 5 19 8 18.9 12C19 15.9 16 19 12 18.9C8.1 19 5 16 5.1 12.1C5 8.1 8.1 5 12.1 5.1Z" />
+      <path d="M8.9 12.05C11 11.95 13.1 12.1 15.1 12" />
+    </Icon>
+  );
+}

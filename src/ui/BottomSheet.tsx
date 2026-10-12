@@ -22,6 +22,17 @@ import { snapPoints, clampSheet, nearestSnap, SNAP_ORDER } from "./sheetSnap";
  * The sheet slides with a transform and the photo above it never resizes, so
  * the photo's canvas is not rebuilt during a drag. No animation with reduced
  * motion.
+ *
+ * `compact` is the sheet under the full-screen photo (12 Oct 2026): at rest
+ * only the handle shows, and the footer comes up with the sheet. The same
+ * elements in the same places, so nothing is rebuilt when it changes.
+ *
+ * Only the body scrolls (`data-sheet-scroll`). The container clips the sheet
+ * while it is slid down, and must never scroll itself: a browser asked to
+ * bring something into view scrolls a hidden-overflow box too, which shifted
+ * the whole screen and left it shifted (found 12 Oct 2026). So it uses
+ * `overflow: clip`, which cannot be scrolled, with `hidden` for browsers
+ * without it, and is marked `data-no-scroll` for the caller's guard.
  */
 
 export type SheetSnap = "collapsed" | "half" | "full" | "panel";
@@ -41,7 +52,16 @@ export interface BottomSheetProps {
   onPointsChange?(points: SheetPoints, container: number): void;
   /** Ref to the scrolling body, so the caller can scroll a section into view */
   bodyRef?: React.Ref<HTMLDivElement>;
+  /** Collapsed is the handle alone, and the footer comes up with the sheet */
+  compact?: boolean;
 }
+
+/**
+ * `overflow: clip` clips like `hidden` but makes no scroll container, so
+ * nothing can scroll the box. A browser that does not know it ignores the
+ * inline value and keeps the class's `overflow: hidden`.
+ */
+export const NO_SCROLL_STYLE: React.CSSProperties = { overflow: "clip" };
 
 // A vertical move on the header past this many px drags the sheet. Below it
 // the press stays a tap on whatever it landed on (a chip, Next).
@@ -65,8 +85,11 @@ function useHeight(ref: React.RefObject<HTMLElement | null>) {
   return height;
 }
 
-export default function BottomSheet({ id, snap, onSnapChange, header, children, footer, onPointsChange, bodyRef }: BottomSheetProps) {
+export default function BottomSheet({ id, snap, onSnapChange, header, children, footer, onPointsChange, bodyRef, compact = false }: BottomSheetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // The home indicator's height, measured: the compact handle rests above it
+  const insetRef = useRef<HTMLDivElement>(null);
+  const inset = useHeight(insetRef);
   const headerRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -74,7 +97,7 @@ export default function BottomSheet({ id, snap, onSnapChange, header, children, 
   const headerH = useHeight(headerRef);
   const footerH = useHeight(footerRef);
   const contentH = useHeight(contentRef);
-  const points = snapPoints({ container, header: headerH, footer: footerH, panel: contentH });
+  const points = snapPoints({ container, header: headerH, footer: footerH, panel: contentH, compact, inset });
   const rest = points[snap] ?? points.collapsed;
 
   const [dragPos, setDragPos] = useState<number | null>(null);
@@ -130,15 +153,19 @@ export default function BottomSheet({ id, snap, onSnapChange, header, children, 
 
   const full = points.full;
   const bodyHeight = Math.max(0, rest - headerH - footerH);
+  // Compact: the footer is off the screen at rest and rises under the handle
+  const footerShift = compact ? Math.min(footerH, Math.max(0, points.collapsed + footerH - position)) : 0;
+  const footerAway = compact && snap === "collapsed" && dragPos === null;
+  const slide = dragPos === null ? "motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out" : "transition-none";
 
   return (
-    <div ref={containerRef} className="absolute inset-0 pointer-events-none overflow-hidden">
+    <div ref={containerRef} data-no-scroll className="absolute inset-0 pointer-events-none overflow-hidden" style={NO_SCROLL_STYLE}>
       <section
         id={id}
         aria-label="Your answers"
         className={cn(
           "absolute inset-x-0 z-10 pointer-events-auto flex flex-col bg-surface rounded-t-2xl shadow-[0_-8px_24px_rgba(15,23,42,0.18)]",
-          dragPos === null ? "motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out" : "transition-none"
+          slide
         )}
         style={{
           bottom: footerH,
@@ -168,6 +195,7 @@ export default function BottomSheet({ id, snap, onSnapChange, header, children, 
         </div>
         <div
           ref={bodyRef}
+          data-sheet-scroll
           className="min-h-0 overflow-y-auto overscroll-contain border-t border-line"
           style={{ height: bodyHeight }}
         >
@@ -176,11 +204,16 @@ export default function BottomSheet({ id, snap, onSnapChange, header, children, 
       </section>
       <div
         ref={footerRef}
-        className="absolute inset-x-0 bottom-0 z-20 pointer-events-auto bg-surface border-t border-line px-4 pt-3"
-        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+        inert={footerAway}
+        className={cn("absolute inset-x-0 bottom-0 z-20 pointer-events-auto bg-surface border-t border-line px-4 pt-3", compact && slide)}
+        style={{
+          paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))",
+          transform: footerShift > 0 ? `translateY(${footerShift}px)` : undefined,
+        }}
       >
         {footer}
       </div>
+      <div ref={insetRef} aria-hidden="true" className="absolute bottom-0 left-0 w-0" style={{ height: "env(safe-area-inset-bottom)" }} />
     </div>
   );
 }

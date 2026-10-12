@@ -1,7 +1,7 @@
 import React from "react";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 import { isTaxonomyCategory } from "@/util/taxonomy";
-import { HideButton } from "./DefaultInputSection";
+import { HideButton, type PanelVariant } from "./DefaultInputSection";
 
 /**
  * The box panel for annotators, Step 1 Objects (decided 4 Oct 2026).
@@ -13,6 +13,11 @@ import { HideButton } from "./DefaultInputSection";
  *
  * Kept apart from DefaultInputSection (contributors) so that panel does not
  * grow more role branches. The mode comes from getObjectPanelMode.
+ *
+ * Like that panel it has two variants (12 Oct 2026): "floating", the card
+ * beside the box on the desktop photo, and "sheet", in the answers sheet on a
+ * phone or tablet: full width with no shadow, buttons at least 44 px tall, and
+ * a 16 px category list so iOS does not zoom the page.
  */
 export type ObjectPanelMode = "decide" | "kept" | "not_an_object" | "drawn";
 
@@ -27,19 +32,24 @@ export interface IObjectInputSection {
   belowMinimumSize?: boolean;
   /** Hides this box on the photo, which closes the panel (10 Oct 2026) */
   onHide?: () => void;
+  /** Where the panel is shown: beside the box, or in the answers sheet (12 Oct 2026) */
+  variant?: PanelVariant;
 }
 
-const PANEL_CLASS = "bg-surface rounded-control shadow-2xl border border-line p-3 w-[280px] pointer-events-auto";
+const FLOATING_PANEL_CLASS = "bg-surface rounded-control shadow-2xl border border-line p-3 w-[280px] pointer-events-auto";
+const SHEET_PANEL_CLASS = "bg-surface px-1 py-2 w-full pointer-events-auto";
+const TOUCH_TARGET = "min-h-[44px]";
 
 const stop = (e: React.MouseEvent) => e.stopPropagation();
 
-function CategorySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function CategorySelect({ value, onChange, sheet = false }: { value: string; onChange: (v: string) => void; sheet?: boolean }) {
   // Anything outside the 18 (an old free-text label, "---" or Not an object)
   // shows the placeholder, so a category has to be chosen
   return (
     <div className="relative flex-1 min-w-0">
       <select
-        className="w-full bg-surface-subtle border border-line rounded-control px-3 py-2 pr-8 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
+        aria-label="Category"
+        className={`w-full bg-surface-subtle border border-line rounded-control px-3 py-2 pr-8 ${sheet ? `text-base ${TOUCH_TARGET}` : "text-sm"} font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer`}
         value={isTaxonomyCategory(value) ? value : "---"}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -59,10 +69,11 @@ function CategorySelect({ value, onChange }: { value: string; onChange: (v: stri
   );
 }
 
-function CloseButton({ onClose }: { onClose: () => void }) {
+function CloseButton({ onClose, sheet = false }: { onClose: () => void; sheet?: boolean }) {
   return (
     <button
-      className="shrink-0 w-9 h-9 flex items-center justify-center rounded-control bg-blue-50 hover:bg-blue-100 text-primary transition-colors shadow-sm border border-blue-200"
+      aria-label="Done"
+      className={`shrink-0 ${sheet ? "w-11 h-11" : "w-9 h-9"} flex items-center justify-center rounded-control bg-blue-50 hover:bg-blue-100 text-primary transition-colors shadow-sm border border-blue-200`}
       onClick={() => onClose()}
       title="Done"
     >
@@ -99,13 +110,17 @@ const ObjectInputSection = ({
   onClose,
   belowMinimumSize = false,
   onHide,
+  variant = "floating",
 }: IObjectInputSection) => {
   const hasCategory = isTaxonomyCategory(value);
+  const sheet = variant === "sheet";
+  const PANEL_CLASS = sheet ? SHEET_PANEL_CLASS : FLOATING_PANEL_CLASS;
+  const tall = sheet ? ` ${TOUCH_TARGET}` : "";
   // The category list, with the hide button beside it when the box can be hidden
   const categoryRow = (
     <div className="flex items-center gap-2">
-      <CategorySelect value={value} onChange={onChange} />
-      {onHide && <HideButton onHide={onHide} />}
+      <CategorySelect value={value} onChange={onChange} sheet={sheet} />
+      {onHide && <HideButton onHide={onHide} variant={variant} />}
     </div>
   );
 
@@ -127,13 +142,13 @@ const ObjectInputSection = ({
         <SizeNote show={belowMinimumSize} />
         <div className="flex gap-2 mt-3">
           <button
-            className="flex-1 py-2 rounded-control font-bold text-sm transition-all shadow-sm border border-primary bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`flex-1 py-2 rounded-control font-bold text-sm transition-all shadow-sm border border-primary bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed${tall}`}
             disabled={!hasCategory}
             onClick={() => onKeep()}
           >
             Keep
           </button>
-          <NotAnObjectButton onMarkNotAnObject={onMarkNotAnObject} className="flex-1" />
+          <NotAnObjectButton onMarkNotAnObject={onMarkNotAnObject} className={`flex-1${tall}`} />
         </div>
       </div>
     );
@@ -143,12 +158,13 @@ const ObjectInputSection = ({
   return (
     <div className={PANEL_CLASS} onMouseDown={stop} onMouseUp={stop}>
       <div className="flex items-center gap-2">
-        <CategorySelect value={value} onChange={onChange} />
-        {onHide && <HideButton onHide={onHide} />}
-        <CloseButton onClose={onClose} />
+        <CategorySelect value={value} onChange={onChange} sheet={sheet} />
+        {onHide && <HideButton onHide={onHide} variant={variant} />}
+        <CloseButton onClose={onClose} sheet={sheet} />
         {mode === "drawn" && (
           <button
-            className="shrink-0 w-9 h-9 flex items-center justify-center rounded-control bg-surface-subtle hover:bg-line text-body transition-colors shadow-sm border border-line"
+            aria-label="Delete box"
+            className={`shrink-0 ${sheet ? "w-11 h-11" : "w-9 h-9"} flex items-center justify-center rounded-control bg-surface-subtle hover:bg-line text-body transition-colors shadow-sm border border-line`}
             onClick={() => onDelete()}
             title="Delete"
           >
@@ -158,7 +174,7 @@ const ObjectInputSection = ({
       </div>
       <SizeNote show={belowMinimumSize} />
       {mode === "kept" && (
-        <NotAnObjectButton onMarkNotAnObject={onMarkNotAnObject} className="w-full mt-2" />
+        <NotAnObjectButton onMarkNotAnObject={onMarkNotAnObject} className={`w-full mt-2${tall}`} />
       )}
     </div>
   );

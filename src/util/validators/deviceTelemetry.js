@@ -35,6 +35,15 @@ export function classifyDevice({ coarsePointer, screenMinSide } = {}) {
 }
 
 /**
+ * A phone, as telemetry calls one: a coarse primary pointer on a screen whose
+ * shorter side is under 600 CSS px. In the full-screen photo (12 Oct 2026) a
+ * phone is asked to turn sideways, and a tablet is not.
+ */
+export function isPhone({ coarsePointer, screenMinSide } = {}) {
+  return classifyDevice({ coarsePointer, screenMinSide }) === "phone";
+}
+
+/**
  * The browser family from a User-Agent string. Checked in this order because
  * each browser's string also names the ones it is built on: Samsung Internet
  * and Edge say Chrome, Chrome says Safari. Chrome and Firefox on iOS
@@ -67,6 +76,9 @@ export const DEVICE_FIELD_RULES = Object.freeze({
   maxZoom: isNumberIn(1, 5),
   loupeShownCount: isIntIn(0, 10000),
   boxesAddedWithButton: isIntIn(0, 10000),
+  // The full-screen photo on phones (12 Oct 2026): times entered and time spent, per image
+  focusModeCount: isIntIn(0, 10000),
+  focusModeMs: isIntIn(0, 86400000),
 });
 
 /**

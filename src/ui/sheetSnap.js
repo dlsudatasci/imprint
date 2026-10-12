@@ -8,6 +8,13 @@
  *   half       half the screen below the top bar
  *   full       all of it but 8 px, so the top bar's edge still shows
  *   panel      while a box is open: its panel and the footer, at most 60%
+ *
+ * `compact` is the sheet under the full-screen photo (12 Oct 2026): collapsed
+ * is the handle alone, above the home indicator (`inset`), so the photo keeps
+ * the screen, and the footer comes up with the sheet. A phone held sideways is
+ * about 390 px tall, so there half would show next to nothing between the
+ * handle and the footer and goes to full instead, and a box's panel takes the
+ * height it needs.
  */
 
 export const SNAP_ORDER = Object.freeze(["collapsed", "half", "full"]);
@@ -16,12 +23,24 @@ export const FLICK_VELOCITY = 0.5;
 export const FULL_GAP_PX = 8;
 export const HALF_SHARE = 0.5;
 export const PANEL_MAX_SHARE = 0.6;
+/** Compact: the least of the scrolling part worth stopping at half for, px */
+export const MIN_HALF_BODY_PX = 160;
 
 const nonNegative = (n) => (Number.isFinite(n) && n > 0 ? n : 0);
 
 /** The four resting positions from the measured heights, px. */
-export function snapPoints({ container, header, footer, panel = 0 }) {
+export function snapPoints({ container, header, footer, panel = 0, compact = false, inset = 0 }) {
   const c = nonNegative(container);
+  if (compact) {
+    const collapsed = nonNegative(header) + nonNegative(inset);
+    const full = Math.max(collapsed, c - FULL_GAP_PX);
+    // The handle and the footer, which is on the screen once the sheet is up
+    const frame = nonNegative(header) + nonNegative(footer);
+    const middle = Math.min(full, Math.max(collapsed, Math.round(c * HALF_SHARE)));
+    const half = middle - frame < MIN_HALF_BODY_PX ? full : middle;
+    const panelPoint = Math.min(full, Math.max(collapsed, frame + nonNegative(panel)));
+    return { collapsed, half, full, panel: panelPoint };
+  }
   const collapsed = nonNegative(header) + nonNegative(footer);
   const full = Math.max(collapsed, c - FULL_GAP_PX);
   const half = Math.min(full, Math.max(collapsed, Math.round(c * HALF_SHARE)));

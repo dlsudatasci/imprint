@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { summarizeInputTypes, classifyDevice, classifyBrowser, sanitizeDeviceTelemetry } from "./deviceTelemetry";
+import { summarizeInputTypes, classifyDevice, classifyBrowser, sanitizeDeviceTelemetry, isPhone } from "./deviceTelemetry";
 
 /** Device and input telemetry for each submitted image (9 Oct 2026). */
 const UA = {
@@ -103,3 +103,24 @@ describe("sanitizeDeviceTelemetry", () => {
     expect(input.inputType).toBe("kinect");
   });
 });
+
+// The full-screen photo on phones (12 Oct 2026)
+describe("isPhone", () => {
+  it("is a coarse pointer on a screen under 600 px, and nothing else", () => {
+    expect(isPhone({ coarsePointer: true, screenMinSide: 599 })).toBe(true);
+    expect(isPhone({ coarsePointer: true, screenMinSide: 600 })).toBe(false);
+    expect(isPhone({ coarsePointer: false, screenMinSide: 390 })).toBe(false);
+    expect(isPhone()).toBe(false);
+  });
+});
+
+describe("full-screen telemetry", () => {
+  it("keeps focusModeCount and focusModeMs when valid, and drops them when not", () => {
+    expect(sanitizeDeviceTelemetry({ focusModeCount: 2, focusModeMs: 45000 })).toEqual({ focusModeCount: 2, focusModeMs: 45000 });
+    expect(sanitizeDeviceTelemetry({ focusModeCount: 0, focusModeMs: 0 })).toEqual({ focusModeCount: 0, focusModeMs: 0 });
+    for (const bad of [{ focusModeCount: -1 }, { focusModeCount: 1.5 }, { focusModeCount: "2" }, { focusModeMs: 86400001 }, { focusModeMs: NaN }, { focusModeMs: 12.5 }]) {
+      expect(sanitizeDeviceTelemetry(bad)).toEqual({});
+    }
+  });
+});
+

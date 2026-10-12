@@ -69,33 +69,54 @@ beforeAll(() => {
 let root: Root | null = null;
 let host: HTMLDivElement;
 
-function mount({ isAnnotator = false, current = 1 } = {}) {
+let toolRef = React.createRef<Tool>();
+
+type MountOptions = {
+  isAnnotator?: boolean;
+  current?: number;
+  layout?: "desktop" | "sheet";
+  askSidewalk?: boolean;
+  focus?: boolean;
+  onEnterFocus?: () => void;
+  onExitFocus?: () => void;
+};
+
+function element({ isAnnotator = false, current = 1, layout = "desktop", askSidewalk, focus, onEnterFocus, onExitFocus }: MountOptions = {}) {
   const data = readSessionData();
   const rec = data.imgRecords[current - 1];
-  const ref = React.createRef<Tool>();
+  return (
+    <ReactPictureAnnotation
+      ref={toolRef as unknown as React.Ref<ReactPictureAnnotation>}
+      image={rec.url}
+      onSelect={() => undefined}
+      onChange={() => undefined}
+      width={960}
+      height={600}
+      annotationData={rec.annotationList}
+      imageID={rec.imageID}
+      city={rec.city}
+      currentAnnotationCount={current}
+      totalAnnotationCount={data.imgRecords.length}
+      username="test"
+      isAnnotator={isAnnotator}
+      layout={layout}
+      askSidewalk={askSidewalk}
+      focus={focus}
+      onEnterFocus={onEnterFocus}
+      onExitFocus={onExitFocus}
+    />
+  );
+}
+
+function mount(options: MountOptions = {}) {
+  toolRef = React.createRef<Tool>();
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
   act(() => {
-    root!.render(
-      <ReactPictureAnnotation
-        ref={ref as unknown as React.Ref<ReactPictureAnnotation>}
-        image={rec.url}
-        onSelect={() => undefined}
-        onChange={() => undefined}
-        width={960}
-        height={600}
-        annotationData={rec.annotationList}
-        imageID={rec.imageID}
-        city={rec.city}
-        currentAnnotationCount={current}
-        totalAnnotationCount={data.imgRecords.length}
-        username="test"
-        isAnnotator={isAnnotator}
-      />
-    );
+    root!.render(element(options));
   });
-  return ref.current as unknown as Tool;
+  return toolRef.current as unknown as Tool;
 }
 
 function unmount() {
@@ -247,6 +268,58 @@ describe("hiding boxes on the photo (8 Oct 2026)", () => {
     expect(tool.state.annotatorStep).toBe("obstructions");
     expect(tool.state.hiddenBoxIds).toEqual([]);
     expect(tool.isBoxHidden("a-car")).toBe(false);
+  });
+});
+
+// 10 Oct 2026: hiding the open box from its panel, Hide all, and the open
+// object's chip highlighted, for both roles
+describe("hiding from the panel and Hide all (10 Oct 2026)", () => {
+  const button = (root: Element | null, text: string) =>
+    Array.from(root?.querySelectorAll("button") ?? []).find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined;
+
+  it("hides the open box from its panel's eye, which closes the panel", () => {
+    for (const isAnnotator of [false, true]) {
+      window.localStorage.clear();
+      writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator } });
+      const tool = mount({ isAnnotator });
+      act(() => tool.selectBoxById("a-car"));
+      const eye = host.querySelector('.rp-selected-input button[aria-label="Hide this box on the photo"]') as HTMLButtonElement;
+      expect(eye).not.toBeNull();
+      act(() => eye.click());
+      expect(tool.isBoxHidden("a-car")).toBe(true);
+      expect(tool.selectedId).toBeNull();
+      expect(host.querySelector(".rp-selected-input")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("hides every box with Hide all and shows them with Show all, for both roles", () => {
+    for (const isAnnotator of [false, true]) {
+      window.localStorage.clear();
+      writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator } });
+      const tool = mount({ isAnnotator });
+      act(() => tool.selectBoxById("b-pole"));
+      const list = () => host.querySelector("#box-review-section");
+      act(() => button(list(), "Hide all")!.click());
+      for (const id of ["a-car", "b-pole", "c-tree"]) expect(tool.isBoxHidden(id)).toBe(true);
+      expect(tool.selectedId).toBeNull();
+      expect(button(list(), "Hide all")).toBeUndefined();
+      expect(list()!.textContent).toContain("3 boxes hidden");
+      act(() => button(list(), "Show all")!.click());
+      expect(tool.state.hiddenBoxIds).toEqual([]);
+      unmount();
+    }
+  });
+
+  it("highlights the open object's chip in the annotators' Objects in This Image", () => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+    const tool = mount({ isAnnotator: true });
+    act(() => tool.selectBoxById("c-tree"));
+    const current = host.querySelectorAll('#box-review-section [aria-current="true"]');
+    expect(current).toHaveLength(1);
+    expect(current[0].textContent).toContain("Tree #1");
+    expect(current[0].closest("li")!.className).toContain("bg-primary-50");
   });
 });
 
@@ -506,6 +579,39 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
     expect(markOf(tool, "a-car")).toMatchObject({ x: 100, y: 100, width: 540, height: 260 });
   });
 
+  // The same magnifier as on touch, while a handle is dragged with the mouse
+  // (10 Oct 2026), for contributors and annotators
+  it("shows the magnifier while a corner or edge handle is dragged with the mouse, for both roles", () => {
+    for (const isAnnotator of [false, true]) {
+      window.localStorage.clear();
+      writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator } });
+      const tool = mount({ isAnnotator });
+      tool.currentImageElement = { width: 640, height: 360 };
+      const loupe = () => (tool.state as unknown as { loupe: { left: number; top: number } | null }).loupe;
+      act(() => tool.selectBoxById("a-car"));
+      // The bottom-right corner handle, (300, 220)
+      act(() => tool.onMouseDown(at(300, 220)));
+      expect(loupe()).toBeNull();
+      act(() => tool.onMouseMove(at(330, 240)));
+      expect(loupe()).toEqual({ left: expect.any(Number), top: expect.any(Number) });
+      act(() => tool.onMouseUp());
+      expect(loupe()).toBeNull();
+      expect(markOf(tool, "a-car")).toMatchObject({ width: 230, height: 140 });
+      // The right edge's middle handle, now at (330, 170)
+      act(() => tool.onMouseDown(at(330, 170)));
+      act(() => tool.onMouseMove(at(360, 170)));
+      expect(loupe()).toEqual({ left: expect.any(Number), top: expect.any(Number) });
+      act(() => (tool as unknown as { onMouseLeave(): void }).onMouseLeave());
+      expect(loupe()).toBeNull();
+      // Drawing a new box, or moving one, shows none
+      act(() => tool.onMouseDown(at(200, 160)));
+      act(() => tool.onMouseMove(at(220, 170)));
+      expect(loupe()).toBeNull();
+      act(() => tool.onMouseUp());
+      unmount();
+    }
+  });
+
   it("refuses to send a box left wholly off the photo, and says which", async () => {
     window.localStorage.clear();
     const rec = record();
@@ -526,7 +632,7 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
       await tool.submit();
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(tool.state.error).toBe("Bollard is outside the photo. Move it onto the photo or delete it.");
+    expect(tool.state.error).toBe("Bollard #1 is outside the photo. Move it onto the photo or delete it.");
   });
 
   it("shows the server's own reason when it refuses an image", async () => {
@@ -545,3 +651,653 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
     expect(tool.state.error).toBe("A box has no area inside the image.");
   });
 });
+
+// Contributors on phones and tablets (9 Oct 2026): real pointer events from a
+// finger on the photo, in the sheet layout. The canvas is the 960 by 600 stage
+// shown at its own size, so a CSS px on it is an image px here.
+describe("touch on the photo (9 Oct 2026)", () => {
+  const realMatchMedia = window.matchMedia;
+  const realRect = HTMLCanvasElement.prototype.getBoundingClientRect;
+
+  beforeEach(() => {
+    // A phone: a finger is the primary pointer, and no animation
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes("coarse") || query.includes("prefers-reduced-motion"),
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+    HTMLCanvasElement.prototype.getBoundingClientRect = function () {
+      return { left: 0, top: 0, width: 960, height: 600, right: 960, bottom: 600, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    };
+  });
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    HTMLCanvasElement.prototype.getBoundingClientRect = realRect;
+  });
+
+  function onPhone() {
+    const tool = mount({ layout: "sheet" });
+    tool.currentImageElement = { width: 640, height: 360 };
+    return tool;
+  }
+  const canvas = () => host.querySelector("canvas.rp-shapes") as HTMLCanvasElement;
+  const fire = (type: string, x: number, y: number, { id = 1, pointerType = "touch" } = {}) =>
+    act(() => {
+      canvas().dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType, clientX: x, clientY: y }));
+    });
+  const markOf = (tool: Tool, id: string) =>
+    ({ ...(tool.shapes.find((sh) => sh.getAnnotationData().id === id)!.getAnnotationData() as unknown as { mark: Record<string, number> }).mark });
+  const CAR = { x: 100, y: 100, width: 200, height: 120 };
+
+  it("selects a suggestion on a tap and leaves its mark as it was, and leaves a mouse's pointer events to the mouse handlers", () => {
+    const tool = onPhone();
+    fire("pointerdown", 200, 160, { pointerType: "mouse" });
+    fire("pointerup", 200, 160, { pointerType: "mouse" });
+    expect(tool.selectedId).toBeNull();
+    fire("pointerdown", 200, 160);
+    fire("pointermove", 203, 162);
+    fire("pointerup", 203, 162);
+    expect(tool.selectedId).toBe("a-car");
+    expect(markOf(tool, "a-car")).toMatchObject(CAR);
+  });
+
+  it("moves the selected box on a drag past the slop, and saves the edit", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    fire("pointerdown", 200, 160);
+    fire("pointermove", 204, 160);
+    expect(markOf(tool, "a-car")).toMatchObject(CAR);
+    fire("pointermove", 230, 170);
+    fire("pointerup", 230, 170);
+    expect(markOf(tool, "a-car")).toMatchObject({ x: 130, y: 110, width: 200, height: 120 });
+    act(() => vi.advanceTimersByTime(500));
+    expect(box("a-car").mark).toMatchObject({ x: 130, y: 110 });
+  });
+
+  it("resizes the selected box from the corner dragged, showing the magnifier while it moves", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    // The bottom-right corner is at (300, 220)
+    fire("pointerdown", 305, 224);
+    fire("pointermove", 345, 254);
+    expect((tool.state as unknown as { loupe: unknown }).loupe).not.toBeNull();
+    fire("pointerup", 345, 254);
+    expect(markOf(tool, "a-car")).toMatchObject({ x: 100, y: 100, width: 240, height: 150 });
+    expect((tool.state as unknown as { loupe: unknown }).loupe).toBeNull();
+  });
+
+  it("puts the box back when a second finger lands mid-drag", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    fire("pointerdown", 200, 160);
+    fire("pointermove", 240, 180);
+    expect(markOf(tool, "a-car").x).toBe(140);
+    fire("pointerdown", 400, 300, { id: 2 });
+    expect(markOf(tool, "a-car")).toMatchObject(CAR);
+    fire("pointerup", 240, 180);
+    fire("pointerup", 400, 300, { id: 2 });
+    expect(markOf(tool, "a-car")).toMatchObject(CAR);
+  });
+
+  it("puts the box back on a pointercancel", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    fire("pointerdown", 200, 160);
+    fire("pointermove", 240, 180);
+    expect(markOf(tool, "a-car").x).toBe(140);
+    fire("pointercancel", 240, 180);
+    expect(markOf(tool, "a-car")).toMatchObject(CAR);
+  });
+
+  it("adds an editable box with Add box, selects it, and lists it as still to decide", () => {
+    const tool = onPhone();
+    const button = host.querySelector("#add-box-button") as HTMLButtonElement;
+    expect(button.textContent).toContain("Add box");
+    act(() => button.click());
+    const added = tool.shapes.map((sh) => sh.getAnnotationData()).find((d) => d.editable);
+    expect(added).toBeDefined();
+    expect(tool.selectedId).toBe(added!.id);
+    // Centred on the photo, 30% of it each way
+    expect(markOf(tool, added!.id)).toMatchObject({ x: 224, y: 126, width: 192, height: 108 });
+    expect(host.textContent).toContain("Drag the corners to fit the object.");
+    // Closed without an answer, it waits under Still to decide with the three suggestions
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    const peek = host.querySelector("#box-review-section-peek")!;
+    expect(peek.textContent).toContain("Still to decide 4");
+    expect(host.querySelector("#box-review-section")!.textContent).toContain("Still to decide 4");
+    expect(host.querySelector('#box-review-section [data-tray="toDecide"][title="Drawn by you"]')!.textContent).toContain("Select a category");
+  });
+
+  it("renders the box panel in the answers sheet, not over the photo", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    expect(host.querySelector(".rp-selected-input")).toBeNull();
+    expect(host.querySelector("#answer-sheet")!.textContent).toContain("obstruct the sidewalk?");
+  });
+
+  it("keeps every box and the selection when the layout switches to desktop", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    const count = tool.shapes.length;
+    act(() => root!.render(element({ layout: "desktop" })));
+    expect(toolRef.current).toBe(tool);
+    expect(tool.shapes).toHaveLength(count);
+    expect(tool.selectedId).toBe("a-car");
+    expect(host.querySelector(".rp-selected-input")!.textContent).toContain("obstruct the sidewalk?");
+    expect(host.querySelector("#answer-sheet")).toBeNull();
+  });
+});
+
+// Annotators on phones and tablets, and the full-screen photo (12 Oct 2026).
+// Real pointer events from a finger, as in "touch on the photo" above.
+describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () => {
+  const realMatchMedia = window.matchMedia;
+  const realRect = HTMLCanvasElement.prototype.getBoundingClientRect;
+  let coarse = true;
+
+  beforeEach(() => {
+    coarse = true;
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes("coarse") ? coarse : query.includes("prefers-reduced-motion"),
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+    HTMLCanvasElement.prototype.getBoundingClientRect = function () {
+      return { left: 0, top: 0, width: 960, height: 600, right: 960, bottom: 600, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    };
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+  });
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    HTMLCanvasElement.prototype.getBoundingClientRect = realRect;
+  });
+
+  type Editor = {
+    mask: { polygons: Array<{ id: string; kind: string; points: Array<{ x: number; y: number }> }> };
+    draft: { points: unknown[] } | null;
+    selectedId: string | null;
+    selectedPoint: number | null;
+    drag: unknown;
+  };
+  type AnnotatorTool = Tool & {
+    enterSidewalkStep(): void;
+    enterObstructionStep(): void;
+    getSidewalkState(): Editor;
+    dispatchSidewalk(action: { type: string; [key: string]: unknown }): void;
+    state: Tool["state"] & { sheetSnap: string; annotatorStep: string; obstructionsConfirmed: boolean };
+  };
+
+  function annotator(options: MountOptions = {}) {
+    const tool = mount({ isAnnotator: true, layout: "sheet", askSidewalk: true, ...options }) as AnnotatorTool;
+    tool.currentImageElement = { width: 640, height: 360 };
+    return tool;
+  }
+  const canvas = () => host.querySelector("canvas.rp-shapes") as HTMLCanvasElement;
+  const fire = (type: string, x: number, y: number, { id = 1, pointerType = "touch" } = {}) =>
+    act(() => {
+      canvas().dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType, clientX: x, clientY: y }));
+    });
+  const tap = (x: number, y: number, options = {}) => {
+    fire("pointerdown", x, y, options);
+    fire("pointerup", x, y, options);
+  };
+  const sheet = () => host.querySelector("#answer-sheet");
+  const button = (scope: Element | null, text: string) =>
+    Array.from(scope?.querySelectorAll("button") ?? []).find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined;
+  const data = (tool: Tool, id: string) =>
+    tool.shapes.find((sh) => sh.getAnnotationData().id === id)!.getAnnotationData() as unknown as { selected?: boolean; obstructs?: boolean | null; comment?: string };
+  /** Every suggestion kept, so Objects is done */
+  const keepAll = (tool: Tool) => {
+    for (const id of ["a-car", "b-pole", "c-tree"]) data(tool, id).selected = true;
+  };
+  /** A square outline drawn with taps: four points, then the first point again */
+  const drawSquare = () => {
+    for (const [x, y] of [[300, 250], [500, 250], [500, 330], [300, 330]]) tap(x, y);
+    tap(303, 252);
+  };
+  const submit = () => host.querySelector("button[type='submit']") as HTMLButtonElement;
+
+  it("Objects: a tap opens the annotators' panel in the sheet, Keep keeps the box, and Add box asks for a category", () => {
+    const tool = annotator();
+    // A mouse's pointer events are left to the mouse handlers, in every step
+    tap(200, 160, { pointerType: "mouse" });
+    expect(tool.selectedId).toBeNull();
+    tap(200, 160);
+    expect(tool.selectedId).toBe("a-car");
+    expect(host.querySelector(".rp-selected-input")).toBeNull();
+    const keep = button(sheet(), "Keep")!;
+    expect(keep.className).toContain("min-h-[44px]");
+    expect(sheet()!.querySelector("select")!.className).toContain("text-base");
+    act(() => keep.click());
+    expect(data(tool, "a-car").selected).toBe(true);
+    expect(tool.selectedId).toBeNull();
+    // The top of the sheet says what is left, with Next
+    expect(host.querySelector("#box-review-section-peek")!.textContent).toContain("To decide 2");
+
+    act(() => (host.querySelector("#add-box-button") as HTMLButtonElement).click());
+    const added = tool.shapes.map((sh) => sh.getAnnotationData()).find((d) => d.editable)!;
+    expect(tool.selectedId).toBe(added.id);
+    expect(sheet()!.textContent).toContain("Select a category");
+  });
+
+  it("the footer names the step's button and keeps it the submit button, with Back in later steps", () => {
+    const tool = annotator();
+    expect(submit().textContent).toBe("Next: Sidewalk");
+    expect(button(host, "Back")).toBeUndefined();
+    keepAll(tool);
+    act(() => tool.enterSidewalkStep());
+    expect(tool.state.annotatorStep).toBe("sidewalk");
+    expect(submit().textContent).toBe("Next: Obstructions");
+    expect(submit().getAttribute("type")).toBe("submit");
+    expect(button(host, "Back")!.getAttribute("aria-label")).toBe("Back to Objects");
+    // The step's heading and tools are at the top of the sheet, with the touch hint
+    expect(sheet()!.textContent).toContain("Step 2 of 3: Sidewalk");
+    expect(host.querySelector("#sidewalk-tools")!.textContent).toContain("Finish");
+    expect(sheet()!.textContent).toContain("Tap the photo to start a shape around the walking space.");
+  });
+
+  it("Sidewalk: taps add points, a tap on the first point closes the shape, and the outline is saved", () => {
+    const tool = annotator();
+    keepAll(tool);
+    act(() => tool.enterSidewalkStep());
+    tap(300, 250, { pointerType: "mouse" });
+    expect(tool.getSidewalkState().draft).toBeNull();
+    tap(300, 250);
+    expect(tool.getSidewalkState().draft!.points).toHaveLength(1);
+    tap(500, 250);
+    tap(500, 330);
+    tap(300, 330);
+    expect(tool.getSidewalkState().mask.polygons).toHaveLength(0);
+    tap(303, 252);
+    const { mask, draft } = tool.getSidewalkState();
+    expect(draft).toBeNull();
+    expect(mask.polygons).toHaveLength(1);
+    expect(mask.polygons[0]).toMatchObject({ kind: "walk", points: [{ x: 300, y: 250 }, { x: 500, y: 250 }, { x: 500, y: 330 }, { x: 300, y: 330 }] });
+    expect(saved().userSidewalkMask.polygons).toHaveLength(1);
+  });
+
+  it("Sidewalk: a drag moves a point of the selected shape, keeping the finger's offset, and ends the drag", () => {
+    const tool = annotator();
+    keepAll(tool);
+    act(() => tool.enterSidewalkStep());
+    drawSquare();
+    // The second point is at (500, 250): pressed 2 px off it
+    fire("pointerdown", 502, 252);
+    fire("pointermove", 530, 270);
+    expect((tool.state as unknown as { loupe: unknown }).loupe).not.toBeNull();
+    fire("pointerup", 530, 270);
+    const editor = tool.getSidewalkState();
+    expect(editor.mask.polygons[0].points[1]).toEqual({ x: 528, y: 268 });
+    expect(editor.drag).toBeNull();
+    expect((tool.state as unknown as { loupe: unknown }).loupe).toBeNull();
+  });
+
+  it("Sidewalk: a tap on empty photo clears the selection and starts no shape, and a second finger puts a dragged point back", () => {
+    const tool = annotator();
+    keepAll(tool);
+    act(() => tool.enterSidewalkStep());
+    drawSquare();
+    expect(tool.getSidewalkState().selectedId).toBe("w1");
+    tap(100, 300);
+    expect(tool.getSidewalkState().selectedId).toBeNull();
+    expect(tool.getSidewalkState().draft).toBeNull();
+    expect(tool.getSidewalkState().mask.polygons).toHaveLength(1);
+
+    // A tap inside the shape selects it again
+    tap(400, 290);
+    expect(tool.getSidewalkState().selectedId).toBe("w1");
+    fire("pointerdown", 300, 250);
+    fire("pointermove", 330, 280);
+    expect(tool.getSidewalkState().mask.polygons[0].points[0]).toEqual({ x: 330, y: 280 });
+    fire("pointerdown", 600, 100, { id: 2 });
+    expect(tool.getSidewalkState().mask.polygons[0].points[0]).toEqual({ x: 300, y: 250 });
+    expect(tool.getSidewalkState().drag).toBeNull();
+    fire("pointerup", 330, 280);
+    fire("pointerup", 600, 100, { id: 2 });
+    expect(tool.getSidewalkState().mask.polygons[0].points[0]).toEqual({ x: 300, y: 250 });
+  });
+
+  it("Obstructions: a tap marks an object and a second tap unmarks it, with no panel, and an unticked confirmation collapses the sheet", async () => {
+    const tool = annotator();
+    keepAll(tool);
+    act(() => tool.enterSidewalkStep());
+    act(() => tool.dispatchSidewalk({ type: "SET_NO_SIDEWALK", value: true }));
+    act(() => tool.enterObstructionStep());
+    expect(tool.state.annotatorStep).toBe("obstructions");
+    tap(450, 150, { pointerType: "mouse" });
+    expect(data(tool, "c-tree").obstructs).not.toBe(true);
+    tap(450, 150);
+    expect(data(tool, "c-tree").obstructs).toBe(true);
+    expect(tool.selectedId).toBeNull();
+    expect(host.querySelector("#box-review-section-peek")!.textContent).toContain("Marked 1 of 3");
+    expect(button(sheet(), "Keep")).toBeUndefined();
+    tap(450, 150);
+    expect(data(tool, "c-tree").obstructs).not.toBe(true);
+    expect(host.querySelector("#obstructions-confirmed")).not.toBeNull();
+    expect(button(host, "Back")!.getAttribute("aria-label")).toBe("Back to Sidewalk");
+
+    // Sent with the confirmation unticked: the message shows and the sheet collapses
+    act(() => tool.setState({ sheetSnap: "full" }));
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    await act(async () => {
+      submit().click();
+    });
+    expect(tool.state.error).toContain("Please tick the box");
+    expect(tool.state.sheetSnap).toBe("collapsed");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("full screen: the sheet is down to its handle, Add box and Exit are on the photo, and a chip says what is left or the selected box's name", () => {
+    const onExitFocus = vi.fn();
+    const tool = annotator({ focus: true, onExitFocus });
+    // The sheet is there to be pulled up, with nothing under its handle at rest
+    const handle = sheet()!.querySelector("button[aria-expanded]")!;
+    expect(handle.getAttribute("aria-expanded")).toBe("false");
+    expect(handle.parentElement!.children).toHaveLength(1);
+    // The step's buttons come up with the sheet, and cannot be reached before
+    expect(submit().closest("[inert]")).not.toBeNull();
+    expect(host.querySelector("#add-box-button")).not.toBeNull();
+    expect(host.querySelector("#full-screen-button")).toBeNull();
+    const exit = host.querySelector("#exit-full-screen-button") as HTMLButtonElement;
+    expect(exit.getAttribute("aria-label")).toBe("Exit full screen");
+    // Nothing selected: how many suggestions are left
+    expect(host.querySelector("[data-focus-chip] span")!.textContent).toBe("3 to decide");
+    // A box selected on the photo leaves the photo clear
+    tap(200, 160);
+    expect(tool.selectedId).toBe("a-car");
+    expect(tool.state.sheetSnap).toBe("collapsed");
+    expect(host.querySelector("[data-focus-chip]")!.textContent).toContain("Car #1");
+    act(() => exit.click());
+    expect(onExitFocus).toHaveBeenCalledTimes(1);
+    // Leaving with the box selected opens its panel in the sheet
+    act(() => root!.render(element({ isAnnotator: true, layout: "sheet", askSidewalk: true, focus: false, onExitFocus })));
+    expect(sheet()!.textContent).toContain("Keep");
+    expect(tool.state.sheetSnap).toBe("panel");
+    expect(tool.selectedId).toBe("a-car");
+    expect(submit().closest("[inert]")).toBeNull();
+    // And going in with it open puts the sheet down again
+    act(() => root!.render(element({ isAnnotator: true, layout: "sheet", askSidewalk: true, focus: true, onExitFocus })));
+    expect(tool.state.sheetSnap).toBe("collapsed");
+    expect(tool.selectedId).toBe("a-car");
+  });
+
+  // Later on 12 Oct 2026: before, Details left full screen and nothing could be
+  // answered in it. Then a panel beside the photo, too narrow for Step 2. Now
+  // the sheet itself, pulled up from the bottom across the whole width.
+  it("full screen: Details pulls the sheet up to the box's panel, stays in full screen, and answering puts it down again", () => {
+    const onExitFocus = vi.fn();
+    const tool = annotator({ focus: true, onExitFocus });
+    const canvasBefore = canvas();
+    const sheetBefore = sheet();
+    tap(200, 160);
+    act(() => button(host.querySelector("[data-focus-chip]"), "Details")!.click());
+    expect(onExitFocus).not.toHaveBeenCalled();
+    expect(tool.state.sheetSnap).toBe("panel");
+    // The box's name and panel are in the part that scrolls
+    const scroller = sheet()!.querySelector("[data-sheet-scroll]")!;
+    expect(scroller.textContent).toContain("Car #1");
+    expect(button(scroller, "Keep")).toBeDefined();
+    // Nothing is rebuilt, and the button is gone while the sheet is up
+    expect(canvas()).toBe(canvasBefore);
+    expect(sheet()).toBe(sheetBefore);
+    expect(host.querySelector("[data-open-sheet]")).toBeNull();
+    expect(submit().closest("[inert]")).toBeNull();
+    act(() => button(scroller, "Keep")!.click());
+    expect(data(tool, "a-car").selected).toBe(true);
+    expect(tool.state.sheetSnap).toBe("collapsed");
+    expect(host.querySelector("[data-open-sheet]")!.textContent).toBe("Details");
+    // With the sheet up on the lists, a box opened from them shows its panel
+    act(() => (host.querySelector("[data-open-sheet]") as HTMLButtonElement).click());
+    expect(tool.state.sheetSnap).toBe("half");
+    expect(scroller.textContent).toContain("To decide 2");
+    act(() => tool.selectBoxById("b-pole"));
+    expect(tool.state.sheetSnap).toBe("panel");
+    // The handle, pressed with a box selected and the sheet down, brings its panel
+    act(() => tool.setState({ sheetSnap: "collapsed" }));
+    act(() => (sheet()!.querySelector("button[aria-expanded]") as HTMLButtonElement).click());
+    expect(tool.state.sheetSnap).toBe("panel");
+  });
+
+  it("full screen: an annotator goes through Sidewalk and Obstructions from the sheet, which goes down for each step's photo", () => {
+    const tool = annotator({ focus: true });
+    keepAll(tool);
+    // Not done would be said with the sheet up: the message is in it
+    act(() => (host.querySelector("[data-open-sheet]") as HTMLButtonElement).click());
+    act(() => submit().click());
+    expect(tool.state.annotatorStep).toBe("sidewalk");
+    expect(tool.state.sheetSnap).toBe("collapsed");
+    // The sheet has the step's own toolbar, and the photo the icons-only one with the way up
+    expect(sheet()!.querySelectorAll("#sidewalk-tools")).toHaveLength(1);
+    expect(host.querySelectorAll('[role="toolbar"]')).toHaveLength(2);
+    expect(host.querySelector("[data-open-sheet]")!.textContent).toBe("Details");
+    drawSquare();
+    expect(tool.getSidewalkState().mask.polygons).toHaveLength(1);
+    act(() => (host.querySelector("[data-open-sheet]") as HTMLButtonElement).click());
+    // Up: one toolbar, the sheet's
+    expect(host.querySelectorAll('[role="toolbar"]')).toHaveLength(1);
+    act(() => submit().click());
+    expect(tool.state.annotatorStep).toBe("obstructions");
+    expect(sheet()!.querySelector("[data-sheet-scroll] #obstructions-confirmed")).not.toBeNull();
+    // Sent with the confirmation unticked: the sheet comes up with the message
+    expect(tool.state.sheetSnap).toBe("collapsed");
+    act(() => submit().click());
+    expect(tool.state.error).toContain("Please tick the box");
+    expect(tool.state.sheetSnap).toBe("half");
+  });
+
+  it("full screen: a contributor's Answers holds the lists, Step 2 and Next Image, and a missing Step 2 answer pulls the sheet up to it", async () => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: false } });
+    const tool = mount({ layout: "sheet", focus: true }) as AnnotatorTool;
+    const open = host.querySelector("[data-open-sheet]") as HTMLButtonElement;
+    expect(open.textContent).toBe("Answers");
+    expect(host.querySelector("[data-focus-chip] span")!.textContent).toBe("3 still to decide");
+    act(() => open.click());
+    expect(tool.state.sheetSnap).toBe("half");
+    const scroller = sheet()!.querySelector("[data-sheet-scroll]")!;
+    expect(scroller.querySelector("#scene-level-section")).not.toBeNull();
+    // The lists once: no short summary above them
+    expect(host.querySelector("#box-review-section-peek")).toBeNull();
+    act(() => (sheet()!.querySelector("button[aria-expanded]") as HTMLButtonElement).click());
+    expect(tool.state.sheetSnap).toBe("collapsed");
+
+    // Every box answered and Step 2 empty: the message has to be seen
+    act(() => {
+      for (const id of ["a-car", "b-pole", "c-tree"]) {
+        tool.selectBoxById(id);
+        tool.onUnselectObstruction();
+      }
+    });
+    expect(tool.state.sheetSnap).toBe("collapsed");
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    await act(async () => {
+      await tool.submit();
+    });
+    expect(tool.state.error).toContain("sidewalk width");
+    expect(tool.state.sheetSnap).toBe("full");
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain("sidewalk width");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  // 12 Oct 2026: on a 360 px phone the fifth accessibility option stuck out of
+  // its card. jsdom lays nothing out, so this checks the rows may wrap. The
+  // widths were checked in a browser at 320, 360, 375 and 390 px.
+  it("lets Step 2's rows of options wrap in the sheet, five going three and two on a narrow phone, and keeps one row on the desktop layout", () => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: false } });
+    const rows = () =>
+      Array.from(host.querySelectorAll<HTMLElement>("#scene-level-section div")).filter(
+        (div) => div.children.length >= 3 && Array.from(div.children).every((child) => child.tagName === "BUTTON") && !div.className.includes("grid"),
+      );
+    mount({ layout: "sheet" });
+    expect(rows().map((row) => row.children.length)).toEqual([3, 3, 5]);
+    for (const row of rows()) expect(row.className).toContain("flex-wrap");
+    for (const option of Array.from(rows()[2].children)) expect(option.className).toContain("max-[389px]:basis-[30%]");
+    expect(rows()[0].children[0].className).not.toContain("basis-");
+    unmount();
+    mount({ layout: "desktop" });
+    expect(rows().map((row) => row.children.length)).toEqual([3, 3, 5]);
+    for (const row of rows()) expect(row.className).not.toContain("flex-wrap");
+    expect(rows()[2].children[0].className).not.toContain("basis-");
+  });
+
+  // 12 Oct 2026: bringing Step 2 into view scrolled the phone screen itself
+  // (scrollIntoView scrolls every container, also the ones that hide their
+  // overflow), which left the photo shifted and a dark gap under it
+  it("a missing Step 2 answer pulls the sheet up and scrolls only inside the sheet, for the tour's request too", async () => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: false } });
+    const proto = Element.prototype as unknown as { scrollIntoView?: unknown; scrollTo?: unknown };
+    const real = { into: proto.scrollIntoView, to: proto.scrollTo };
+    const scrollIntoView = vi.fn();
+    const scrolled: Element[] = [];
+    proto.scrollIntoView = scrollIntoView;
+    proto.scrollTo = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      const tool = mount({ layout: "sheet" }) as AnnotatorTool;
+      act(() => {
+        for (const id of ["a-car", "b-pole", "c-tree"]) {
+          tool.selectBoxById(id);
+          tool.onUnselectObstruction();
+        }
+      });
+      globalThis.fetch = vi.fn() as unknown as typeof fetch;
+      await act(async () => {
+        await tool.submit();
+      });
+      expect(tool.state.error).toContain("sidewalk width");
+      expect(tool.state.sheetSnap).toBe("full");
+      const scroller = sheet()!.querySelector("[data-sheet-scroll]")!;
+      expect(scroller.contains(host.querySelector("#scene-level-section"))).toBe(true);
+      expect(scrolled).toEqual([scroller]);
+
+      // The tutorial's request before a tour step in the pulled-up part of the sheet
+      scrolled.length = 0;
+      act(() => {
+        window.dispatchEvent(new CustomEvent("imprint:answer-sheet", { detail: { snap: "full", scrollTo: "#scene-level-section" } }));
+      });
+      expect(scrolled).toEqual([scroller]);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      proto.scrollIntoView = real.into;
+      proto.scrollTo = real.to;
+    }
+  });
+
+  it("puts back a part of the phone screen that scrolled anyway, and leaves the sheet's own scrolling alone", () => {
+    mount({ layout: "sheet" });
+    const fixed = Array.from(host.querySelectorAll<HTMLElement>("[data-no-scroll]"));
+    // The screen's root, the photo area and the sheet's container
+    expect(fixed.length).toBeGreaterThanOrEqual(3);
+    expect(fixed).toContain(canvas().closest("[data-no-scroll]"));
+    expect(fixed).toContain(sheet()!.closest("[data-no-scroll]"));
+    for (const el of fixed) {
+      el.scrollTop = 180;
+      el.scrollLeft = 12;
+      act(() => {
+        el.dispatchEvent(new Event("scroll"));
+      });
+      expect([el.scrollTop, el.scrollLeft]).toEqual([0, 0]);
+    }
+    const scroller = sheet()!.querySelector<HTMLElement>("[data-sheet-scroll]")!;
+    scroller.scrollTop = 180;
+    act(() => {
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    expect(scroller.scrollTop).toBe(180);
+    // Gone with the tool
+    const left = fixed[0];
+    unmount();
+    document.body.appendChild(left);
+    left.scrollTop = 90;
+    left.dispatchEvent(new Event("scroll"));
+    expect(left.scrollTop).toBe(90);
+    left.remove();
+  });
+
+  it("offers the full-screen button only when the form passes it (phones), level with Add box", () => {
+    annotator();
+    expect(host.querySelector("#full-screen-button")).toBeNull();
+    unmount();
+    const onEnterFocus = vi.fn();
+    annotator({ onEnterFocus });
+    const enter = host.querySelector("#full-screen-button") as HTMLButtonElement;
+    expect(enter.getAttribute("aria-label")).toBe("Full-screen photo");
+    expect(enter.style.bottom).toBe((host.querySelector("#add-box-button") as HTMLElement).style.bottom);
+    act(() => enter.click());
+    expect(onEnterFocus).toHaveBeenCalledTimes(1);
+    // Full screen belongs to the sheet layout, which every phone and tablet has
+    unmount();
+    annotator({ layout: "desktop", onEnterFocus });
+    expect(host.querySelector("#full-screen-button")).toBeNull();
+  });
+
+  it("counts the times and the time in full screen for telemetry", async () => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: false } });
+    const tool = mount({ layout: "sheet" });
+    act(() => root!.render(element({ layout: "sheet", focus: true })));
+    act(() => vi.advanceTimersByTime(2000));
+    act(() => root!.render(element({ layout: "sheet", focus: false })));
+    act(() => root!.render(element({ layout: "sheet", focus: true })));
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => {
+      for (const id of ["a-car", "b-pole", "c-tree"]) {
+        tool.selectBoxById(id);
+        tool.onUnselectObstruction();
+      }
+      tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+    });
+    const fetchMock = vi.fn(async () => ({ status: 200, ok: true, json: async () => ({}) }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await act(async () => {
+      await tool.submit();
+    });
+    const call = fetchMock.mock.calls.find((c) => (c as unknown as [string])[0] === "/api/annotationSubmit") as unknown as [string, { body: string }];
+    const { telemetry } = JSON.parse(call[1].body);
+    expect(telemetry.focusModeCount).toBe(2);
+    expect(telemetry.focusModeMs).toBe(3000);
+    expect(telemetry.layout).toBe("sheet");
+  });
+
+  it("on the desktop layout says tap when a finger is the primary pointer, and reads as before with a mouse", () => {
+    const TOUCH = {
+      objects: "Tap Add box for every object the suggestions missed.",
+      sidewalk: "Tap points around the sidewalk, then tap the first point again, or Finish shape, to close the shape.",
+      hint: "No shapes yet. Tap points around the sidewalk on the photo to start one.",
+      obstructions: "Tap every object that obstructs the sidewalk for you, traveling as you normally do.",
+    };
+    const MOUSE = {
+      objects: "Box every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not. For each dashed yellow suggestion, check its category, fix the box if it is loose, then click Keep, or click Not an object if it marks nothing real. Draw a box for every object the suggestions missed.",
+      sidewalk: "Outline the walking space in this image. Click points around the sidewalk and click the first point again to close the shape. Draw under any object standing on the sidewalk, as if it were not there.",
+      hint: "No shapes yet. Click points around the sidewalk on the photo to start one.",
+      obstructions: "Click every object that obstructs the sidewalk for you, traveling as you normally do. Click it again to unmark it. Leave the others unmarked, then confirm below that they do not obstruct.",
+    };
+    for (const [finger, copy, other] of [[true, TOUCH, MOUSE], [false, MOUSE, TOUCH]] as const) {
+      coarse = finger;
+      window.localStorage.clear();
+      writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+      const tool = annotator({ layout: "desktop" });
+      expect(host.textContent).toContain(copy.objects);
+      expect(host.textContent).not.toContain(other.objects);
+      keepAll(tool);
+      act(() => tool.enterSidewalkStep());
+      expect(host.textContent).toContain(copy.sidewalk);
+      expect(host.textContent).toContain(copy.hint);
+      expect(host.textContent).not.toContain(other.hint);
+      act(() => tool.dispatchSidewalk({ type: "SET_NO_SIDEWALK", value: true }));
+      act(() => tool.enterObstructionStep());
+      expect(host.textContent).toContain(copy.obstructions);
+      expect(host.textContent).not.toContain(other.obstructions);
+      unmount();
+    }
+  });
+});
+

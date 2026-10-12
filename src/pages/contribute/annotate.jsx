@@ -3,8 +3,6 @@ import React from "react";
 import { useSession } from "next-auth/react"; // Add this import
 
 import Page from "@/ui/page";
-import DesktopOnly from "@/features/annotate/desktopOnly";
-import { useCanAnnotate } from "@/hooks/useCanAnnotate";
 import AnnotationSessionSelection from "@/features/annotate/selection";
 import AnnotateForm from "@/features/annotate/form";
 import AnnotationDone from "@/features/annotate/done";
@@ -19,27 +17,27 @@ import {
 /**
  * The annotation flow — where contributors do the actual work.
  *
- * Which of four screens appears is worked out from the session counters rather
+ * Which of three screens appears is worked out from the session counters rather
  * than stored as a step number:
  *
  *   no session          → choose a batch size
  *   current <= total    → annotate the current image
  *   current > total     → finished; finalise and celebrate
- *   no mouse or trackpad → desktop-only notice, whatever the above says
  *
  * Session state is read from the local cache first and only fetched from the
  * server when nothing is cached. That is what lets the flow survive a page
  * reload, which matters because the annotation tool reloads the page between
  * every image.
  *
- * The device check runs before the session logic, so nobody on a phone can open
- * a batch they then can't work through. See hooks/useCanAnnotate.
+ * Everyone can annotate on any device: contributors from 9 Oct 2026, and
+ * annotators from 12 Oct 2026, when their three steps got the phone and tablet
+ * layout. There is no device check any more. AnnotateForm picks the layout by
+ * the screen's width (hooks/useAnnotateLayout) and shows its own skeleton
+ * until that is known.
  */
 export default function AnnotatePage() {
   const { data: session, status } = useSession(); // Add this line
   const loading = status === "loading";
-  // null until the device check runs in the browser; see the skeleton below.
-  const canAnnotate = useCanAnnotate();
 
   const [state, setState] = React.useState({
     annotationTotalCount: null,
@@ -175,7 +173,7 @@ export default function AnnotatePage() {
   // branch. Both matter: the layout already puts the shell and a skeleton on
   // the server while loading, so returning null here made the client's first
   // render disagree with the server's HTML and hydration failed.
-  if (loading || restoring || canAnnotate === null) {
+  if (loading || restoring) {
     return (
       <Page title="Annotate - Imprint Contribute" contribute>
         <ContentSkeleton />
@@ -184,11 +182,6 @@ export default function AnnotatePage() {
   }
 
   const renderComponent = () => {
-    /* If the device can't drive the canvas */
-    if (!canAnnotate) {
-      return <DesktopOnly />;
-    }
-
     /* If the user has no annotation sessions active */
     if (
       !state.annotationCurrentCount ||

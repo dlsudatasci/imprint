@@ -37,9 +37,14 @@ describe("buildDisplayLabels", () => {
     expect(result.size).toBe(0);
   });
 
-  it("returns a plain label for a single annotation", () => {
-    const result = buildDisplayLabels([{ id: "a", comment: "tree" }]);
-    expect(result.get("a")).toBe("Tree");
+  // Every object starts at #1 (10 Oct 2026), even the only one of its category
+  it("numbers a single annotation #1, but not a single box marked Not an object", () => {
+    const result = buildDisplayLabels([{ id: "a", comment: "tree" }, { id: "b", comment: "not_an_object" }]);
+    expect(result.get("a")).toBe("Tree #1");
+    // Not an object boxes are not objects: numbered only when there are two or more
+    expect(result.get("b")).toBe("Not an object");
+    const two = buildDisplayLabels([{ id: "a", comment: "not_an_object" }, { id: "b", comment: "not_an_object" }]);
+    expect([two.get("a"), two.get("b")]).toEqual(["Not an object #1", "Not an object #2"]);
   });
 
   it("numbers duplicate categories", () => {
@@ -62,23 +67,23 @@ describe("buildDisplayLabels", () => {
     expect(result.get("c")).toBe("Bollard #3");
   });
 
-  it("does not number singleton categories", () => {
+  it("numbers each category from #1, one of each included", () => {
     const result = buildDisplayLabels([
       { id: "a", comment: "tree" },
       { id: "b", comment: "bollard" },
     ]);
-    expect(result.get("a")).toBe("Tree");
-    expect(result.get("b")).toBe("Bollard");
+    expect(result.get("a")).toBe("Tree #1");
+    expect(result.get("b")).toBe("Bollard #1");
   });
 
-  it("numbers only the duplicated category in a mix", () => {
+  it("numbers each category on its own in a mix", () => {
     const result = buildDisplayLabels([
       { id: "a", comment: "tree" },
       { id: "b", comment: "bollard" },
       { id: "c", comment: "tree" },
     ]);
     expect(result.get("a")).toBe("Tree #1");
-    expect(result.get("b")).toBe("Bollard");
+    expect(result.get("b")).toBe("Bollard #1");
     expect(result.get("c")).toBe("Tree #2");
   });
 
@@ -110,14 +115,15 @@ describe("buildDisplayLabels", () => {
     expect(result.get("d")).toBeNull();
   });
 
-  it("does not count unlabeled annotations toward duplicates", () => {
+  it("does not count unlabeled annotations toward the numbers", () => {
     const result = buildDisplayLabels([
       { id: "a", comment: "tree" },
       { id: "b", comment: "" },
       { id: "c", comment: undefined },
     ]);
-    expect(result.get("a")).toBe("Tree");
+    expect(result.get("a")).toBe("Tree #1");
   });
+
 
   it("assigns numbers in input order", () => {
     const result = buildDisplayLabels([
@@ -187,7 +193,7 @@ describe("buildDisplayLabelsInOrder", () => {
       ["pred-10", "Lamp Post #2"],
       ["Xk4", "Lamp Post #3"],
       ["ab2", "Lamp Post #4"],
-      ["pred-3", "Tree"],
+      ["pred-3", "Tree #1"],
     ]);
     // The canvas moves a clicked box to the end of its list
     for (const order of [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [2, 4, 0, 3, 1]]) {

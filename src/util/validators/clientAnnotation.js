@@ -7,12 +7,13 @@ import { validateSidewalkMask } from "@/util/validators/sidewalkMask";
  * The annotator's Objects step (decided 4 Oct 2026): every suggestion is kept
  * or marked Not an object, and every kept or drawn box has one of the 18
  * categories. Everything can be checked from existingAnnotations, which holds
- * every box on the canvas.
+ * every box on the canvas. `words` is "touch" on a phone or tablet, where the
+ * message says tap (12 Oct 2026).
  */
-export function validateObjectStep(existingAnnotations) {
+export function validateObjectStep(existingAnnotations, { words = "pointer" } = {}) {
   const boxes = existingAnnotations || [];
   if (boxes.some((box) => !box.editable && !isDecidedForObjects(box))) {
-    return { valid: false, error: "Please click Keep or Not an object on every suggested box." };
+    return { valid: false, error: `Please ${words === "touch" ? "tap" : "click"} Keep or Not an object on every suggested box.` };
   }
   const real = boxes.filter((box) => box.editable || box.selected === true);
   if (real.some((box) => !isTaxonomyCategory(box.comment))) {
@@ -50,6 +51,11 @@ export function validateSidewalkStep({ askSidewalk, mask, hasDraft, imageWidth, 
   return result.valid ? { valid: true } : { valid: false, error: result.message };
 }
 
+/**
+ * Every check before an image is sent. A contributor's failure names the part
+ * of the screen to show (9 Oct 2026): "objects" for a box (the answers at the
+ * bottom of the screen on a phone) or "scene" for Step 2.
+ */
 export function validateAnnotationForSubmit({
   existingAnnotations,
   newObjects,
@@ -62,9 +68,10 @@ export function validateAnnotationForSubmit({
   sidewalkDraftOpen = false,
   imageWidth,
   imageHeight,
+  words = "pointer",
 }) {
   if (isAnnotator) {
-    const objects = validateObjectStep(existingAnnotations);
+    const objects = validateObjectStep(existingAnnotations, { words });
     if (!objects.valid) return objects;
     const sidewalk = validateSidewalkStep({
       askSidewalk,
@@ -82,13 +89,13 @@ export function validateAnnotationForSubmit({
   );
 
   if (unconfirmed.length > 0) {
-    return { valid: false, error: "Please click Yes or No on all existing annotations before submitting." };
+    return { valid: false, section: "objects", error: "Please answer Yes or No for every object before submitting." };
   }
 
   const objectsToValidate = [...(newObjects || []), ...(selectedObjects || [])];
   for (const object of objectsToValidate) {
     if (!object.comment || object.comment === "---") {
-      return { valid: false, error: "You have an unlabeled object. Please select a label for all the boxes." };
+      return { valid: false, section: "objects", error: "You have an unlabeled object. Please select a label for all the boxes." };
     }
   }
 
@@ -98,27 +105,27 @@ export function validateAnnotationForSubmit({
   const allBoxes = [...confirmedExisting, ...(newObjects || [])];
   for (const object of allBoxes) {
     if (object.obstructs === undefined || object.obstructs === null) {
-      return { valid: false, error: "Please indicate whether each object obstructs the sidewalk." };
+      return { valid: false, section: "objects", error: "Please indicate whether each object obstructs the sidewalk." };
     }
     if (object.obstructs === true && (object.severity === undefined || object.severity === null)) {
-      return { valid: false, error: "Please rate the severity of each obstruction (1–5)." };
+      return { valid: false, section: "objects", error: "Please rate the severity of each obstruction (1–5)." };
     }
   }
 
   if (!sceneLevel || !sceneLevel.sidewalkWidth) {
-    return { valid: false, error: "Please select the sidewalk width category." };
+    return { valid: false, section: "scene", error: "Please select the sidewalk width category." };
   }
   // With no sidewalk the other three questions are greyed out and left empty
   // (decided 2 Oct 2026), so they are only required when a sidewalk is present.
   if (sceneLevel.sidewalkWidth !== "no_sidewalk") {
     if (sceneLevel.surfaceCondition === null || sceneLevel.surfaceCondition === undefined) {
-      return { valid: false, error: "Please rate the surface condition." };
+      return { valid: false, section: "scene", error: "Please rate the surface condition." };
     }
     if (sceneLevel.walkability === null || sceneLevel.walkability === undefined) {
-      return { valid: false, error: "Please rate the walking comfort." };
+      return { valid: false, section: "scene", error: "Please rate the walking comfort." };
     }
     if (sceneLevel.overallAccessibility === null || sceneLevel.overallAccessibility === undefined) {
-      return { valid: false, error: "Please rate accessibility." };
+      return { valid: false, section: "scene", error: "Please rate accessibility." };
     }
   }
 

@@ -122,6 +122,38 @@ describe("DefaultInputSection", () => {
     expect(bare).not.toContain("Suggested as");
   });
 
+  // Phones and tablets (9 Oct 2026): the panel in the answers sheet
+  it("fills the sheet's width with 16 px category fields and 44 px buttons in the sheet variant", () => {
+    const sheet = render({ variant: "sheet", editable: true, value: "bollard", obstructs: false });
+    expect(sheet).not.toContain("w-[280px]");
+    expect(sheet).not.toContain("shadow-2xl");
+    expect(sheet).toMatch(/<select[^>]*class="[^"]*text-base/);
+    expect(sheet).toMatch(/<button[^>]*class="[^"]*min-h-\[44px\][^"]*"[^>]*>Yes</);
+    expect(sheet).toMatch(/<button[^>]*class="[^"]*min-h-\[44px\][^"]*"[^>]*>Delete box</);
+    expect(sheet).toMatch(/w-11 h-11[^"]*"[^>]*aria-label="Close"|aria-label="Close"[^>]*class="[^"]*w-11 h-11/);
+    const typed = render({ variant: "sheet", editable: true, value: "fire hydrant cover" });
+    expect(typed).toMatch(/<input[^>]*class="[^"]*text-base/);
+    const picker = render({ variant: "sheet", selected: true, obstructs: true, severity: null });
+    expect(picker).not.toContain("w-[260px]");
+    expect(picker).toMatch(/min-h-\[44px\][^"]*"[^>]*>Confirm</);
+    // The floating panel is as it was
+    const floating = render({ editable: true, value: "bollard" });
+    expect(floating).toContain("w-[280px]");
+    expect(floating).toMatch(/<select[^>]*class="[^"]*text-sm/);
+    expect(floating).not.toContain("min-h-[44px]");
+    expect(floating).not.toContain("text-base");
+  });
+
+  // 10 Oct 2026: the open box can be hidden from its panel
+  it("offers a Hide button when the box can be hidden, and none otherwise", () => {
+    const hideButton = /<button[^>]*aria-label="Hide this box on the photo"/;
+    expect(render({ onHide: noop })).toMatch(hideButton);
+    expect(render({ onHide: noop, editable: true, value: "bollard" })).toMatch(hideButton);
+    expect(render({ onHide: noop, value: "not_an_object", isRejected: true, obstructs: false })).toMatch(hideButton);
+    expect(render({ onHide: noop, variant: "sheet" })).toMatch(/w-11 h-11[^"]*"[^>]*title="Hide this box on the photo"/);
+    expect(render({})).not.toMatch(hideButton);
+  });
+
   it("has no em dash or semicolon in its copy", () => {
     const states = [
       render({ editable: true, value: "---" }),

@@ -7,13 +7,30 @@ import AnnotateForm from "@/features/annotate/form";
 import TUTORIAL_IMAGES from "@/data/tutorialImages";
 import { clearSession, writeSession, writeTutorialFlag, readSessionData, readCurrentCount } from "@/util/sessionCache";
 import ContentSkeleton from "@/features/layout/contentSkeleton";
-import DesktopOnly from "@/features/annotate/desktopOnly";
-import { useCanAnnotate } from "@/hooks/useCanAnnotate";
-import { buildTourSteps, tourTargets, tourStepCount, tourBeaconPlacements } from "@/features/tutorial/tourSteps";
+import { useAnnotateLayout } from "@/hooks/useAnnotateLayout";
+import { useIsPhone } from "@/hooks/useIsPhone";
+import {
+  buildTourSteps,
+  tourBeaconTargets,
+  tourStepCount,
+  tourBeaconPlacements,
+  tourInputFor,
+  tourWordsFor,
+  tourShowsBeacons,
+} from "@/features/tutorial/tourSteps";
+import { SHEET_EVENT } from "@/ui/annotation-tool/index";
 import { getServerSession } from "next-auth/next";
-import { ObjectId } from "mongodb";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
-import { connectToDatabase } from "@/util/mongodb";
+import { isAnnotatorUser } from "@/util/userRole";
+
+// Moves the answers sheet on a phone (the annotation tool listens). The detail
+// is a snap name, or { snap, scrollTo } with the selector the step points at.
+// Any request also closes an open box, so the top of the sheet shows the step.
+const moveSheet = (detail) => window.dispatchEvent(new CustomEvent(SHEET_EVENT, { detail }));
+// The sheet's slide, and a little more, before the tour measures its target
+const SHEET_SETTLE_MS = 260;
+// How long "Tap ? to see the tour again." stays up
+const TOUR_HINT_MS = 4000;
 
 // How many images the walkthrough runs through. Referenced by the step counter,
 // the progress bar, and the sampling query, so change it in one place.
@@ -30,7 +47,8 @@ const MOCKED_ENDPOINTS = [
 // The places the tour points at, in order, and the wording of each step
 // (annotator and contributor versions) live in src/features/tutorial/tourSteps.js,
 // so the "Step n of N" counter and the beacons can't drift from the step list.
-// Contributors have five steps and annotators three (decided 3 Oct 2026).
+// Contributors have five steps (six with the touch tour on a phone or tablet,
+// 9 Oct 2026), and annotators a tour per step.
 
 /**
  * The guided walkthrough new contributors complete before their first real
@@ -57,10 +75,23 @@ const MOCKED_ENDPOINTS = [
 export default function TutorialPage({ isAnnotator = false }) {
   const { status, update } = useSession();
   const loading = status === "loading";
-  // The tutorial renders the real annotation form, so it needs the same device
-  // check the live flow has. Without it a phone could reach the canvas here and
-  // mark the tutorial complete on a tool it can't actually use.
-  const canAnnotate = useCanAnnotate();
+  // Everyone can do the tutorial on any device (annotators from 12 Oct 2026),
+  // so there is no device check. The layout picks the tour.
+  const layout = useAnnotateLayout();
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  useEffect(() => {
+    setCoarsePointer(Boolean(window.matchMedia?.("(pointer: coarse)")?.matches));
+  }, []);
+  // The sheet layout gets the touch tours, which point at the answers sheet
+  // and have no beacons. Phones and tablets always have it, either way up (12
+  // Oct 2026): an iPad held sideways used to get the desktop layout, with
+  // beacons over a touch screen. The desktop layout, for a mouse, keeps the
+  // pointer tours and their beacons.
+  const tourInput = tourInputFor(layout);
+  const tourWords = tourWordsFor({ layout, coarsePointer });
+  // The first step of a tour mentions the full-screen photo on phones and tablets
+  const phone = useIsPhone();
+  const tablet = coarsePointer && phone === false;
 
   const [current, setCurrent] = useState(null);
   const [data, setData] = useState(null);
@@ -78,7 +109,7 @@ export default function TutorialPage({ isAnnotator = false }) {
   // and 6 Oct 2026), and each step has its own tour and beacons (6 Oct 2026).
   // Contributors stay on "objects" throughout.
   const [annotatorStep, setAnnotatorStep] = useState("objects");
-  const stepCount = tourStepCount(isAnnotator, annotatorStep);
+  const stepCount = tourStepCount(isAnnotator, annotatorStep, tourInput);
   // Steps whose tour has already run by itself. Like Objects, Sidewalk and
   // Obstructions walk the annotator through on the first image only, once
   // each. On later images every step shows beacons.
@@ -86,6 +117,42 @@ export default function TutorialPage({ isAnnotator = false }) {
   // The image on screen, read inside the step-change handler below
   const currentRef = useRef(current);
   currentRef.current = current;
+  // The touch tours have no beacons, so once a tour ends nothing on the screen
+  // says how to see it again. Said once per page load, under the top bar.
+  const [tourHint, setTourHint] = useState(false);
+  const tourHintShownRef = useRef(false);
+  const tourHintTimerRef = useRef(null);
+  const tourInputRef = useRef(tourInput);
+  tourInputRef.current = tourInput;
+  // The full-screen photo on a phone (12 Oct 2026). A tour's steps point at the
+  // top bar and the answers sheet, which are not on the screen there, so a
+  // tour waits: one that would start in full screen starts on leaving it.
+  const [fullScreen, setFullScreen] = useState(false);
+  useEffect(() => () => clearTimeout(tourHintTimerRef.current), []);
+
+  /** A tour ended: finished, dismissed with ×, or a tap on the overlay. */
+  const endTour = useCallback(() => {
+    setTourMode("beacons");
+    setJoyrideKey((k) => k + 1);
+    if (tourInputRef.current === "touch" && !tourHintShownRef.current) {
+      tourHintShownRef.current = true;
+      setTourHint(true);
+      clearTimeout(tourHintTimerRef.current);
+      tourHintTimerRef.current = setTimeout(() => setTourHint(false), TOUR_HINT_MS);
+    }
+  }, []);
+
+  /** The top bar's ? button (touch): the current step's tour from its first step. */
+  const showTour = useCallback(() => {
+    // A tour step points at the top of the answers sheet, which shows the box
+    // panel instead while a box is open: close it and collapse the sheet first
+    moveSheet("collapsed");
+    setTourHint(false);
+    setStepOffset(0);
+    setTourMode("touring");
+    setJoyrideKey((k) => k + 1);
+  }, []);
+
   const handleAnnotatorStepChange = useCallback((step) => {
     setAnnotatorStep(step);
     setStepOffset(0);
@@ -135,7 +202,7 @@ export default function TutorialPage({ isAnnotator = false }) {
   }) => (
     <div
       {...tooltipProps}
-      className="bg-surface rounded-card p-5 shadow-2xl w-[320px] max-w-full border border-line font-sans z-[10000]"
+      className="bg-surface rounded-card p-5 shadow-2xl w-[320px] max-w-[calc(100vw-32px)] border border-line font-sans z-[10000]"
     >
       <div className="flex justify-between items-start mb-2">
         {step.title && <h3 className="font-bold text-lg text-ink">{step.title}</h3>}
@@ -143,8 +210,7 @@ export default function TutorialPage({ isAnnotator = false }) {
         <button
           onClick={(e) => {
             e.preventDefault();
-            setTourMode("beacons");
-            setJoyrideKey((k) => k + 1);
+            endTour();
           }}
           aria-label="Dismiss tour"
           className="text-subtle hover:text-body transition-colors duration-300 bg-surface-subtle hover:bg-line-card rounded-full shrink-0 w-6 h-6 flex items-center justify-center -mr-2 -mt-2"
@@ -180,8 +246,7 @@ export default function TutorialPage({ isAnnotator = false }) {
             onClick={(e) => {
               if (index + stepOffset === stepCount - 1) {
                 e.preventDefault();
-                setTourMode("beacons");
-                setJoyrideKey((k) => k + 1);
+                endTour();
               } else {
                 primaryProps.onClick(e);
               }
@@ -195,7 +260,24 @@ export default function TutorialPage({ isAnnotator = false }) {
     </div>
   );
 
-  const buildSteps = useCallback(() => buildTourSteps(isAnnotator, annotatorStep), [isAnnotator, annotatorStep]);
+  // A touch tour step whose target is in the part of the answers sheet pulled
+  // down carries `sheet: "full"`: the sheet moves up before that step, with
+  // its target scrolled into view, and back after it
+  const buildSteps = useCallback(
+    () => buildTourSteps(isAnnotator, annotatorStep, tourInput, { words: tourWords, phone: phone === true, tablet }).map(({ sheet, ...step }) =>
+      sheet === "full"
+        ? {
+          ...step,
+          before: () => {
+            moveSheet({ snap: "full", scrollTo: step.target });
+            return new Promise((resolve) => setTimeout(resolve, SHEET_SETTLE_MS));
+          },
+          after: () => moveSheet("collapsed"),
+        }
+        : step
+    ),
+    [isAnnotator, annotatorStep, tourInput, tourWords, phone, tablet]
+  );
 
   // Clicking the dark overlay should dismiss the tour. Joyride's own
   // overlayClickAction advances the step instead of closing in continuous mode,
@@ -204,24 +286,19 @@ export default function TutorialPage({ isAnnotator = false }) {
     if (tourMode !== "touring") return;
 
     const handleOverlayClick = (e) => {
-      if (e.target.closest('.react-joyride__overlay')) {
-        setTourMode("beacons");
-        setJoyrideKey((k) => k + 1);
-      }
+      if (e.target.closest('.react-joyride__overlay')) endTour();
     };
 
-    document.addEventListener("mousedown", handleOverlayClick);
-    return () => document.removeEventListener("mousedown", handleOverlayClick);
-  }, [tourMode]);
+    // pointerdown, so a tap on a phone dismisses it too
+    document.addEventListener("pointerdown", handleOverlayClick);
+    return () => document.removeEventListener("pointerdown", handleOverlayClick);
+  }, [tourMode, endTour]);
 
   // Once the tour runs out of steps (or is skipped) we drop back to the
   // idle state: pulsing beacons the user can click to replay any single step.
   const handleJoyrideCallback = useCallback(({ status: tourStatus }) => {
-    if (tourStatus === "finished" || tourStatus === "skipped") {
-      setTourMode("beacons");
-      setJoyrideKey((k) => k + 1);
-    }
-  }, []);
+    if (tourStatus === "finished" || tourStatus === "skipped") endTour();
+  }, [endTour]);
 
   // Main data loading effect
   useEffect(() => {
@@ -305,8 +382,7 @@ export default function TutorialPage({ isAnnotator = false }) {
   // No `typeof window` branch here: rendering different trees on the server and
   // on the client is precisely what breaks hydration. `loading` is true on both
   // for the first render, so gating on it alone is consistent.
-  if (loading || canAnnotate === null) return <Page title="Tutorial - Imprint Contribute" contribute><ContentSkeleton /></Page>;
-  if (!canAnnotate) return <Page title="Tutorial - Imprint Contribute" contribute><DesktopOnly /></Page>;
+  if (loading || layout === null) return <Page title="Tutorial - Imprint Contribute" contribute><ContentSkeleton /></Page>;
   if (!current || !data) return <Page title="Loading Tutorial..." contribute><ContentSkeleton /></Page>;
 
   const singleImage = data.imgRecords[current - 1];
@@ -331,12 +407,27 @@ export default function TutorialPage({ isAnnotator = false }) {
         isTutorial
         isAnnotator={isAnnotator}
         onAnnotatorStepChange={handleAnnotatorStepChange}
+        // Touch: no beacons, so the top bar gets a ? button that replays the tour
+        onShowTour={tourShowsBeacons(tourInput) ? undefined : showTour}
+        onFocusChange={setFullScreen}
       />
 
+      {tourHint && !fullScreen && (
+        <p
+          role="status"
+          className="pointer-events-none fixed left-1/2 -translate-x-1/2 z-[60] px-3 py-2 rounded-full bg-ink/85 text-white text-xs font-semibold whitespace-nowrap"
+          style={{ top: "calc(env(safe-area-inset-top) + 56px)" }}
+        >
+          Tap ? to see the tour again.
+        </p>
+      )}
+
       {/* Custom pulsing beacons on every target of the step's tour, shown when
-          not in active tour. Keyed on the step so they measure again for each step. */}
-      {domReady && tourMode === "beacons" && (
-        <TutorialBeacons key={`beacons-${annotatorStep}-${current}`} isAnnotator={isAnnotator} annotatorStep={annotatorStep} onBeaconClick={(idx) => {
+          not in active tour. Keyed on the step so they measure again for each step.
+          Not on touch (12 Oct 2026): over the photo and the sheet they blocked
+          swipes and drags. */}
+      {domReady && tourMode === "beacons" && tourShowsBeacons(tourInput) && !fullScreen && (
+        <TutorialBeacons key={`beacons-${annotatorStep}-${current}-${tourInput}`} isAnnotator={isAnnotator} annotatorStep={annotatorStep} input={tourInput} onBeaconClick={(idx) => {
           setStepOffset(idx);
           setTourMode("touring");
           setJoyrideKey((k) => k + 1);
@@ -344,7 +435,7 @@ export default function TutorialPage({ isAnnotator = false }) {
       )}
 
       {/* Joyride guided tour — only in touring mode */}
-      {domReady && tourMode === "touring" && (
+      {domReady && tourMode === "touring" && !fullScreen && (
         <Joyride
           key={`joyride-${joyrideKey}`}
           steps={buildSteps().slice(stepOffset)}
@@ -381,14 +472,15 @@ export default function TutorialPage({ isAnnotator = false }) {
  * guide card sliding as the page scrolls. Every such change schedules one
  * re-measure on the next animation frame.
  */
-function TutorialBeacons({ isAnnotator = false, annotatorStep = "objects", onBeaconClick }) {
+function TutorialBeacons({ isAnnotator = false, annotatorStep = "objects", input = "pointer", onBeaconClick }) {
   // One beacon per step of the tour on screen, so a beacon's index is its step.
   // Each tour says where its beacons sit (tourBeaconPlacements): above the
   // target by default, and to its left beside the photo for the contributor
   // severity step and in the Sidewalk step, where the toolbar sits right above
   // the photo.
-  const placements = tourBeaconPlacements(isAnnotator, annotatorStep);
-  const targets = tourTargets(isAnnotator, annotatorStep).map((sel, i) => ({
+  // The touch tour's beacons sit above or below their targets only (9 Oct 2026)
+  const placements = tourBeaconPlacements(isAnnotator, annotatorStep, input);
+  const targets = tourBeaconTargets(isAnnotator, annotatorStep, input).map((sel, i) => ({
     sel,
     placement: placements[i],
     offset: 15,
@@ -491,18 +583,7 @@ function TutorialBeacons({ isAnnotator = false, annotatorStep = "objects", onBea
  */
 export async function getServerSideProps(context) {
   const session = await getServerSession(context.req, context.res, authOptions);
-  let isAnnotator = false;
-  if (session?.user?._id) {
-    try {
-      const { db } = await connectToDatabase();
-      const user = await db
-        .collection("users")
-        .findOne({ _id: new ObjectId(session.user._id) }, { projection: { role: 1 } });
-      isAnnotator = user?.role === "annotator";
-    } catch (error) {
-      // Fall back to the contributor wording; the tutorial itself still works.
-      console.error("tutorial getServerSideProps: role lookup failed:", error);
-    }
-  }
+  // Falls back to the contributor wording when the lookup fails; the tutorial itself still works
+  const isAnnotator = await isAnnotatorUser(session);
   return { props: { session: session ?? null, isAnnotator } };
 }

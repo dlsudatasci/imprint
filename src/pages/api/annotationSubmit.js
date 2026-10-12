@@ -12,6 +12,7 @@ import {
   hasEmptyBox,
 } from "@/util/validators/annotationSubmit";
 import { filterAnnotationsByTau, TAU_THRESHOLD } from "@/util/validators/telemetryPayload";
+import { sanitizeDeviceTelemetry, classifyBrowser } from "@/util/validators/deviceTelemetry";
 import {
   requiresSidewalkMask,
   normalizeSidewalkMask,
@@ -216,12 +217,21 @@ const handler = async (req, res) => {
           .collection("annotations")
           .countDocuments({ userId, status: "completed" });
 
+        // The client's telemetry first and the server's fields after it, so a
+        // client field named event, userId, username or imageID cannot replace
+        // the server's (9 Oct 2026). A client timestamp is dropped:
+        // logTelemetryEvent sets its own. Device fields are kept only with
+        // allowed values, and the browser family comes from the User-Agent
+        // header, which is never stored.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
+        const { timestamp, ...clientTelemetry } = sanitizeDeviceTelemetry(telemetry);
         await logTelemetryEvent({
+          ...clientTelemetry,
           event: "IMAGE_SUBMITTED",
           userId,
           username,
           imageID,
-          ...telemetry,
+          browserFamily: classifyBrowser(req.headers?.["user-agent"]),
           cumulativeAnnotationsToDate,
         });
       }

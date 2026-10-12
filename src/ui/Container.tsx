@@ -46,6 +46,15 @@ const widths: Record<ContainerWidth, string> = {
   form: 'max-w-md',
 };
 
+/**
+ * The shell's classes, for an element that must sometimes be a Container and
+ * sometimes not while React keeps what is inside it: the annotation screen
+ * keeps one tool across the desktop and phone layouts (9 Oct 2026).
+ */
+export function containerClass(width: ContainerWidth = 'page', className?: string) {
+  return cn(SHELL, widths[width], className);
+}
+
 /*
  * forwardRef is load-bearing, not boilerplate: ActionSection and CityStats both
  * hand this a ref that an IntersectionObserver watches to fade the section in.
@@ -65,7 +74,7 @@ const Container = React.forwardRef<HTMLElement, ContainerProps>(function Contain
   return (
     <El
       ref={forwarded}
-      className={cn(SHELL, widths[width], className)}
+      className={containerClass(width, className)}
       {...rest}
     >
       {children}

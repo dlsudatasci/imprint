@@ -1,5 +1,5 @@
 import ReactPictureAnnotation from "../ReactPictureAnnotation";
-import { RectShape } from "../Shape";
+import { RectShape, drawnBoxStyle } from "../Shape";
 import randomId from "../utils/randomId";
 import { IAnnotationState } from "./AnnotationState";
 import { pickNearSmallBox } from "@/util/boxGeometry";
@@ -118,21 +118,7 @@ export class DefaultAnnotationState implements IAnnotationState {
           drawnOrder: Date.now(),
         },
         onShapeChange,
-        {
-          paddingX: 12,
-          paddingY: 4,
-          lineWidth: 2,
-          shadowBlur: 10,
-          fontSize: 12,
-          fontColor: "#212529",
-          fontBackground: "#f8f9fa",
-          fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', Helvetica, Arial, sans-serif",
-          shapeBackground: "hsla(210, 16%, 93%, 0.2)",
-          shapeStrokeStyle: "#16a34a",
-          shapeShadowStyle: "hsla(210, 9%, 31%, 0.35)",
-          transformerBackground: "#111827",
-          transformerSize: 10,
-        }
+        drawnBoxStyle
       )
     );
 

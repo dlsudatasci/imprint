@@ -15,7 +15,7 @@ import { writeSession } from "@/util/sessionCache";
  * A stand-in canvas context lets the boxes draw, so the label each box is
  * drawn with can be read.
  */
-type Shape = { getAnnotationData(): { id: string }; paint: (...args: unknown[]) => unknown };
+type Shape = { getAnnotationData(): { id: string; selected?: boolean }; paint: (...args: unknown[]) => unknown };
 type Gesture = { onMouseDown(x: number, y: number): void; onMouseMove(x: number, y: number): void; onMouseUp(): void };
 type Tool = {
   shapes: Shape[];
@@ -24,6 +24,10 @@ type Tool = {
   onShapeChange(): void;
   onInputCommentChange(comment: string): void;
   currentAnnotationState: Gesture;
+  state: { annotatorStep: string };
+  enterSidewalkStep(): void;
+  enterObstructionStep(): void;
+  dispatchSidewalk(action: { type: string; [key: string]: unknown }): void;
 };
 
 const mark = (x: number) => ({ x, y: 40, width: 30, height: 120, type: "RECT" });
@@ -58,9 +62,9 @@ beforeAll(() => {
 let root: Root | null = null;
 let host: HTMLDivElement;
 
-function mount(): Tool {
+function mount({ isAnnotator = false } = {}): Tool {
   window.localStorage.clear();
-  writeSession({ total: 1, current: 1, data: { imgRecords: [{ imageID: "IMG", url: "/p.jpg", annotationList: boxes }], isAnnotator: false } });
+  writeSession({ total: 1, current: 1, data: { imgRecords: [{ imageID: "IMG", url: "/p.jpg", annotationList: boxes }], isAnnotator } });
   const ref = React.createRef<ReactPictureAnnotation>();
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -80,6 +84,8 @@ function mount(): Tool {
         currentAnnotationCount={1}
         totalAnnotationCount={1}
         username="test"
+        isAnnotator={isAnnotator}
+        askSidewalk={isAnnotator}
       />
     );
   });
@@ -119,7 +125,7 @@ describe("labels on the photo", () => {
       "lp-b": "Lamp Post #2",
       "lp-c": "Lamp Post #3",
       "lp-d": "Lamp Post #4",
-      "tr-1": "Tree",
+      "tr-1": "Tree #1",
       "zz": "Lamp Post #5",
     });
     // The lists show the same numbers, in that order
@@ -157,5 +163,22 @@ describe("labels on the photo", () => {
       }
     }
     expect(listLabels().filter((t) => t?.startsWith("Lamp Post"))).toHaveLength(6);
+  });
+
+  // The adviser's request (10 Oct 2026): annotators outline the walking space
+  // with no object boxes in the way, and get them back in Obstructions
+  it("are not drawn at all in the annotators' Sidewalk step, and come back in Obstructions", () => {
+    const tool = mount({ isAnnotator: true });
+    // Every suggestion kept, so Objects is done
+    for (const shape of tool.shapes) shape.getAnnotationData().selected = true;
+    act(() => tool.enterSidewalkStep());
+    expect(tool.state.annotatorStep).toBe("sidewalk");
+    expect(photoLabels(tool)).toEqual({});
+    expect(host.textContent).not.toContain("Show object boxes");
+    expect(host.textContent).toContain("Show photo only");
+    act(() => tool.dispatchSidewalk({ type: "SET_NO_SIDEWALK", value: true }));
+    act(() => tool.enterObstructionStep());
+    expect(tool.state.annotatorStep).toBe("obstructions");
+    expect(Object.keys(photoLabels(tool))).toHaveLength(boxes.length);
   });
 });

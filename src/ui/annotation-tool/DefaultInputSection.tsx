@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { NOT_AN_OBJECT, getSuggestionPanelMode } from "@/util/suggestionJudgment";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
+import { BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
+import { EyeOffIcon } from "../icons";
 
 /**
  * The box panel for contributors, Step 1.
@@ -12,6 +14,12 @@ import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
  * marked Not an object, each from a button at the foot of the panel. The panel
  * offers a close button only once the box is fully answered, so a new box is
  * never left half done by accident.
+ *
+ * Two variants (9 Oct 2026): "floating", the card beside the box on the
+ * desktop photo, and "sheet", the same panel in the answers sheet on a phone
+ * or tablet: full width with no shadow, every button at least 44 px tall, and
+ * 16 px text in the category list and the "Other..." field, so iOS does not
+ * zoom the page when one is focused.
  */
 const SEVERITY_LEVELS = [
   { value: 1, label: "Minor inconvenience" },
@@ -49,10 +57,21 @@ export interface IDefaultInputSection {
   severity?: number | null;
   // False for annotators, who give no severity (decided 3 Oct 2026)
   askSeverity?: boolean;
+  /** Where the panel is shown: beside the box, or in the answers sheet (9 Oct 2026) */
+  variant?: PanelVariant;
+  /** Hides this box on the photo, which closes the panel (10 Oct 2026). No button without it. */
+  onHide?: () => void;
 }
 
+export type PanelVariant = "floating" | "sheet";
+
 const PANEL_CLASS = "bg-surface rounded-control shadow-2xl border border-line p-3 w-[280px] pointer-events-auto";
+const SHEET_PANEL_CLASS = "bg-surface px-1 py-2 w-full pointer-events-auto";
 const SECONDARY_BUTTON = "px-2.5 py-1.5 rounded-control text-xs font-semibold border border-line bg-surface-subtle text-ink hover:bg-line transition-colors";
+// At least 44 px tall in the sheet (Apple HIG, Material)
+const TOUCH_TARGET = "min-h-[44px]";
+const panelClass = (variant: PanelVariant) => (variant === "sheet" ? SHEET_PANEL_CLASS : PANEL_CLASS);
+const secondaryButton = (variant: PanelVariant) => (variant === "sheet" ? `${SECONDARY_BUTTON} ${TOUCH_TARGET} px-3.5` : SECONDARY_BUTTON);
 const stop = (e: React.MouseEvent) => e.stopPropagation();
 
 function SeveritySlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
@@ -69,6 +88,10 @@ function SeveritySlider({ value, onChange }: { value: number; onChange: (v: numb
         .severity-range::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.15); }
         .severity-range::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--color-primary, #3b82f6); border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); cursor: grab; }
         .severity-range::-moz-range-thumb:active { cursor: grabbing; }
+        @media (pointer: coarse) {
+          .severity-range::-webkit-slider-thumb { width: 32px; height: 32px; }
+          .severity-range::-moz-range-thumb { width: 32px; height: 32px; }
+        }
       `}</style>
       <input
         type="range"
@@ -100,25 +123,31 @@ function SeveritySlider({ value, onChange }: { value: number; onChange: (v: numb
   );
 }
 
-function SeverityPicker({ initialValue, onConfirm, onBack }: {
+function SeverityPicker({ initialValue, onConfirm, onBack, variant = "floating" }: {
   initialValue: number | null | undefined;
   onConfirm: (severity: number) => void;
   onBack: () => void;
+  variant?: PanelVariant;
 }) {
   const [localSeverity, setLocalSeverity] = useState(initialValue ?? 3);
+  const sheet = variant === "sheet";
 
   return (
-    <div className="bg-surface rounded-control shadow-2xl border border-line p-4 w-[260px] pointer-events-auto" onMouseDown={stop} onMouseUp={stop}>
+    <div
+      className={sheet ? "bg-surface px-1 py-2 w-full pointer-events-auto" : "bg-surface rounded-control shadow-2xl border border-line p-4 w-[260px] pointer-events-auto"}
+      onMouseDown={stop}
+      onMouseUp={stop}
+    >
       <p className="text-sm font-semibold text-ink mb-3 text-center">How severe is this obstruction?</p>
       <SeveritySlider value={localSeverity} onChange={setLocalSeverity} />
       <button
-        className="w-full mt-3 py-2 rounded-control text-sm font-bold transition-all border border-primary bg-primary/10 text-primary hover:bg-primary/20"
+        className={`w-full mt-3 py-2 rounded-control text-sm font-bold transition-all border border-primary bg-primary/10 text-primary hover:bg-primary/20${sheet ? ` ${TOUCH_TARGET}` : ""}`}
         onClick={() => onConfirm(localSeverity)}
       >
         Confirm
       </button>
       <button
-        className="w-full mt-1 py-1.5 rounded-control text-xs font-medium text-muted hover:text-body transition-colors"
+        className={`w-full mt-1 py-1.5 rounded-control text-xs font-medium text-muted hover:text-body transition-colors${sheet ? ` ${TOUCH_TARGET}` : ""}`}
         onClick={onBack}
       >
         Go back
@@ -127,10 +156,28 @@ function SeverityPicker({ initialValue, onConfirm, onBack }: {
   );
 }
 
-function CloseButton({ onClose }: { onClose: () => void }) {
+/**
+ * Hides the open box on the photo (10 Oct 2026), so crowded boxes can be
+ * fitted without going down to the lists for its eye. Shown again from its
+ * chip.
+ */
+export function HideButton({ onHide, variant = "floating" }: { onHide: () => void; variant?: PanelVariant }) {
   return (
     <button
-      className="shrink-0 w-9 h-9 grid place-items-center rounded-control text-muted hover:text-ink hover:bg-surface-subtle transition-colors"
+      className={`shrink-0 ${variant === "sheet" ? "w-11 h-11" : "w-9 h-9"} grid place-items-center rounded-control text-muted hover:text-ink hover:bg-surface-subtle transition-colors`}
+      onClick={() => onHide()}
+      title={BOX_VISIBILITY_COPY.hideOpen}
+      aria-label={BOX_VISIBILITY_COPY.hideOpen}
+    >
+      <EyeOffIcon size={16} />
+    </button>
+  );
+}
+
+function CloseButton({ onClose, variant = "floating" }: { onClose: () => void; variant?: PanelVariant }) {
+  return (
+    <button
+      className={`shrink-0 ${variant === "sheet" ? "w-11 h-11" : "w-9 h-9"} grid place-items-center rounded-control text-muted hover:text-ink hover:bg-surface-subtle transition-colors`}
       onClick={() => onClose()}
       title="Close"
       aria-label="Close"
@@ -141,17 +188,20 @@ function CloseButton({ onClose }: { onClose: () => void }) {
 }
 
 /** The category list, plus "Other..." for a label typed in. Not an object is a button, not a category. */
-function CategoryField({ value, isCustom, setIsCustom, onChange }: {
+function CategoryField({ value, isCustom, setIsCustom, onChange, variant = "floating" }: {
   value: string;
   isCustom: boolean;
   setIsCustom: (v: boolean) => void;
   onChange: (v: string) => void;
+  variant?: PanelVariant;
 }) {
+  // 16 px in the sheet: iOS zooms the page when a field under 16 px is focused
+  const textSize = variant === "sheet" ? `text-base ${TOUCH_TARGET}` : "text-sm";
   if (isCustom) {
     return (
       <input
         autoFocus
-        className="flex-1 min-w-0 bg-surface-subtle border border-line rounded-control px-3 py-2 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder-gray-400"
+        className={`flex-1 min-w-0 bg-surface-subtle border border-line rounded-control px-3 py-2 ${textSize} font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder-gray-400`}
         placeholder="Type label name..."
         value={value === "---" ? "" : value}
         onChange={(e) => onChange(e.target.value)}
@@ -163,7 +213,7 @@ function CategoryField({ value, isCustom, setIsCustom, onChange }: {
     <div className="relative flex-1 min-w-0">
       <select
         aria-label="Category"
-        className="w-full bg-surface-subtle border border-line rounded-control px-3 py-2 pr-8 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
+        className={`w-full bg-surface-subtle border border-line rounded-control px-3 py-2 pr-8 ${textSize} font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer`}
         value={value && value !== NOT_AN_OBJECT ? value : "---"}
         onChange={(e) => {
           if (e.target.value === "OTHER_CUSTOM") {
@@ -192,15 +242,16 @@ function CategoryField({ value, isCustom, setIsCustom, onChange }: {
   );
 }
 
-function AnswerButton({ active, disabled, onClick, children }: {
+function AnswerButton({ active, disabled, onClick, children, variant = "floating" }: {
   active: boolean;
   disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  variant?: PanelVariant;
 }) {
   return (
     <button
-      className={`py-2 rounded-control text-sm font-bold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${active
+      className={`py-2${variant === "sheet" ? ` ${TOUCH_TARGET}` : ""} rounded-control text-sm font-bold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${active
         ? "border-primary bg-primary text-white"
         : "border-line bg-surface text-ink hover:bg-surface-subtle"
         }`}
@@ -232,8 +283,11 @@ const DefaultInputSection = ({
   obstructs,
   severity,
   askSeverity = true,
+  variant = "floating",
+  onHide,
 }: IDefaultInputSection) => {
-  const [isCustom, setIsCustom] = useState(false);
+  // A typed-in label opens as the "Other..." field straight away
+  const [isCustom, setIsCustom] = useState(() => isCustomLabel(value));
   // Changing the severity of a box already answered Yes
   const [adjustingSeverity, setAdjustingSeverity] = useState(false);
 
@@ -270,12 +324,13 @@ const DefaultInputSection = ({
 
   if (mode === "severity") {
     // A first Yes: Go back takes the Yes back, so nothing is recorded
-    return <SeverityPicker initialValue={severity} onConfirm={onSetSeverity} onBack={onClearObstruction} />;
+    return <SeverityPicker initialValue={severity} onConfirm={onSetSeverity} onBack={onClearObstruction} variant={variant} />;
   }
 
   if (adjustingSeverity) {
     return (
       <SeverityPicker
+        variant={variant}
         initialValue={severity}
         onConfirm={(v) => { setAdjustingSeverity(false); onSetSeverity(v); }}
         onBack={() => setAdjustingSeverity(false)}
@@ -290,17 +345,18 @@ const DefaultInputSection = ({
   if (mode === "not_an_object") {
     const suggested = originalComment && originalComment !== NOT_AN_OBJECT ? translateValue(originalComment) : "";
     return (
-      <div className={PANEL_CLASS} onMouseDown={stop} onMouseUp={stop}>
+      <div className={panelClass(variant)} onMouseDown={stop} onMouseUp={stop}>
         <div className="flex items-center gap-2">
           <span className="flex-1 pl-1 text-sm font-semibold text-ink">Not an object</span>
-          <CloseButton onClose={onClose} />
+          {onHide && <HideButton onHide={onHide} variant={variant} />}
+          <CloseButton onClose={onClose} variant={variant} />
         </div>
         <span className="block px-1 text-xs text-muted">
           {suggested ? `Suggested as ${suggested}. ` : ""}This box won&apos;t be counted.
         </span>
         <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-2">
           <span className="text-xs text-muted">A real object after all?</span>
-          <button className={SECONDARY_BUTTON} onClick={() => onRestoreObject()}>
+          <button className={secondaryButton(variant)} onClick={() => onRestoreObject()}>
             Restore
           </button>
         </div>
@@ -335,18 +391,19 @@ const DefaultInputSection = ({
   };
 
   return (
-    <div className={PANEL_CLASS} onMouseDown={stop} onMouseUp={stop}>
+    <div className={panelClass(variant)} onMouseDown={stop} onMouseUp={stop}>
       <div className="flex items-center gap-2">
-        <CategoryField value={value} isCustom={isCustom} setIsCustom={setIsCustom} onChange={onChange} />
-        {answered && <CloseButton onClose={onClose} />}
+        <CategoryField value={value} isCustom={isCustom} setIsCustom={setIsCustom} onChange={onChange} variant={variant} />
+        {onHide && <HideButton onHide={onHide} variant={variant} />}
+        {answered && <CloseButton onClose={onClose} variant={variant} />}
       </div>
 
       <p className="text-sm text-body mt-3 mb-2">
         Does <span className="font-semibold text-ink">{hasCategory ? translateValue(value) : "this object"}</span> obstruct the sidewalk?
       </p>
       <div className="grid grid-cols-2 gap-2">
-        <AnswerButton active={answer === "yes"} disabled={!hasCategory} onClick={onYes}>Yes</AnswerButton>
-        <AnswerButton active={answer === "no"} disabled={!hasCategory} onClick={onNo}>No</AnswerButton>
+        <AnswerButton active={answer === "yes"} disabled={!hasCategory} onClick={onYes} variant={variant}>Yes</AnswerButton>
+        <AnswerButton active={answer === "no"} disabled={!hasCategory} onClick={onNo} variant={variant}>No</AnswerButton>
       </div>
 
       {/* The severity number only, styled like "Drawn by you". Its wording is on
@@ -354,7 +411,7 @@ const DefaultInputSection = ({
       {answer === "yes" && askSeverity && severity != null && (
         <div className="flex items-center justify-between gap-2 mt-3">
           <span className="text-xs text-muted">Severity {severity}</span>
-          <button className="text-xs font-semibold text-primary hover:underline" onClick={() => setAdjustingSeverity(true)}>
+          <button className={`text-xs font-semibold text-primary hover:underline${variant === "sheet" ? ` ${TOUCH_TARGET} px-2` : ""}`} onClick={() => setAdjustingSeverity(true)}>
             Change
           </button>
         </div>
@@ -364,14 +421,14 @@ const DefaultInputSection = ({
         {editable ? (
           <>
             <span className="text-xs text-muted">Drawn by you</span>
-            <button className={`${SECONDARY_BUTTON} hover:text-danger`} onClick={() => onDelete()}>
+            <button className={`${secondaryButton(variant)} hover:text-danger`} onClick={() => onDelete()}>
               Delete box
             </button>
           </>
         ) : (
           <>
             <span className="text-xs text-muted">No real object in this box?</span>
-            <button className={SECONDARY_BUTTON} onClick={() => onMarkNotAnObject()}>
+            <button className={secondaryButton(variant)} onClick={() => onMarkNotAnObject()}>
               Not an object
             </button>
           </>
@@ -380,6 +437,15 @@ const DefaultInputSection = ({
     </div>
   );
 };
+
+/** A label typed in with "Other...": not empty, not Not an object, and not one of the categories. */
+function isCustomLabel(value: string) {
+  if (!value || value === "---" || value === NOT_AN_OBJECT) return false;
+  const lower = value.toLowerCase();
+  return !CATEGORY_OPTIONS.some(
+    (opt) => opt.value === value || opt.label.toLowerCase() === lower || opt.value.replace(/_/g, " ") === lower
+  );
+}
 
 const translateValue = (value: string) => {
   if (value === NOT_AN_OBJECT) return "Not an object";

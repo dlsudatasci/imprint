@@ -25,7 +25,7 @@ export type { CheckboxProps } from './Checkbox';
 export { default as Radio } from './Radio';
 export type { RadioProps } from './Radio';
 
-export { default as Container } from './Container';
+export { default as Container, containerClass } from './Container';
 export type { ContainerProps, ContainerWidth } from './Container';
 
 export { default as Card } from './Card';

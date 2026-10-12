@@ -227,6 +227,36 @@ describe("POST /api/annotationSubmit", () => {
     );
   });
 
+  // 9 Oct 2026: the client's telemetry cannot replace the server's fields
+  it("keeps the server's event, userId, username, imageID and timestamp over the client's", async () => {
+    setupMocks();
+    const telemetry = { imageDurationMs: 5000, event: "FAKE", userId: "someone-else", username: "mallory", imageID: 999, timestamp: "2001-01-01" };
+    await handler(createMockReq({ body: { ...validBody, telemetry } }), createMockRes());
+    const logged = logTelemetryEvent.mock.calls[0][0];
+    expect(logged).toMatchObject({ event: "IMAGE_SUBMITTED", userId: MOCK_USER_ID, imageID: 42, imageDurationMs: 5000 });
+    expect(logged.username).toBe("testuser");
+    expect(logged).not.toHaveProperty("timestamp");
+  });
+
+  it("logs the device fields when valid, drops them when not, and sets the browser family from the header", async () => {
+    setupMocks();
+    const device = { inputType: "touch", layout: "sheet", deviceClass: "phone", viewportWidth: 390, viewportHeight: 844, photoDisplayWidth: 390, devicePixelRatio: 3, maxZoom: 2, loupeShownCount: 3, boxesAddedWithButton: 1 };
+    const ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
+    await handler(createMockReq({ body: { ...validBody, telemetry: { ...device, browserFamily: "edge" } }, headers: { "user-agent": ua } }), createMockRes());
+    const logged = logTelemetryEvent.mock.calls[0][0];
+    expect(logged).toMatchObject({ ...device, browserFamily: "safari" });
+    expect(JSON.stringify(logged)).not.toContain("iPhone OS");
+
+    vi.clearAllMocks();
+    setupMocks();
+    await handler(createMockReq({ body: { ...validBody, telemetry: { ...device, inputType: "kinect", maxZoom: 40, viewportWidth: "wide" } } }), createMockRes());
+    const second = logTelemetryEvent.mock.calls[0][0];
+    expect(second).not.toHaveProperty("inputType");
+    expect(second).not.toHaveProperty("maxZoom");
+    expect(second).not.toHaveProperty("viewportWidth");
+    expect(second).toMatchObject({ layout: "sheet", browserFamily: "other" });
+  });
+
   it("does not call logTelemetryEvent when telemetry is absent", async () => {
     setupMocks();
     const req = createMockReq({ body: { ...validBody, telemetry: undefined } });

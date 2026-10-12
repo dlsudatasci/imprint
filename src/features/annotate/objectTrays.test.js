@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TRAYS, TRAY_COPY, trayOf, buildTrays, ghostSlotCount } from "./objectTrays";
+import { TRAYS, TRAY_COPY, trayOf, buildTrays, ghostSlotCount, sceneProgress, sceneProgressLine } from "./objectTrays";
 
 // Contributor Step 1: lists of answers under the photo (7 Oct 2026)
 const mark = { x: 0, y: 0, width: 50, height: 50, type: "RECT" };
@@ -113,5 +113,24 @@ describe("TRAY_COPY", () => {
     }
     expect(TRAY_COPY.notObstructions).toBe("Not obstructions");
     expect(TRAY_COPY.obstructions).toBe("Obstructions");
+  });
+});
+
+// The Step 2 line at the top of the answers sheet on a phone (9 Oct 2026)
+describe("sceneProgress", () => {
+  it("counts the four answers, and only the width when there is no sidewalk", () => {
+    expect(sceneProgress(null)).toEqual({ answered: 0, required: 4 });
+    expect(sceneProgress({ sidewalkWidth: "two_people", surfaceCondition: 2, walkability: null, overallAccessibility: null })).toEqual({ answered: 2, required: 4 });
+    expect(sceneProgress({ sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null })).toEqual({ answered: 1, required: 1 });
+  });
+
+  it("reads as a line with no em dash or semicolon", () => {
+    expect(sceneProgressLine({ sidewalkWidth: "one_person" })).toBe("Step 2: Rate the Sidewalk, 1 of 4 answered");
+    expect(sceneProgressLine(null)).not.toMatch(/[—;]/);
+  });
+
+  it("says tap, not click, on touch", () => {
+    expect(TRAY_COPY.noObjectsTouch).toContain("Tap Add box");
+    expect(TRAY_COPY.noObjectsTouch.toLowerCase()).not.toContain("click");
   });
 });

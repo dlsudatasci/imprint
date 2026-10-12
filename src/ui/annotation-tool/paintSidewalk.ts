@@ -11,6 +11,10 @@
  *   "edit"     the Sidewalk step: fill, solid blue strokes, the selected
  *              shape's point and edge handles, and the shape being drawn
  *   "overlay"  the Obstructions step: a faint fill only, as a guide
+ *
+ * With `touch` (annotators on a phone or tablet, 12 Oct 2026) the handles are
+ * round and large enough for a finger, sized in CSS px so they keep their size
+ * at any zoom. See sidewalkHandleRadii.
  */
 
 type Point = { x: number; y: number };
@@ -33,10 +37,33 @@ export interface SidewalkPaintOptions {
   hideFill?: boolean;
   /** Whether the cursor is near enough the draft's first point to close it. */
   nearFirstPoint?: boolean;
+  /** Finger-sized round handles (12 Oct 2026) */
+  touch?: boolean;
+  /** Stage px to CSS px, so touch handles keep their size on screen */
+  displayScale?: number;
 }
 
 const WALK = "#2563eb";
 const HANDLE = 6;
+
+/**
+ * The outline's handle sizes in stage px.
+ *
+ * Without `touch`, the mouse's sizes: a 6 px square on each point of the
+ * selected shape, a 3 px dot in the middle of each edge and on each point of
+ * the shape being drawn, and a 7 px first point while the pointer is near
+ * enough to close the shape.
+ *
+ * With `touch`, circles sized in CSS px (divided by the display scale): 8 px
+ * for a point, 6 for an edge dot and a point of the shape being drawn, and 12
+ * for the first point once the shape has 3 points, since a phone has no hover
+ * to grow it.
+ */
+export function sidewalkHandleRadii({ touch = false, displayScale = 1 }: { touch?: boolean; displayScale?: number } = {}) {
+  if (!touch) return { touch: false, pointSquare: HANDLE, pointRadius: HANDLE / 2, edgeRadius: 3, draftRadius: 3, firstRadius: 7 };
+  const s = displayScale > 0 && Number.isFinite(displayScale) ? displayScale : 1;
+  return { touch: true, pointSquare: 0, pointRadius: 8 / s, edgeRadius: 6 / s, draftRadius: 6 / s, firstRadius: 12 / s };
+}
 
 let offscreen: HTMLCanvasElement | null = null;
 
@@ -98,8 +125,9 @@ function roundHandle(ctx: CanvasRenderingContext2D, c: Point, radius: number, fi
 }
 
 export function paintSidewalk(ctx: CanvasRenderingContext2D, options: SidewalkPaintOptions) {
-  const { mode, state, toCanvas, hideFill = false, nearFirstPoint = false } = options;
+  const { mode, state, toCanvas, hideFill = false, nearFirstPoint = false, touch = false, displayScale = 1 } = options;
   const { polygons } = state.mask;
+  const radii = sidewalkHandleRadii({ touch, displayScale });
 
   if (mode === "overlay") {
     paintFill(ctx, polygons, toCanvas, 0.18);
@@ -123,9 +151,12 @@ export function paintSidewalk(ctx: CanvasRenderingContext2D, options: SidewalkPa
     for (let i = 0; i < n; i++) {
       const a = selected.points[i];
       const b = selected.points[(i + 1) % n];
-      roundHandle(ctx, toCanvas({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }), 3, "white");
+      roundHandle(ctx, toCanvas({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }), radii.edgeRadius, "white");
     }
-    selected.points.forEach((p, i) => squareHandle(ctx, toCanvas(p), i === state.selectedPoint));
+    selected.points.forEach((p, i) => {
+      if (radii.touch) roundHandle(ctx, toCanvas(p), radii.pointRadius, i === state.selectedPoint ? WALK : "white");
+      else squareHandle(ctx, toCanvas(p), i === state.selectedPoint);
+    });
   }
 
   const { draft, preview } = state;
@@ -146,8 +177,9 @@ export function paintSidewalk(ctx: CanvasRenderingContext2D, options: SidewalkPa
       ctx.setLineDash([]);
     }
     draft.points.forEach((p, i) => {
-      const enlarge = i === 0 && nearFirstPoint && draft.points.length >= 3;
-      roundHandle(ctx, toCanvas(p), enlarge ? 7 : 3, i === 0 ? color : "white");
+      // On touch the first point is large as soon as the shape can be closed
+      const enlarge = i === 0 && draft.points.length >= 3 && (radii.touch || nearFirstPoint);
+      roundHandle(ctx, toCanvas(p), enlarge ? radii.firstRadius : radii.draftRadius, i === 0 ? color : "white");
     });
   }
   ctx.restore();

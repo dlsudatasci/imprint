@@ -22,10 +22,10 @@ import {
   isDecidedForObjects,
 } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
-import { isBelowMinimumSize, clampPointToImage, keepMarkInside, markArea } from "@/util/boxGeometry";
+import { isBelowMinimumSize, clampPointToImage, keepMarkInside, markArea, normalizeMark, pickNearSmallBox } from "@/util/boxGeometry";
 import { normalizeSubmittedMarks } from "@/util/validators/annotationSubmit";
 import { findNearDuplicates } from "@/features/annotate/objectStep";
-import { buildTrays, TRAY_COPY } from "@/features/annotate/objectTrays";
+import { buildTrays, TRAY_COPY, sceneProgressLine } from "@/features/annotate/objectTrays";
 import { toggleHiddenId, withoutHiddenId, BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
 import { createEditSaver } from "@/util/editSaver";
 import { TAXONOMY_GUIDE, TAXONOMY_RULES } from "@/features/annotate/taxonomyGuide";
@@ -35,10 +35,20 @@ import {
   summarizeObstructionStep,
   toggleObstructionPatch,
   finalizeObstructionAnswers,
+  pickJudgeTarget,
 } from "@/features/annotate/obstructionStep";
 import { OBSTRUCTION_GUIDE } from "@/features/annotate/obstructionGuide";
 import { annotatorStepHeading, annotatorStepsFor } from "@/features/annotate/annotatorSteps";
-import { initialSidewalkState, sidewalkReducer, isNearFirstPoint } from "@/features/annotate/sidewalkEditor";
+import {
+  initialSidewalkState,
+  sidewalkReducer,
+  isNearFirstPoint,
+  findPointNear,
+  findEdgeHandleNear,
+  pickShape,
+} from "@/features/annotate/sidewalkEditor";
+import { annotatorStepParagraph, sidewalkOutlineHint, sidewalkSheetHint } from "@/features/annotate/annotatorStepCopy";
+import { summarizeObjectStep } from "@/features/annotate/objectStep";
 import { SIDEWALK_GUIDE } from "@/features/annotate/sidewalkGuide";
 import { normalizeSidewalkMask, summarizeSidewalkMask } from "@/util/validators/sidewalkMask";
 
@@ -46,20 +56,60 @@ import { IAnnotation } from "./Annotation";
 import { IAnnotationState } from "./annotation/AnnotationState";
 import { DefaultAnnotationState } from "./annotation/DefaultAnnotationState";
 import JudgingAnnotationState from "./annotation/JudgingAnnotationState";
+import TransformationState from "./annotation/TransformationState";
 import SidewalkAnnotationState from "./annotation/SidewalkAnnotationState";
 import { paintSidewalk } from "./paintSidewalk";
-import DefaultInputSection from "./DefaultInputSection";
+import DefaultInputSection, { type PanelVariant } from "./DefaultInputSection";
 import ObjectInputSection from "./ObjectInputSection";
-import ObjectTrays from "./ObjectTrays";
+import ObjectTrays, { ObjectTraysPeek } from "./ObjectTrays";
 import {
   defaultShapeStyle,
+  drawnBoxStyle,
   IShape,
   IShapeBase,
   IShapeStyle,
   PaintVariant,
   RectShape,
+  boxStrokeColor,
 } from "./Shape";
-import Transformer, { ITransformer } from "./Transformer";
+import Transformer, { ITransformer, TransformerMode } from "./Transformer";
+import randomId from "./utils/randomId";
+import { reduceTouch, initialTouchState, type TouchInput, type TouchEffect, type TouchHit, type Point, type Corner } from "./touchGesture";
+import {
+  reduceSidewalkTouch,
+  initialSidewalkTouchState,
+  type SidewalkHit,
+  type SidewalkTouchInput,
+  type SidewalkTouchEffect,
+} from "./sidewalkTouch";
+import {
+  clientToStage,
+  cssToImage,
+  markCorners,
+  moveCorner,
+  pickCorner,
+  addBoxPlacement,
+  TOUCH_HANDLE_HIT_PX,
+  TOUCH_MIN_SIDE_PX,
+  ADD_BOX_MIN_SIDE_PX,
+  TOUCH_NEAR_PX,
+  TOUCH_SMALL_BOX_PX,
+} from "./touchGeometry";
+import { loupePlacement, loupeSource, LOUPE_SIZE_PX, LOUPE_MAGNIFICATION, LOUPE_BACKGROUND } from "./loupe";
+import {
+  fitImage,
+  applyView,
+  zoomAt,
+  panLimits,
+  clampView,
+  clampZoom,
+  ensureVisible,
+  IDENTITY_VIEW,
+  type Fit,
+  type View,
+} from "./viewTransform";
+import BottomSheet, { NO_SCROLL_STYLE, type SheetSnap, type SheetPoints } from "../BottomSheet";
+import { summarizeInputTypes, classifyDevice } from "@/util/validators/deviceTelemetry";
 import {
   readSessionData,
   writeSession,
@@ -70,7 +120,18 @@ import { H2 } from "../Typography";
 import { H3 } from "../Typography";
 import Container from '../Container';
 import Checkbox from '../Checkbox';
-import { EyeIcon, EyeOffIcon } from '../icons';
+import {
+  EyeIcon,
+  EyeOffIcon,
+  CheckIcon,
+  CloseIcon,
+  UndoIcon,
+  TrashIcon,
+  PhotoIcon,
+  PointMinusIcon,
+  ExpandIcon,
+  ShrinkIcon,
+} from '../icons';
 import { buildDisplayLabelsInOrder, orderOfAppearance, formatLabel } from "@/util/buildDisplayLabels";
 
 // Sent with every submit so the analysis can tell marks made on the fixed
@@ -78,6 +139,46 @@ import { buildDisplayLabelsInOrder, orderOfAppearance, formatLabel } from "@/uti
 // up to 5 stage px away from the boxes (IMPRINT_photo_frame_fix.md, 9 Oct 2026).
 // A page loaded before that deploy sends no canvasVersion.
 export const CANVAS_VERSION = 2;
+
+/** The tutorial moves the answers sheet with this window event, detail "collapsed", "half" or "full" (9 Oct 2026). */
+export const SHEET_EVENT = "imprint:answer-sheet";
+
+/** Copy for the full-screen photo on phones (12 Oct 2026). */
+export const FOCUS_COPY = Object.freeze({
+  enter: "Full-screen photo",
+  exit: "Exit full screen",
+  // Pulls the answers sheet up from the bottom: on a selected box, and otherwise
+  details: "Details",
+  answers: "Answers",
+  deleteBox: "Delete box",
+  stillToDecide: (n: number) => `${n} still to decide`,
+  toDecide: (n: number) => `${n} to decide`,
+});
+
+/** Copy over the photo on touch (9 Oct 2026). Says "tap", never "click". */
+export const ADD_BOX_COPY = Object.freeze({
+  button: "Add box",
+  fit: "Fit",
+  hint: "Drag the corners to fit the object.",
+});
+
+/** An annotator card on the desktop layout, or in the answers sheet on a phone or tablet. */
+type CardVariant = "desktop" | "sheet";
+
+// A guide card in the sheet: full width, not sticky, no inner scroll (the sheet's body scrolls)
+const GUIDE_SHEET_CLASS = "bg-surface rounded-card border border-line p-4";
+
+/** What the magnifier is on: a box's corner or edge, or a point of the sidewalk outline. */
+type LoupeTarget = { kind: "box"; id: string } | { kind: "sidewalk" };
+
+/** The sidewalk outline's blue, as paintSidewalk draws it. */
+const SIDEWALK_BLUE = "#2563eb";
+
+/** A media query's answer, false where there is no matchMedia (tests, old browsers). */
+const matches = (query: string) =>
+  typeof window !== "undefined" && Boolean(window.matchMedia?.(query)?.matches);
+
+const prefersReducedMotion = () => matches("(prefers-reduced-motion: reduce)");
 
 interface IReactPictureAnnotationProps {
   annotationData?: IAnnotation[];
@@ -117,6 +218,8 @@ interface IReactPictureAnnotationProps {
     onClearObstruction: () => void,
     onRestoreObject: () => void,
     originalComment: string,
+    variant?: PanelVariant,
+    onHide?: () => void,
   ) => React.ReactElement;
   totalAnnotationCount?: number;
   // Annotators give no severity and answer no scene-level questions (decided
@@ -128,6 +231,16 @@ interface IReactPictureAnnotationProps {
   // Annotators on model-development images (and in the tutorial) outline the
   // sidewalk between Objects and Obstructions (6 Oct 2026)
   askSidewalk?: boolean;
+  // "sheet" on phones and tablets under 1024 px (9 Oct 2026, both roles from
+  // 12 Oct 2026): the photo fills the screen and the answers sit in a bottom sheet
+  layout?: "desktop" | "sheet";
+  // The full-screen photo on phones and tablets (12 Oct 2026): in the sheet
+  // layout the photo fills the screen, with no top bar and the answers sheet
+  // down to its handle.
+  // AnnotateForm holds it and passes the two callbacks on phones and tablets.
+  focus?: boolean;
+  onEnterFocus?: () => void;
+  onExitFocus?: () => void;
 }
 
 type AnnotatorStep = "objects" | "sidewalk" | "obstructions";
@@ -164,8 +277,14 @@ const defaultState: IStageState = {
  *     it means unsaved work must be written to the session cache first. See
  *     cacheCurrentImageEdits.
  *
- * Note that the canvas is driven by mouse events with no touch equivalent, so
- * annotating requires a mouse or trackpad. See hooks/useCanAnnotate.
+ * The mouse drives the canvas through the state classes in annotation/. A
+ * finger or a pen works too, on any device: contributors from 9 Oct 2026
+ * (IMPRINT_contributor_mobile.md) and annotators from 12 Oct 2026
+ * (IMPRINT_mobile_followup.md). Pointer handlers beside the mouse ones run the
+ * touch gestures (touchGesture.ts for boxes, sidewalkTouch.ts for the
+ * outline), Add box places boxes, and on phones and tablets the answers sit
+ * in a bottom sheet (layout "sheet"). On phones the photo can also fill the
+ * whole screen (the `focus` prop). The mouse tool is unchanged.
  */
 /**
  * Sidewalk width card icons.
@@ -481,6 +600,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       onClearObstruction: () => void,
       onRestoreObject: () => void,
       originalComment: string,
+      variant: PanelVariant = "floating",
+      onHide?: () => void,
     ) => (
       <DefaultInputSection
         key={id}
@@ -502,9 +623,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         onClearObstruction={onClearObstruction}
         onRestoreObject={onRestoreObject}
         originalComment={originalComment}
+        variant={variant}
+        onHide={onHide}
       />
     ),
     isAnnotator: false,
+    layout: "desktop",
   };
 
   public state = {
@@ -537,7 +661,6 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     obstructionsConfirmed: false,
     // The Sidewalk step's editor state (render copy, see sidewalkState below)
     sidewalk: initialSidewalkState(null),
-    showSidewalkBoxes: true,
     hideSidewalkFill: false,
     showSidewalkOverlay: true,
     // Step 1, both roles (8 Oct 2026): boxes hidden on the photo from the list
@@ -545,6 +668,20 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     hiddenBoxIds: [] as string[],
     // True while an image is being sent, so the button cannot send it twice
     submitting: false,
+    // Phones and tablets (9 Oct 2026). The photo area's size in the sheet
+    // layout, measured, and where the answers sheet rests.
+    sheetStage: null as { width: number; height: number } | null,
+    sheetSnap: "collapsed" as SheetSnap,
+    sheetCollapsed: 0,
+    // Touch: zoomed in past the fit (shows Fit), the magnifier's place while a
+    // corner is dragged, the box Add box just placed (shows its hint), and
+    // whether any pointer is coarse (shows Add box in the desktop layout)
+    zoomed: false,
+    loupe: null as { left: number; top: number } | null,
+    addBoxHintId: null as string | null,
+    anyCoarsePointer: false,
+    // A finger is the primary pointer (an iPad, a phone): the words say "tap"
+    coarsePointer: false,
   };
 
   set selectedId(value: string | null) {
@@ -622,6 +759,48 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   // every action except MOVE_PREVIEW and DRAG_POINT.
   private sidewalkState = initialSidewalkState(null);
 
+  // ── Phones and tablets (contributors, 9 Oct 2026, IMPRINT_contributor_mobile.md) ──
+  // The letterbox fit, and the touch zoom and pan on top of it. scaleState is
+  // always applyView(fit, view), which is the fit itself at the identity view.
+  private fit: Fit | null = null;
+  private view: View = IDENTITY_VIEW;
+  // "touch" shows four round corner handles, "mouse" the eight square ones.
+  // Set by every press on the photo.
+  public inputMode: TransformerMode = "mouse";
+  // For telemetry, reset when the image changes
+  private inputTypesUsed = new Set<string>();
+  private maxZoom = 1;
+  private loupeShownCount = 0;
+  private boxesAddedWithButton = 0;
+  // The touch gesture in progress (touchGesture.ts), the fingers on the photo
+  // (CSS px from the canvas's corner), and what the press started from
+  private touchState = initialTouchState();
+  private pointers = new Map<number, Point>();
+  private touchStart: { boxId: string | null; mark: IShapeBase | null; downImage: Point; corner: Corner | null; grab: Point } | null = null;
+  private pinchStart: { distance: number; mid: Point; view: View } | null = null;
+  private viewAnimation: number | null = null;
+  private loupeFrame: number | null = null;
+  // True while a mouse resize shows the magnifier, so each drag counts once
+  private mouseLoupeShown = false;
+  private loupeCanvasRef = React.createRef<HTMLCanvasElement>();
+  private sheetAreaRef = React.createRef<HTMLDivElement>();
+  private sheetBodyRef = React.createRef<HTMLDivElement>();
+  private sheetAreaObserver: ResizeObserver | null = null;
+  private sheetPoints: SheetPoints | null = null;
+  private lastStage = { width: 0, height: 0 };
+  private lastPanelId: string | null = null;
+  // The Sidewalk step's touch gesture (sidewalkTouch.ts, 12 Oct 2026), where
+  // the finger went down (image px), and the point being dragged: the finger's
+  // offset from it, and where it was, to put it back
+  private sidewalkTouchState = initialSidewalkTouchState();
+  private sidewalkDown: Point = { x: 0, y: 0 };
+  private sidewalkDrag: { grab: Point; start: Point } | null = null;
+  private sidewalkAiming = false;
+  // The full-screen photo, for telemetry, per image
+  private focusModeCount = 0;
+  private focusModeMs = 0;
+  private focusStartMs: number | null = null;
+
   // Annotators give no severity and answer no scene-level questions (decided
   // 3 Oct 2026). Every role-dependent part of the tool reads these getters.
   private get askSeverity() {
@@ -666,8 +845,73 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   private get paintVariant(): PaintVariant {
     if (this.inObstructionStep) return "obstructions";
-    if (this.inSidewalkStep) return "context";
     return "default";
+  }
+
+  /**
+   * The Sidewalk step shows no object boxes (10 Oct 2026, the adviser's
+   * request), so the annotator outlines the walking space without them in the
+   * way. They come back in Obstructions.
+   */
+  private get paintsBoxes() {
+    return !this.inSidewalkStep;
+  }
+
+  /**
+   * On a phone or tablet, for both roles (annotators from 12 Oct 2026): the
+   * photo fills the screen and the answers sit in a sheet.
+   */
+  private get isSheet() {
+    return this.props.layout === "sheet";
+  }
+
+  /**
+   * Touch and pen on the photo, for both roles (annotators from 12 Oct 2026).
+   * A finger gets the touch interaction on any layout. The mouse keeps its own
+   * handlers and is unchanged.
+   */
+  private get touchEnabled() {
+    return true;
+  }
+
+  /** The photo fills the whole screen (phones, the sheet layout). */
+  private get inFocus() {
+    return this.isSheet && this.props.focus === true;
+  }
+
+  /**
+   * Whether the words say "tap": on the sheet layout, and on the desktop layout
+   * when a finger is the primary pointer (an iPad held sideways). With a mouse
+   * or trackpad as the primary pointer the desktop copy is word for word as it
+   * was. The same rule as the tours' wording (tourWordsFor).
+   */
+  private get touchWords() {
+    return this.isSheet || this.state.coarsePointer;
+  }
+
+  private get words(): "pointer" | "touch" {
+    return this.touchWords ? "touch" : "pointer";
+  }
+
+  /** Stage px to CSS px. 1 in the sheet layout, where the stage is the photo area itself. */
+  private get displayScale() {
+    return this.isSheet ? 1 : this.state.canvasScale;
+  }
+
+  /**
+   * The stage's size in stage px. Every read of it goes through here: the
+   * desktop stage is the fixed 960 by 600 from the props, shrunk with a CSS
+   * scale. In the sheet layout the stage is the photo area, in CSS px, so
+   * labels, handles and every pixel threshold keep their size.
+   */
+  public stageSize() {
+    if (this.isSheet && this.state.sheetStage) return this.state.sheetStage;
+    return { width: this.props.width, height: this.props.height };
+  }
+
+  /** Add box: in the sheet layout, and on a desktop layout with a touch screen. Contributors' box step only. */
+  private get showAddBox() {
+    return this.touchEnabled && this.inBoxStep && (this.isSheet || this.state.anyCoarsePointer);
   }
 
   /** 8 canvas pixels in image pixels, so snapping feels the same on 640 and 1280 pixel images. */
@@ -721,6 +965,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         toCanvas,
         hideFill: this.state.hideSidewalkFill,
         nearFirstPoint: Boolean(state.draft && state.preview && isNearFirstPoint(state.draft, state.preview, this.sidewalkTolerance)),
+        // Finger-sized handles once the photo has been touched
+        touch: this.inputMode === "touch",
+        displayScale: this.displayScale,
       });
     } else if (this.inObstructionStep && this.state.showSidewalkOverlay) {
       paintSidewalk(this.canvas2D, { mode: "overlay", state, toCanvas });
@@ -790,26 +1037,58 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       // Save a waiting edit when the page is left, reloaded or hidden
       window.addEventListener("pagehide", this.flushEdits);
       document.addEventListener("visibilitychange", this.onVisibilityChange);
+      // The tutorial moves the answers sheet before its Step 2 step
+      window.addEventListener(SHEET_EVENT, this.onSheetRequest);
+      document.addEventListener("scroll", this.onStrayScroll, true);
+      // A finger is the primary pointer, so a box selected from a chip shows
+      // round corner handles before the photo is ever touched
+      if (this.touchEnabled && matches("(pointer: coarse)")) {
+        this.setInputMode("touch");
+        this.setState({ coarsePointer: true });
+      }
+      if (this.touchEnabled && matches("(any-pointer: coarse)")) this.setState({ anyCoarsePointer: true });
+      if (this.inFocus) this.focusStartMs = Date.now();
     }
     this.syncSelectedId();
     this.setupCanvasScaling();
+    this.observeSheetArea();
+    this.lastStage = this.stageSize();
     this.editsRestored = true;
   };
 
   public componentDidUpdate = (preProps: IReactPictureAnnotationProps, prevState: this["state"]) => {
-    const { width, height, image } = this.props;
+    const { image } = this.props;
     // Contributors' Step 2 answers are saved as they change, like the boxes
     if (prevState && prevState.sceneLevel !== this.state.sceneLevel) this.scheduleEditSave();
-    if (preProps.width !== width || preProps.height !== height) {
-      this.setCanvasDPI();
-      this.onShapeChange();
-      this.onImageChange();
+    // A switch between the desktop and sheet layouts (an iPad rotated) builds
+    // new canvases in a new place. Every box, answer and the selection are
+    // instance fields and state, so they carry over. Only the stage changes.
+    const layoutChanged = preProps.layout !== this.props.layout;
+    if (layoutChanged) {
+      this.canvas2D = this.canvasRef.current?.getContext("2d");
+      this.imageCanvas2D = this.imageCanvasRef.current?.getContext("2d");
+      this.currentTransformer = null;
+      this.resizeObserver?.disconnect();
+      this.setupCanvasScaling();
+      this.observeSheetArea();
+    }
+    const stage = this.stageSize();
+    if (layoutChanged || stage.width !== this.lastStage.width || stage.height !== this.lastStage.height) {
+      this.onStageResize(this.lastStage);
+      this.lastStage = stage;
     }
     if (preProps.image !== image) {
       this.mountTime = Date.now();
       this.sceneStepStartMs = null;
       this.obstructionStepStartMs = null;
       this.sidewalkStepStartMs = null;
+      this.inputTypesUsed = new Set();
+      this.maxZoom = 1;
+      this.loupeShownCount = 0;
+      this.boxesAddedWithButton = 0;
+      this.focusModeCount = this.inFocus ? 1 : 0;
+      this.focusModeMs = 0;
+      this.focusStartMs = this.inFocus ? Date.now() : null;
       this.cleanImage();
       if (this.currentImageElement) {
         this.currentImageElement.src = image;
@@ -820,15 +1099,57 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     // this.syncAnnotationData();
     this.syncSelectedId();
+    // Touch handles are sized in CSS px, so they follow the desktop stage's CSS scale
+    if (prevState && prevState.canvasScale !== this.state.canvasScale && this.inputMode === "touch") {
+      this.currentTransformer = null;
+      this.onShapeChange({ quiet: true });
+    }
+    if (preProps.focus !== this.props.focus || layoutChanged) this.onFocusChange(preProps.focus === true && preProps.layout === "sheet");
+    if (this.isSheet) this.followPanel();
   };
+
+  /**
+   * Entering or leaving the full-screen photo (phones, 12 Oct 2026). The tool
+   * stays mounted, so the selection, the zoom and every edit carry over. On
+   * leaving, a selected box's panel opens in the sheet with the box kept in
+   * view, otherwise the sheet comes back collapsed. Counts the entries and the
+   * time for telemetry.
+   */
+  private onFocusChange(wasInFocus: boolean) {
+    const now = this.inFocus;
+    if (now === wasInFocus) return;
+    if (now) {
+      this.focusModeCount += 1;
+      this.focusStartMs = Date.now();
+      // The photo first: the sheet goes down to its handle, also with a box
+      // open (Details on the photo pulls its panel up)
+      this.lastPanelId = this.state.showInput ? this.selectedId : null;
+      this.setState({ sheetSnap: "collapsed" }, () => this.relaxView());
+      return;
+    }
+    if (this.focusStartMs !== null) this.focusModeMs += Date.now() - this.focusStartMs;
+    this.focusStartMs = null;
+    if (!this.isSheet) return;
+    const openId = this.state.showInput ? this.selectedId : null;
+    this.lastPanelId = openId;
+    this.setState({ sheetSnap: openId ? "panel" : "collapsed" }, () => {
+      if (openId) this.keepSelectedInView();
+      else this.relaxView();
+    });
+  }
 
   public componentWillUnmount = () => {
     this.resizeObserver?.disconnect();
+    this.sheetAreaObserver?.disconnect();
+    this.cancelViewAnimation();
+    if (this.loupeFrame !== null && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(this.loupeFrame);
     this.editSaver.flush();
     if (typeof window !== "undefined") {
       window.removeEventListener("keydown", this.onSidewalkKeyDown);
       window.removeEventListener("pagehide", this.flushEdits);
       document.removeEventListener("visibilitychange", this.onVisibilityChange);
+      window.removeEventListener(SHEET_EVENT, this.onSheetRequest);
+      document.removeEventListener("scroll", this.onStrayScroll, true);
     }
   };
 
@@ -895,7 +1216,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   public render() {
-    const { width, height, inputElement } = this.props;
+    const { inputElement } = this.props;
+    // The stage: 960 by 600 on the desktop, the photo area on a phone (stageSize)
+    const { width, height } = this.stageSize();
     const {
       showInput,
       inputPosition,
@@ -915,25 +1238,60 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // The same numbering as the labels drawn on the photo
     const displayLabels = buildDisplayLabelsInOrder(sortedAnnotations);
 
-    const { canvasScale } = this.state;
-    const { askScene, askSeverity, annotatorObjectStep, inObstructionStep, inSidewalkStep, askSidewalk } = this;
+    const canvasScale = this.displayScale;
+    const { askScene, askSeverity, annotatorObjectStep, inObstructionStep, inSidewalkStep } = this;
     const steps = this.annotatorSteps;
-    const finishLabel = this.props.totalAnnotationCount && this.props.currentAnnotationCount >= this.props.totalAnnotationCount
-      ? "Finish Session"
-      : "Next Image";
-    // An annotator image with no objects left has nothing to judge, so the
-    // Objects step submits straight away
-    const hasRealObjects = realObjects(this.currentAnnotationData).length > 0;
+    // Contributors' canvas takes touch and pen (9 Oct 2026). Annotators' does not.
+    const touch = this.touchEnabled;
 
-    // The canvas, the same in both layouts below
+    // The box panel: beside the box on the desktop photo, in the answers sheet on a phone
+    const panel = (variant: PanelVariant) => annotatorObjectStep ? (
+      <ObjectInputSection
+        key={this.selectedId || ""}
+        value={inputComment}
+        mode={getObjectPanelMode({ editable, selected, comment: inputComment })}
+        onChange={this.onInputCommentChange}
+        onKeep={this.onKeep}
+        onMarkNotAnObject={this.onMarkNotAnObject}
+        onDelete={this.onDelete}
+        onClose={this.onClose}
+        belowMinimumSize={this.selectedBelowMinimumSize()}
+        onHide={this.inBoxStep ? this.hideOpenBox : undefined}
+        variant={variant}
+      />
+    ) : inputElement(
+      inputComment,
+      this.onInputCommentChange,
+      this.onDelete,
+      this.onSelectObstruction,
+      this.onUnselectObstruction,
+      editable,
+      selected,
+      isRejected,
+      this.selectedId || "",
+      this.onSetSeverity,
+      this.onSetObstructs,
+      obstructs,
+      severity,
+      this.onMarkNotAnObject,
+      askSeverity,
+      this.onClose,
+      this.onClearObstruction,
+      this.onRestoreObject,
+      this.state.originalComment,
+      variant,
+      this.inBoxStep ? this.hideOpenBox : undefined,
+    );
+
+    // The canvas, the same in every layout
     const canvasArea = (
       <div ref={this.canvasWrapperRef} className="w-full overflow-hidden">
-        <div style={{
+        <div className="relative" style={{
           width: width * canvasScale,
           height: height * canvasScale,
           margin: '0 auto',
         }}>
-          <div className="rp-stage relative" style={{
+          <div className={`rp-stage relative${touch ? " select-none [-webkit-touch-callout:none]" : ""}`} style={{
             width, height,
             transform: `scale(${canvasScale})`,
             transformOrigin: 'top left',
@@ -946,7 +1304,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               height={height * 2}
             />
             <canvas
-              className="rp-shapes"
+              className={touch ? "rp-shapes touch-none" : "rp-shapes"}
               style={{ width, height }}
               ref={this.canvasRef}
               width={width * 2}
@@ -955,56 +1313,34 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               onMouseMove={this.onMouseMove}
               onMouseUp={this.onMouseUp}
               onMouseLeave={this.onMouseLeave}
+              onPointerDown={this.onPointerDown}
+              onPointerMove={this.onPointerMove}
+              onPointerUp={this.onPointerUp}
+              onPointerCancel={this.onPointerCancel}
+              onContextMenu={touch ? this.preventContextMenu : undefined}
             />
-            {showInput && (
+            {showInput && !this.isSheet && (
               <div
-                className="rp-selected-input"
+                className={touch ? "rp-selected-input select-text" : "rp-selected-input"}
                 style={inputPosition}
                 onMouseDown={(e) => e.stopPropagation()}
                 onMouseUp={(e) => e.stopPropagation()}
                 onMouseMove={(e) => e.stopPropagation()}
               >
-                {annotatorObjectStep ? (
-                  <ObjectInputSection
-                    key={this.selectedId || ""}
-                    value={inputComment}
-                    mode={getObjectPanelMode({ editable, selected, comment: inputComment })}
-                    onChange={this.onInputCommentChange}
-                    onKeep={this.onKeep}
-                    onMarkNotAnObject={this.onMarkNotAnObject}
-                    onDelete={this.onDelete}
-                    onClose={this.onClose}
-                    belowMinimumSize={this.selectedBelowMinimumSize()}
-                  />
-                ) : inputElement(
-                  inputComment,
-                  this.onInputCommentChange,
-                  this.onDelete,
-                  this.onSelectObstruction,
-                  this.onUnselectObstruction,
-                  editable,
-                  selected,
-                  isRejected,
-                  this.selectedId || "",
-                  this.onSetSeverity,
-                  this.onSetObstructs,
-                  obstructs,
-                  severity,
-                  this.onMarkNotAnObject,
-                  askSeverity,
-                  this.onClose,
-                  this.onClearObstruction,
-                  this.onRestoreObject,
-                  this.state.originalComment,
-                )}
+                {panel("floating")}
               </div>
             )}
           </div>
+          {this.renderLoupe()}
+          {touch && this.renderPhotoOverlays()}
         </div>
       </div>
     );
     // Contributors get the one-card layout with their answers under the photo (7 Oct 2026). Annotator steps keep theirs.
     const contributorLayout = !annotatorObjectStep;
+    // Contributors on a phone or tablet: the photo fills the screen and the
+    // answers sit in a bottom sheet (9 Oct 2026)
+    if (this.isSheet) return this.renderSheetLayout(canvasArea, panel, sortedAnnotations, displayLabels);
 
     return (
       <Container as="section" width="wide" className="annotation-container">
@@ -1034,6 +1370,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   onOpen={this.openTrayItem}
                   onToggleHidden={this.toggleBoxHidden}
                   onShowAll={this.showAllBoxes}
+                  onHideAll={this.hideAllBoxes}
+                  tourIds={this.state.anyCoarsePointer}
                 />
               </div>
             ) : (
@@ -1042,27 +1380,17 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   {inObstructionStep ? (
                     <>
                       <H2 className="text-lg font-bold text-ink mb-1">{annotatorStepHeading("obstructions", steps)}</H2>
-                      <P className="text-body text-sm">
-                        Click every object that obstructs the sidewalk for you, traveling as you normally do.
-                        Click it again to unmark it. Leave the others unmarked, then confirm below that they do not obstruct.
-                      </P>
+                      <P className="text-body text-sm">{annotatorStepParagraph("obstructions", this.words)}</P>
                     </>
                   ) : inSidewalkStep ? (
                     <>
                       <H2 className="text-lg font-bold text-ink mb-1">{annotatorStepHeading("sidewalk", steps)}</H2>
-                      <P className="text-body text-sm">
-                        Outline the walking space in this image. Click points around the sidewalk and click the first point again to close the shape.
-                        Draw under any object standing on the sidewalk, as if it were not there.
-                      </P>
+                      <P className="text-body text-sm">{annotatorStepParagraph("sidewalk", this.words)}</P>
                     </>
                   ) : (
                     <>
                       <H2 className="text-lg font-bold text-ink mb-1">{annotatorStepHeading("objects", steps)}</H2>
-                      <P className="text-body text-sm">
-                        Box every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not.
-                        For each dashed yellow suggestion, check its category, fix the box if it is loose, then click Keep,
-                        or click Not an object if it marks nothing real. Draw a box for every object the suggestions missed.
-                      </P>
+                      <P className="text-body text-sm">{annotatorStepParagraph("objects", this.words)}</P>
                     </>
                   )}
                 </div>
@@ -1086,196 +1414,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           {/* ── Right: Step 2 (35%) for contributors, the "What to Box" list for annotators ── */}
           {askScene ? (
           <div style={{ flex: '35 1 0%' }} className="min-w-0 overflow-y-auto">
-            <div id="scene-level-section" className="mb-6">
-              <H2 className="text-lg font-bold text-ink mb-1">Step 2: Rate the Sidewalk</H2>
-              <P className="text-body text-sm mb-4">
-                Rate the following aspects of the sidewalk scene based on what you see in the image.
-              </P>
-              <div className="space-y-2">
-                {/* Item 1 — Sidewalk Width */}
-                <div className="bg-surface-subtle p-3 rounded-card border border-line">
-                  <p className="text-sm font-semibold text-ink mb-0.5">Sidewalk Width</p>
-                  <p className="text-[11px] text-muted mb-1.5">How much usable walking space does this sidewalk have?</p>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[
-                      { value: "three_or_more", label: "Wide", icon: "threePlus" as const },
-                      { value: "two_people", label: "Moderate", icon: "twoPeople" as const },
-                      { value: "one_person", label: "Narrow", icon: "onePerson" as const },
-                      { value: "no_sidewalk", label: "None", icon: "noSidewalk" as const },
-                    ].map((opt) => (
-                      <button
-                        key={opt.value}
-                        className={`flex flex-col items-center p-2 rounded-card text-center transition-all border ${this.state.sceneLevel.sidewalkWidth === opt.value
-                          ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                          : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
-                          }`}
-                        onClick={() => {
-                          this.markSceneStepStart();
-                          const updates: Record<string, unknown> = { sidewalkWidth: opt.value };
-                          // No sidewalk: the other three questions are greyed out, so
-                          // clear any answers given before "None" was chosen.
-                          if (opt.value === "no_sidewalk") {
-                            updates.surfaceCondition = null;
-                            updates.walkability = null;
-                            updates.overallAccessibility = null;
-                          }
-                          this.setState({
-                            sceneLevel: { ...this.state.sceneLevel, ...updates },
-                          });
-                        }}
-                      >
-                        <div className="w-12 h-12 mb-1 flex items-end justify-center">
-                          <SidewalkWidthIcon type={opt.icon} />
-                        </div>
-                        <span className="text-[10px] font-semibold leading-tight">{opt.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Item 2 — Surface Condition (disabled when no sidewalk) */}
-                {/* Ground cross-section profiles — visual language: the surface itself.
-                    3-level functional scale per Wolf et al. (2007) and Project Sidewalk reliability data. */}
-                {(() => {
-                  const disabled = this.state.sceneLevel.sidewalkWidth === "no_sidewalk";
-                  const surfaceOptions: { value: number; label: string; icon: "easy" | "some" | "difficult" }[] = [
-                    { value: 1, label: "Easy to traverse", icon: "easy" },
-                    { value: 2, label: "Some difficulty", icon: "some" },
-                    { value: 3, label: "Difficult or dangerous", icon: "difficult" },
-                  ];
-                  return (
-                    <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
-                      <p className="text-sm font-semibold text-ink mb-0.5">Surface Condition</p>
-                      <p className="text-[11px] text-muted mb-1.5">
-                        {disabled ? "Not applicable — no sidewalk present" : "How does the walking surface affect movement?"}
-                      </p>
-                      <div className="flex gap-1.5">
-                        {surfaceOptions.map((opt) => (
-                          <button
-                            key={opt.value}
-                            disabled={disabled}
-                            className={`flex-1 flex flex-col items-center py-2 px-1 rounded-control transition-all border ${!disabled && this.state.sceneLevel.surfaceCondition === opt.value
-                              ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                              : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
-                              }`}
-                            onClick={() => {
-                              if (!disabled) {
-                                this.markSceneStepStart();
-                                this.setState({
-                                  sceneLevel: { ...this.state.sceneLevel, surfaceCondition: opt.value },
-                                });
-                              }
-                            }}
-                          >
-                            <div className="w-10 h-10 mb-1 flex items-center justify-center">
-                              <SurfaceConditionIcon type={opt.icon} />
-                            </div>
-                            <span className="text-[10px] font-semibold leading-tight text-center">{opt.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Item 3 — Walking Comfort (disabled when no sidewalk) */}
-                {/* Face expressions — visual language: how the scene *feels*.
-                    Reframed from undefined "walkability" to concrete "comfort" per Mehta (2008).
-                    3-level scale per Kim et al. (2025) stability findings. */}
-                {(() => {
-                  const disabled = this.state.sceneLevel.sidewalkWidth === "no_sidewalk";
-                  const comfortOptions: { value: number; label: string; icon: "comfortable" | "somewhat" | "uncomfortable" }[] = [
-                    { value: 1, label: "Comfortable", icon: "comfortable" },
-                    { value: 2, label: "Somewhat uncomfortable", icon: "somewhat" },
-                    { value: 3, label: "Uncomfortable", icon: "uncomfortable" },
-                  ];
-                  return (
-                    <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
-                      <p className="text-sm font-semibold text-ink mb-0.5">Walking Comfort</p>
-                      <p className="text-[11px] text-muted mb-1.5">
-                        {disabled ? "Not applicable — no sidewalk present" : "How comfortable does this sidewalk look for walking?"}
-                      </p>
-                      <div className="flex gap-1.5">
-                        {comfortOptions.map((opt) => (
-                          <button
-                            key={opt.value}
-                            disabled={disabled}
-                            className={`flex-1 flex flex-col items-center py-2 px-1 rounded-control transition-all border ${!disabled && this.state.sceneLevel.walkability === opt.value
-                              ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                              : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
-                              }`}
-                            onClick={() => {
-                              if (!disabled) {
-                                this.markSceneStepStart();
-                                this.setState({
-                                  sceneLevel: { ...this.state.sceneLevel, walkability: opt.value },
-                                });
-                              }
-                            }}
-                          >
-                            <div className="w-10 h-10 mb-1 flex items-center justify-center">
-                              <WalkingComfortIcon type={opt.icon} />
-                            </div>
-                            <span className="text-[10px] font-semibold leading-tight text-center">{opt.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Item 4 — Accessible to Me (disabled when no sidewalk) */}
-                {/* Gateway/path metaphor with traffic-light colour gradient.
-                    Self-referential "to me" framing per Huang et al. (2025) and Li et al. (2025).
-                    5-point scale: Preston & Colman (2000) show 2-4 point scales have worst
-                    psychometric properties; Project Sidewalk uses 1-5 severity; finer scale
-                    captures person-dependent variation that IS the signal (thesis core argument).
-                    Can be collapsed to 3 levels for reporting if needed. */}
-                {(() => {
-                  const disabled = this.state.sceneLevel.sidewalkWidth === "no_sidewalk";
-                  const accessOptions: { value: number; label: string; icon: "easy" | "mostly" | "somewhat" | "very" | "not" }[] = [
-                    { value: 1, label: "Easily accessible", icon: "easy" },
-                    { value: 2, label: "Mostly accessible", icon: "mostly" },
-                    { value: 3, label: "Somewhat difficult", icon: "somewhat" },
-                    { value: 4, label: "Very difficult", icon: "very" },
-                    { value: 5, label: "Not accessible", icon: "not" },
-                  ];
-                  return (
-                    <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
-                      <p className="text-sm font-semibold text-ink mb-0.5">Accessible to Me</p>
-                      <p className="text-[11px] text-muted mb-1.5">
-                        {disabled ? "Not applicable — no sidewalk present" : "Could you personally navigate this sidewalk?"}
-                      </p>
-                      <div className="flex gap-1">
-                        {accessOptions.map((opt) => (
-                          <button
-                            key={opt.value}
-                            disabled={disabled}
-                            className={`flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-control transition-all border ${!disabled && this.state.sceneLevel.overallAccessibility === opt.value
-                              ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                              : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
-                              }`}
-                            onClick={() => {
-                              if (!disabled) {
-                                this.markSceneStepStart();
-                                this.setState({
-                                  sceneLevel: { ...this.state.sceneLevel, overallAccessibility: opt.value },
-                                });
-                              }
-                            }}
-                          >
-                            <div className="w-8 h-8 mb-0.5 flex items-center justify-center">
-                              <AccessibleToMeIcon type={opt.icon} />
-                            </div>
-                            <span className="text-[9px] font-semibold leading-tight text-center">{opt.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
+            {this.renderSceneQuestions("desktop")}
           </div>
           ) : inSidewalkStep ? this.renderSidewalkGuide() : inObstructionStep ? this.renderObstructionGuide() : this.renderTaxonomyGuide()}
 
@@ -1294,37 +1433,1699 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         )}
 
         <div className="flex justify-center my-10 gap-4">
-          {inObstructionStep && askSidewalk ? (
-            <Button variant="neutral" onClick={this.backToSidewalk}>
-              Back to Sidewalk
-            </Button>
-          ) : inObstructionStep || inSidewalkStep ? (
-            <Button variant="neutral" onClick={this.backToObjects}>
-              Back to Objects
-            </Button>
-          ) : this.props.currentAnnotationCount > 1 && (
-            <Button variant="neutral" onClick={this.onPrevious}>
-              Previous
-            </Button>
-          )}
-
-          {/* Stays the submit button in every step, the tutorial's target */}
-          {inSidewalkStep ? (
-            <Button submit onClick={this.onSidewalkNext} disabled={this.state.submitting} className="whitespace-nowrap">
-              {this.state.submitting ? "Saving..." : hasRealObjects ? "Next: Obstructions" : finishLabel}
-            </Button>
-          ) : annotatorObjectStep && !inObstructionStep ? (
-            <Button submit onClick={this.onObjectsNext} disabled={this.state.submitting} className="whitespace-nowrap">
-              {this.state.submitting ? "Saving..." : askSidewalk ? "Next: Sidewalk" : hasRealObjects ? "Next: Obstructions" : finishLabel}
-            </Button>
-          ) : (
-            <Button submit onClick={this.submit} disabled={this.state.submitting} className="whitespace-nowrap">
-              {this.state.submitting ? "Saving..." : finishLabel}
-            </Button>
-          )}
+          {this.renderActions("desktop")}
         </div>
       </Container>
     );
+  }
+
+  /**
+   * The buttons under the image: back (Previous, or back a step for
+   * annotators) and the submit button, which the tutorial points at in every
+   * step. One copy for both layouts. In the sheet layout (contributors on a
+   * phone) they sit in the sheet's footer, the submit button full width.
+   */
+  private renderActions(variant: "desktop" | "sheet") {
+    const { annotatorObjectStep, inObstructionStep, inSidewalkStep, askSidewalk } = this;
+    const finishLabel = this.props.totalAnnotationCount && this.props.currentAnnotationCount >= this.props.totalAnnotationCount
+      ? "Finish Session"
+      : "Next Image";
+    // An annotator image with no objects left has nothing to judge, so the
+    // Objects step submits straight away
+    const hasRealObjects = realObjects(this.currentAnnotationData).length > 0;
+
+    if (variant === "sheet") {
+      // The same step logic as the desktop buttons below, with shorter labels
+      // so two fit on a 360 px screen (annotators from 12 Oct 2026)
+      const back = inObstructionStep && askSidewalk
+        ? { label: "Back", name: "Back to Sidewalk", onClick: this.backToSidewalk }
+        : inObstructionStep || inSidewalkStep
+          ? { label: "Back", name: "Back to Objects", onClick: this.backToObjects }
+          : this.props.currentAnnotationCount > 1
+            ? { label: "Previous", name: undefined, onClick: this.onPrevious }
+            : null;
+      const next = inSidewalkStep
+        ? { label: hasRealObjects ? "Next: Obstructions" : finishLabel, onClick: this.onSidewalkNext }
+        : annotatorObjectStep && !inObstructionStep
+          ? { label: askSidewalk ? "Next: Sidewalk" : hasRealObjects ? "Next: Obstructions" : finishLabel, onClick: this.onObjectsNext }
+          : { label: finishLabel, onClick: this.submit };
+      return (
+        <div className="flex gap-2">
+          {back && (
+            <Button variant="neutral" aria-label={back.name} onClick={back.onClick}>
+              {back.label}
+            </Button>
+          )}
+          <Button submit fullWidth onClick={next.onClick} disabled={this.state.submitting} className="whitespace-nowrap">
+            {this.state.submitting ? "Saving..." : next.label}
+          </Button>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {inObstructionStep && askSidewalk ? (
+          <Button variant="neutral" onClick={this.backToSidewalk}>
+            Back to Sidewalk
+          </Button>
+        ) : inObstructionStep || inSidewalkStep ? (
+          <Button variant="neutral" onClick={this.backToObjects}>
+            Back to Objects
+          </Button>
+        ) : this.props.currentAnnotationCount > 1 && (
+          <Button variant="neutral" onClick={this.onPrevious}>
+            Previous
+          </Button>
+        )}
+
+        {/* Stays the submit button in every step, the tutorial's target */}
+        {inSidewalkStep ? (
+          <Button submit onClick={this.onSidewalkNext} disabled={this.state.submitting} className="whitespace-nowrap">
+            {this.state.submitting ? "Saving..." : hasRealObjects ? "Next: Obstructions" : finishLabel}
+          </Button>
+        ) : annotatorObjectStep && !inObstructionStep ? (
+          <Button submit onClick={this.onObjectsNext} disabled={this.state.submitting} className="whitespace-nowrap">
+            {this.state.submitting ? "Saving..." : askSidewalk ? "Next: Sidewalk" : hasRealObjects ? "Next: Obstructions" : finishLabel}
+          </Button>
+        ) : (
+          <Button submit onClick={this.submit} disabled={this.state.submitting} className="whitespace-nowrap">
+            {this.state.submitting ? "Saving..." : finishLabel}
+          </Button>
+        )}
+      </>
+    );
+  }
+
+  /**
+   * Contributors' Step 2, the four questions about the sidewalk. One copy for
+   * both layouts (9 Oct 2026). The desktop layout keeps its classes. In the
+   * sheet every option is at least 44 px tall and no label is under 12 px.
+   */
+  private renderSceneQuestions(variant: "desktop" | "sheet") {
+    const sheet = variant === "sheet";
+    const { sceneLevel } = this.state;
+    const disabled = sceneLevel.sidewalkWidth === "no_sidewalk";
+    // Shown under a greyed-out question when the image has no sidewalk
+    const notApplicable = "Not applicable. There is no sidewalk.";
+    const prompt = sheet ? "text-xs text-muted mb-1.5" : "text-[11px] text-muted mb-1.5";
+    const optionLabel = (desktopSize: string) => sheet ? "text-xs font-semibold leading-tight text-center" : `${desktopSize} font-semibold leading-tight text-center`;
+    // In the sheet a row of options wraps when it does not fit (12 Oct 2026):
+    // on a 360 px phone the fifth accessibility option stuck out of its card,
+    // and on a 320 px one the third comfort option did. The five options go
+    // three and two under 390 px, where five in a row have no room.
+    const optionRow = (gap: string) => (sheet ? `flex flex-wrap ${gap}` : `flex ${gap}`);
+    const FIVE_ACROSS = "max-[389px]:basis-[30%]";
+    const optionClass = (isSelected: boolean, desktopPadding: string, sheetExtra = "") =>
+      `${sheet ? `min-h-[44px] ${sheetExtra} ` : ""}flex-1 flex flex-col items-center ${desktopPadding} rounded-control transition-all border ${isSelected
+        ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
+        : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
+        }`;
+
+    const surfaceOptions: { value: number; label: string; icon: "easy" | "some" | "difficult" }[] = [
+      { value: 1, label: "Easy to traverse", icon: "easy" },
+      { value: 2, label: "Some difficulty", icon: "some" },
+      { value: 3, label: "Difficult or dangerous", icon: "difficult" },
+    ];
+    const comfortOptions: { value: number; label: string; icon: "comfortable" | "somewhat" | "uncomfortable" }[] = [
+      { value: 1, label: "Comfortable", icon: "comfortable" },
+      { value: 2, label: "Somewhat uncomfortable", icon: "somewhat" },
+      { value: 3, label: "Uncomfortable", icon: "uncomfortable" },
+    ];
+    const accessOptions: { value: number; label: string; icon: "easy" | "mostly" | "somewhat" | "very" | "not" }[] = [
+      { value: 1, label: "Easily accessible", icon: "easy" },
+      { value: 2, label: "Mostly accessible", icon: "mostly" },
+      { value: 3, label: "Somewhat difficult", icon: "somewhat" },
+      { value: 4, label: "Very difficult", icon: "very" },
+      { value: 5, label: "Not accessible", icon: "not" },
+    ];
+
+    return (
+      <div id="scene-level-section" className={sheet ? "px-4 pt-4 pb-6" : "mb-6"}>
+        <H2 className="text-lg font-bold text-ink mb-1">Step 2: Rate the Sidewalk</H2>
+        <P className="text-body text-sm mb-4">
+          Rate the following aspects of the sidewalk scene based on what you see in the image.
+        </P>
+        <div className="space-y-2">
+          {/* Item 1 — Sidewalk Width */}
+          <div className="bg-surface-subtle p-3 rounded-card border border-line">
+            <p className="text-sm font-semibold text-ink mb-0.5">Sidewalk Width</p>
+            <p className={prompt}>How much usable walking space does this sidewalk have?</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {[
+                { value: "three_or_more", label: "Wide", icon: "threePlus" as const },
+                { value: "two_people", label: "Moderate", icon: "twoPeople" as const },
+                { value: "one_person", label: "Narrow", icon: "onePerson" as const },
+                { value: "no_sidewalk", label: "None", icon: "noSidewalk" as const },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  className={`${sheet ? "min-h-[44px] " : ""}flex flex-col items-center p-2 rounded-card text-center transition-all border ${sceneLevel.sidewalkWidth === opt.value
+                    ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
+                    : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
+                    }`}
+                  onClick={() => {
+                    this.markSceneStepStart();
+                    const updates: Record<string, unknown> = { sidewalkWidth: opt.value };
+                    // No sidewalk: the other three questions are greyed out, so
+                    // clear any answers given before "None" was chosen.
+                    if (opt.value === "no_sidewalk") {
+                      updates.surfaceCondition = null;
+                      updates.walkability = null;
+                      updates.overallAccessibility = null;
+                    }
+                    this.setState({
+                      sceneLevel: { ...this.state.sceneLevel, ...updates },
+                    });
+                  }}
+                >
+                  <div className="w-12 h-12 mb-1 flex items-end justify-center">
+                    <SidewalkWidthIcon type={opt.icon} />
+                  </div>
+                  <span className={sheet ? "text-xs font-semibold leading-tight" : "text-[10px] font-semibold leading-tight"}>{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Item 2 — Surface Condition (disabled when no sidewalk) */}
+          {/* Ground cross-section profiles — visual language: the surface itself.
+              3-level functional scale per Wolf et al. (2007) and Project Sidewalk reliability data. */}
+          <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
+            <p className="text-sm font-semibold text-ink mb-0.5">Surface Condition</p>
+            <p className={prompt}>
+              {disabled ? notApplicable : "How does the walking surface affect movement?"}
+            </p>
+            <div className={optionRow("gap-1.5")}>
+              {surfaceOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  disabled={disabled}
+                  className={optionClass(!disabled && sceneLevel.surfaceCondition === opt.value, "py-2 px-1")}
+                  onClick={() => {
+                    if (!disabled) {
+                      this.markSceneStepStart();
+                      this.setState({
+                        sceneLevel: { ...this.state.sceneLevel, surfaceCondition: opt.value },
+                      });
+                    }
+                  }}
+                >
+                  <div className="w-10 h-10 mb-1 flex items-center justify-center">
+                    <SurfaceConditionIcon type={opt.icon} />
+                  </div>
+                  <span className={optionLabel("text-[10px]")}>{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Item 3 — Walking Comfort (disabled when no sidewalk) */}
+          {/* Face expressions — visual language: how the scene *feels*.
+              Reframed from undefined "walkability" to concrete "comfort" per Mehta (2008).
+              3-level scale per Kim et al. (2025) stability findings. */}
+          <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
+            <p className="text-sm font-semibold text-ink mb-0.5">Walking Comfort</p>
+            <p className={prompt}>
+              {disabled ? notApplicable : "How comfortable does this sidewalk look for walking?"}
+            </p>
+            <div className={optionRow("gap-1.5")}>
+              {comfortOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  disabled={disabled}
+                  className={optionClass(!disabled && sceneLevel.walkability === opt.value, "py-2 px-1")}
+                  onClick={() => {
+                    if (!disabled) {
+                      this.markSceneStepStart();
+                      this.setState({
+                        sceneLevel: { ...this.state.sceneLevel, walkability: opt.value },
+                      });
+                    }
+                  }}
+                >
+                  <div className="w-10 h-10 mb-1 flex items-center justify-center">
+                    <WalkingComfortIcon type={opt.icon} />
+                  </div>
+                  <span className={optionLabel("text-[10px]")}>{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Item 4 — Accessible to Me (disabled when no sidewalk) */}
+          {/* Gateway/path metaphor with traffic-light colour gradient.
+              Self-referential "to me" framing per Huang et al. (2025) and Li et al. (2025).
+              5-point scale: Preston & Colman (2000) show 2-4 point scales have worst
+              psychometric properties; Project Sidewalk uses 1-5 severity; finer scale
+              captures person-dependent variation that IS the signal (thesis core argument).
+              Can be collapsed to 3 levels for reporting if needed. */}
+          <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
+            <p className="text-sm font-semibold text-ink mb-0.5">Accessible to Me</p>
+            <p className={prompt}>
+              {disabled ? notApplicable : "Could you personally navigate this sidewalk?"}
+            </p>
+            <div className={optionRow("gap-1")}>
+              {accessOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  disabled={disabled}
+                  className={optionClass(!disabled && sceneLevel.overallAccessibility === opt.value, "py-1.5 px-0.5", FIVE_ACROSS)}
+                  onClick={() => {
+                    if (!disabled) {
+                      this.markSceneStepStart();
+                      this.setState({
+                        sceneLevel: { ...this.state.sceneLevel, overallAccessibility: opt.value },
+                      });
+                    }
+                  }}
+                >
+                  <div className="w-8 h-8 mb-0.5 flex items-center justify-center">
+                    <AccessibleToMeIcon type={opt.icon} />
+                  </div>
+                  <span className={optionLabel("text-[9px]")}>{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Phones and tablets (contributors, 9 Oct 2026, IMPRINT_contributor_mobile.md) ──
+
+  /**
+   * The sheet layout: the photo area from the top bar down to the top of the
+   * collapsed sheet, and the answers sheet over the rest. Expanding the sheet
+   * covers the bottom of the photo, as in Grab: the photo area never resizes
+   * during a drag, so the canvas is not rebuilt.
+   */
+  private renderSheetLayout(
+    canvasArea: React.ReactElement,
+    panel: (variant: PanelVariant) => React.ReactElement,
+    sortedAnnotations: IAnnotation[],
+    displayLabels: Map<string, string>,
+  ) {
+    const { showInput, sheetSnap, sheetCollapsed, error } = this.state;
+
+    const open = showInput ? this.selectedShape()?.getAnnotationData() : null;
+    const openLabel = open
+      ? displayLabels.get(open.id) ?? formatLabel(open.comment) ?? TRAY_COPY.fallbackLabel
+      : "";
+    const annotator = this.annotatorObjectStep;
+
+    // A box open: the handle and its name, so the answers come back as soon as it closes
+    let header: React.ReactNode;
+    let body: React.ReactNode;
+    if (showInput) {
+      header = (
+        <div className="h-11 px-4 pb-2 flex items-center">
+          <span className="text-sm font-semibold text-ink truncate">{openLabel || TRAY_COPY.fallbackLabel}</span>
+        </div>
+      );
+      body = <div className="px-3 pt-1 pb-4">{panel("sheet")}</div>;
+    } else if (annotator) {
+      header = this.renderAnnotatorSheetHeader(sortedAnnotations, displayLabels);
+      body = this.renderAnnotatorSheetBody(sortedAnnotations, displayLabels);
+    } else {
+      const trays = buildTrays(sortedAnnotations, { labels: displayLabels });
+      header = (
+        <ObjectTraysPeek
+          trays={trays}
+          selectedId={null}
+          onOpen={this.openTrayItem}
+          onNext={this.openNextToDecide}
+          sceneLine={sceneProgressLine(this.state.sceneLevel)}
+          onShowScene={this.showSceneSection}
+        />
+      );
+      body = (
+        <>
+          <ObjectTrays
+            trays={trays}
+            selectedId={null}
+            hiddenIds={this.state.hiddenBoxIds}
+            onOpen={this.openTrayItem}
+            onToggleHidden={this.toggleBoxHidden}
+            onShowAll={this.showAllBoxes}
+            onHideAll={this.hideAllBoxes}
+            stacked
+          />
+          {this.renderSceneQuestions("sheet")}
+        </>
+      );
+    }
+
+    const footer = (
+      <>
+        {error && (
+          <p role="alert" className="mb-2 px-3 py-2 rounded-control bg-danger-soft border border-danger-border text-danger text-sm font-medium">
+            {error}
+          </p>
+        )}
+        {this.renderActions("sheet")}
+      </>
+    );
+
+    // The full-screen photo (12 Oct 2026): no top bar, and the sheet at rest
+    // is its handle alone, so the photo has the screen either way up. Pulled
+    // up (the handle, or Details and Answers on the photo) it is the same
+    // sheet across the whole width, with everything inside the part that
+    // scrolls: a phone held sideways is about 390 px tall, too short to keep
+    // the top of the sheet in view as well. The same elements in the same
+    // places as outside full screen, so nothing is rebuilt on the way in or out.
+    const focus = this.inFocus;
+    if (focus) {
+      body = showInput ? (
+        <>
+          <p className="px-4 pt-3 text-sm font-semibold text-ink truncate">{openLabel || TRAY_COPY.fallbackLabel}</p>
+          {body}
+        </>
+      ) : annotator ? (
+        <div className="pt-3">{header}{body}</div>
+      ) : (
+        // A contributor's lists and Step 2. The short summary the sheet shows
+        // at rest outside full screen would only say the lists twice.
+        <div className="pt-1">{body}</div>
+      );
+      header = null;
+    }
+
+    return (
+      <div className="relative flex-1 min-h-0" data-layout="sheet" data-focus={focus ? "true" : undefined} data-no-scroll>
+        <div ref={this.sheetAreaRef} data-no-scroll className="absolute inset-x-0 top-0 overflow-hidden" style={{ ...NO_SCROLL_STYLE, bottom: sheetCollapsed }}>
+          {canvasArea}
+        </div>
+        <BottomSheet
+          id="answer-sheet"
+          compact={focus}
+          snap={sheetSnap}
+          onSnapChange={this.onSheetSnapChange}
+          header={header}
+          footer={footer}
+          onPointsChange={this.onSheetPoints}
+          bodyRef={this.sheetBodyRef}
+        >
+          <div onFocusCapture={this.onSheetFocus}>{body}</div>
+        </BottomSheet>
+      </div>
+    );
+  }
+
+  /**
+   * Annotators on a phone or tablet (12 Oct 2026): the top of the answers
+   * sheet for the step, always in view. The step heading, then what the step
+   * needs at hand: Objects, what is left to decide with Next and every object
+   * as a chip. Sidewalk, the drawing tools and a one-line hint. Obstructions,
+   * the objects as chips that toggle, and the confirmation. Every row has a
+   * fixed height, so the photo area does not resize as the content changes.
+   */
+  private renderAnnotatorSheetHeader(sortedAnnotations: IAnnotation[], displayLabels: Map<string, string>) {
+    const steps = this.annotatorSteps;
+    const labelOf = (box: IAnnotation) => displayLabels.get(box.id) ?? formatLabel(box.comment) ?? TRAY_COPY.fallbackLabel;
+    const heading = (key: AnnotatorStep) => (
+      <p className="h-5 text-xs font-bold text-muted truncate">{annotatorStepHeading(key, steps)}</p>
+    );
+    const chipRow = "h-11 flex items-center gap-2 overflow-x-auto overscroll-x-contain";
+
+    if (this.inSidewalkStep) {
+      const { sidewalk } = this.state;
+      const count = sidewalk.mask.polygons.length;
+      const line = sidewalk.message
+        || sidewalkSheetHint({ drawing: Boolean(sidewalk.draft), shapeSelected: Boolean(sidewalk.selectedId) });
+      return (
+        <div className="px-4 pb-2">
+          <div className="h-5 flex items-center justify-between gap-3">
+            <p className="text-xs font-bold text-muted truncate">{annotatorStepHeading("sidewalk", steps)}</p>
+            <span className="text-xs text-muted whitespace-nowrap">
+              {count === 0 ? "No shapes yet" : count === 1 ? "1 shape" : `${count} shapes`}
+            </span>
+          </div>
+          {this.renderSidewalkToolbar("sheet")}
+          {/* Two lines at a fixed height: the longest hint does not fit one line on a phone */}
+          <p role="status" className="mt-1 h-8 text-xs leading-4 text-muted line-clamp-2">{line}</p>
+        </div>
+      );
+    }
+
+    if (this.inObstructionStep) {
+      const objects = realObjects(this.currentAnnotationData);
+      const { marked } = summarizeObstructionStep(this.currentAnnotationData);
+      return (
+        <div id="box-review-section-peek" className="px-4 pb-2">
+          {heading("obstructions")}
+          <p className="h-6 text-sm font-semibold text-ink">Marked {marked} of {objects.length}</p>
+          <ul aria-label="Objects" className={chipRow}>
+            {orderOfAppearance(objects).map((box) => {
+              const isMarked = box.obstructs === true;
+              return (
+                <li key={box.id} className="shrink-0">
+                  <button
+                    type="button"
+                    aria-pressed={isMarked}
+                    onClick={() => this.toggleObstruction(box.id)}
+                    className={`h-10 px-3 text-xs font-semibold rounded-control border whitespace-nowrap transition-colors ${isMarked
+                      ? "bg-red-600 border-red-600 text-white"
+                      : "bg-surface border-line text-ink"
+                      }`}
+                  >
+                    {labelOf(box)}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="min-h-[44px] flex items-center">
+            <Checkbox
+              id="obstructions-confirmed"
+              checked={this.state.obstructionsConfirmed}
+              onChange={(e) => this.setState({ obstructionsConfirmed: e.target.checked })}
+              label="I checked every object. The ones I did not mark do not obstruct the sidewalk for me."
+            />
+          </div>
+        </div>
+      );
+    }
+
+    const toDecide = summarizeObjectStep(this.currentAnnotationData).toDecideIds;
+    return (
+      <div id="box-review-section-peek" className="px-4 pb-2">
+        {heading("objects")}
+        <div className="h-11 flex items-center justify-between gap-3">
+          {toDecide.length > 0 ? (
+            <>
+              <span className="text-sm font-semibold text-ink">
+                To decide <span className="font-medium text-muted tabular-nums">{toDecide.length}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => this.selectBoxById(toDecide[0])}
+                className="h-11 px-4 rounded-control border border-primary bg-primary text-white text-sm font-bold"
+              >
+                {TRAY_COPY.next}
+              </button>
+            </>
+          ) : (
+            <span className="text-sm font-semibold text-success">Every suggestion is decided.</span>
+          )}
+        </div>
+        <ul aria-label="Objects in this image" className={chipRow}>
+          {sortedAnnotations.map((box) => {
+            const tag = this.objectTag(box);
+            return (
+              <li key={box.id} className="shrink-0">
+                <button
+                  type="button"
+                  onClick={() => this.selectBoxById(box.id)}
+                  className="h-10 px-2.5 inline-flex items-center gap-1.5 rounded-control border border-line bg-surface whitespace-nowrap"
+                >
+                  <span className="text-xs font-semibold text-ink">{labelOf(box)}</span>
+                  <span className={`text-xs font-bold rounded-control px-1 ${tag.className}`}>{tag.text}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  }
+
+  /** Annotators: the part of the sheet pulled up. The step's instructions, then its cards. */
+  private renderAnnotatorSheetBody(sortedAnnotations: IAnnotation[], displayLabels: Map<string, string>) {
+    const step: AnnotatorStep = this.inSidewalkStep ? "sidewalk" : this.inObstructionStep ? "obstructions" : "objects";
+    return (
+      <div className="px-4 pt-3 pb-6 space-y-4">
+        <P className="text-body text-sm">{annotatorStepParagraph(step, "touch")}</P>
+        {step === "sidewalk" ? (
+          <>
+            {this.renderSidewalkShapesCard("sheet")}
+            {this.renderSidewalkGuide("sheet")}
+          </>
+        ) : step === "obstructions" ? (
+          <>
+            {this.renderObstructionsCard(displayLabels, "sheet")}
+            {this.renderObstructionGuide("sheet")}
+          </>
+        ) : (
+          <>
+            {this.renderObjectsCard(sortedAnnotations, displayLabels, "sheet")}
+            {this.renderTaxonomyGuide("sheet")}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  /**
+   * The magnifier, over the photo while a box's corner or edge is dragged:
+   * with a finger (corners) or the mouse (any of the eight handles), so it is
+   * the same on every device (10 Oct 2026). Never takes a press.
+   */
+  private renderLoupe() {
+    const { loupe } = this.state;
+    return (
+      <canvas
+        ref={this.loupeCanvasRef}
+        aria-hidden="true"
+        width={LOUPE_SIZE_PX * 2}
+        height={LOUPE_SIZE_PX * 2}
+        className="pointer-events-none absolute z-20 rounded-full shadow-[0_6px_20px_rgba(15,23,42,0.35)]"
+        style={{
+          width: LOUPE_SIZE_PX,
+          height: LOUPE_SIZE_PX,
+          left: loupe?.left ?? 0,
+          top: loupe?.top ?? 0,
+          display: loupe ? "block" : "none",
+        }}
+      />
+    );
+  }
+
+  /**
+   * Over the photo: Add box (bottom left, the box step), the full-screen
+   * button on phones or Exit in full screen (bottom right), Fit while zoomed
+   * (top right), the Add box hint (top centre), and in full screen a status
+   * chip (top left). In full screen every position keeps clear of the notch
+   * and the home indicator.
+   */
+  private renderPhotoOverlays() {
+    const { zoomed, addBoxHintId, showInput } = this.state;
+    const showHint = addBoxHintId !== null && addBoxHintId === this.selectedId && showInput;
+    const focus = this.inFocus;
+    // The sheet's handle is under the photo and keeps clear of the home indicator itself
+    const edge = (side: "left" | "right" | "top" | "bottom") => (focus && side !== "bottom" ? `max(12px, env(safe-area-inset-${side}))` : 12);
+    const floating = "absolute z-10 h-11 inline-flex items-center justify-center rounded-full bg-surface text-ink text-sm font-bold border border-line shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50";
+    return (
+      <>
+        {this.showAddBox && (
+          <button
+            type="button"
+            id="add-box-button"
+            onClick={this.addBoxFromButton}
+            className={`${floating} gap-1.5 pl-3 pr-4`}
+            style={{ left: edge("left"), bottom: edge("bottom") }}
+          >
+            <svg aria-hidden="true" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            {ADD_BOX_COPY.button}
+          </button>
+        )}
+        {/* Phones and tablets: AnnotateForm passes the callbacks there. They always have the sheet layout. */}
+        {this.isSheet && !focus && this.props.onEnterFocus && (
+          <button
+            type="button"
+            id="full-screen-button"
+            aria-label={FOCUS_COPY.enter}
+            title={FOCUS_COPY.enter}
+            onClick={this.props.onEnterFocus}
+            className={`${floating} w-11`}
+            style={{ right: edge("right"), bottom: edge("bottom") }}
+          >
+            <ExpandIcon size={20} />
+          </button>
+        )}
+        {focus && this.props.onExitFocus && (
+          <button
+            type="button"
+            id="exit-full-screen-button"
+            aria-label={FOCUS_COPY.exit}
+            title={FOCUS_COPY.exit}
+            onClick={this.props.onExitFocus}
+            className={`${floating} w-11`}
+            style={{ right: edge("right"), bottom: edge("bottom") }}
+          >
+            <ShrinkIcon size={20} />
+          </button>
+        )}
+        {zoomed && (
+          <button
+            type="button"
+            onClick={this.resetView}
+            className={`${floating} min-w-[44px] px-4`}
+            style={{ right: edge("right"), top: edge("top") }}
+          >
+            {ADD_BOX_COPY.fit}
+          </button>
+        )}
+        {showHint && (
+          <p
+            role="status"
+            className="pointer-events-none absolute left-1/2 -translate-x-1/2 z-10 px-3 py-2 rounded-full bg-ink/80 text-white text-xs font-semibold whitespace-nowrap"
+            style={{ top: edge("top") }}
+          >
+            {ADD_BOX_COPY.hint}
+          </p>
+        )}
+        {focus && (
+          <div className="absolute z-10 max-w-[calc(100%-7rem)]" style={{ left: edge("left"), top: edge("top") }}>
+            {this.renderFocusChip()}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  /**
+   * The full-screen photo's status chip, top left. It says where things
+   * stand, and its button pulls the answers sheet up from the bottom (later on
+   * 12 Oct 2026: before, Details left full screen, and nothing could be
+   * answered in it). A selected box's name, with Delete for a box the person drew and
+   * Details. With nothing selected, how many objects are left to decide and
+   * Answers. In the Sidewalk step the drawing tools, and in Obstructions how
+   * many objects are marked.
+   */
+  private renderFocusChip() {
+    const chip = "inline-flex items-center gap-1 rounded-full bg-surface text-ink text-sm font-semibold border border-line shadow-md";
+    // Pulls the answers sheet up. Gone while it is up.
+    const sheetUp = this.state.sheetSnap !== "collapsed";
+    const openButton = (label: string) =>
+      sheetUp ? null : (
+        <button type="button" data-open-sheet onClick={this.pullSheetUp} className="shrink-0 h-9 px-3 rounded-full bg-primary text-white text-xs font-bold">
+          {label}
+        </button>
+      );
+    const withButton = sheetUp ? "px-3" : "pl-3 pr-1";
+
+    if (this.inSidewalkStep) {
+      // Pulled up, the sheet has the drawing tools and the message at its top
+      if (sheetUp) return null;
+      const { message } = this.state.sidewalk;
+      return (
+        <div className="flex flex-col items-start gap-1">
+          <div className="flex items-center gap-1 rounded-control bg-surface border border-line shadow-md p-1">
+            {this.renderSidewalkToolbar("compact")}
+            {openButton(FOCUS_COPY.details)}
+          </div>
+          {message && <p role="status" className="px-3 py-1 rounded-control bg-surface border border-line shadow-md text-xs text-ink">{message}</p>}
+        </div>
+      );
+    }
+
+    if (this.inObstructionStep) {
+      const { objects, marked } = summarizeObstructionStep(this.currentAnnotationData);
+      return (
+        <span data-focus-chip className={`${chip} h-11 ${withButton}`}>
+          <span>Marked {marked} of {objects}</span>
+          {openButton(FOCUS_COPY.details)}
+        </span>
+      );
+    }
+
+    const open = this.selectedShape()?.getAnnotationData();
+    if (open && !this.isBoxHidden(open.id)) {
+      const label = buildDisplayLabelsInOrder(this.currentAnnotationData).get(open.id) ?? formatLabel(open.comment) ?? TRAY_COPY.fallbackLabel;
+      return (
+        <span data-focus-chip className={`${chip} h-11 ${open.editable ? "pl-3 pr-1" : withButton}`}>
+          <span className="truncate">{label}</span>
+          {open.editable && (
+            <button
+              type="button"
+              aria-label={FOCUS_COPY.deleteBox}
+              title={FOCUS_COPY.deleteBox}
+              onClick={this.onDelete}
+              className="shrink-0 w-11 h-11 grid place-items-center rounded-full text-muted"
+            >
+              <TrashIcon size={18} />
+            </button>
+          )}
+          {openButton(FOCUS_COPY.details)}
+        </span>
+      );
+    }
+
+    // Nothing selected: what is left, and the way to the lists, Step 2 and Next Image
+    const count = this.annotatorObjectStep
+      ? summarizeObjectStep(this.currentAnnotationData).toDecideIds.length
+      : buildTrays(this.currentAnnotationData).toDecide.length;
+    if (count === 0 && sheetUp) return null;
+    return (
+      <span data-focus-chip className={`${chip} h-11 ${count > 0 ? withButton : "px-1"}`}>
+        {count > 0 && <span>{this.annotatorObjectStep ? FOCUS_COPY.toDecide(count) : FOCUS_COPY.stillToDecide(count)}</span>}
+        {openButton(this.annotatorObjectStep ? FOCUS_COPY.details : FOCUS_COPY.answers)}
+      </span>
+    );
+  }
+
+  /**
+   * Full screen: Details and Answers on the photo pull the sheet up, to the
+   * open box's panel or to the answers.
+   */
+  private pullSheetUp = () => {
+    if (!this.inFocus) return;
+    const openId = this.state.showInput ? this.selectedId : null;
+    this.lastPanelId = openId;
+    this.setState({ sheetSnap: openId ? "panel" : "half" }, () => {
+      if (openId) this.keepSelectedInView();
+    });
+  };
+
+  /** The selected box's shape, or null. */
+  private selectedShape() {
+    if (!this.selectedId) return null;
+    return this.shapes.find((shape) => shape.getAnnotationData().id === this.selectedId) ?? null;
+  }
+
+  /** The resize handles for the selected box: square for the mouse, round corners for a finger. */
+  private makeTransformer(shape: IShape): ITransformer {
+    const mode: TransformerMode = this.touchEnabled ? this.inputMode : "mouse";
+    return new Transformer(shape, this.scaleState.scale, mode, this.displayScale);
+  }
+
+  /** Set by every press on the photo. A change swaps the handles on the selected box. */
+  public setInputMode(mode: TransformerMode) {
+    if (this.inputMode === mode) return;
+    this.inputMode = mode;
+    this.currentTransformer = null;
+    this.onShapeChange({ quiet: true });
+  }
+
+  /**
+   * The stage changed size: the canvases were resized (which clears them and
+   * their scaling), or the layout changed. Recomputes the fit and keeps the
+   * zoom, with the photo point at the centre of the old stage at the centre of
+   * the new one, then repaints the photo and the boxes. Before 9 Oct 2026 a
+   * size change repainted with the old fit, which would put boxes in the wrong
+   * place.
+   */
+  private onStageResize(previous: { width: number; height: number }) {
+    this.setCanvasDPI();
+    const { width: iw, height: ih } = this.imageSize();
+    const stage = this.stageSize();
+    if (this.currentImageElement && iw && ih) {
+      const centre = this.calculateMousePosition(previous.width / 2, previous.height / 2);
+      const fit = fitImage(iw, ih, stage.width, stage.height);
+      if (fit) {
+        this.fit = fit;
+        let view: View = IDENTITY_VIEW;
+        if (this.view.zoom > 1 && previous.width > 0 && previous.height > 0) {
+          const scale = fit.scale * this.view.zoom;
+          view = clampView(
+            {
+              zoom: this.view.zoom,
+              panX: stage.width / 2 - centre.positionX * scale - fit.originX,
+              panY: stage.height / 2 - centre.positionY * scale - fit.originY,
+            },
+            panLimits(fit, this.view.zoom, stage, { width: iw, height: ih }, this.sheetCover()),
+          );
+        }
+        this.view = view;
+        this.scaleState = applyView(fit, view);
+        if ((view.zoom > 1.001) !== this.state.zoomed) this.setState({ zoomed: view.zoom > 1.001 });
+      }
+    }
+    if (this.inputMode === "touch") this.currentTransformer = null;
+    this.onShapeChange();
+    this.onImageChange();
+  }
+
+  /** Measures the photo area in the sheet layout, which is the stage there. */
+  private observeSheetArea() {
+    this.sheetAreaObserver?.disconnect();
+    this.sheetAreaObserver = null;
+    const el = this.sheetAreaRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    this.sheetAreaObserver = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      const width = Math.floor(rect.width);
+      const height = Math.floor(rect.height);
+      if (width <= 0 || height <= 0) return;
+      const now = this.state.sheetStage;
+      if (!now || now.width !== width || now.height !== height) this.setState({ sheetStage: { width, height } });
+    });
+    this.sheetAreaObserver.observe(el);
+  }
+
+  /** How much of the photo area the sheet covers now, past its collapsed height. */
+  private sheetCover() {
+    if (!this.isSheet || !this.sheetPoints) return 0;
+    const position = this.sheetPoints[this.state.sheetSnap] ?? this.sheetPoints.collapsed;
+    return Math.max(0, position - this.sheetPoints.collapsed);
+  }
+
+  private onSheetPoints = (points: SheetPoints) => {
+    this.sheetPoints = points;
+    if (points.collapsed !== this.state.sheetCollapsed) this.setState({ sheetCollapsed: points.collapsed });
+    if (this.state.showInput) this.keepSelectedInView();
+  };
+
+  private onSheetSnapChange = (requested: SheetSnap) => {
+    // Full screen: the handle pulls an open box's panel up, not the lists behind it
+    const snap = this.inFocus && this.state.showInput && requested === "half" ? "panel" : requested;
+    this.setState({ sheetSnap: snap }, () => {
+      if (snap === "collapsed") this.relaxView();
+    });
+  };
+
+  /**
+   * The tutorial moves the sheet: up before a tour step whose target is in the
+   * part pulled down, and back after it, and down before a tour starts. The
+   * detail is a snap name, or { snap, scrollTo } with the selector of the
+   * element the step points at. Any request closes an open box first (12 Oct
+   * 2026): the tour points at the top of the sheet, which shows the box panel
+   * instead while a box is open.
+   */
+  private onSheetRequest = (event: Event) => {
+    const detail = (event as CustomEvent).detail;
+    const snap = typeof detail === "string" ? detail : detail?.snap;
+    const scrollTo: string | undefined = typeof detail === "object" ? detail?.scrollTo : undefined;
+    if (!this.isSheet || !["collapsed", "half", "full"].includes(snap)) return;
+    if (this.state.showInput) {
+      this.lastPanelId = null;
+      this.closePanel();
+    }
+    this.setState({ sheetSnap: snap }, () => {
+      if (snap === "full") this.scrollSheetTo(scrollTo || "#scene-level-section");
+      if (snap === "collapsed") this.relaxView();
+    });
+  };
+
+  /** Focusing a text field in the sheet moves it to full, so the keyboard does not cover the field. */
+  private onSheetFocus = (event: React.FocusEvent) => {
+    const target = event.target as HTMLElement;
+    const typing = target.tagName === "TEXTAREA" || (target.tagName === "INPUT" && (target as HTMLInputElement).type !== "range");
+    if (typing && this.state.sheetSnap !== "full") this.setState({ sheetSnap: "full" });
+  };
+
+  /**
+   * The sheet follows the panel: opening a box moves it to its panel height
+   * and pans the photo so the box stays in view, and closing it (X, No,
+   * Confirm, Delete box, Not an object, a tap on empty photo) brings the
+   * answers back at the collapsed height.
+   */
+  private followPanel() {
+    const openId = this.state.showInput ? this.selectedId : null;
+    if (openId === this.lastPanelId) return;
+    this.lastPanelId = openId;
+    // Full screen: a box selected on the photo leaves the photo clear, and
+    // Details pulls its panel up. A box opened from the lists, with the sheet
+    // already up, shows its panel as usual.
+    if (openId && this.inFocus && this.state.sheetSnap === "collapsed") return;
+    if (openId) {
+      this.setState({ sheetSnap: "panel" }, () => this.keepSelectedInView());
+    } else {
+      this.setState({ sheetSnap: "collapsed" }, () => this.relaxView());
+    }
+  }
+
+  /** Pans the photo, by the smallest shift, so the selected box is clear of the sheet. */
+  private keepSelectedInView() {
+    if (!this.isSheet || !this.fit) return;
+    const shape = this.selectedShape();
+    const { width: iw, height: ih } = this.imageSize();
+    if (!shape || !iw || !ih) return;
+    const stage = this.stageSize();
+    const cover = this.sheetCover();
+    const box = this.calculateShapePosition(normalizeMark(shape.getAnnotationData().mark));
+    const visible = { x: 0, y: 0, width: stage.width, height: Math.max(0, stage.height - cover) };
+    const limits = panLimits(this.fit, this.view.zoom, stage, { width: iw, height: ih }, cover);
+    const pan = ensureVisible(box, visible, this.view, limits);
+    if (Math.abs(pan.panX - this.view.panX) > 0.5 || Math.abs(pan.panY - this.view.panY) > 0.5) {
+      this.animateView({ zoom: this.view.zoom, ...pan });
+    }
+  }
+
+  /** Back inside the normal limits once the sheet no longer covers the photo. */
+  private relaxView() {
+    if (!this.fit) return;
+    const { width: iw, height: ih } = this.imageSize();
+    if (!iw || !ih) return;
+    const next = clampView(this.view, panLimits(this.fit, this.view.zoom, this.stageSize(), { width: iw, height: ih }, this.sheetCover()));
+    if (next.panX !== this.view.panX || next.panY !== this.view.panY) this.animateView(next);
+  }
+
+  /** Applies a zoom and pan: a view change, not an edit, so nothing is saved. */
+  private setView(view: View) {
+    if (!this.fit) return;
+    this.view = view;
+    this.scaleState = applyView(this.fit, view);
+    this.maxZoom = Math.max(this.maxZoom, view.zoom);
+    this.onImageChange();
+    this.onShapeChange({ quiet: true });
+    const zoomed = view.zoom > 1.001;
+    if (zoomed !== this.state.zoomed) this.setState({ zoomed });
+  }
+
+  /** Moves the view over 180 ms, at once with reduced motion. */
+  private animateView(target: View, duration = 180) {
+    this.cancelViewAnimation();
+    if (prefersReducedMotion() || typeof requestAnimationFrame === "undefined") {
+      this.setView(target);
+      return;
+    }
+    const from = this.view;
+    let start: number | null = null;
+    const step = (now: number) => {
+      if (start === null) start = now;
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      this.setView({
+        zoom: from.zoom + (target.zoom - from.zoom) * eased,
+        panX: from.panX + (target.panX - from.panX) * eased,
+        panY: from.panY + (target.panY - from.panY) * eased,
+      });
+      this.viewAnimation = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    this.viewAnimation = requestAnimationFrame(step);
+  }
+
+  private cancelViewAnimation() {
+    if (this.viewAnimation !== null && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(this.viewAnimation);
+    this.viewAnimation = null;
+  }
+
+  /** Fit: back to the whole photo. */
+  private resetView = () => {
+    this.animateView(IDENTITY_VIEW);
+  };
+
+  private openNextToDecide = () => {
+    const sorted = orderOfAppearance(this.currentAnnotationData);
+    const next = buildTrays(sorted, { labels: buildDisplayLabelsInOrder(sorted) }).toDecide[0];
+    if (next) this.openTrayItem(next.id);
+  };
+
+  /**
+   * Scrolls the sheet's own list, and nothing else, so the target is at its
+   * top. Never `scrollIntoView` (12 Oct 2026): it scrolls every box around the
+   * target that can scroll, and while the sheet was still sliding up that
+   * included the phone screen's clipped containers. The whole screen shifted,
+   * with the dark background showing and the buttons displaced, and stayed so.
+   */
+  private scrollSheetTo(selector: string) {
+    if (typeof document === "undefined") return;
+    let target: Element | null = null;
+    try {
+      target = document.querySelector(selector);
+    } catch {
+      target = null;
+    }
+    const scroller = target?.closest<HTMLElement>("[data-sheet-scroll]");
+    if (!target || !scroller) return;
+    const top = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    if (typeof scroller.scrollTo === "function") scroller.scrollTo({ top, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    else scroller.scrollTop = top;
+  }
+
+  /**
+   * The phone screen's containers must never scroll (see scrollSheetTo). They
+   * use `overflow: clip` where the browser has it. This puts back any that
+   * scrolled anyway, such as an older browser bringing a focused field into
+   * view. Listens in the capture phase, since scroll events do not bubble.
+   */
+  private onStrayScroll = (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !target.hasAttribute("data-no-scroll")) return;
+    if (target.scrollTop !== 0) target.scrollTop = 0;
+    if (target.scrollLeft !== 0) target.scrollLeft = 0;
+  };
+
+  private scrollToScene() {
+    this.scrollSheetTo("#scene-level-section");
+  }
+
+  /** The Step 2 line at the top of the sheet: pull the sheet up to Step 2. */
+  private showSceneSection = () => {
+    this.showSection("scene");
+  };
+
+  /**
+   * Shows the part of the screen a submit error is about (sheet layout):
+   * Step 2 with the sheet at full, or the answers with the sheet collapsed, so
+   * the Still to decide line and its Next button are in view.
+   */
+  private showSection(section?: string) {
+    if (!this.isSheet) return;
+    if (this.state.showInput) {
+      this.lastPanelId = null;
+      this.closePanel();
+    }
+    if (section === "scene") this.setState({ sheetSnap: "full" }, () => this.scrollToScene());
+    // In full screen the sheet at rest is its handle alone, so it comes up
+    // for the message and the top of the answers to be seen
+    else if (this.inFocus) this.setState({ sheetSnap: "half" });
+    else this.setState({ sheetSnap: "collapsed" }, () => this.relaxView());
+  }
+
+  /**
+   * Add box (contributors' box step, touch): a new drawn box in the middle of
+   * the visible photo, selected so its panel opens (category first) with its
+   * four corners showing. Dragging a finger on empty photo never draws a box.
+   */
+  public addBoxFromButton = () => {
+    if (!this.touchEnabled || !this.inBoxStep) return;
+    const { width: iw, height: ih } = this.imageSize();
+    const stage = this.stageSize();
+    const topLeft = this.calculateMousePosition(0, 0);
+    const bottomRight = this.calculateMousePosition(stage.width, Math.max(0, stage.height - this.sheetCover()));
+    let x1 = topLeft.positionX;
+    let y1 = topLeft.positionY;
+    let x2 = bottomRight.positionX;
+    let y2 = bottomRight.positionY;
+    if (iw && ih) {
+      x1 = Math.max(0, x1);
+      y1 = Math.max(0, y1);
+      x2 = Math.min(iw, x2);
+      y2 = Math.min(ih, y2);
+    }
+    const visible = { x: x1, y: y1, width: Math.max(0, x2 - x1), height: Math.max(0, y2 - y1) };
+    const minSide = cssToImage(ADD_BOX_MIN_SIDE_PX, this.scaleState.scale, this.displayScale);
+    const mark = addBoxPlacement(visible, { width: iw, height: ih }, minSide);
+    const id = randomId();
+    this.shapes.push(
+      new RectShape(
+        // Like a drawn box: numbered in the order added, never submitted with its time
+        { id, mark, editable: true, selected: false, drawnOrder: Date.now() },
+        this.onShapeChange,
+        drawnBoxStyle
+      )
+    );
+    this.boxesAddedWithButton += 1;
+    this.inputTypesUsed.add("touch");
+    this.inputMode = "touch";
+    this.selectBoxById(id);
+    this.setState({ addBoxHintId: id });
+  };
+
+  private preventContextMenu = (event: React.MouseEvent) => event.preventDefault();
+
+  /** A pointer's place on the canvas, CSS px from its top-left corner. */
+  private pointerPoint(event: React.PointerEvent<HTMLCanvasElement>): Point {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  /** CSS px on the canvas to stage px, through the canvas's size on screen (not offsetX). */
+  private cssToStage(point: Point): Point {
+    const stage = this.stageSize();
+    const rect = this.canvasRef.current?.getBoundingClientRect();
+    if (!rect || !rect.width || !rect.height) return { x: point.x / this.displayScale, y: point.y / this.displayScale };
+    return clientToStage(point.x + rect.left, point.y + rect.top, rect, stage.width, stage.height);
+  }
+
+  /** CSS px on the canvas to image px. */
+  private toImage(point: Point): Point {
+    const stage = this.cssToStage(point);
+    const { positionX, positionY } = this.calculateMousePosition(stage.x, stage.y);
+    return { x: positionX, y: positionY };
+  }
+
+  /** What a press here lands on: a corner of the selected box, its inside, or another box. */
+  private touchHitAt(point: Point): TouchHit {
+    const image = this.toImage(point);
+    // Obstructions: the boxes are locked. A tap toggles a real object's mark,
+    // and there is nothing to fit or move.
+    if (this.inObstructionStep) return { corner: null, insideSelected: false, boxId: this.touchJudgeTargetAt(image) };
+    const shape = this.selectedShape();
+    let corner: Corner | null = null;
+    let insideSelected = false;
+    if (shape && this.inBoxStep && !this.isBoxHidden(shape.getAnnotationData().id)) {
+      const data = shape.getAnnotationData();
+      // A rejected box has no handles and does not move
+      if (!data.isRejected) corner = pickCorner(data.mark, image, cssToImage(TOUCH_HANDLE_HIT_PX, this.scaleState.scale, this.displayScale));
+      const m = normalizeMark(data.mark);
+      insideSelected = image.x >= m.x && image.x <= m.x + m.width && image.y >= m.y && image.y <= m.y + m.height;
+    }
+    const boxId = this.touchBoxAt(image);
+    return { corner, insideSelected, boxId: boxId === this.selectedId ? null : boxId };
+  }
+
+  /**
+   * Obstructions on touch: the real object a finger picks at this point (image
+   * px). The smallest one under it, as the mouse does (pickJudgeTarget), or a
+   * small one near it with a finger's tolerances.
+   */
+  private touchJudgeTargetAt(point: Point): string | null {
+    const boxes = this.shapes.map((shape) => shape.getAnnotationData());
+    const target = pickJudgeTarget(boxes, point.x, point.y);
+    if (target) return target.id;
+    const near = pickNearSmallBox(
+      boxes.map((box) => (isRealObject(box) ? box.mark : null)),
+      point.x,
+      point.y,
+      this.scaleState.scale,
+      { nearPx: TOUCH_NEAR_PX / this.displayScale, smallPx: TOUCH_SMALL_BOX_PX / this.displayScale }
+    );
+    return near === null ? null : boxes[near].id;
+  }
+
+  /**
+   * The box a finger picks at this point (image px), as the mouse does: the
+   * smallest box under it, or a small box near it with a finger's tolerances.
+   * Hidden boxes are skipped.
+   */
+  private touchBoxAt(point: Point): string | null {
+    let best: string | null = null;
+    let bestArea = Infinity;
+    for (const shape of this.shapes) {
+      const data = shape.getAnnotationData();
+      if (this.isBoxHidden(data.id) || !shape.checkBoundary(point.x, point.y)) continue;
+      const area = Math.abs(data.mark.width * data.mark.height);
+      if (area < bestArea) {
+        best = data.id;
+        bestArea = area;
+      }
+    }
+    if (best !== null) return best;
+    const near = pickNearSmallBox(
+      this.shapes.map((shape) => (this.isBoxHidden(shape.getAnnotationData().id) ? null : shape.getAnnotationData().mark)),
+      point.x,
+      point.y,
+      this.scaleState.scale,
+      { nearPx: TOUCH_NEAR_PX / this.displayScale, smallPx: TOUCH_SMALL_BOX_PX / this.displayScale }
+    );
+    return near === null ? null : this.shapes[near].getAnnotationData().id;
+  }
+
+  /**
+   * Touch and pen on the photo (contributors). The mouse keeps its own
+   * handlers: every pointer handler returns at once for a mouse, and for
+   * annotators, without preventDefault, so their tool is exactly as before.
+   */
+  private onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === "mouse" || !this.touchEnabled) return;
+    // Stops the browser's compatibility mouse events, so a tap is not handled twice
+    event.preventDefault();
+    try {
+      // A finger that slides onto the sheet still reports to the photo
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Not an active pointer (synthetic events in tests)
+    }
+    this.cancelViewAnimation();
+    this.inputTypesUsed.add(event.pointerType);
+    this.setInputMode("touch");
+    const point = this.pointerPoint(event);
+    this.pointers.set(event.pointerId, point);
+    // The Sidewalk step has its own gestures (sidewalkTouch.ts). The box
+    // gestures serve the box step and, with the boxes locked, Obstructions.
+    if (this.pointers.size === 1) {
+      if (this.inSidewalkStep) this.dispatchSidewalkTouch({ type: "down", id: event.pointerId, point, hit: this.sidewalkHitAt(point) });
+      else this.dispatchTouch({ type: "down", id: event.pointerId, point, hit: this.touchHitAt(point) });
+    } else {
+      this.routeTouch({ type: "secondDown", id: event.pointerId, point });
+      if (this.pointers.size === 2) this.startPinch();
+    }
+  };
+
+  /** Sends a move, lift, cancel or second finger to the step's gesture reducer. */
+  private routeTouch(event: Exclude<TouchInput, { type: "down" }>) {
+    if (this.inSidewalkStep) this.dispatchSidewalkTouch(event);
+    else this.dispatchTouch(event);
+  }
+
+  private get touchPhase() {
+    return this.inSidewalkStep ? this.sidewalkTouchState.phase : this.touchState.phase;
+  }
+
+  private onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === "mouse" || !this.touchEnabled || !this.pointers.has(event.pointerId)) return;
+    const point = this.pointerPoint(event);
+    this.pointers.set(event.pointerId, point);
+    if (this.touchPhase === "pinch") {
+      if (this.pinchStart && this.pointers.size >= 2) this.updatePinch();
+      return;
+    }
+    this.routeTouch({ type: "move", id: event.pointerId, point });
+  };
+
+  private onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === "mouse" || !this.touchEnabled || !this.pointers.has(event.pointerId)) return;
+    this.pointers.delete(event.pointerId);
+    if (this.pointers.size < 2) this.pinchStart = null;
+    this.routeTouch({ type: "up", id: event.pointerId });
+  };
+
+  private onPointerCancel = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === "mouse" || !this.touchEnabled || !this.pointers.has(event.pointerId)) return;
+    this.pointers.delete(event.pointerId);
+    this.pinchStart = null;
+    this.routeTouch({ type: "cancel", id: event.pointerId });
+  };
+
+  // ── Touch in the annotators' Sidewalk step (12 Oct 2026) ──
+
+  /** A point, an edge dot or the first point is within this many image px of a finger: 22 CSS px. */
+  private sidewalkHitDistance() {
+    return cssToImage(TOUCH_HANDLE_HIT_PX, this.scaleState.scale, this.displayScale);
+  }
+
+  /** What a press lands on in the Sidewalk step. */
+  private sidewalkHitAt(point: Point): SidewalkHit {
+    const image = this.toImage(point);
+    const state = this.sidewalkState;
+    const reach = this.sidewalkHitDistance();
+    const drafting = Boolean(state.draft);
+    const selected = state.mask.polygons.find((polygon) => polygon.id === state.selectedId) || null;
+    let pointIndex: number | null = null;
+    let edgeAfterIndex: number | null = null;
+    if (selected && !drafting) {
+      pointIndex = findPointNear(selected, image, reach);
+      // A point wins over the dot in the middle of an edge
+      if (pointIndex === null) edgeAfterIndex = findEdgeHandleNear(selected, image, reach)?.afterIndex ?? null;
+    }
+    return {
+      drafting,
+      nearFirstPoint: Boolean(state.draft && state.draft.points.length >= 3 && isNearFirstPoint(state.draft, image, reach)),
+      pointIndex,
+      edgeAfterIndex,
+      shapeId: pickShape(state.mask.polygons, image)?.id ?? null,
+      shapeSelected: Boolean(selected),
+    };
+  }
+
+  private dispatchSidewalkTouch(event: SidewalkTouchInput) {
+    if (event.type === "down") this.sidewalkDown = this.toImage(event.point);
+    const { state, effect } = reduceSidewalkTouch(this.sidewalkTouchState, event);
+    this.sidewalkTouchState = state;
+    this.applySidewalkTouchEffect(effect);
+  }
+
+  /**
+   * Carries out a Sidewalk gesture with the editor's own actions, the ones the
+   * mouse uses, so its rules apply unchanged. Snapping to the photo's edge
+   * keeps its tolerance (dispatchSidewalk passes it). The 22 px hit distance is
+   * only for what a finger lands on.
+   */
+  private applySidewalkTouchEffect(effect: SidewalkTouchEffect) {
+    const editor = this.sidewalkState;
+    const selected = editor.mask.polygons.find((polygon) => polygon.id === editor.selectedId) || null;
+    switch (effect.type) {
+      case "close":
+        this.dispatchSidewalk({ type: "CLOSE_SHAPE" });
+        break;
+      case "addPoint":
+        this.dispatchSidewalk({ type: "ADD_POINT", point: this.toImage(effect.point) });
+        break;
+      case "startShape":
+        this.dispatchSidewalk({ type: "START_SHAPE", point: this.toImage(effect.point) });
+        break;
+      case "aim": {
+        // The dashed line to the finger, and the magnifier on its point
+        this.dispatchSidewalk({ type: "MOVE_PREVIEW", point: this.toImage(effect.point) });
+        if (!this.sidewalkAiming) {
+          this.sidewalkAiming = true;
+          this.loupeShownCount += 1;
+        }
+        const preview = this.sidewalkState.preview;
+        if (preview) this.showLoupe(effect.point, preview, { kind: "sidewalk" });
+        break;
+      }
+      case "place": {
+        const point = this.toImage(effect.point);
+        const draft = this.sidewalkState.draft;
+        this.sidewalkAiming = false;
+        this.hideLoupe();
+        if (draft && draft.points.length >= 3 && isNearFirstPoint(draft, point, this.sidewalkHitDistance())) {
+          this.dispatchSidewalk({ type: "CLOSE_SHAPE" });
+        } else {
+          this.dispatchSidewalk({ type: "ADD_POINT", point });
+        }
+        break;
+      }
+      case "cancelAim": {
+        // The preview back to the last point: nothing is added
+        const draft = this.sidewalkState.draft;
+        const last = draft?.points[draft.points.length - 1];
+        this.sidewalkAiming = false;
+        this.hideLoupe();
+        if (last) this.dispatchSidewalk({ type: "MOVE_PREVIEW", point: last });
+        break;
+      }
+      case "selectPoint":
+        this.dispatchSidewalk({ type: "SELECT_POINT", index: effect.index });
+        break;
+      case "selectShape":
+        this.dispatchSidewalk({ type: "SELECT_SHAPE", id: effect.shapeId });
+        break;
+      case "clearSelection":
+        this.dispatchSidewalk({ type: "CLEAR_SELECTION" });
+        break;
+      case "startDrag": {
+        const at = selected?.points[effect.index];
+        if (!selected || !at) break;
+        this.dispatchSidewalk({ type: "SELECT_POINT", index: effect.index });
+        this.dispatchSidewalk({ type: "START_DRAG", id: selected.id, index: effect.index });
+        this.beginSidewalkDrag(at);
+        this.dragSidewalkPoint(effect.point);
+        break;
+      }
+      case "insertPoint": {
+        if (!selected) break;
+        const points = selected.points;
+        const a = points[effect.afterIndex];
+        const b = points[(effect.afterIndex + 1) % points.length];
+        if (!a || !b) break;
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        this.dispatchSidewalk({ type: "INSERT_POINT", id: selected.id, afterIndex: effect.afterIndex, point: mid });
+        if (effect.drag) {
+          this.dispatchSidewalk({ type: "START_DRAG", id: selected.id, index: effect.afterIndex + 1 });
+          this.beginSidewalkDrag(mid);
+          this.dragSidewalkPoint(effect.point);
+        }
+        break;
+      }
+      case "dragPoint":
+        this.dragSidewalkPoint(effect.point);
+        break;
+      case "endDrag":
+        this.sidewalkDrag = null;
+        this.hideLoupe();
+        this.dispatchSidewalk({ type: "END_DRAG" });
+        break;
+      case "revertDrag":
+        // A second finger or a cancel: the point back where it was
+        if (this.sidewalkDrag) this.dispatchSidewalk({ type: "DRAG_POINT", point: this.sidewalkDrag.start });
+        this.sidewalkDrag = null;
+        this.hideLoupe();
+        this.dispatchSidewalk({ type: "END_DRAG" });
+        break;
+      case "pan":
+        this.panBy(effect.dx, effect.dy);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** The finger keeps its offset from the point, so the point does not jump under it. */
+  private beginSidewalkDrag(at: Point) {
+    if (!this.sidewalkState.drag) return;
+    this.sidewalkDrag = { grab: { x: this.sidewalkDown.x - at.x, y: this.sidewalkDown.y - at.y }, start: { x: at.x, y: at.y } };
+    this.loupeShownCount += 1;
+  }
+
+  private dragSidewalkPoint(finger: Point) {
+    const drag = this.sidewalkDrag;
+    if (!drag) return;
+    const image = this.toImage(finger);
+    this.dispatchSidewalk({ type: "DRAG_POINT", point: { x: image.x - drag.grab.x, y: image.y - drag.grab.y } });
+    const { drag: active, mask } = this.sidewalkState;
+    const at = active ? mask.polygons.find((polygon) => polygon.id === active.id)?.points[active.index] : null;
+    if (at) this.showLoupe(finger, at, { kind: "sidewalk" });
+  }
+
+  /** Runs the gesture reducer and carries out its effect. */
+  private dispatchTouch(event: TouchInput) {
+    if (event.type === "down") {
+      const shape = this.selectedShape();
+      this.touchStart = {
+        boxId: this.selectedId,
+        // The selected box's mark at the press, for a revert
+        mark: shape ? { ...shape.getAnnotationData().mark } : null,
+        downImage: this.toImage(event.point),
+        corner: event.hit.corner,
+        grab: { x: 0, y: 0 },
+      };
+    }
+    const { state, effect } = reduceTouch(this.touchState, event);
+    this.touchState = state;
+    this.applyTouchEffect(effect);
+  }
+
+  /** The box the gesture works on: the one selected at the press, unless it is rejected. */
+  private touchTarget() {
+    const id = this.touchStart?.boxId;
+    if (!id) return null;
+    const shape = this.shapes.find((s) => s.getAnnotationData().id === id);
+    return shape && !shape.getAnnotationData().isRejected ? shape : null;
+  }
+
+  private applyTouchEffect(effect: TouchEffect) {
+    switch (effect.type) {
+      case "select":
+        // Obstructions: a tap on a real object toggles its mark. No panel, no selection.
+        if (this.inObstructionStep) this.toggleObstruction(effect.boxId);
+        else this.selectBoxById(effect.boxId);
+        break;
+      case "deselect":
+        if (this.inObstructionStep) break;
+        if (this.selectedId !== null) this.closePanel();
+        break;
+      case "startCorner": {
+        const shape = this.touchTarget();
+        const start = this.touchStart;
+        if (!shape || !start?.mark) break;
+        // The finger keeps its offset from the corner, so the corner does not jump under it
+        const corner = markCorners(start.mark)[effect.corner];
+        start.grab = { x: start.downImage.x - corner.x, y: start.downImage.y - corner.y };
+        start.corner = effect.corner;
+        this.loupeShownCount += 1;
+        if (this.state.addBoxHintId === shape.getAnnotationData().id) this.setState({ addBoxHintId: null });
+        this.applyCorner(effect.point);
+        break;
+      }
+      case "moveCorner":
+        this.applyCorner(effect.point);
+        break;
+      case "startMove":
+      case "moveBox":
+        this.applyMove(effect.dx, effect.dy);
+        break;
+      case "pan":
+        this.panBy(effect.dx, effect.dy);
+        break;
+      case "revert":
+        this.revertTouch();
+        break;
+      case "commit":
+        this.commitTouch();
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** One corner follows the finger; the opposite corner stays. Repainted without saving until the finger lifts. */
+  private applyCorner(point: Point) {
+    const shape = this.touchTarget();
+    const start = this.touchStart;
+    if (!shape || !start?.mark || start.corner === null) return;
+    const { width, height } = this.imageSize();
+    const minSide = cssToImage(TOUCH_MIN_SIDE_PX, this.scaleState.scale, this.displayScale);
+    const next = moveCorner(start.mark, start.corner, this.toImage(point), start.grab, minSide, width, height);
+    const mark = shape.getAnnotationData().mark;
+    Object.assign(mark, { x: next.x, y: next.y, width: next.width, height: next.height });
+    this.onShapeChange({ quiet: true });
+    this.showLoupe(point, markCorners(mark)[start.corner], { kind: "box", id: shape.getAnnotationData().id });
+  }
+
+  /** The selected box moved by the finger's travel since the press, kept on the photo. */
+  private applyMove(dx: number, dy: number) {
+    const shape = this.touchTarget();
+    const start = this.touchStart;
+    if (!shape || !start?.mark) return;
+    const { width, height } = this.imageSize();
+    const moved = keepMarkInside(
+      {
+        ...start.mark,
+        x: start.mark.x + cssToImage(dx, this.scaleState.scale, this.displayScale),
+        y: start.mark.y + cssToImage(dy, this.scaleState.scale, this.displayScale),
+      },
+      width,
+      height
+    );
+    Object.assign(shape.getAnnotationData().mark, { x: moved.x, y: moved.y, width: moved.width, height: moved.height });
+    this.onShapeChange({ quiet: true });
+  }
+
+  /** The box back where it was at the press (a second finger, or a cancel). */
+  private revertTouch() {
+    const shape = this.touchTarget();
+    const start = this.touchStart;
+    if (shape && start?.mark) Object.assign(shape.getAnnotationData().mark, start.mark);
+    this.hideLoupe();
+    this.onShapeChange({ quiet: true });
+  }
+
+  /** The finger lifted after fitting or moving the box: one edit, saved like a mouse edit. */
+  private commitTouch() {
+    const shape = this.touchTarget();
+    if (shape) {
+      const { mark } = shape.getAnnotationData();
+      Object.assign(mark, normalizeMark(mark));
+    }
+    this.hideLoupe();
+    this.onShapeChange();
+  }
+
+  /** One finger on empty photo pans, when zoomed in. */
+  private panBy(dx: number, dy: number) {
+    if (!this.fit || this.view.zoom <= 1) return;
+    const { width: iw, height: ih } = this.imageSize();
+    if (!iw || !ih) return;
+    const limits = panLimits(this.fit, this.view.zoom, this.stageSize(), { width: iw, height: ih }, this.sheetCover());
+    this.setView(clampView(
+      { ...this.view, panX: this.view.panX + dx / this.displayScale, panY: this.view.panY + dy / this.displayScale },
+      limits
+    ));
+  }
+
+  private startPinch() {
+    const [a, b] = Array.from(this.pointers.values());
+    if (!a || !b) return;
+    this.hideLoupe();
+    this.pinchStart = {
+      distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+      mid: this.cssToStage({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }),
+      view: this.view,
+    };
+  }
+
+  /** Two fingers zoom about their midpoint, from 1 to 5 times the fit, and moving both pans. */
+  private updatePinch() {
+    const start = this.pinchStart;
+    const { width: iw, height: ih } = this.imageSize();
+    if (!start || !this.fit || !iw || !ih) return;
+    const [a, b] = Array.from(this.pointers.values());
+    const distance = Math.hypot(b.x - a.x, b.y - a.y);
+    const mid = this.cssToStage({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const zoom = clampZoom(start.view.zoom * (distance / start.distance));
+    const next = zoomAt(this.fit, start.view, start.mid, mid, zoom);
+    this.setView(clampView(next, panLimits(this.fit, zoom, this.stageSize(), { width: iw, height: ih }, this.sheetCover())));
+  }
+
+  private lastLoupe: { finger: Point; point: Point; target: LoupeTarget } | null = null;
+
+  /**
+   * The magnifier over the point being dragged (a corner, or with the mouse
+   * any handle), placed above the finger or pointer (below it near the top).
+   * `finger` is CSS px on the canvas, `point` image px.
+   */
+  private showLoupe(finger: Point, point: Point, target: LoupeTarget) {
+    const stage = this.stageSize();
+    const area = { width: stage.width * this.displayScale, height: stage.height * this.displayScale };
+    const { left, top } = loupePlacement(finger, area);
+    this.lastLoupe = { finger, point, target };
+    const now = this.state.loupe;
+    if (!now || now.left !== left || now.top !== top) this.setState({ loupe: { left, top } });
+    if (typeof requestAnimationFrame === "undefined") {
+      this.paintLoupe();
+      return;
+    }
+    if (this.loupeFrame !== null) return;
+    this.loupeFrame = requestAnimationFrame(() => {
+      this.loupeFrame = null;
+      this.paintLoupe();
+    });
+  }
+
+  private hideLoupe() {
+    this.lastLoupe = null;
+    if (this.state.loupe) this.setState({ loupe: null });
+  }
+
+  /**
+   * Paints the magnifier: the photo around the dragged point at 2.5 times its
+   * current display scale, drawn from the source image so it is sharp, dark
+   * past the photo's edge, the box's outline (at a corner its two edges meet
+   * in the middle, at an edge handle one edge runs through it), and a
+   * crosshair on the point.
+   */
+  private paintLoupe() {
+    const canvas = this.loupeCanvasRef.current;
+    const info = this.lastLoupe;
+    const ctx = canvas?.getContext?.("2d");
+    if (!canvas || !info || !ctx) return;
+    const size = LOUPE_SIZE_PX;
+    const half = size / 2;
+    const { target } = info;
+    const shape = target.kind === "box" ? this.shapes.find((s) => s.getAnnotationData().id === target.id) : undefined;
+    const src = loupeSource(info.point, this.scaleState.scale * this.displayScale, LOUPE_MAGNIFICATION, size, this.imageSize());
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(half, half, half, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = LOUPE_BACKGROUND;
+    ctx.fillRect(0, 0, size, size);
+    const image = this.currentImageElement;
+    if (image && src.draw) {
+      const d = src.draw;
+      ctx.drawImage(image, d.sx, d.sy, d.sw, d.sh, d.dx, d.dy, d.dw, d.dh);
+    }
+    if (shape) {
+      const m = normalizeMark(shape.getAnnotationData().mark);
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = boxStrokeColor(shape.getAnnotationData());
+      ctx.strokeRect((m.x - src.sx) * src.scale, (m.y - src.sy) * src.scale, m.width * src.scale, m.height * src.scale);
+    }
+    if (target.kind === "sidewalk") {
+      // The outline in place of a box: the selected shape's edges, or the shape
+      // being drawn with its dashed line to the finger
+      const toLoupe = (p: Point) => ({ x: (p.x - src.sx) * src.scale, y: (p.y - src.sy) * src.scale });
+      const editor = this.sidewalkState;
+      const trace = (points: Point[], close: boolean) => {
+        ctx.beginPath();
+        points.forEach((p, i) => {
+          const c = toLoupe(p);
+          if (i === 0) ctx.moveTo(c.x, c.y);
+          else ctx.lineTo(c.x, c.y);
+        });
+        if (close) ctx.closePath();
+        ctx.stroke();
+      };
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = SIDEWALK_BLUE;
+      const selected = editor.mask.polygons.find((polygon) => polygon.id === editor.selectedId);
+      if (editor.draft) {
+        trace(editor.draft.points, false);
+        const last = editor.draft.points[editor.draft.points.length - 1];
+        if (last && editor.preview) {
+          ctx.setLineDash([4, 4]);
+          trace([last, editor.preview], false);
+          ctx.setLineDash([]);
+        }
+      } else if (selected) {
+        trace(selected.points, true);
+      }
+    }
+    // The crosshair: two 10 px lines, white with a 1 px dark outline
+    ctx.lineCap = "butt";
+    for (const [width, colour] of [[3, "rgba(11, 15, 20, 0.85)"], [1, "#ffffff"]] as const) {
+      ctx.lineWidth = width;
+      ctx.strokeStyle = colour;
+      ctx.beginPath();
+      ctx.moveTo(half - 5, half);
+      ctx.lineTo(half + 5, half);
+      ctx.moveTo(half, half - 5);
+      ctx.lineTo(half, half + 5);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(half, half, half - 1.5, 0, Math.PI * 2);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#ffffff";
+    ctx.stroke();
+  }
+
+  /** Device and input fields for this image's telemetry (deviceTelemetry.js). */
+  private deviceTelemetry() {
+    const win = typeof window !== "undefined" ? window : undefined;
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const screenMin = win?.screen ? Math.min(win.screen.width, win.screen.height) : undefined;
+    const imageWidth = this.imageSize().width;
+    return {
+      inputType: summarizeInputTypes(this.inputTypesUsed),
+      layout: this.isSheet ? "sheet" : "desktop",
+      deviceClass: classifyDevice({ coarsePointer: matches("(pointer: coarse)"), screenMinSide: screenMin }),
+      viewportWidth: win ? Math.round(win.innerWidth) : undefined,
+      viewportHeight: win ? Math.round(win.innerHeight) : undefined,
+      photoDisplayWidth: imageWidth && this.fit ? round2(imageWidth * this.fit.scale * this.displayScale) : undefined,
+      devicePixelRatio: win?.devicePixelRatio ? round2(win.devicePixelRatio) : undefined,
+      maxZoom: round2(this.maxZoom),
+      loupeShownCount: this.loupeShownCount,
+      boxesAddedWithButton: this.boxesAddedWithButton,
+      // The full-screen photo on phones (12 Oct 2026), counting the time still running
+      focusModeCount: this.focusModeCount,
+      focusModeMs: Math.round(this.focusModeMs + (this.focusStartMs !== null ? Date.now() - this.focusStartMs : 0)),
+    };
   }
 
   /** The image's natural size. The element is never attached to the page. */
@@ -1377,7 +3178,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   public selectShapeAt = (index: number) => {
     const shape = this.shapes[index];
     this.selectedId = shape.getAnnotationData().id;
-    this.currentTransformer = new Transformer(shape, this.scaleState.scale);
+    this.currentTransformer = this.makeTransformer(shape);
     this.shapes.splice(index, 1);
     this.shapes.push(shape);
     return shape;
@@ -1428,34 +3229,73 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.setState({ hiddenBoxIds: [] }, () => this.onShapeChange());
   };
 
+  /** Hides the open box from its panel's eye (10 Oct 2026), which closes the panel. */
+  private hideOpenBox = () => {
+    if (this.selectedId && !this.state.hiddenBoxIds.includes(this.selectedId)) this.toggleBoxHidden(this.selectedId);
+  };
+
+  /** Step 1, both roles: hides every box on the photo (10 Oct 2026). Closes the open panel. */
+  private hideAllBoxes = () => {
+    if (!this.inBoxStep) return;
+    if (this.selectedId) {
+      this.currentAnnotationState.onMouseUp();
+      this.selectedId = null;
+      this.setAnnotationState(new DefaultAnnotationState(this));
+    }
+    const hiddenBoxIds = this.shapes.map((shape) => shape.getAnnotationData().id);
+    this.setState({ hiddenBoxIds }, () => this.onShapeChange());
+  };
+
   /**
    * Annotators: the "Objects in This Image" card under the canvas. Keeps the
    * box-review-section id, which the tutorial points at.
    */
-  private renderObjectsCard(sortedAnnotations: IAnnotation[], displayLabels: Map<string, string>) {
+  /** An annotator box's status, as its chip shows it: Drawn, Kept, Not an object or To decide. */
+  private objectTag(box: IAnnotation) {
+    if (box.editable) return { text: "Drawn", className: "bg-blue-50 text-primary border border-blue-200" };
+    if (box.selected === true) return { text: "Kept", className: "bg-primary text-white" };
+    if (box.comment === NOT_AN_OBJECT) return { text: "Not an object", className: "bg-surface-subtle text-muted border border-line" };
+    return { text: "To decide", className: "bg-danger-soft text-danger" };
+  }
+
+  /**
+   * `variant` is "desktop" (as it was) or "sheet": in the answers sheet on a
+   * phone or tablet (12 Oct 2026) the card is full width, its chips and
+   * buttons at least 44 px tall and no text under 12 px. The other annotator
+   * cards take the same variant.
+   */
+  private renderObjectsCard(sortedAnnotations: IAnnotation[], displayLabels: Map<string, string>, variant: CardVariant = "desktop") {
+    const sheet = variant === "sheet";
     const duplicates = findNearDuplicates(sortedAnnotations);
     const labelOf = (box: IAnnotation) => displayLabels.get(box.id) ?? formatLabel(box.comment) ?? "Select a category";
-    const tagFor = (box: IAnnotation) => {
-      if (box.editable) return { text: "Drawn", className: "bg-blue-50 text-primary border border-blue-200" };
-      if (box.selected === true) return { text: "Kept", className: "bg-primary text-white" };
-      if (box.comment === NOT_AN_OBJECT) return { text: "Not an object", className: "bg-surface-subtle text-muted border border-line" };
-      return { text: "To decide", className: "bg-danger-soft text-danger" };
-    };
+    const tagFor = (box: IAnnotation) => this.objectTag(box);
+    const textButton = sheet ? "font-semibold text-primary hover:underline min-h-[44px] px-1" : "font-semibold text-primary hover:underline";
 
     const hidden = this.state.hiddenBoxIds;
     const hiddenCount = sortedAnnotations.filter((box) => hidden.includes(box.id)).length;
+    // The box whose panel is open (10 Oct 2026)
+    const openId = this.state.showInput ? this.selectedId : null;
 
     return (
       <div id="box-review-section" className="bg-surface rounded-card border border-line shadow-sm p-4 w-full">
         <div className="mb-3 flex items-center justify-between gap-3">
           <H3><span className="text-lg font-bold text-ink">Objects in This Image</span></H3>
-          {/* Boxes hidden on the photo (8 Oct 2026) */}
-          {hiddenCount > 0 && (
-            <span className="inline-flex items-center gap-2 text-xs text-muted whitespace-nowrap">
-              {BOX_VISIBILITY_COPY.hiddenCount(hiddenCount)}
-              <button type="button" onClick={this.showAllBoxes} className="font-semibold text-primary hover:underline">
-                {BOX_VISIBILITY_COPY.showAll}
-              </button>
+          {/* Boxes hidden on the photo (8 Oct 2026), and Hide all (10 Oct 2026) */}
+          {sortedAnnotations.length > 0 && (
+            <span className="inline-flex items-center gap-3 text-xs text-muted whitespace-nowrap">
+              {hiddenCount > 0 && (
+                <>
+                  {BOX_VISIBILITY_COPY.hiddenCount(hiddenCount)}
+                  <button type="button" onClick={this.showAllBoxes} className={textButton}>
+                    {BOX_VISIBILITY_COPY.showAll}
+                  </button>
+                </>
+              )}
+              {hiddenCount < sortedAnnotations.length && (
+                <button type="button" onClick={this.hideAllBoxes} className={textButton}>
+                  {BOX_VISIBILITY_COPY.hideAll}
+                </button>
+              )}
             </span>
           )}
         </div>
@@ -1463,20 +3303,22 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           {sortedAnnotations.map((box) => {
             const tag = tagFor(box);
             const isHidden = hidden.includes(box.id);
+            const isOpen = box.id === openId;
             const eyeLabel = isHidden ? BOX_VISIBILITY_COPY.show(labelOf(box)) : BOX_VISIBILITY_COPY.hide(labelOf(box));
             return (
               <li
                 key={box.id}
-                className={`group border border-line rounded-control bg-surface hover:border-primary hover:shadow-md transition-all flex items-stretch ${isHidden ? "opacity-60" : ""}`}
+                className={`group border rounded-control hover:border-primary hover:shadow-md transition-all flex items-stretch ${sheet ? "min-h-[44px] " : ""}${isOpen ? "border-primary bg-primary-50 ring-2 ring-primary/40" : "border-line bg-surface"} ${isHidden ? "opacity-60" : ""}`}
               >
                 {/* The name opens the box, the eye hides it on the photo */}
                 <button
                   type="button"
+                  aria-current={isOpen ? "true" : undefined}
                   className="flex items-center gap-1.5 pl-2 pr-1 py-1 cursor-pointer rounded-control"
                   onClick={() => this.selectBoxById(box.id)}
                 >
                   <span className="text-xs font-semibold text-ink whitespace-nowrap">{labelOf(box)}</span>
-                  <span className={`text-[10px] font-bold rounded-control px-1 whitespace-nowrap ${tag.className}`}>{tag.text}</span>
+                  <span className={`${sheet ? "text-xs" : "text-[10px]"} font-bold rounded-control px-1 whitespace-nowrap ${tag.className}`}>{tag.text}</span>
                 </button>
                 <button
                   type="button"
@@ -1484,9 +3326,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   aria-pressed={isHidden}
                   title={eyeLabel}
                   onClick={() => this.toggleBoxHidden(box.id)}
-                  className="grid place-items-center pl-0.5 pr-2 rounded-control text-subtle hover:text-ink transition-colors"
+                  className={`grid place-items-center pl-0.5 pr-2 rounded-control text-subtle hover:text-ink transition-colors${sheet ? " min-w-[44px]" : ""}`}
                 >
-                  {isHidden ? <EyeOffIcon size={14} /> : <EyeIcon size={14} />}
+                  {isHidden ? <EyeOffIcon size={sheet ? 18 : 14} /> : <EyeIcon size={sheet ? 18 : 14} />}
                 </button>
               </li>
             );
@@ -1502,12 +3344,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   }
 
   /** Annotators: the "What to Box" list beside the canvas, in place of Step 2. */
-  private renderTaxonomyGuide() {
+  private renderTaxonomyGuide(variant: CardVariant = "desktop") {
     return (
-      <div style={{ flex: '35 1 0%' }} className="min-w-0">
+      <div style={variant === "sheet" ? undefined : { flex: '35 1 0%' }} className="min-w-0">
         <div
           id="taxonomy-guide"
-          className="sticky top-4 bg-surface rounded-card border border-line shadow-sm p-4 max-h-[calc(100vh-2rem)] overflow-y-auto"
+          className={variant === "sheet" ? GUIDE_SHEET_CLASS : "sticky top-4 bg-surface rounded-card border border-line shadow-sm p-4 max-h-[calc(100vh-2rem)] overflow-y-auto"}
         >
           <H2 className="text-lg font-bold text-ink mb-3">What to Box</H2>
           {TAXONOMY_GUIDE.map(({ group, items }) => (
@@ -1543,9 +3385,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   public enterObstructionStep = ({ restoring = false }: { restoring?: boolean } = {}) => {
     if (!this.annotatorObjectStep) return;
 
-    const check = validateObjectStep(this.currentAnnotationData);
+    const check = validateObjectStep(this.currentAnnotationData, { words: this.words });
     if (!check.valid) {
-      if (!restoring) this.setState({ error: check.error });
+      if (!restoring) this.showStepError(check.error);
       return;
     }
 
@@ -1553,7 +3395,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       const sidewalk = this.sidewalkCheck();
       if (!sidewalk.valid) {
         if (restoring) this.enterSidewalkStep({ restoring: true });
-        else this.setState({ error: sidewalk.error });
+        else this.showStepError(sidewalk.error);
         return;
       }
     }
@@ -1569,10 +3411,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.obstructionStepStartMs = Date.now();
     this.setState(
       // Every box shows again outside Step 1
-      { annotatorStep: "obstructions", obstructionsConfirmed: false, error: null, showInput: false, hiddenBoxIds: [] },
+      { annotatorStep: "obstructions", obstructionsConfirmed: false, error: null, showInput: false, hiddenBoxIds: [], ...this.sheetStepReset() },
       () => {
         this.onShapeChange();
-        this.canvasWrapperRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+        this.afterStepChange();
         if (!restoring) this.cacheCurrentImageEdits();
         // Told on a reload too, so the tutorial shows this step's tour
         this.props.onAnnotatorStepChange?.("obstructions");
@@ -1580,11 +3422,42 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     );
   };
 
+  /**
+   * An annotator step's error. On a phone or tablet the sheet collapses and
+   * any panel closes, so the top of the sheet (what is left to decide, the
+   * drawing tools or the confirmation) is in view with the message.
+   */
+  private showStepError(error: string | undefined) {
+    this.setState({ error: error ?? null });
+    this.showSection();
+  }
+
+  /** Moving between steps on a phone or tablet collapses the sheet. */
+  private sheetStepReset(): { sheetSnap?: SheetSnap } {
+    return this.isSheet ? { sheetSnap: "collapsed" } : {};
+  }
+
+  /**
+   * After a step change: the desktop layout scrolls the photo into view. The
+   * sheet layout does not scroll (the page is fixed there) and goes back to
+   * the whole photo, since a zoom on one box says nothing about the next step.
+   */
+  private afterStepChange() {
+    if (!this.isSheet) {
+      this.canvasWrapperRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    this.lastPanelId = null;
+    this.touchState = initialTouchState();
+    this.sidewalkTouchState = initialSidewalkTouchState();
+    if (this.fit && (this.view.zoom !== 1 || this.view.panX !== 0 || this.view.panY !== 0)) this.setView(IDENTITY_VIEW);
+  }
+
   /** Annotators, Objects step: the forward button. Sidewalk next on model-development images. */
   private onObjectsNext = () => {
-    const check = validateObjectStep(this.currentAnnotationData);
+    const check = validateObjectStep(this.currentAnnotationData, { words: this.words });
     if (!check.valid) {
-      this.setState({ error: check.error });
+      this.showStepError(check.error);
       return;
     }
     if (this.askSidewalk) this.enterSidewalkStep();
@@ -1611,9 +3484,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    */
   public enterSidewalkStep = ({ restoring = false }: { restoring?: boolean } = {}) => {
     if (!this.askSidewalk) return;
-    const check = validateObjectStep(this.currentAnnotationData);
+    const check = validateObjectStep(this.currentAnnotationData, { words: this.words });
     if (!check.valid) {
-      if (!restoring) this.setState({ error: check.error });
+      if (!restoring) this.showStepError(check.error);
       return;
     }
 
@@ -1622,9 +3495,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.setAnnotationState(new SidewalkAnnotationState(this));
     this.sidewalkStepStartMs = Date.now();
     this.obstructionStepStartMs = null;
-    this.setState({ annotatorStep: "sidewalk", error: null, showInput: false, hiddenBoxIds: [] }, () => {
+    this.setState({ annotatorStep: "sidewalk", error: null, showInput: false, hiddenBoxIds: [], ...this.sheetStepReset() }, () => {
       this.onShapeChange();
-      this.canvasWrapperRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+      this.afterStepChange();
       if (!restoring) this.cacheCurrentImageEdits();
       // Told on a reload too, so the tutorial shows this step's tour
       this.props.onAnnotatorStepChange?.("sidewalk");
@@ -1635,7 +3508,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private onSidewalkNext = () => {
     const sidewalk = this.sidewalkCheck();
     if (!sidewalk.valid) {
-      this.setState({ error: sidewalk.error });
+      this.showStepError(sidewalk.error);
       return;
     }
     this.enterObstructionStep();
@@ -1651,8 +3524,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.sidewalkStepStartMs = null;
     this.obstructionStepStartMs = null;
     this.setAnnotationState(new DefaultAnnotationState(this));
-    this.setState({ annotatorStep: "objects", error: null }, () => {
+    this.setState({ annotatorStep: "objects", error: null, ...this.sheetStepReset() }, () => {
       this.onShapeChange();
+      if (this.isSheet) this.afterStepChange();
       this.cacheCurrentImageEdits();
       this.props.onAnnotatorStepChange?.("objects");
     });
@@ -1681,12 +3555,52 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * (a refused shape, an undone drag) show under the photo instead, next to
    * where the drawing happens (8 Oct 2026).
    */
-  private renderSidewalkToolbar() {
-    const { sidewalk, showSidewalkBoxes, hideSidewalkFill } = this.state;
+  private renderSidewalkToolbar(variant: "desktop" | "sheet" | "compact" = "desktop") {
+    const { sidewalk, hideSidewalkFill } = this.state;
     const drawing = Boolean(sidewalk.draft);
     const send = (type: string, extra: Record<string, unknown> = {}) => () => this.dispatchSidewalk({ type, ...extra });
-    const toggle = (key: "showSidewalkBoxes" | "hideSidewalkFill") => () =>
-      this.setState(key === "showSidewalkBoxes" ? { showSidewalkBoxes: !showSidewalkBoxes } : { hideSidewalkFill: !hideSidewalkFill }, () => this.onShapeChange());
+    const togglePhotoOnly = () => this.setState({ hideSidewalkFill: !hideSidewalkFill }, () => this.onShapeChange());
+
+    // Phones and tablets (12 Oct 2026). "sheet": one sideways-scrolling row of
+    // 44 px buttons with an icon and a short label, at the top of the answers
+    // sheet. "compact": icons only, for the full-screen photo. The same enable
+    // rules as the desktop toolbar.
+    if (variant !== "desktop") {
+      const compact = variant === "compact";
+      const tools: Array<{ label: string; name: string; icon: React.ReactNode; disabled?: boolean; pressed?: boolean; onClick: () => void }> = [
+        { label: "Finish", name: "Finish shape", icon: <CheckIcon size={18} />, disabled: !drawing, onClick: send("CLOSE_SHAPE") },
+        { label: "Undo point", name: "Undo point", icon: <UndoIcon size={18} />, disabled: !drawing, onClick: send("UNDO_POINT") },
+        { label: "Cancel", name: "Cancel shape", icon: <CloseIcon size={18} />, disabled: !drawing, onClick: send("CANCEL_SHAPE") },
+        { label: "Delete point", name: "Delete point", icon: <PointMinusIcon size={18} />, disabled: drawing || sidewalk.selectedPoint == null, onClick: send("DELETE_POINT") },
+        { label: "Delete shape", name: "Delete shape", icon: <TrashIcon size={18} />, disabled: drawing || !sidewalk.selectedId, onClick: send("DELETE_SHAPE") },
+        { label: "Photo only", name: "Show photo only", icon: <PhotoIcon size={18} />, pressed: hideSidewalkFill, onClick: togglePhotoOnly },
+      ];
+      return (
+        <div
+          id={compact ? undefined : "sidewalk-tools"}
+          role="toolbar"
+          aria-label="Drawing tools"
+          className={compact ? "flex items-center gap-1" : "h-11 flex items-center gap-2 overflow-x-auto overscroll-x-contain"}
+        >
+          {tools.map((tool) => (
+            <button
+              key={tool.label}
+              type="button"
+              disabled={tool.disabled}
+              aria-label={compact ? tool.name : undefined}
+              title={compact ? tool.name : undefined}
+              aria-pressed={tool.pressed === undefined ? undefined : tool.pressed}
+              onClick={tool.onClick}
+              className={`shrink-0 h-11 inline-flex items-center justify-center gap-1.5 rounded-control border text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-40 ${compact ? "w-11" : "px-3"} ${tool.pressed ? "border-primary bg-primary text-white" : "border-line bg-surface text-ink"}`}
+            >
+              {tool.icon}
+              {!compact && tool.label}
+            </button>
+          ))}
+        </div>
+      );
+    }
+
     return (
       <div id="sidewalk-tools" className="mb-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -1697,10 +3611,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           <Button size="sm" variant="neutral" disabled={drawing || sidewalk.selectedPoint == null} onClick={send("DELETE_POINT")}>Delete point</Button>
           <Button size="sm" variant="neutral" disabled={drawing || !sidewalk.selectedId} onClick={send("DELETE_SHAPE")}>Delete shape</Button>
           <span className="w-px h-6 bg-line mx-1" aria-hidden="true" />
-          <Button size="sm" variant={showSidewalkBoxes ? "primary" : "neutral"} aria-pressed={showSidewalkBoxes} onClick={toggle("showSidewalkBoxes")}>
-            Show object boxes
-          </Button>
-          <Button size="sm" variant={hideSidewalkFill ? "primary" : "neutral"} aria-pressed={hideSidewalkFill} onClick={toggle("hideSidewalkFill")}>
+          <Button size="sm" variant={hideSidewalkFill ? "primary" : "neutral"} aria-pressed={hideSidewalkFill} onClick={togglePhotoOnly}>
             Show photo only
           </Button>
         </div>
@@ -1715,18 +3626,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * deletes it (redesigned 6 Oct 2026, the shapes were large buttons with no
    * hint of what they did).
    */
-  private renderSidewalkShapesCard() {
+  private renderSidewalkShapesCard(variant: CardVariant = "desktop") {
+    const sheet = variant === "sheet";
     const { sidewalk } = this.state;
     const { polygons, noSidewalk } = sidewalk.mask;
     const hasShapes = polygons.length > 0 || Boolean(sidewalk.draft);
     const number = (id: string) => id.replace(/^[a-z]+/, "");
     const selected = polygons.find((p) => p.id === sidewalk.selectedId);
-    let hint: string;
-    if (sidewalk.draft) hint = "Click the first point again to close the shape you are drawing.";
-    else if (selected) hint = `Shape ${number(selected.id)} is selected. Drag its points on the photo, or drag the handle in the middle of an edge to add a point.`;
-    else if (polygons.length > 0) hint = "Click a shape to select it on the photo and adjust its points.";
-    else if (noSidewalk) hint = "This image is marked as having no sidewalk.";
-    else hint = "No shapes yet. Click points around the sidewalk on the photo to start one.";
+    // "tap" with a finger, the desktop wording with a mouse (annotatorStepCopy.js)
+    const hint = sidewalkOutlineHint(
+      { drawing: Boolean(sidewalk.draft), selectedNumber: selected ? number(selected.id) : null, shapeCount: polygons.length, noSidewalk },
+      this.words
+    );
 
     return (
       <div id="sidewalk-shapes" className="bg-surface rounded-card border border-line shadow-sm p-4 w-full">
@@ -1744,16 +3655,16 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               return (
                 <li
                   key={polygon.id}
-                  className={`flex items-center gap-1.5 rounded-control border pl-1 pr-1 py-0.5 transition-colors ${isSelected ? "border-primary bg-primary-50" : "border-line bg-surface hover:border-primary"}`}
+                  className={`flex items-center gap-1.5 rounded-control border pl-1 pr-1 py-0.5 transition-colors ${sheet ? "min-h-[44px] " : ""}${isSelected ? "border-primary bg-primary-50" : "border-line bg-surface hover:border-primary"}`}
                 >
                   <button
                     type="button"
                     aria-pressed={isSelected}
                     onClick={() => this.dispatchSidewalk({ type: "SELECT_SHAPE", id: polygon.id })}
-                    className="flex items-baseline gap-1.5 px-1 py-0.5 text-left cursor-pointer"
+                    className={`flex items-baseline gap-1.5 px-1 py-0.5 text-left cursor-pointer${sheet ? " min-h-[44px] items-center" : ""}`}
                   >
                     <span className="text-xs font-semibold text-ink whitespace-nowrap">Shape {number(polygon.id)}</span>
-                    <span className="text-[11px] text-muted whitespace-nowrap">{polygon.points.length} points</span>
+                    <span className={`${sheet ? "text-xs" : "text-[11px]"} text-muted whitespace-nowrap`}>{polygon.points.length} points</span>
                   </button>
                   <button
                     type="button"
@@ -1763,7 +3674,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                       this.dispatchSidewalk({ type: "SELECT_SHAPE", id: polygon.id });
                       this.dispatchSidewalk({ type: "DELETE_SHAPE" });
                     }}
-                    className="shrink-0 bg-surface border border-line hover:bg-danger-soft hover:text-danger text-muted rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold transition-colors"
+                    className={`shrink-0 bg-surface border border-line hover:bg-danger-soft hover:text-danger text-muted rounded-full flex items-center justify-center font-bold transition-colors ${sheet ? "w-9 h-9 text-sm" : "w-5 h-5 text-[10px]"}`}
                   >
                     ×
                   </button>
@@ -1775,7 +3686,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
         <p className="text-xs text-muted">{hint}</p>
 
-        <div className="mt-3 pt-3 border-t border-line">
+        <div className={`mt-3 pt-3 border-t border-line${sheet ? " min-h-[44px] flex items-center" : ""}`}>
           <Checkbox
             id="no-sidewalk"
             checked={noSidewalk}
@@ -1798,12 +3709,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   }
 
   /** Annotators, Sidewalk step: "What Counts as Walking Space" beside the canvas. */
-  private renderSidewalkGuide() {
+  private renderSidewalkGuide(variant: CardVariant = "desktop") {
     return (
-      <div style={{ flex: '35 1 0%' }} className="min-w-0">
+      <div style={variant === "sheet" ? undefined : { flex: '35 1 0%' }} className="min-w-0">
         <div
           id="sidewalk-guide"
-          className="sticky top-4 bg-surface rounded-card border border-line shadow-sm p-4 max-h-[calc(100vh-2rem)] overflow-y-auto"
+          className={variant === "sheet" ? GUIDE_SHEET_CLASS : "sticky top-4 bg-surface rounded-card border border-line shadow-sm p-4 max-h-[calc(100vh-2rem)] overflow-y-auto"}
         >
           <H2 className="text-lg font-bold text-ink mb-3">What Counts as Walking Space</H2>
           <ul className="space-y-2 list-disc pl-4">
@@ -1817,7 +3728,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   }
 
   /** Annotators, Obstructions step: the list under the canvas, and the confirmation. */
-  private renderObstructionsCard(displayLabels: Map<string, string>) {
+  private renderObstructionsCard(displayLabels: Map<string, string>, variant: CardVariant = "desktop") {
+    const sheet = variant === "sheet";
     const objects = realObjects(this.currentAnnotationData);
     const { marked } = summarizeObstructionStep(this.currentAnnotationData);
     return (
@@ -1845,7 +3757,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   type="button"
                   aria-pressed={isMarked}
                   onClick={() => this.toggleObstruction(box.id)}
-                  className={`text-xs font-semibold rounded-control border px-2 py-1 transition-colors whitespace-nowrap ${isMarked
+                  className={`text-xs font-semibold rounded-control border transition-colors whitespace-nowrap ${sheet ? "min-h-[44px] px-3" : "px-2 py-1"} ${isMarked
                     ? "bg-red-600 border-red-600 text-white"
                     : "bg-surface border-line text-ink hover:border-primary"
                     }`}
@@ -1856,25 +3768,28 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             );
           })}
         </ul>
-        <div className="mt-4 pt-3 border-t border-line">
-          <Checkbox
-            id="obstructions-confirmed"
-            checked={this.state.obstructionsConfirmed}
-            onChange={(e) => this.setState({ obstructionsConfirmed: e.target.checked })}
-            label="I checked every object. The ones I did not mark do not obstruct the sidewalk for me."
-          />
-        </div>
+        {/* In the sheet the confirmation is at the top, always in view */}
+        {!sheet && (
+          <div className="mt-4 pt-3 border-t border-line">
+            <Checkbox
+              id="obstructions-confirmed"
+              checked={this.state.obstructionsConfirmed}
+              onChange={(e) => this.setState({ obstructionsConfirmed: e.target.checked })}
+              label="I checked every object. The ones I did not mark do not obstruct the sidewalk for me."
+            />
+          </div>
+        )}
       </div>
     );
   }
 
   /** Annotators, Obstructions step: "What Counts as an Obstruction" beside the canvas. */
-  private renderObstructionGuide() {
+  private renderObstructionGuide(variant: CardVariant = "desktop") {
     return (
-      <div style={{ flex: '35 1 0%' }} className="min-w-0">
+      <div style={variant === "sheet" ? undefined : { flex: '35 1 0%' }} className="min-w-0">
         <div
           id="obstruction-guide"
-          className="sticky top-4 bg-surface rounded-card border border-line shadow-sm p-4 max-h-[calc(100vh-2rem)] overflow-y-auto"
+          className={variant === "sheet" ? GUIDE_SHEET_CLASS : "sticky top-4 bg-surface rounded-card border border-line shadow-sm p-4 max-h-[calc(100vh-2rem)] overflow-y-auto"}
         >
           <H2 className="text-lg font-bold text-ink mb-3">What Counts as an Obstruction</H2>
           <ul className="space-y-2 list-disc pl-4">
@@ -1960,6 +3875,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (offPhoto) {
       const label = buildDisplayLabelsInOrder(this.currentAnnotationData).get(offPhoto.id) || "A box";
       this.setState({ error: `${label} is outside the photo. Move it onto the photo or delete it.` });
+      this.showSection("objects");
       return;
     }
 
@@ -2019,6 +3935,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       suggestionConfidences: [...suggestionConfidences, ...hiddenConfidences],
       geometryChanges,
       labelChanges,
+      // Device and input (9 Oct 2026). The server adds the browser family.
+      ...this.deviceTelemetry(),
     };
 
     this.setState({ error: null });
@@ -2036,10 +3954,13 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       sidewalkDraftOpen: Boolean(this.sidewalkState.draft),
       imageWidth: imageSize.width,
       imageHeight: imageSize.height,
+      words: this.words,
     });
 
     if (!validationResult.valid) {
       this.setState({ error: validationResult.error });
+      // On a phone, show the part the message is about
+      this.showSection((validationResult as { section?: string }).section);
       return;
     }
 
@@ -2149,9 +4070,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.paintSidewalkLayer();
     const variant = this.paintVariant;
     for (const item of this.shapes) {
+      if (!this.paintsBoxes) break;
       if (this.isBoxHidden(item.getAnnotationData().id)) continue;
       const isSelected = variant === "default" && item.getAnnotationData().id === data.id;
-      const { x, y, width: boxW } = item.paint(
+      item.paint(
         this.canvas2D,
         this.calculateShapePosition,
         isSelected,
@@ -2161,10 +4083,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
       if (isSelected) {
         if (!this.currentTransformer) {
-          this.currentTransformer = new Transformer(
-            item,
-            this.scaleState.scale
-          );
+          this.currentTransformer = this.makeTransformer(item);
         }
 
         this.currentTransformer.paint(
@@ -2173,25 +4092,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           this.scaleState.scale
         );
 
-        const stageW = 960;
-        const popupW = 290;
-        const margin = this.props.marginWithInput;
-        const rightLeft = x + boxW + margin;
-        const leftLeft = x - popupW - margin;
-        const useLeft = rightLeft + popupW > stageW && leftLeft >= 0;
-        const popupTop = Math.max(0, Math.min(y, 600 - 220));
-
-        this.setState({
-          showInput: true,
-          inputPosition: { left: useLeft ? leftLeft : rightLeft, top: popupTop },
-          inputComment: item.getAnnotationData().comment || "",
-          originalComment: item.getAnnotationData().initialState?.comment || "",
-          editable: item.getAnnotationData().editable || false,
-          selected: item.getAnnotationData().selected || false,
-          isRejected: item.getAnnotationData().isRejected || false,
-          obstructs: item.getAnnotationData().obstructs,
-          severity: item.getAnnotationData().severity,
-        });
+        this.syncPanel(item);
       }
     }
     this.currentAnnotationData = this.shapes.map((item) =>
@@ -2202,6 +4103,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   public onShapeChange = ({ quiet = false }: { quiet?: boolean } = {}) => {
+    // The selected box, whose panel shows. Found while painting, or without a
+    // canvas (jsdom) straight from the shapes, so the panel's state never
+    // depends on painting (9 Oct 2026).
+    let selectedItem: IShape | null = null;
     if (this.canvas2D && this.canvasRef.current) {
       this.canvas2D.clearRect(
         0,
@@ -2210,7 +4115,6 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         this.canvasRef.current.height
       );
 
-      let hasSelectedItem = false;
       // Numbered in the lists' order, not drawing order, which changes on every
       // click: "Lamp Post #2" is the same box on the photo and in the list
       const labels = buildDisplayLabelsInOrder(this.currentAnnotationData);
@@ -2218,15 +4122,14 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       // The sidewalk outline goes under the boxes
       this.paintSidewalkLayer();
 
-      // Obstructions and Sidewalk lock the boxes: nothing is selected or
-      // transformed. Sidewalk can hide them.
+      // Obstructions locks the boxes: nothing is selected or transformed.
+      // Sidewalk shows none.
       const variant = this.paintVariant;
-      const skipBoxes = this.inSidewalkStep && !this.state.showSidewalkBoxes;
       for (const item of this.shapes) {
-        if (skipBoxes) continue;
+        if (!this.paintsBoxes) break;
         if (this.isBoxHidden(item.getAnnotationData().id)) continue;
         const isSelected = variant === "default" && item.getAnnotationData().id === this.selectedId;
-        const { x, y, width: boxW } = item.paint(
+        item.paint(
           this.canvas2D,
           this.calculateShapePosition,
           isSelected,
@@ -2236,52 +4139,34 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
         if (isSelected) {
           if (!this.currentTransformer) {
-            this.currentTransformer = new Transformer(
-              item,
-              this.scaleState.scale
-            );
+            this.currentTransformer = this.makeTransformer(item);
           }
 
-          hasSelectedItem = true;
+          selectedItem = item;
 
           this.currentTransformer.paint(
             this.canvas2D,
             this.calculateShapePosition,
             this.scaleState.scale
           );
-
-          const stageW = 960;
-          const popupW = 290;
-          const margin = this.props.marginWithInput;
-          const rightLeft = x + boxW + margin;
-          const leftLeft = x - popupW - margin;
-          const useLeft = rightLeft + popupW > stageW && leftLeft >= 0;
-          const popupTop = Math.max(0, Math.min(y, 600 - 220));
-
-          this.setState({
-            showInput: true,
-            inputPosition: { left: useLeft ? leftLeft : rightLeft, top: popupTop },
-            inputComment: item.getAnnotationData().comment || "",
-            originalComment: item.getAnnotationData().initialState?.comment || "",
-            editable: item.getAnnotationData().editable || false,
-            selected: item.getAnnotationData().selected || false,
-            isRejected: item.getAnnotationData().isRejected || false,
-            obstructs: item.getAnnotationData().obstructs,
-            severity: item.getAnnotationData().severity,
-          });
         }
       }
+    } else if (this.paintVariant === "default" && this.paintsBoxes) {
+      const item = this.selectedShape();
+      if (item && !this.isBoxHidden(item.getAnnotationData().id)) selectedItem = item;
+    }
 
-      // quiet: a pointer-speed sidewalk repaint, which must not re-render
-      if (!hasSelectedItem && !quiet) {
-        this.setState({
-          showInput: false,
-          inputComment: "",
-          editable: false,
-          selected: false,
-          isRejected: false,
-        });
-      }
+    if (selectedItem) {
+      this.syncPanel(selectedItem);
+    } else if (!quiet) {
+      // quiet: a pointer-speed repaint, which must not re-render
+      this.setState({
+        showInput: false,
+        inputComment: "",
+        editable: false,
+        selected: false,
+        isRejected: false,
+      });
     }
     this.currentAnnotationData = this.shapes.map((item) =>
       item.getAnnotationData()
@@ -2292,6 +4177,35 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // repaint is a pointer moving over the sidewalk outline, not an edit.
     if (!quiet) this.scheduleEditSave();
   };
+
+  /**
+   * Shows the selected box's panel with its answers (9 Oct 2026, moved out of
+   * the painting code). On the desktop photo the panel sits beside the box: to
+   * its right, or to its left when it would run off the stage.
+   */
+  private syncPanel(item: IShape) {
+    const data = item.getAnnotationData();
+    const { x, y, width: boxW } = this.calculateShapePosition(data.mark);
+    const stage = this.stageSize();
+    const popupW = 290;
+    const margin = this.props.marginWithInput;
+    const rightLeft = x + boxW + margin;
+    const leftLeft = x - popupW - margin;
+    const useLeft = rightLeft + popupW > stage.width && leftLeft >= 0;
+    const popupTop = Math.max(0, Math.min(y, stage.height - 220));
+
+    this.setState({
+      showInput: true,
+      inputPosition: { left: useLeft ? leftLeft : rightLeft, top: popupTop },
+      inputComment: data.comment || "",
+      originalComment: data.initialState?.comment || "",
+      editable: data.editable || false,
+      selected: data.selected || false,
+      isRejected: data.isRejected || false,
+      obstructs: data.obstructs,
+      severity: data.severity,
+    });
+  }
 
   /**
    * Rebuilds the shapes array from props, but only when something actually
@@ -2631,25 +4545,15 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         nextImageNode.addEventListener("load", () => {
           this.currentImageElement = nextImageNode;
           const { width, height } = nextImageNode;
-          const imageNodeRatio = height / width;
-          const { width: canvasWidth, height: canvasHeight } = this.props;
-          const canvasNodeRatio = canvasHeight / canvasWidth;
-          if (!isNaN(imageNodeRatio) && !isNaN(canvasNodeRatio)) {
-            if (imageNodeRatio < canvasNodeRatio) {
-              const scale = canvasWidth / width;
-              this.scaleState = {
-                originX: 0,
-                originY: (canvasHeight - scale * height) / 2,
-                scale,
-              };
-            } else {
-              const scale = canvasHeight / height;
-              this.scaleState = {
-                originX: (canvasWidth - scale * width) / 2,
-                originY: 0,
-                scale,
-              };
-            }
+          const stage = this.stageSize();
+          // The letterbox fit (viewTransform.ts). A new image starts at the
+          // whole photo: the touch zoom is not kept.
+          const fit = fitImage(width, height, stage.width, stage.height);
+          if (fit) {
+            this.fit = fit;
+            this.view = IDENTITY_VIEW;
+            this.scaleState = applyView(fit, this.view);
+            if (this.state.zoomed) this.setState({ zoomed: false });
           }
           this.onImageChange();
           this.onShapeChange();
@@ -2661,6 +4565,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   private onMouseDown: MouseEventHandler<HTMLCanvasElement> = (event) => {
+    // For telemetry, and the square handles (9 Oct 2026)
+    this.inputTypesUsed.add("mouse");
+    this.setInputMode("mouse");
     const { offsetX, offsetY } = event.nativeEvent;
     const { positionX, positionY } = this.calculateMousePosition(
       offsetX,
@@ -2680,6 +4587,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (this.inBoxStep) {
       const { x, y } = this.clampToPhoto(positionX, positionY);
       this.currentAnnotationState.onMouseMove(x, y);
+      this.followMouseLoupe(offsetX, offsetY);
       return;
     }
     this.currentAnnotationState.onMouseMove(positionX, positionY);
@@ -2687,11 +4595,35 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   private onMouseUp: MouseEventHandler<HTMLCanvasElement> = () => {
     this.currentAnnotationState.onMouseUp();
+    this.endMouseLoupe();
   };
 
   private onMouseLeave: MouseEventHandler<HTMLCanvasElement> = () => {
     this.currentAnnotationState.onMouseLeave();
+    this.endMouseLoupe();
   };
+
+  /**
+   * The magnifier while a resize handle is dragged with the mouse (10 Oct
+   * 2026, both roles, box step), as a finger fitting a corner gets on touch.
+   * `offsetX`, `offsetY` are stage px on the canvas.
+   */
+  private followMouseLoupe(offsetX: number, offsetY: number) {
+    if (!(this.currentAnnotationState instanceof TransformationState)) return;
+    const point = this.currentTransformer?.activeHandlePoint?.();
+    if (!point || !this.selectedId) return;
+    if (!this.mouseLoupeShown) {
+      this.mouseLoupeShown = true;
+      this.loupeShownCount += 1;
+    }
+    this.showLoupe({ x: offsetX * this.displayScale, y: offsetY * this.displayScale }, point, { kind: "box", id: this.selectedId });
+  }
+
+  private endMouseLoupe() {
+    if (!this.mouseLoupeShown) return;
+    this.mouseLoupeShown = false;
+    this.hideLoupe();
+  }
 
   private surfaceTypeText = (surfaceType) => {
     switch (surfaceType) {

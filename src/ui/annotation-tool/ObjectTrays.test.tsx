@@ -39,9 +39,9 @@ describe("ObjectTrays", () => {
     expect(html).toMatch(/Still to decide <span[^>]*>3<\/span>/);
     expect(count(html, 'data-tray="toDecide"')).toBe(3);
     // Dashed amber for suggestions, dashed blue for the box the contributor drew
-    expect(chip(html, "Tree")).toContain("border-dashed border-warning");
-    expect(chip(html, "Bollard")).toContain("border-dashed border-primary");
-    expect(chip(html, "Bollard")).toContain('<svg data-drawn="true"');
+    expect(chip(html, "Tree #1")).toContain("border-dashed border-warning");
+    expect(chip(html, "Bollard #1")).toContain("border-dashed border-primary");
+    expect(chip(html, "Bollard #1")).toContain('<svg data-drawn="true"');
     // Each empty list shows three empty slots, so it is clear answers go there
     for (const id of ["object-tray-not-obstructions", "object-tray-obstructions"]) {
       expect(count(list(html, id), 'data-slot="empty"')).toBe(3);
@@ -60,12 +60,12 @@ describe("ObjectTrays", () => {
     const yes = list(html, "object-tray-obstructions");
     const no = list(html, "object-tray-not-obstructions");
     expect(yes).toContain(">Obstructions</h3>");
-    expect(yes).toMatch(/>Tree</);
+    expect(yes).toMatch(/>Tree #1</);
     expect(no).toContain(">Not obstructions</h3>");
-    expect(no).toMatch(/>Car</);
+    expect(no).toMatch(/>Car #1</);
     // Drawn boxes have a pencil before the name (8 Oct 2026), and say so to screen readers
-    expect(yes).toMatch(/<svg data-drawn="true"[\s\S]*?<\/svg>Bollard<span class="sr-only">, drawn by you<\/span>/);
-    expect(no).toMatch(/<svg data-drawn="true"[\s\S]*?<\/svg>Planter/);
+    expect(yes).toMatch(/<svg data-drawn="true"[\s\S]*?<\/svg>Bollard #1<span class="sr-only">, drawn by you<\/span>/);
+    expect(no).toMatch(/<svg data-drawn="true"[\s\S]*?<\/svg>Planter #1/);
     expect(count(html, "data-drawn")).toBe(2);
     expect(html).not.toContain(">Drawn<");
     // Plain white chips in the lists (8 Oct 2026), no green or amber fills
@@ -132,7 +132,7 @@ describe("ObjectTrays", () => {
   it("rings the chip of the box whose panel is open", () => {
     const html = render([suggestion("a", "tree"), suggestion("b", "car")], "b");
     expect(count(html, "ring-2 ring-primary/40")).toBe(1);
-    expect(chip(html, "Car")).toContain("ring-2 ring-primary/40");
+    expect(chip(html, "Car #1")).toContain("ring-2 ring-primary/40");
   });
 });
 
@@ -160,7 +160,7 @@ describe("ObjectTrays eye toggles", () => {
   it("gives every chip, in every list, an eye that names its object", () => {
     const html = renderWith([]);
     expect(count(html, "data-eye")).toBe(4);
-    for (const label of ["Tree", "Car", "Bollard", "Bench"]) {
+    for (const label of ["Tree #1", "Car #1", "Bollard #1", "Bench"]) {
       expect(chip(html, label)).toContain(`aria-label="Hide ${label} on the photo"`);
       expect(chip(html, label)).toContain('aria-pressed="false"');
     }
@@ -169,12 +169,12 @@ describe("ObjectTrays eye toggles", () => {
 
   it("fades a hidden object's chip, crosses out its eye and offers to show it", () => {
     const html = renderWith(["b", "c"]);
-    for (const label of ["Car", "Bollard"]) {
+    for (const label of ["Car #1", "Bollard #1"]) {
       expect(chip(html, label)).toContain("opacity-60");
       expect(chip(html, label)).toContain(`aria-label="Show ${label} on the photo"`);
       expect(chip(html, label)).toContain('aria-pressed="true"');
     }
-    expect(chip(html, "Tree")).not.toContain("opacity-60");
+    expect(chip(html, "Tree #1")).not.toContain("opacity-60");
     expect(html).toMatch(/data-hidden-summary[^>]*>2 boxes hidden<button[^>]*>Show all<\/button>/);
   });
 
@@ -189,3 +189,38 @@ describe("ObjectTrays eye toggles", () => {
     expect(html).not.toContain("data-hidden-summary");
   });
 });
+
+// 10 Oct 2026: Hide all, and the open object's chip filled and outlined
+describe("ObjectTrays Hide all and the open object", () => {
+  const noop = () => undefined;
+  const boxes = [suggestion("a", "tree"), suggestion("b", "car", { isRejected: true, obstructs: false }), drawn("c", "bollard")];
+  const renderWith = (hiddenIds: string[], selectedId: string | null = null) =>
+    renderToStaticMarkup(
+      <ObjectTrays
+        trays={buildTrays(boxes, { labels: buildDisplayLabels(boxes) })}
+        selectedId={selectedId}
+        hiddenIds={hiddenIds}
+        onOpen={noop}
+        onToggleHidden={noop}
+        onShowAll={noop}
+        onHideAll={noop}
+      />
+    );
+
+  it("offers Hide all until every box is hidden, beside Show all", () => {
+    expect(renderWith([])).toMatch(/data-hidden-summary[^>]*><button[^>]*>Hide all<\/button>/);
+    expect(renderWith(["a"])).toMatch(/1 box hidden<button[^>]*>Show all<\/button><button[^>]*>Hide all<\/button>/);
+    const allHidden = renderWith(["a", "b", "c"]);
+    expect(allHidden).toContain(">Show all<");
+    expect(allHidden).not.toContain(">Hide all<");
+  });
+
+  it("fills and outlines the open object's chip, and marks it current", () => {
+    const html = renderWith([], "b");
+    expect(chip(html, "Car #1")).toContain("border-primary bg-primary-50");
+    expect(chip(html, "Car #1")).toContain('aria-current="true"');
+    expect(chip(html, "Tree #1")).not.toContain("bg-primary-50");
+    expect(count(html, 'aria-current="true"')).toBe(1);
+  });
+});
+

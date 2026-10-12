@@ -30,3 +30,14 @@
 .rp-selected-input {
   position: absolute;
 }
+
+/* Contributors on phones and tablets (9 Oct 2026): the annotation screen covers
+   the page. 100dvh follows the browser's toolbars as they show and hide, with
+   100vh for browsers that do not know it. The dark background letterboxes the
+   photo like a photo viewer. */
+.annotate-sheet-screen {
+  height: 100vh;
+  height: 100dvh;
+  background: #0b0f14;
+  overscroll-behavior: none;
+}

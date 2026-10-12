@@ -15,8 +15,11 @@ export function formatLabel(comment) {
  * Assigns numbered display labels to annotations so same-category
  * objects can be distinguished: "Tree #1", "Tree #2".
  *
- * Singletons keep a plain label ("Bollard"). Unlabeled annotations
- * (no comment, empty, or "---") get null.
+ * Every object is numbered from #1, even when it is the only one of its
+ * category ("Bollard #1", the adviser's request, 10 Oct 2026), so a number
+ * never appears on a box only once a second one is added. Boxes marked Not an
+ * object are not objects: they are numbered only when there are two or more.
+ * Unlabeled annotations (no comment, empty, or "---") get null.
  *
  * The numbering follows the order of the input array — callers
  * should pass annotations sorted by id (the same order the UI
@@ -46,7 +49,7 @@ export function buildDisplayLabels(annotations) {
 
     const titleCased = formatLabel(cat);
 
-    if (counts[cat] > 1) {
+    if (cat !== "not_an_object" || counts[cat] > 1) {
       counters[cat] = (counters[cat] || 0) + 1;
       labels.set(ann.id, `${titleCased} #${counters[cat]}`);
     } else {

@@ -212,6 +212,23 @@ describe("pickNearSmallBox", () => {
     expect(pickNearSmallBox([sliver, other], 104, 110, 1)).toBe(0);
     expect(pickNearSmallBox([sliver, other], 108, 110, 1)).toBe(1);
   });
+
+  // A finger is wider than a mouse pointer (9 Oct 2026)
+  it("reaches further, and counts larger boxes as small, with a finger's tolerances", () => {
+    const touch = { nearPx: 12, smallPx: 24 };
+    // 10 px right of the sliver
+    expect(pickNearSmallBox([sliver], 112, 110, 1)).toBeNull();
+    expect(pickNearSmallBox([sliver], 112, 110, 1, touch)).toBe(0);
+    // A 20 px wide box is small for a finger, not for the mouse
+    const post = { x: 100, y: 100, width: 20, height: 40 };
+    expect(pickNearSmallBox([post], 125, 110, 1)).toBeNull();
+    expect(pickNearSmallBox([post], 125, 110, 1, touch)).toBe(0);
+    // The mouse keeps its tolerances when none are given
+    expect(pickNearSmallBox([sliver], 108, 110, 1, {})).toBe(0);
+    expect(pickNearSmallBox([sliver], 109, 110, 1, {})).toBeNull();
+    expect(NEAR_HIT_CANVAS_PX).toBe(6);
+    expect(SMALL_BOX_CANVAS_PX).toBe(12);
+  });
 });
 
 // Keeping boxes on the photo (8 Oct 2026)

@@ -34,7 +34,29 @@ export const TRAY_COPY = Object.freeze({
   removed: "Not an object",
   drawnTitle: "Drawn by you",
   fallbackLabel: FALLBACK_LABEL,
+  // The top of the answers sheet on a phone or tablet (9 Oct 2026)
+  next: "Next",
+  noObjectsTouch: "No suggestions in this image. Tap Add box for any object the model missed.",
 });
+
+/**
+ * How much of Step 2 is answered, for the line at the top of the answers sheet
+ * (9 Oct 2026). With no sidewalk the other three questions are skipped, so
+ * only the width is needed.
+ */
+export function sceneProgress(sceneLevel) {
+  const s = sceneLevel || {};
+  const answered = (v) => v !== null && v !== undefined;
+  if (s.sidewalkWidth === "no_sidewalk") return { answered: 1, required: 1 };
+  const fields = [s.sidewalkWidth, s.surfaceCondition, s.walkability, s.overallAccessibility];
+  return { answered: fields.filter(answered).length, required: 4 };
+}
+
+/** "Step 2: Rate the Sidewalk, 1 of 4 answered" */
+export function sceneProgressLine(sceneLevel) {
+  const { answered, required } = sceneProgress(sceneLevel);
+  return `Step 2: Rate the Sidewalk, ${answered} of ${required} answered`;
+}
 
 /**
  * Which list a box belongs to. Suggestions use the same states as

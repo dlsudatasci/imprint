@@ -8,6 +8,7 @@ import {
   pickShape,
   pointInPolygon,
   isNearFirstPoint,
+  closesDraft,
   SIDEWALK_EDITOR_MESSAGES as M,
 } from "./sidewalkEditor.js";
 import { SIDEWALK_MASK_LIMITS } from "@/util/validators/sidewalkMask";
@@ -243,6 +244,30 @@ describe("hit-testing", () => {
     const draft = { kind: "walk", points: [pt(10, 10), pt(100, 10)] };
     expect(isNearFirstPoint(draft, pt(14, 12), TOL)).toBe(true);
     expect(isNearFirstPoint(draft, pt(40, 40), TOL)).toBe(false);
+  });
+});
+
+describe("closesDraft", () => {
+  const reach = 12;
+  const close = (draft, point) => closesDraft(draft, point, { ...ctx, reach });
+
+  it("closes only a draft of three or more points, within the reach of its first point", () => {
+    const three = { kind: "walk", points: [pt(100, 100), pt(200, 100), pt(200, 200)] };
+    expect(close(three, pt(110, 106))).toBe(true);
+    expect(close(three, pt(120, 100))).toBe(false);
+    expect(close({ kind: "walk", points: [pt(100, 100), pt(200, 100)] }, pt(100, 100))).toBe(false);
+    expect(close(null, pt(100, 100))).toBe(false);
+  });
+
+  it("closes on a press just off the photo beside a first point on its edge, as the hover preview does", () => {
+    // The first point was snapped to the bottom edge; the press lands 20 px
+    // below the photo, which places it on the edge right beside it
+    const draft = { kind: "walk", points: [pt(300, H), pt(300, 250), pt(400, 250)] };
+    const press = pt(304, H + 20);
+    expect(isNearFirstPoint(draft, press, reach)).toBe(false);
+    expect(close(draft, press)).toBe(true);
+    const preview = sidewalkReducer({ ...initialSidewalkState(), draft }, { ...ctx, type: "MOVE_PREVIEW", point: press }).preview;
+    expect(close(draft, preview)).toBe(true);
   });
 });
 

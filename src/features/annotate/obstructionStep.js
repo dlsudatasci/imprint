@@ -70,3 +70,19 @@ export function pickJudgeTarget(annotations = [], x, y) {
   }
   return best;
 }
+
+/**
+ * The box whose label is under the point, or null (14 Oct 2026). `labels` is
+ * [{ id, rect: { x, y, width, height } }] in the order painted, so the label
+ * on top wins. A label is drawn over the boxes and is wider than a thin box
+ * (a post, a motorcycle seen end on), so a click on it named that box but
+ * landed outside it, and the box could not be marked by its label.
+ */
+export function pickJudgeLabel(labels = [], x, y) {
+  for (let i = (labels || []).length - 1; i >= 0; i--) {
+    const { id, rect } = labels[i] || {};
+    if (!rect) continue;
+    if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height) return id;
+  }
+  return null;
+}

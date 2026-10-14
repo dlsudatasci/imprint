@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toggleHiddenId, withoutHiddenId, BOX_VISIBILITY_COPY } from "./boxVisibility";
+import { toggleHiddenId, withoutHiddenId, BOX_VISIBILITY_COPY, isDoubleTap, DOUBLE_TAP_MS } from "./boxVisibility";
 
 // Hiding boxes on the photo in Step 1 (8 Oct 2026)
 describe("toggleHiddenId", () => {
@@ -45,5 +45,22 @@ describe("BOX_VISIBILITY_COPY for Hide all and the panel's eye", () => {
     expect(BOX_VISIBILITY_COPY.hideAll).toBe("Hide all");
     expect(BOX_VISIBILITY_COPY.hideOpen).toBe("Hide this box on the photo");
     for (const s of [BOX_VISIBILITY_COPY.hideAll, BOX_VISIBILITY_COPY.hideOpen]) expect(s).not.toMatch(/—|;/);
+  });
+});
+
+describe("isDoubleTap", () => {
+  const first = { at: 1000, x: 100, y: 100 };
+
+  it("is a second tap soon after and near the first", () => {
+    expect(isDoubleTap(first, { at: 1250, x: 110, y: 95 }, { reach: 20 })).toBe(true);
+    expect(isDoubleTap(first, { at: 1000 + DOUBLE_TAP_MS, x: 100, y: 100 }, { reach: 20 })).toBe(true);
+  });
+
+  it("is not one too late, too far, out of order, or with no first tap or reach", () => {
+    expect(isDoubleTap(first, { at: 1001 + DOUBLE_TAP_MS, x: 100, y: 100 }, { reach: 20 })).toBe(false);
+    expect(isDoubleTap(first, { at: 1200, x: 130, y: 100 }, { reach: 20 })).toBe(false);
+    expect(isDoubleTap(first, { at: 900, x: 100, y: 100 }, { reach: 20 })).toBe(false);
+    expect(isDoubleTap(null, first, { reach: 20 })).toBe(false);
+    expect(isDoubleTap(first, { at: 1200, x: 100, y: 100 })).toBe(false);
   });
 });

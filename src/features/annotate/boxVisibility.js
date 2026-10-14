@@ -23,6 +23,26 @@ export function withoutHiddenId(ids, id) {
   return list.includes(id) ? list.filter((x) => x !== id) : list;
 }
 
+/**
+ * Double-tap to show a hidden box again (14 Oct 2026, a finger in Step 1). A
+ * hidden box is not drawn, so the annotator double-taps where it was. Two taps
+ * on empty photo make a double tap when the second comes within DOUBLE_TAP_MS
+ * of the first and within `reach` of it. Each tap is { at, x, y }, with `at`
+ * in ms and x, y in the same units as `reach`.
+ */
+export const DOUBLE_TAP_MS = 400;
+
+/**
+ * @param {{ at: number, x: number, y: number } | null | undefined} previous
+ * @param {{ at: number, x: number, y: number } | null | undefined} current
+ * @param {{ withinMs?: number, reach?: number }} [options]
+ */
+export function isDoubleTap(previous, current, { withinMs = DOUBLE_TAP_MS, reach } = {}) {
+  if (!previous || !current || !(reach > 0)) return false;
+  const elapsed = current.at - previous.at;
+  return elapsed >= 0 && elapsed <= withinMs && Math.hypot(current.x - previous.x, current.y - previous.y) <= reach;
+}
+
 export const BOX_VISIBILITY_COPY = Object.freeze({
   hide: (label) => `Hide ${label} on the photo`,
   show: (label) => `Show ${label} on the photo`,

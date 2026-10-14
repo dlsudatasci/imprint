@@ -288,6 +288,19 @@ describe("the touch tour", () => {
     expect(text).toContain("bottom of the screen");
   });
 
+  it("says the open or new box is the only one on the photo, and how to show a hidden box again (14 Oct 2026)", () => {
+    for (const isAnnotator of [false, true]) {
+      const steps = buildTourSteps(isAnnotator, "objects", "touch");
+      expect(steps[0].content).toContain("While a box is open it is the only box on the photo, and the others come back when you close it.");
+      expect(steps[1].content).toContain("Until you close it, it is the only box on the photo.");
+      expect(steps[2].content).toContain("To show a hidden box again, double-tap where it was.");
+    }
+    const annotatorList = buildTourSteps(true, "objects", "touch")[2].content;
+    expect(annotatorList).toContain("with the suggestions still to decide first");
+    expect(annotatorList).toContain("Hide all and Show all, beside the step's name");
+    expect(buildTourSteps(false, "objects", "touch")[2].content).toContain("Hide all and Show all, beside the step's name");
+  });
+
   it("puts no beacon beside its target", () => {
     expect(tourBeaconPlacements(false, "objects", "touch").every((p) => p === "top" || p === "bottom")).toBe(true);
   });
@@ -358,7 +371,7 @@ describe("the pointer tours with touch wording", () => {
     const steps = touch(false, "objects");
     const plain = buildTourSteps(false);
     expect(steps[0].content).toBe("Dashed yellow boxes are model suggestions. Tap each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, tap Not an object. To label an object the model missed, tap Add box at the bottom left of the photo and drag the new box's corners to fit it. Pinch to zoom in on small objects.");
-    expect(steps[1].content).toBe("Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Tap any object to change its answer. Tap the eye beside an object to hide its box on the photo while you work on boxes around it.");
+    expect(steps[1].content).toBe("Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Tap any object to change its answer. Tap the eye beside an object to hide its box on the photo while you work on boxes around it. To show a hidden box again, double-tap where it was.");
     expect(steps[2].content).toBe("When you answer Yes, a scale opens on the photo beside the box. Rate how severely the object blocks passage, from 1 (a minor inconvenience) to 5 (it completely blocks the path), then tap Confirm. To change it later, open the box and tap Change.");
     expect(steps[3].content).toBe(plain[3].content);
     expect(steps[4].content).toBe("Tap Next Image when every suggested box has been decided (Yes, No, or Not an object), every box has a category, and all four scene-level questions are answered. On the last image the button reads Finish Session. If something is missing, a message tells you what to finish.");
@@ -369,7 +382,7 @@ describe("the pointer tours with touch wording", () => {
     const plainObjects = buildTourSteps(true, "objects");
     expect(objects[0].content).toBe("Box every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not. Dashed yellow boxes are suggestions. Tap each one, check its category and fit the box if it is loose, then tap Keep, or tap Not an object if it marks nothing real. For every object the suggestions missed, tap Add box at the bottom left of the photo and drag the new box's corners to fit it. Pinch to zoom in on small objects.");
     expect(objects[1].content).toBe(plainObjects[1].content);
-    expect(objects[2].content).toBe("This list shows every box in the image and which suggestions you still need to decide. Tap a box in the list to select it. Tap the eye beside an object to hide its box on the photo while you work on boxes around it.");
+    expect(objects[2].content).toBe("This list shows every box in the image and which suggestions you still need to decide. Tap a box in the list to select it. Tap the eye beside an object to hide its box on the photo while you work on boxes around it. To show a hidden box again, double-tap where it was.");
     expect(objects[3].content).toBe("When every suggested box is kept or marked Not an object and every box has a category, tap Next: Sidewalk. You then outline the walking space, and after that mark which objects obstruct the sidewalk for you. If something is missing, a message tells you what to finish.");
 
     const sidewalk = touch(true, "sidewalk");

@@ -284,6 +284,45 @@ export default function ObjectTrays({ trays, selectedId, hiddenIds = [], onOpen,
   );
 }
 
+export interface SheetStepHeadingProps {
+  /** "Step 1 of 3: Objects", "Step 1: Identify Objects" */
+  heading: string;
+  /** Boxes hidden on the photo, and every box in the image */
+  hiddenCount: number;
+  boxCount: number;
+  onShowAll(): void;
+  onHideAll(): void;
+}
+
+/**
+ * The first row of the answers sheet in Step 1 on a phone or tablet, for both
+ * roles (14 Oct 2026): the step's name, with Show all and Hide all on the
+ * right, so a hidden box is a tap away without pulling the sheet up. Show all
+ * says how many are hidden. 40 px, the height of a chip.
+ */
+export function SheetStepHeading({ heading, hiddenCount, boxCount, onShowAll, onHideAll }: SheetStepHeadingProps) {
+  const button = cn("h-10 px-2 text-xs font-semibold text-primary rounded-control whitespace-nowrap", FOCUS);
+  return (
+    <div className="h-10 flex items-center justify-between gap-3">
+      <p className="text-xs font-bold text-muted truncate">{heading}</p>
+      {boxCount > 0 && (
+        <span className="shrink-0 -mr-2 inline-flex items-center">
+          {hiddenCount > 0 && (
+            <button type="button" onClick={onShowAll} className={button}>
+              {BOX_VISIBILITY_COPY.showAll} <span className="font-medium text-muted tabular-nums">{hiddenCount}</span>
+            </button>
+          )}
+          {hiddenCount < boxCount && (
+            <button type="button" onClick={onHideAll} className={button}>
+              {BOX_VISIBILITY_COPY.hideAll}
+            </button>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export interface ObjectTraysPeekProps {
   trays: Trays;
   selectedId: string | null;
@@ -295,6 +334,11 @@ export interface ObjectTraysPeekProps {
   sceneLine: string;
   /** Show Step 2 */
   onShowScene(): void;
+  /** Ids of boxes hidden on the photo, for the first row's Show all (14 Oct 2026) */
+  hiddenIds?: string[];
+  /** With onHideAll, the first row: the step's name with Show all and Hide all (14 Oct 2026) */
+  onShowAll?(): void;
+  onHideAll?(): void;
 }
 
 /** One answer list as a row: its title and count, then its chips scrolling sideways. */
@@ -328,11 +372,22 @@ function PeekRow({ tray, trays, actions, id }: {
  * it the photo's, does not change as objects are answered. The touch tour
  * points at it (box-review-section-peek).
  */
-export function ObjectTraysPeek({ trays, selectedId, onOpen, onNext, sceneLine, onShowScene }: ObjectTraysPeekProps) {
+export function ObjectTraysPeek({ trays, selectedId, onOpen, onNext, sceneLine, onShowScene, hiddenIds = [], onShowAll, onHideAll }: ObjectTraysPeekProps) {
   const { toDecide, total, removed } = trays;
   const actions: ChipActions = { selectedId, onOpen, hidden: new Set() };
+  const everyItem = [...toDecide, ...trays.notObstructions, ...trays.obstructions, ...removed];
+  const hidden = new Set(hiddenIds);
   return (
     <div id="box-review-section-peek" className="px-4 pb-2">
+      {onShowAll && onHideAll && (
+        <SheetStepHeading
+          heading={TRAY_COPY.stepHeading}
+          hiddenCount={everyItem.filter((item) => hidden.has(item.id)).length}
+          boxCount={everyItem.length}
+          onShowAll={onShowAll}
+          onHideAll={onHideAll}
+        />
+      )}
       <div className="h-11 flex items-center justify-between gap-3">
         {toDecide.length > 0 ? (
           <>

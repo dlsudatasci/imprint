@@ -1,7 +1,6 @@
 import { ReactPictureAnnotation } from "../index";
 import { IAnnotationState } from "./AnnotationState";
 import {
-  isNearFirstPoint,
   findPointNear,
   findEdgeHandleNear,
   pickShape,
@@ -34,7 +33,7 @@ export default class SidewalkAnnotationState implements IAnnotationState {
     const point = { x: positionX, y: positionY };
 
     if (state.draft) {
-      if (state.draft.points.length >= 3 && isNearFirstPoint(state.draft, point, tolerance)) {
+      if (context.sidewalkClosesDraft(point)) {
         context.dispatchSidewalk({ type: "CLOSE_SHAPE" });
       } else {
         context.dispatchSidewalk({ type: "ADD_POINT", point });

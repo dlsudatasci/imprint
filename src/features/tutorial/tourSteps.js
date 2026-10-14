@@ -111,7 +111,7 @@ const CONTRIBUTOR = [
   {
     title: "Your Answers",
     content: "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you draw are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Click any object to change its answer. Click the eye beside an object to hide its box on the photo while you work on boxes around it.",
-    touchContent: "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Tap any object to change its answer. Tap the eye beside an object to hide its box on the photo while you work on boxes around it.",
+    touchContent: "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Tap any object to change its answer. Tap the eye beside an object to hide its box on the photo while you work on boxes around it. To show a hidden box again, double-tap where it was.",
   },
   SEVERITY_STEP,
   SCENE_STEP,
@@ -131,7 +131,7 @@ const ANNOTATOR = [
   {
     title: "Objects in This Image",
     content: "This list shows every box in the image and which suggestions you still need to decide. Click a box in the list to select it. Click the eye beside an object to hide its box on the photo while you work on boxes around it.",
-    touchContent: "This list shows every box in the image and which suggestions you still need to decide. Tap a box in the list to select it. Tap the eye beside an object to hide its box on the photo while you work on boxes around it.",
+    touchContent: "This list shows every box in the image and which suggestions you still need to decide. Tap a box in the list to select it. Tap the eye beside an object to hide its box on the photo while you work on boxes around it. To show a hidden box again, double-tap where it was.",
   },
   ANNOTATOR_SUBMIT_STEP,
 ];
@@ -240,15 +240,15 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
   copy: [
     {
       title: "Annotation Canvas",
-      content: "Dashed yellow boxes are model suggestions. Tap each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, tap Not an object. Pinch to zoom in on small objects.",
+      content: "Dashed yellow boxes are model suggestions. Tap each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, tap Not an object. While a box is open it is the only box on the photo, and the others come back when you close it. Pinch to zoom in on small objects.",
     },
     {
       title: "Add a Box",
-      content: "To label an object the model missed, tap Add box. A box appears in the middle of the photo. Drag its four corners to fit the object. A magnifier shows exactly where the corner sits.",
+      content: "To label an object the model missed, tap Add box. A box appears in the middle of the photo. Drag its four corners to fit the object. A magnifier shows exactly where the corner sits. Until you close it, it is the only box on the photo.",
     },
     {
       title: "Your Answers",
-      content: "Every answer is listed at the bottom of the screen, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. Pull the list up to see everything, and tap any object to change its answer.",
+      content: "Every answer is listed at the bottom of the screen, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. Pull the list up to see everything, and tap any object to change its answer. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye beside an object in the list pulled up hides one. To show a hidden box again, double-tap where it was.",
     },
     {
       title: "Severity",
@@ -278,15 +278,15 @@ const ANNOTATOR_TOUCH_TOURS = Object.freeze({
     copy: [
       {
         title: "Annotation Canvas",
-        content: "Box every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not. Tap each dashed yellow suggestion, check its category and fit the box if it is loose, then tap Keep, or tap Not an object if it marks nothing real. Pinch to zoom in on small objects.",
+        content: "Box every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not. Tap each dashed yellow suggestion, check its category and fit the box if it is loose, then tap Keep, or tap Not an object if it marks nothing real. While a box is open it is the only box on the photo, and the others come back when you close it. Pinch to zoom in on small objects.",
       },
       {
         title: "Add a Box",
-        content: "Tap Add box for every object the suggestions missed. A box appears in the middle of the photo. Drag its four corners to fit the object. A magnifier shows exactly where the corner sits.",
+        content: "Tap Add box for every object the suggestions missed. A box appears in the middle of the photo. Drag its four corners to fit the object. A magnifier shows exactly where the corner sits. Until you close it, it is the only box on the photo.",
       },
       {
         title: "Objects in This Image",
-        content: "Every box is listed at the bottom of the screen with what is left to decide. Tap one to open it, or tap Next to go to the next suggestion to decide. Pull the list up for the eye that hides a box on the photo.",
+        content: "Every box is listed at the bottom of the screen, with the suggestions still to decide first. Tap one to open it, or tap Next to go to the next suggestion to decide. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye in the list pulled up hides one. To show a hidden box again, double-tap where it was.",
       },
       {
         title: "What to Box",

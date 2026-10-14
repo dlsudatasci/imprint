@@ -139,6 +139,18 @@ export function isNearFirstPoint(draft, point, tolerance) {
   return Boolean(first) && distance(first, point) <= tolerance;
 }
 
+/**
+ * True when a press at `point` closes the draft instead of adding a point
+ * (14 Oct 2026). The point is placed first, clamped to the photo and snapped
+ * to its edge as ADD_POINT and the hover preview place it, so a press just
+ * off the photo beside a first point on its edge closes the shape, as the
+ * enlarged first point promised. `reach` is the hit distance in image px.
+ */
+export function closesDraft(draft, point, { imageWidth, imageHeight, tolerance = 0, reach }) {
+  if (!draft || (draft.points?.length ?? 0) < 3) return false;
+  return isNearFirstPoint(draft, placePoint(point, { imageWidth, imageHeight, tolerance }), reach);
+}
+
 // ---- Reducer ----------------------------------------------------------------
 
 function placePoint(point, action) {

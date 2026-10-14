@@ -26,7 +26,7 @@ import { isBelowMinimumSize, clampPointToImage, keepMarkInside, markArea, normal
 import { normalizeSubmittedMarks } from "@/util/validators/annotationSubmit";
 import { findNearDuplicates } from "@/features/annotate/objectStep";
 import { buildTrays, TRAY_COPY, sceneProgressLine } from "@/features/annotate/objectTrays";
-import { toggleHiddenId, withoutHiddenId, BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
+import { toggleHiddenId, withoutHiddenId, isDoubleTap, BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
 import { createEditSaver } from "@/util/editSaver";
 import { TAXONOMY_GUIDE, TAXONOMY_RULES } from "@/features/annotate/taxonomyGuide";
 import {
@@ -36,13 +36,14 @@ import {
   toggleObstructionPatch,
   finalizeObstructionAnswers,
   pickJudgeTarget,
+  pickJudgeLabel,
 } from "@/features/annotate/obstructionStep";
 import { OBSTRUCTION_GUIDE } from "@/features/annotate/obstructionGuide";
 import { annotatorStepHeading, annotatorStepsFor } from "@/features/annotate/annotatorSteps";
 import {
   initialSidewalkState,
   sidewalkReducer,
-  isNearFirstPoint,
+  closesDraft,
   findPointNear,
   findEdgeHandleNear,
   pickShape,
@@ -57,7 +58,7 @@ import {
   sidewalkToolbarStatus,
   sidewalkTools,
 } from "@/features/annotate/sidewalkTools";
-import { summarizeObjectStep } from "@/features/annotate/objectStep";
+import { summarizeObjectStep, toDecideFirst } from "@/features/annotate/objectStep";
 import { SIDEWALK_GUIDE } from "@/features/annotate/sidewalkGuide";
 import { normalizeSidewalkMask, summarizeSidewalkMask } from "@/util/validators/sidewalkMask";
 
@@ -70,7 +71,7 @@ import SidewalkAnnotationState from "./annotation/SidewalkAnnotationState";
 import { paintSidewalk } from "./paintSidewalk";
 import DefaultInputSection, { type PanelVariant } from "./DefaultInputSection";
 import ObjectInputSection from "./ObjectInputSection";
-import ObjectTrays, { ObjectTraysPeek } from "./ObjectTrays";
+import ObjectTrays, { ObjectTraysPeek, SheetStepHeading } from "./ObjectTrays";
 import {
   defaultShapeStyle,
   drawnBoxStyle,
@@ -192,6 +193,20 @@ type LoupeTarget = { kind: "box"; id: string } | { kind: "sidewalk" };
 
 /** The sidewalk outline's blue, as paintSidewalk draws it. */
 const SIDEWALK_BLUE = "#2563eb";
+
+/** How near the first point, in CSS px, a mouse press closes a Sidewalk shape. */
+const SIDEWALK_CLOSE_PX = 12;
+
+/**
+ * How long after a finger or pen a mouse event on the photo is taken to be the
+ * browser's copy of the tap, and ignored (14 Oct 2026). iOS Safari sends those
+ * copies even though the tap's pointerdown is cancelled, so in Obstructions a
+ * tap marked a box and the copied mousedown unmarked it straight away.
+ */
+const COMPAT_MOUSE_MS = 1000;
+
+/** How near the first tap, in CSS px, the second of a double tap lands (isDoubleTap) */
+const DOUBLE_TAP_PX = 30;
 
 /** A media query's answer, false where there is no matchMedia (tests, old browsers). */
 const matches = (query: string) =>
@@ -795,6 +810,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   // (CSS px from the canvas's corner), and what the press started from
   private touchState = initialTouchState();
   private pointers = new Map<number, Point>();
+  /** When a finger or pen last touched the photo, for isMouseFromTouch */
+  private lastTouchAt = -Infinity;
+  /** The last tap on empty photo in Step 1, for showHiddenOnDoubleTap: { at, x, y } in ms and image px */
+  private lastEmptyTap: { at: number; x: number; y: number } | null = null;
   private touchStart: { boxId: string | null; mark: IShapeBase | null; downImage: Point; corner: Corner | null; grab: Point } | null = null;
   private pinchStart: { distance: number; mid: Point; view: View } | null = null;
   private viewAnimation: number | null = null;
@@ -854,8 +873,30 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     return !this.inSidewalkStep && !this.inObstructionStep;
   }
 
-  /** True for a box hidden on the photo. Only in Step 1: every box shows in the other steps. */
-  public isBoxHidden = (id: string) => this.inBoxStep && this.state.hiddenBoxIds.includes(id);
+  /**
+   * True for a box hidden on the photo. Only in Step 1: every box shows in the
+   * other steps. On a phone or tablet the open box is also the only one shown
+   * (focusedBoxId).
+   */
+  public isBoxHidden = (id: string) => {
+    if (!this.inBoxStep) return false;
+    if (this.state.hiddenBoxIds.includes(id)) return true;
+    const focused = this.focusedBoxId;
+    return focused !== null && id !== focused;
+  };
+
+  /**
+   * Phones and tablets, Step 1, both roles (14 Oct 2026): the open box, a
+   * suggestion tapped or a box just added, is the only box on the photo until
+   * it closes. Every other box is neither drawn nor tapped meanwhile, so a tap
+   * where one was closes the open box. The boxes the annotator hid stay
+   * hidden after; this is not stored in hiddenBoxIds.
+   */
+  private get focusedBoxId(): string | null {
+    if (!this.isSheet || !this.inBoxStep || this.selectedId == null) return null;
+    const id = this.selectedId;
+    return this.shapes.some((shape) => shape.getAnnotationData().id === id) ? id : null;
+  }
 
   /** The step list for this image: Sidewalk only on model-development images. */
   private get annotatorSteps() {
@@ -938,6 +979,30 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     return 8 / (this.scaleState.scale || 1);
   }
 
+  /**
+   * The mouse's reach to the first point to close a shape: 12 CSS px, in image
+   * px (14 Oct 2026). It was the 8 stage px tolerance, which the CSS scale of
+   * the desktop stage shrank to about 5 px on a laptop, smaller than the dot.
+   */
+  private sidewalkCloseReach() {
+    return cssToImage(SIDEWALK_CLOSE_PX, this.scaleState.scale, this.displayScale);
+  }
+
+  /**
+   * True when a press at this image point closes the shape being drawn. One
+   * test for the click, the enlarged first point under the mouse, and touch,
+   * so what the first point promises is what a press does.
+   */
+  public sidewalkClosesDraft(point: Point, reach = this.sidewalkCloseReach()) {
+    const { width, height } = this.imageSize();
+    return closesDraft(this.sidewalkState.draft, point, {
+      imageWidth: width,
+      imageHeight: height,
+      tolerance: this.sidewalkTolerance,
+      reach,
+    });
+  }
+
   public getSidewalkState() {
     return this.sidewalkState;
   }
@@ -983,7 +1048,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         state,
         toCanvas,
         hideFill: this.state.hideSidewalkFill,
-        nearFirstPoint: Boolean(state.draft && state.preview && isNearFirstPoint(state.draft, state.preview, this.sidewalkTolerance)),
+        nearFirstPoint: Boolean(state.preview && this.sidewalkClosesDraft(state.preview)),
         // Finger-sized handles once the photo has been touched
         touch: this.inputMode === "touch",
         displayScale: this.displayScale,
@@ -1770,8 +1835,14 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           onNext={this.openNextToDecide}
           sceneLine={sceneProgressLine(this.state.sceneLevel)}
           onShowScene={this.showSceneSection}
+          hiddenIds={this.state.hiddenBoxIds}
+          onShowAll={this.showAllBoxes}
+          onHideAll={this.hideAllBoxes}
         />
       );
+      // Show all and Hide all are at the top of the sheet (14 Oct 2026). In
+      // full screen that top is not shown, so the lists keep their own.
+      const listVisibility = this.inFocus ? { onShowAll: this.showAllBoxes, onHideAll: this.hideAllBoxes } : {};
       body = (
         <>
           <ObjectTrays
@@ -1780,8 +1851,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             hiddenIds={this.state.hiddenBoxIds}
             onOpen={this.openTrayItem}
             onToggleHidden={this.toggleBoxHidden}
-            onShowAll={this.showAllBoxes}
-            onHideAll={this.hideAllBoxes}
+            {...listVisibility}
             stacked
           />
           {this.renderSceneQuestions("sheet")}
@@ -1921,9 +1991,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
 
     const toDecide = summarizeObjectStep(this.currentAnnotationData).toDecideIds;
+    // Show all and Hide all beside the step's name (14 Oct 2026), so a hidden
+    // box is a tap away without pulling the sheet up
+    const hiddenCount = sortedAnnotations.filter((box) => this.state.hiddenBoxIds.includes(box.id)).length;
     return (
       <div id="box-review-section-peek" className="px-4 pb-2">
-        {heading("objects")}
+        <SheetStepHeading
+          heading={annotatorStepHeading("objects", steps)}
+          hiddenCount={hiddenCount}
+          boxCount={sortedAnnotations.length}
+          onShowAll={this.showAllBoxes}
+          onHideAll={this.hideAllBoxes}
+        />
         <div className="h-11 flex items-center justify-between gap-3">
           {toDecide.length > 0 ? (
             <>
@@ -1942,8 +2021,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             <span className="text-sm font-semibold text-success">Every suggestion is decided.</span>
           )}
         </div>
+        {/* The suggestions still to decide first (14 Oct 2026), so none is out of sight along the row */}
         <ul aria-label="Objects in this image" className={chipRow}>
-          {sortedAnnotations.map((box) => {
+          {toDecideFirst(sortedAnnotations, toDecide).map((box) => {
             const tag = this.objectTag(box);
             return (
               <li key={box.id} className="shrink-0">
@@ -2570,6 +2650,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * small one near it with a finger's tolerances.
    */
   private touchJudgeTargetAt(point: Point): string | null {
+    const labelled = this.judgeLabelAt(point);
+    if (labelled) return labelled;
     const boxes = this.shapes.map((shape) => shape.getAnnotationData());
     const target = pickJudgeTarget(boxes, point.x, point.y);
     if (target) return target.id;
@@ -2589,11 +2671,21 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * Hidden boxes are skipped.
    */
   private touchBoxAt(point: Point): string | null {
+    return this.boxAtAmong(point, (id) => !this.isBoxHidden(id));
+  }
+
+  /** The box hidden by the annotator under a finger at this point (image px), as touchBoxAt picks. */
+  private hiddenBoxAt(point: Point): string | null {
+    const hidden = this.state.hiddenBoxIds;
+    return this.boxAtAmong(point, (id) => hidden.includes(id));
+  }
+
+  private boxAtAmong(point: Point, include: (id: string) => boolean): string | null {
     let best: string | null = null;
     let bestArea = Infinity;
     for (const shape of this.shapes) {
       const data = shape.getAnnotationData();
-      if (this.isBoxHidden(data.id) || !shape.checkBoundary(point.x, point.y)) continue;
+      if (!include(data.id) || !shape.checkBoundary(point.x, point.y)) continue;
       const area = Math.abs(data.mark.width * data.mark.height);
       if (area < bestArea) {
         best = data.id;
@@ -2602,7 +2694,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     if (best !== null) return best;
     const near = pickNearSmallBox(
-      this.shapes.map((shape) => (this.isBoxHidden(shape.getAnnotationData().id) ? null : shape.getAnnotationData().mark)),
+      this.shapes.map((shape) => (include(shape.getAnnotationData().id) ? shape.getAnnotationData().mark : null)),
       point.x,
       point.y,
       this.scaleState.scale,
@@ -2618,8 +2710,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    */
   private onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === "mouse" || !this.touchEnabled) return;
-    // Stops the browser's compatibility mouse events, so a tap is not handled twice
+    // Stops the browser's compatibility mouse events, so a tap is not handled
+    // twice. iOS Safari sends them anyway, so the mouse handlers also check
+    // isMouseFromTouch.
     event.preventDefault();
+    this.lastTouchAt = Date.now();
     try {
       // A finger that slides onto the sheet still reports to the photo
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -2665,6 +2760,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   private onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === "mouse" || !this.touchEnabled || !this.pointers.has(event.pointerId)) return;
+    this.lastTouchAt = Date.now();
     this.pointers.delete(event.pointerId);
     if (this.pointers.size < 2) this.pinchStart = null;
     this.routeTouch({ type: "up", id: event.pointerId });
@@ -2672,6 +2768,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   private onPointerCancel = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === "mouse" || !this.touchEnabled || !this.pointers.has(event.pointerId)) return;
+    this.lastTouchAt = Date.now();
     this.pointers.delete(event.pointerId);
     this.pinchStart = null;
     this.routeTouch({ type: "cancel", id: event.pointerId });
@@ -2700,7 +2797,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     return {
       drafting,
-      nearFirstPoint: Boolean(state.draft && state.draft.points.length >= 3 && isNearFirstPoint(state.draft, image, reach)),
+      nearFirstPoint: this.sidewalkClosesDraft(image, reach),
       pointIndex,
       edgeAfterIndex,
       shapeId: pickShape(state.mask.polygons, image)?.id ?? null,
@@ -2747,10 +2844,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       }
       case "place": {
         const point = this.toImage(effect.point);
-        const draft = this.sidewalkState.draft;
         this.sidewalkAiming = false;
         this.hideLoupe();
-        if (draft && draft.points.length >= 3 && isNearFirstPoint(draft, point, this.sidewalkHitDistance())) {
+        if (this.sidewalkClosesDraft(point, this.sidewalkHitDistance())) {
           this.dispatchSidewalk({ type: "CLOSE_SHAPE" });
         } else {
           this.dispatchSidewalk({ type: "ADD_POINT", point });
@@ -2857,6 +2953,25 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.applyTouchEffect(effect);
   }
 
+  /**
+   * Step 1 (14 Oct 2026): a second tap on empty photo, soon after and near the
+   * first, shows the hidden box under it again (isDoubleTap). The first tap
+   * did what a tap on empty photo does, closing an open box.
+   */
+  private showHiddenOnDoubleTap() {
+    const image = this.touchStart?.downImage;
+    if (!this.inBoxStep || !image) return;
+    const tap = { at: Date.now(), x: image.x, y: image.y };
+    const reach = cssToImage(DOUBLE_TAP_PX, this.scaleState.scale, this.displayScale);
+    if (!isDoubleTap(this.lastEmptyTap, tap, { reach })) {
+      this.lastEmptyTap = tap;
+      return;
+    }
+    this.lastEmptyTap = null;
+    const id = this.hiddenBoxAt(image);
+    if (id) this.setState({ hiddenBoxIds: withoutHiddenId(this.state.hiddenBoxIds, id) }, () => this.onShapeChange());
+  }
+
   /** The box the gesture works on: the one selected at the press, unless it is rejected. */
   private touchTarget() {
     const id = this.touchStart?.boxId;
@@ -2868,6 +2983,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private applyTouchEffect(effect: TouchEffect) {
     switch (effect.type) {
       case "select":
+        this.lastEmptyTap = null;
         // Obstructions: a tap on a real object toggles its mark. No panel, no selection.
         if (this.inObstructionStep) this.toggleObstruction(effect.boxId);
         else this.selectBoxById(effect.boxId);
@@ -2875,6 +2991,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       case "deselect":
         if (this.inObstructionStep) break;
         if (this.selectedId !== null) this.closePanel();
+        this.showHiddenOnDoubleTap();
         break;
       case "startCorner": {
         const shape = this.touchTarget();
@@ -3292,8 +3409,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       <div id="box-review-section" className="bg-surface rounded-card border border-line shadow-sm p-4 w-full">
         <div className="mb-3 flex items-center justify-between gap-3">
           <H3><span className="text-lg font-bold text-ink">Objects in This Image</span></H3>
-          {/* Boxes hidden on the photo (8 Oct 2026), and Hide all (10 Oct 2026) */}
-          {sortedAnnotations.length > 0 && (
+          {/* Boxes hidden on the photo (8 Oct 2026), and Hide all (10 Oct 2026).
+              In the sheet both sit beside the step's name, always in view (14 Oct 2026). */}
+          {sheet && hiddenCount > 0 && (
+            <span className="text-xs text-muted whitespace-nowrap">{BOX_VISIBILITY_COPY.hiddenCount(hiddenCount)}</span>
+          )}
+          {!sheet && sortedAnnotations.length > 0 && (
             <span className="inline-flex items-center gap-3 text-xs text-muted whitespace-nowrap">
               {hiddenCount > 0 && (
                 <>
@@ -3312,7 +3433,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           )}
         </div>
         <ul className="flex flex-wrap gap-2">
-          {sortedAnnotations.map((box) => {
+          {(sheet ? toDecideFirst(sortedAnnotations, summarizeObjectStep(this.currentAnnotationData).toDecideIds) : sortedAnnotations).map((box) => {
             const tag = tagFor(box);
             const isHidden = hidden.includes(box.id);
             const isOpen = box.id === openId;
@@ -3561,6 +3682,21 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // Save each mark, so a refresh mid-step keeps the marks (6 Oct 2026)
     this.cacheCurrentImageEdits();
   };
+
+  /**
+   * Obstructions: the real object whose label is under this image point, or
+   * null. A label is drawn over the boxes, so it is checked before them, by
+   * the mouse (JudgingAnnotationState) and a finger alike. Public so
+   * JudgingAnnotationState can call it.
+   */
+  public judgeLabelAt(point: Point): string | null {
+    const { originX, originY, scale } = this.scaleState;
+    const labels = this.shapes
+      .map((shape) => ({ data: shape.getAnnotationData(), rect: shape.labelRect }))
+      .filter(({ data, rect }) => rect && isRealObject(data) && !this.isBoxHidden(data.id))
+      .map(({ data, rect }) => ({ id: data.id, rect }));
+    return pickJudgeLabel(labels, point.x * scale + originX, point.y * scale + originY);
+  }
 
   /**
    * Annotators, Sidewalk step: the drawing tools (13 Oct 2026, replacing a row
@@ -4644,10 +4780,24 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
   };
 
+  /**
+   * True for a mouse event the browser made from a finger or pen: one while a
+   * finger is down or within COMPAT_MOUSE_MS of one, or one the browser says
+   * came from touch. A real mouse right after a tap is rare enough to lose.
+   */
+  private isMouseFromTouch(event?: React.MouseEvent<HTMLCanvasElement>) {
+    const capabilities = (event?.nativeEvent as (MouseEvent & { sourceCapabilities?: { firesTouchEvents?: boolean } }) | undefined)?.sourceCapabilities;
+    return this.pointers.size > 0 || Date.now() - this.lastTouchAt < COMPAT_MOUSE_MS || capabilities?.firesTouchEvents === true;
+  }
+
   private onMouseDown: MouseEventHandler<HTMLCanvasElement> = (event) => {
+    if (this.isMouseFromTouch(event)) return;
     // For telemetry, and the square handles (9 Oct 2026)
     this.inputTypesUsed.add("mouse");
     this.setInputMode("mouse");
+    // Obstructions (14 Oct 2026): a double-click is one click. Its second
+    // press used to toggle the box back, so a double-clicked box stayed unmarked.
+    if (this.inObstructionStep && event.detail > 1) return;
     const { offsetX, offsetY } = event.nativeEvent;
     const { positionX, positionY } = this.calculateMousePosition(
       offsetX,
@@ -4657,6 +4807,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   private onMouseMove: MouseEventHandler<HTMLCanvasElement> = (event) => {
+    if (this.isMouseFromTouch(event)) return;
     const { offsetX, offsetY } = event.nativeEvent;
     const { positionX, positionY } = this.calculateMousePosition(
       offsetX,
@@ -4673,7 +4824,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.currentAnnotationState.onMouseMove(positionX, positionY);
   };
 
-  private onMouseUp: MouseEventHandler<HTMLCanvasElement> = () => {
+  private onMouseUp: MouseEventHandler<HTMLCanvasElement> = (event) => {
+    if (this.isMouseFromTouch(event)) return;
     this.currentAnnotationState.onMouseUp();
     this.endMouseLoupe();
   };

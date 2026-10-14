@@ -751,6 +751,35 @@ describe("touch on the photo (9 Oct 2026)", () => {
     expect(markOf(tool, "a-car")).toMatchObject(CAR);
   });
 
+  it("on a phone the open box is the only box on the photo until it closes, and on the desktop layout every box stays (14 Oct 2026)", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("c-tree"));
+    expect(tool.isBoxHidden("c-tree")).toBe(false);
+    expect(tool.isBoxHidden("a-car")).toBe(true);
+    expect(tool.isBoxHidden("b-pole")).toBe(true);
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    expect(tool.isBoxHidden("a-car")).toBe(false);
+
+    unmount();
+    const desktop = mount();
+    act(() => desktop.selectBoxById("c-tree"));
+    expect(desktop.isBoxHidden("a-car")).toBe(false);
+  });
+
+  it("puts Show all and Hide all beside the step's name at the top of the sheet, and the list pulled up no longer repeats them (14 Oct 2026)", () => {
+    const tool = onPhone();
+    const peek = () => host.querySelector("#box-review-section-peek")!;
+    const peekButton = (text: string) => Array.from(peek().querySelectorAll("button")).find((b) => b.textContent?.trim() === text);
+    expect(peek().textContent).toContain("Step 1: Identify Objects");
+    expect(peekButton("Hide all")).toBeDefined();
+    expect(host.querySelector("#box-review-section [data-hidden-summary]")).toBeNull();
+    act(() => peekButton("Hide all")!.click());
+    for (const id of ["a-car", "b-pole", "c-tree"]) expect(tool.isBoxHidden(id)).toBe(true);
+    expect(peekButton("Hide all")).toBeUndefined();
+    act(() => peekButton("Show all 3")!.click());
+    expect(tool.state.hiddenBoxIds).toEqual([]);
+  });
+
   it("adds an editable box with Add box, selects it, and lists it as still to decide", () => {
     const tool = onPhone();
     const button = host.querySelector("#add-box-button") as HTMLButtonElement;
@@ -885,6 +914,78 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     expect(sheet()!.textContent).toContain("Select a category");
   });
 
+  it("Objects: an open box is the only box on the photo until it closes, and boxes hidden before stay hidden (14 Oct 2026)", () => {
+    const tool = annotator();
+    act(() => tool.toggleBoxHidden("b-pole"));
+    tap(440, 150);
+    expect(tool.selectedId).toBe("c-tree");
+    expect(tool.isBoxHidden("c-tree")).toBe(false);
+    expect(tool.isBoxHidden("a-car")).toBe(true);
+    expect(tool.isBoxHidden("b-pole")).toBe(true);
+    // Focus is not hiding: the list's eyes still say only the pole is hidden
+    expect(tool.state.hiddenBoxIds).toEqual(["b-pole"]);
+    // A tap where the car is closes the tree, as the car is out of the way
+    tap(250, 160);
+    expect(tool.selectedId).toBeNull();
+    expect(tool.isBoxHidden("a-car")).toBe(false);
+    expect(tool.isBoxHidden("b-pole")).toBe(true);
+
+    // A box just added is alone on the photo too, until its panel closes
+    act(() => (host.querySelector("#add-box-button") as HTMLButtonElement).click());
+    const added = tool.shapes.map((sh) => sh.getAnnotationData()).find((d) => d.editable)!;
+    expect(tool.selectedId).toBe(added.id);
+    for (const id of ["a-car", "b-pole", "c-tree"]) expect(tool.isBoxHidden(id)).toBe(true);
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    expect(tool.isBoxHidden("a-car")).toBe(false);
+    expect(tool.isBoxHidden(added.id)).toBe(false);
+  });
+
+  it("Objects: the chips put the suggestions still to decide first, and Show all and Hide all sit beside the step's name (14 Oct 2026)", () => {
+    const tool = annotator();
+    const peek = () => host.querySelector("#box-review-section-peek")!;
+    const chips = () => Array.from(peek().querySelectorAll('ul[aria-label="Objects in this image"] li')).map((li) => li.textContent);
+    expect(chips()).toEqual(["Car #1To decide", "Utility Post #1To decide", "Tree #1To decide"]);
+    act(() => {
+      data(tool, "a-car").selected = true;
+      tool.setState({});
+    });
+    expect(chips()).toEqual(["Utility Post #1To decide", "Tree #1To decide", "Car #1Kept"]);
+
+    // Beside the heading: Hide all, then Show all with how many are hidden
+    expect(button(peek(), "Hide all")).toBeDefined();
+    expect(button(peek(), "Show all 1")).toBeUndefined();
+    act(() => button(peek(), "Hide all")!.click());
+    for (const id of ["a-car", "b-pole", "c-tree"]) expect(tool.isBoxHidden(id)).toBe(true);
+    expect(button(peek(), "Hide all")).toBeUndefined();
+    act(() => button(peek(), "Show all 3")!.click());
+    expect(tool.state.hiddenBoxIds).toEqual([]);
+    // Pulled up, the card no longer repeats them
+    expect(button(host.querySelector("#box-review-section"), "Hide all")).toBeUndefined();
+  });
+
+  it("Objects: a double tap where a hidden box is shows it again, and two slow taps do not (14 Oct 2026)", () => {
+    const tool = annotator();
+    act(() => tool.toggleBoxHidden("c-tree"));
+    const now = vi.spyOn(Date, "now");
+    try {
+      now.mockReturnValue(10_000);
+      tap(440, 150);
+      now.mockReturnValue(10_000 + 1_000);
+      tap(440, 150);
+      expect(tool.isBoxHidden("c-tree")).toBe(true);
+      now.mockReturnValue(20_000);
+      tap(440, 150);
+      now.mockReturnValue(20_250);
+      tap(445, 155);
+      expect(tool.isBoxHidden("c-tree")).toBe(false);
+      expect(tool.state.hiddenBoxIds).toEqual([]);
+      // Shown, not opened
+      expect(tool.selectedId).toBeNull();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("the footer names the step's button and keeps it the submit button, with Back in later steps", () => {
     const tool = annotator();
     expect(submit().textContent).toBe("Next: Sidewalk");
@@ -981,6 +1082,24 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     expect(data(tool, "c-tree").obstructs).not.toBe(true);
     expect(host.querySelector("#obstructions-confirmed")).not.toBeNull();
     expect(button(host, "Back")!.getAttribute("aria-label")).toBe("Back to Sidewalk");
+
+    // iOS Safari follows a tap with a mouse press on the same spot, even
+    // though the tap's pointerdown was cancelled. It must not toggle again.
+    const compatMouse = (type: string, x: number, y: number) =>
+      act(() => {
+        const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+        Object.defineProperty(event, "offsetX", { value: x });
+        Object.defineProperty(event, "offsetY", { value: y });
+        canvas().dispatchEvent(event);
+      });
+    tap(450, 150);
+    compatMouse("mousedown", 450, 150);
+    compatMouse("mouseup", 450, 150);
+    expect(data(tool, "c-tree").obstructs).toBe(true);
+    expect(host.querySelector("#box-review-section-peek")!.textContent).toContain("Marked 1 of 3");
+    tap(450, 150);
+    compatMouse("mousedown", 450, 150);
+    expect(data(tool, "c-tree").obstructs).not.toBe(true);
 
     // Sent with the confirmation unticked: the message shows and the sheet collapses
     act(() => tool.setState({ sheetSnap: "full" }));

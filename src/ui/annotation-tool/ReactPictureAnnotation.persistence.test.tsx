@@ -895,9 +895,10 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     expect(submit().textContent).toBe("Next: Obstructions");
     expect(submit().getAttribute("type")).toBe("submit");
     expect(button(host, "Back")!.getAttribute("aria-label")).toBe("Back to Objects");
-    // The step's heading and tools are at the top of the sheet, with the touch hint
+    // The step's heading and tools are at the top of the sheet, with the touch hint.
+    // Before a shape is started the only tool is Photo only (13 Oct 2026).
     expect(sheet()!.textContent).toContain("Step 2 of 3: Sidewalk");
-    expect(host.querySelector("#sidewalk-tools")!.textContent).toContain("Finish");
+    expect(sheet()!.querySelector("#sidewalk-tools")!.textContent).toBe("Photo only");
     expect(sheet()!.textContent).toContain("Tap the photo to start a shape around the walking space.");
   });
 
@@ -1301,3 +1302,252 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
   });
 });
 
+/**
+ * The Sidewalk step's drawing tools (13 Oct 2026): a bar that shows only the
+ * tools for what the annotator is doing, in place of six buttons above the
+ * photo that were mostly greyed out. One rule (sidewalkTools.js) for the
+ * desktop bar, the answers sheet and the full-screen photo.
+ */
+describe("the Sidewalk step's drawing tools (13 Oct 2026)", () => {
+  const realMatchMedia = window.matchMedia;
+  const realRect = HTMLCanvasElement.prototype.getBoundingClientRect;
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+  });
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    HTMLCanvasElement.prototype.getBoundingClientRect = realRect;
+  });
+
+  type Editor = {
+    mask: { polygons: Array<{ id: string; points: Array<{ x: number; y: number }> }> };
+    draft: { points: unknown[] } | null;
+    selectedId: string | null;
+    selectedPoint: number | null;
+    message: string | null;
+  };
+  type SidewalkTool = Tool & {
+    enterSidewalkStep(): void;
+    getSidewalkState(): Editor;
+    state: Tool["state"] & { hideSidewalkFill: boolean; sheetSnap: string };
+  };
+
+  /** An annotator in the Sidewalk step, every suggestion kept */
+  function inSidewalk(options: MountOptions = {}) {
+    const tool = mount({ isAnnotator: true, askSidewalk: true, ...options }) as SidewalkTool;
+    tool.currentImageElement = { width: 640, height: 360 };
+    for (const shape of tool.shapes) (shape.getAnnotationData() as unknown as { selected: boolean }).selected = true;
+    act(() => tool.enterSidewalkStep());
+    expect(tool.state.annotatorStep).toBe("sidewalk");
+    return tool;
+  }
+  /** Phones and tablets: a finger as the pointer, and a canvas with a size */
+  function onTouch() {
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes("coarse"),
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+    HTMLCanvasElement.prototype.getBoundingClientRect = function () {
+      return { left: 0, top: 0, width: 960, height: 600, right: 960, bottom: 600, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    };
+  }
+  const click = (tool: Tool, x: number, y: number) =>
+    act(() => {
+      tool.onMouseDown({ nativeEvent: { offsetX: x, offsetY: y } });
+      tool.onMouseUp();
+    });
+  const tap = (x: number, y: number) => {
+    const canvas = host.querySelector("canvas.rp-shapes") as HTMLCanvasElement;
+    for (const type of ["pointerdown", "pointerup"]) {
+      act(() => {
+        canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch", clientX: x, clientY: y }));
+      });
+    }
+  };
+  const key = (name: string) => act(() => void window.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })));
+  const SQUARE: Array<[number, number]> = [[300, 250], [500, 250], [500, 330], [300, 330]];
+
+  const bar = (scope: ParentNode = host) => scope.querySelector<HTMLElement>("#sidewalk-tools")!;
+  const toolButtons = (scope: Element) => Array.from(scope.querySelectorAll<HTMLButtonElement>("button[data-tool]"));
+  const names = (scope: Element) => toolButtons(scope).map((b) => b.dataset.tool);
+  const toolButton = (scope: Element, name: string) => scope.querySelector<HTMLButtonElement>(`button[data-tool="${name}"]`)!;
+  const status = () => bar().querySelector('[role="status"]')!.textContent;
+
+  it("desktop: the bar is part of the photo's card, and before a shape is started it has only Photo only and what to do next", () => {
+    inSidewalk();
+    expect(bar().getAttribute("role")).toBe("toolbar");
+    expect(bar().getAttribute("aria-label")).toBe("Drawing tools");
+    expect(bar().dataset.context).toBe("idle");
+    // In the card with the photo, above it: nothing floats between the step's words and the card
+    expect(bar().parentElement!.querySelector("canvas.rp-shapes")).not.toBeNull();
+    expect(bar().compareDocumentPosition(host.querySelector("canvas.rp-shapes")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(names(bar())).toEqual(["photoOnly"]);
+    expect(status()).toBe("Click the photo to start a shape.");
+    // One line at a fixed height, so the photo does not move as the tools change
+    expect(bar().className).toContain("min-h-[44px]");
+    expect(bar().className).not.toContain("flex-wrap");
+    for (const gone of ["Finish", "Undo", "Cancel", "Delete point", "Delete shape"]) expect(bar().textContent).not.toContain(gone);
+  });
+
+  it("desktop: drawing shows Finish, Undo and Cancel, and a selected shape shows Delete point, Delete shape and Done", () => {
+    const tool = inSidewalk();
+    click(tool, ...SQUARE[0]);
+    expect(bar().dataset.context).toBe("drawing");
+    expect(names(bar())).toEqual(["finish", "undo", "cancel", "photoOnly"]);
+    expect(toolButtons(bar()).map((b) => b.textContent)).toEqual(["Finish", "Undo", "Cancel", "Photo only"]);
+    expect(toolButtons(bar()).map((b) => b.getAttribute("aria-label"))).toEqual(["Finish shape", "Undo point", "Cancel shape", "Show photo only"]);
+    expect(toolButtons(bar()).every((b) => !b.disabled && b.getAttribute("type") === "button")).toBe(true);
+    expect(status()).toBe("Drawing a shape: 1 point");
+    // Finish on one point: the editor says why not, under the photo as before
+    act(() => toolButton(bar(), "finish").click());
+    expect(tool.getSidewalkState().message).toBe("A shape needs at least three points.");
+    expect(host.textContent).toContain("A shape needs at least three points.");
+    expect(tool.getSidewalkState().draft).not.toBeNull();
+
+    for (const [x, y] of SQUARE.slice(1)) click(tool, x, y);
+    expect(status()).toBe("Drawing a shape: 4 points");
+    act(() => toolButton(bar(), "undo").click());
+    expect(tool.getSidewalkState().draft!.points).toHaveLength(3);
+    click(tool, ...SQUARE[3]);
+    act(() => toolButton(bar(), "finish").click());
+    expect(tool.getSidewalkState().draft).toBeNull();
+    expect(tool.getSidewalkState().mask.polygons).toHaveLength(1);
+
+    // Closed, the shape is selected: its tools replace the drawing ones
+    expect(bar().dataset.context).toBe("shape");
+    expect(names(bar())).toEqual(["deletePoint", "deleteShape", "done", "photoOnly"]);
+    expect(status()).toBe("Shape 1: 4 points");
+    expect(toolButton(bar(), "deletePoint").disabled).toBe(true);
+    expect(toolButton(bar(), "deletePoint").title).toBe("Delete point. Click a point of the shape first.");
+    expect(toolButton(bar(), "done").getAttribute("aria-label")).toBe("Done");
+    // A press on a point selects it, and Delete point can remove it
+    click(tool, ...SQUARE[1]);
+    expect(tool.getSidewalkState().selectedPoint).toBe(1);
+    expect(status()).toBe("Shape 1: point 2 of 4");
+    expect(toolButton(bar(), "deletePoint").disabled).toBe(false);
+    act(() => toolButton(bar(), "deletePoint").click());
+    expect(tool.getSidewalkState().mask.polygons[0].points).toEqual([{ x: 300, y: 250 }, { x: 500, y: 330 }, { x: 300, y: 330 }]);
+    expect(status()).toBe("Shape 1: 3 points");
+
+    // Done puts the shape down: no tools, and what to do next
+    act(() => toolButton(bar(), "done").click());
+    expect(tool.getSidewalkState().selectedId).toBeNull();
+    expect(names(bar())).toEqual(["photoOnly"]);
+    expect(status()).toBe("Click a shape to select it, or click the photo to start another.");
+    // A click inside the shape selects it again, and Delete shape removes it
+    click(tool, 340, 310);
+    expect(tool.getSidewalkState().selectedId).toBe("w1");
+    act(() => toolButton(bar(), "deleteShape").click());
+    expect(tool.getSidewalkState().mask.polygons).toHaveLength(0);
+    expect(bar().dataset.context).toBe("idle");
+    expect(status()).toBe("Click the photo to start a shape.");
+    // Cancel drops a shape being drawn
+    click(tool, ...SQUARE[0]);
+    click(tool, ...SQUARE[1]);
+    act(() => toolButton(bar(), "cancel").click());
+    expect(tool.getSidewalkState().draft).toBeNull();
+    expect(names(bar())).toEqual(["photoOnly"]);
+  });
+
+  it("desktop: each tool's tooltip names a key, and the key does what the button does", () => {
+    const tool = inSidewalk();
+    for (const [x, y] of SQUARE) click(tool, x, y);
+    expect(toolButtons(bar()).map((b) => b.title)).toEqual(["Finish shape (Enter)", "Undo point (Backspace)", "Cancel shape (Esc)", "Show photo only"]);
+    key("Backspace");
+    expect(tool.getSidewalkState().draft!.points).toHaveLength(3);
+    key("Escape");
+    expect(tool.getSidewalkState().draft).toBeNull();
+    for (const [x, y] of SQUARE) click(tool, x, y);
+    key("Enter");
+    expect(tool.getSidewalkState().mask.polygons).toHaveLength(1);
+    expect(toolButton(bar(), "deleteShape").title).toBe("Delete shape (Delete)");
+    expect(toolButton(bar(), "done").title).toBe("Done (Esc)");
+
+    // With a point selected the Delete key removes the point, so Delete shape's tooltip drops it
+    click(tool, ...SQUARE[2]);
+    expect(toolButton(bar(), "deletePoint").title).toBe("Delete point (Backspace)");
+    expect(toolButton(bar(), "deleteShape").title).toBe("Delete shape");
+    key("Delete");
+    expect(tool.getSidewalkState().mask.polygons[0].points).toHaveLength(3);
+    key("Escape");
+    expect(tool.getSidewalkState().selectedId).toBeNull();
+    click(tool, 340, 310);
+    key("Delete");
+    expect(tool.getSidewalkState().mask.polygons).toHaveLength(0);
+  });
+
+  it("desktop: Photo only is always there and says whether it is on", () => {
+    const tool = inSidewalk();
+    const photoOnly = () => toolButton(bar(), "photoOnly");
+    expect(photoOnly().getAttribute("aria-pressed")).toBe("false");
+    act(() => photoOnly().click());
+    expect(tool.state.hideSidewalkFill).toBe(true);
+    expect(photoOnly().getAttribute("aria-pressed")).toBe("true");
+    // Still there, and still on, while drawing and with a shape selected
+    for (const [x, y] of SQUARE) click(tool, x, y);
+    expect(photoOnly().getAttribute("aria-pressed")).toBe("true");
+    key("Enter");
+    expect(names(bar())).toEqual(["deletePoint", "deleteShape", "done", "photoOnly"]);
+    act(() => photoOnly().click());
+    expect(tool.state.hideSidewalkFill).toBe(false);
+  });
+
+  it("phones and tablets: the sheet's row follows the same rule, without Done, and stays one height", () => {
+    onTouch();
+    const tool = inSidewalk({ layout: "sheet" });
+    const row = () => bar(host.querySelector("#answer-sheet")!);
+    expect(row().dataset.context).toBe("idle");
+    expect(names(row())).toEqual(["photoOnly"]);
+    expect(toolButton(row(), "photoOnly").textContent).toBe("Photo only");
+    expect(row().className).toContain("h-11");
+
+    tap(...SQUARE[0]);
+    expect(names(row())).toEqual(["finish", "undo", "cancel", "photoOnly"]);
+    expect(toolButtons(row()).map((b) => b.textContent)).toEqual(["Finish", "Undo", "Cancel", ""]);
+    // Beside other tools Photo only is its icon, named for a screen reader
+    expect(toolButton(row(), "photoOnly").getAttribute("aria-label")).toBe("Show photo only");
+    expect(toolButtons(row()).every((b) => b.className.includes("h-11"))).toBe(true);
+    expect(row().className).toContain("h-11");
+    tap(...SQUARE[1]);
+    act(() => toolButton(row(), "undo").click());
+    expect(tool.getSidewalkState().draft!.points).toHaveLength(1);
+    for (const [x, y] of SQUARE.slice(1)) tap(x, y);
+    act(() => toolButton(row(), "finish").click());
+    expect(tool.getSidewalkState().mask.polygons).toHaveLength(1);
+
+    // A tap on empty photo clears the selection there, so no Done
+    expect(names(row())).toEqual(["deletePoint", "deleteShape", "photoOnly"]);
+    expect(toolButton(row(), "deletePoint").disabled).toBe(true);
+    tap(...SQUARE[1]);
+    expect(tool.getSidewalkState().selectedPoint).toBe(1);
+    act(() => toolButton(row(), "deletePoint").click());
+    expect(tool.getSidewalkState().mask.polygons[0].points).toHaveLength(3);
+    act(() => toolButton(row(), "deleteShape").click());
+    expect(tool.getSidewalkState().mask.polygons).toHaveLength(0);
+    expect(names(row())).toEqual(["photoOnly"]);
+  });
+
+  it("the full-screen photo: the same tools as icons, each with its name", () => {
+    onTouch();
+    const tool = inSidewalk({ layout: "sheet", focus: true });
+    const chip = () => host.querySelector<HTMLElement>('[data-open-sheet]')!.parentElement!.querySelector<HTMLElement>('[role="toolbar"]')!;
+    expect(tool.state.sheetSnap).toBe("collapsed");
+    expect(chip().id).toBe("");
+    expect(names(chip())).toEqual(["photoOnly"]);
+    tap(...SQUARE[0]);
+    expect(names(chip())).toEqual(["finish", "undo", "cancel", "photoOnly"]);
+    expect(toolButtons(chip()).map((b) => b.textContent)).toEqual(["", "", "", ""]);
+    expect(toolButtons(chip()).map((b) => b.getAttribute("aria-label"))).toEqual(["Finish shape", "Undo point", "Cancel shape", "Show photo only"]);
+    // No keyboard on a phone: the tooltips name no keys
+    expect(toolButtons(chip()).map((b) => b.title)).toEqual(["Finish shape", "Undo point", "Cancel shape", "Show photo only"]);
+    for (const [x, y] of SQUARE.slice(1)) tap(x, y);
+    act(() => toolButton(chip(), "finish").click());
+    expect(names(chip())).toEqual(["deletePoint", "deleteShape", "photoOnly"]);
+    expect(toolButton(chip(), "deletePoint").title).toBe("Delete point. Tap a point of the shape first.");
+  });
+});

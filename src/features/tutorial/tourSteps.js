@@ -136,9 +136,10 @@ const ANNOTATOR = [
   ANNOTATOR_SUBMIT_STEP,
 ];
 
-// Annotators, Sidewalk step (6 Oct 2026). The toolbar sits right above the
-// photo, so their beacons go to the left of both rather than on top of the
-// toolbar's buttons or under the photo, where the card's beacon is.
+// Annotators, Sidewalk step (6 Oct 2026). The drawing tools are a bar at the
+// top of the photo's card (13 Oct 2026, before that a row above the card), so
+// their beacons go to the left of both rather than on top of the bar's buttons
+// or under the photo, where the card's beacon is.
 const SIDEWALK_TOUR = Object.freeze({
   targets: Object.freeze([".rp-stage", "#sidewalk-tools", "#sidewalk-guide", "#sidewalk-shapes", "button[type='submit']"]),
   placements: ["bottom", "bottom", "left", "top", "top"],
@@ -151,10 +152,10 @@ const SIDEWALK_TOUR = Object.freeze({
     },
     {
       title: "Drawing Tools",
-      content: "Finish shape closes the shape you are drawing, and Undo point and Cancel shape fix mistakes. Click a finished shape to select it, then drag its points, drag the handle in the middle of an edge to add a point, or delete a point or the whole shape. Show photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.",
-      // The desktop toolbar keeps its labels, so this names Finish shape and
-      // Cancel shape, not the sheet's short labels
-      touchContent: "Finish shape closes the shape you are drawing, and Undo point and Cancel shape fix mistakes. Tap a finished shape to select it, then drag its points, tap the dot in the middle of an edge to add a point, or delete a point or the whole shape. Show photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.",
+      // The bar shows only the tools that apply (13 Oct 2026, sidewalkTools.js),
+      // with the same labels on every device
+      content: "These tools change with what you are doing. While you draw a shape, Finish closes it, and Undo and Cancel fix mistakes. Click a finished shape to select it, then drag its points, drag the handle in the middle of an edge to add a point, or use Delete point and Delete shape. Photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.",
+      touchContent: "These tools change with what you are doing. While you draw a shape, Finish closes it, and Undo and Cancel fix mistakes. Tap a finished shape to select it, then drag its points, tap the dot in the middle of an edge to add a point, or use Delete point and Delete shape. Photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.",
     },
     {
       title: "What Counts as Walking Space",
@@ -309,7 +310,7 @@ const ANNOTATOR_TOUCH_TOURS = Object.freeze({
       },
       {
         title: "Drawing Tools",
-        content: "Finish closes the shape you are drawing, and Undo point and Cancel fix mistakes. Tap a finished shape to select it, then drag its points, tap a dot in the middle of an edge to add a point, or delete a point or the whole shape. Photo only hides the fill so you can check the edges.",
+        content: "These tools change with what you are doing. While you draw a shape, Finish closes it, and Undo and Cancel fix mistakes. Tap a finished shape to select it, then drag its points, tap a dot in the middle of an edge to add a point, or use Delete point and Delete shape. Photo only hides the fill so you can check the edges.",
       },
       {
         title: "Sidewalk Outline",

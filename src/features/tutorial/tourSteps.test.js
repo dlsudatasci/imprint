@@ -181,8 +181,10 @@ describe("annotator tours for Sidewalk and Obstructions", () => {
     const [canvas, tools, , shapes, next] = buildTourSteps(true, "sidewalk");
     expect(canvas.content).toMatch(/click the first point again to close the shape/);
     expect(canvas.content).toMatch(/Draw under any object standing on the sidewalk/);
-    expect(tools.content).toMatch(/Finish shape/);
-    expect(tools.content).toMatch(/Show photo only/);
+    // 13 Oct 2026: the tools change with what the annotator is doing, and are
+    // named by the labels on their buttons
+    expect(tools.content).toBe("These tools change with what you are doing. While you draw a shape, Finish closes it, and Undo and Cancel fix mistakes. Click a finished shape to select it, then drag its points, drag the handle in the middle of an edge to add a point, or use Delete point and Delete shape. Photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.");
+    for (const old of ["Finish shape", "Undo point", "Cancel shape", "Show photo only"]) expect(tools.content).not.toContain(old);
     expect(shapes.content).toMatch(/tick No sidewalk/);
     expect(shapes.content).toMatch(/Click one to select it on the photo and adjust its points/);
     expect(next.content).toMatch(/no shape is half drawn/);
@@ -373,7 +375,7 @@ describe("the pointer tours with touch wording", () => {
     const sidewalk = touch(true, "sidewalk");
     const plainSidewalk = buildTourSteps(true, "sidewalk");
     expect(sidewalk[0].content).toBe("Tap points around the sidewalk to outline it, then tap the first point again to close the shape. To place a point exactly, drag your finger and let go where the magnifier shows the right spot. Draw under any object standing on the sidewalk, as if it were not there. Separate stretches, such as both sides of a street, are separate shapes.");
-    expect(sidewalk[1].content).toBe("Finish shape closes the shape you are drawing, and Undo point and Cancel shape fix mistakes. Tap a finished shape to select it, then drag its points, tap the dot in the middle of an edge to add a point, or delete a point or the whole shape. Show photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.");
+    expect(sidewalk[1].content).toBe("These tools change with what you are doing. While you draw a shape, Finish closes it, and Undo and Cancel fix mistakes. Tap a finished shape to select it, then drag its points, tap the dot in the middle of an edge to add a point, or use Delete point and Delete shape. Photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.");
     expect(sidewalk[2].content).toBe(plainSidewalk[2].content);
     expect(sidewalk[3].content).toBe("Every shape you draw is listed here. Tap one to select it on the photo and adjust its points, or tap its × to delete it. If the image has no sidewalk or pedestrian path, tick No sidewalk instead of drawing.");
     expect(sidewalk[4].content).toBe(plainSidewalk[4].content);
@@ -405,7 +407,7 @@ describe("the annotator touch tours", () => {
     expect(steps.map((s) => s.title)).toEqual(["Outline the Walking Space", "Drawing Tools", "Sidewalk Outline", "What Counts as Walking Space", "Next: Obstructions"]);
     expect(steps.map((s) => s.sheet)).toEqual([undefined, undefined, "full", "full", undefined]);
     expect(steps[0].content).toContain("let go where the magnifier shows the right spot");
-    expect(steps[1].content).toContain("Finish closes the shape you are drawing");
+    expect(steps[1].content).toBe("These tools change with what you are doing. While you draw a shape, Finish closes it, and Undo and Cancel fix mistakes. Tap a finished shape to select it, then drag its points, tap a dot in the middle of an edge to add a point, or use Delete point and Delete shape. Photo only hides the fill so you can check the edges.");
   });
 
   it("gives Obstructions four steps, with the guide in the part pulled up, ending on Next Image", () => {

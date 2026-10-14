@@ -476,8 +476,8 @@ function TutorialBeacons({ isAnnotator = false, annotatorStep = "objects", input
   // One beacon per step of the tour on screen, so a beacon's index is its step.
   // Each tour says where its beacons sit (tourBeaconPlacements): above the
   // target by default, and to its left beside the photo for the contributor
-  // severity step and in the Sidewalk step, where the toolbar sits right above
-  // the photo.
+  // severity step and in the Sidewalk step, where the drawing tools sit at the
+  // top of the photo's card.
   // The touch tour's beacons sit above or below their targets only (9 Oct 2026)
   const placements = tourBeaconPlacements(isAnnotator, annotatorStep, input);
   const targets = tourBeaconTargets(isAnnotator, annotatorStep, input).map((sel, i) => ({
@@ -568,7 +568,10 @@ function TutorialBeacons({ isAnnotator = false, annotatorStep = "objects", input
           className="absolute z-[9999] w-9 h-9 flex items-center justify-center"
           style={{ top: pos.top - 18, left: pos.left - 18 }}
         >
-          <span className="absolute w-full h-full rounded-full bg-ink/30 animate-ping" />
+          {/* The ripple grows to twice the beacon. It must not take clicks: it
+              reached over the bottom of the photo, where a click meant for the
+              sidewalk outline opened the tour instead (found 13 Oct 2026). */}
+          <span className="pointer-events-none absolute w-full h-full rounded-full bg-ink/30 animate-ping" />
           <span className="relative w-4 h-4 rounded-full bg-ink" />
         </button>
       ))}

@@ -48,6 +48,15 @@ import {
   pickShape,
 } from "@/features/annotate/sidewalkEditor";
 import { annotatorStepParagraph, sidewalkOutlineHint, sidewalkSheetHint } from "@/features/annotate/annotatorStepCopy";
+import {
+  SIDEWALK_TOOL_COPY,
+  sidewalkKeyAction,
+  sidewalkShapeNumber,
+  sidewalkToolContext,
+  sidewalkToolTitle,
+  sidewalkToolbarStatus,
+  sidewalkTools,
+} from "@/features/annotate/sidewalkTools";
 import { summarizeObjectStep } from "@/features/annotate/objectStep";
 import { SIDEWALK_GUIDE } from "@/features/annotate/sidewalkGuide";
 import { normalizeSidewalkMask, summarizeSidewalkMask } from "@/util/validators/sidewalkMask";
@@ -161,6 +170,16 @@ export const ADD_BOX_COPY = Object.freeze({
   fit: "Fit",
   hint: "Drag the corners to fit the object.",
 });
+
+/** The icon of each Sidewalk drawing tool (sidewalkTools.js), at a size. */
+const SIDEWALK_TOOL_ICONS: Record<string, (size: number) => React.ReactNode> = {
+  finish: (size) => <CheckIcon size={size} />,
+  undo: (size) => <UndoIcon size={size} />,
+  cancel: (size) => <CloseIcon size={size} />,
+  deletePoint: (size) => <PointMinusIcon size={size} />,
+  deleteShape: (size) => <TrashIcon size={size} />,
+  done: (size) => <CheckIcon size={size} />,
+};
 
 /** An annotator card on the desktop layout, or in the answers sheet on a phone or tablet. */
 type CardVariant = "desktop" | "sheet";
@@ -1165,17 +1184,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const tag = target?.tagName;
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || target?.isContentEditable) return;
 
-    const { draft, selectedId, selectedPoint } = this.sidewalkState;
-    let action: { type: string } | null = null;
-    if (event.key === "Enter" && draft) action = { type: "CLOSE_SHAPE" };
-    else if (event.key === "Escape") action = { type: draft ? "CANCEL_SHAPE" : "CLEAR_SELECTION" };
-    else if (event.key === "Backspace") {
-      if (draft) action = { type: "UNDO_POINT" };
-      else if (selectedPoint != null) action = { type: "DELETE_POINT" };
-    } else if (event.key === "Delete") {
-      if (selectedPoint != null) action = { type: "DELETE_POINT" };
-      else if (selectedId) action = { type: "DELETE_SHAPE" };
-    }
+    // Which key does what is decided in sidewalkTools.js, with the tools' tooltips
+    const type = sidewalkKeyAction(event.key, this.sidewalkState);
+    const action = type ? { type } : null;
     if (!action) return;
     event.preventDefault();
     this.dispatchSidewalk(action);
@@ -1395,10 +1406,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   )}
                 </div>
 
-                {inSidewalkStep && this.renderSidewalkToolbar()}
-
                 <div className="flex flex-col gap-4 mb-6">
                   <div className="w-full bg-surface-subtle rounded-card border border-line shadow-sm p-2">
+                    {/* The drawing tools are part of the photo's card (13 Oct 2026), so
+                        the three steps share one layout: heading, photo, list */}
+                    {inSidewalkStep && this.renderSidewalkToolbar()}
                     {canvasArea}
                     {/* Sidewalk messages, under the photo where the outline is drawn */}
                     {inSidewalkStep && this.state.sidewalk.message && (
@@ -3551,70 +3563,138 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   /**
-   * Annotators, Sidewalk step: the toolbar above the canvas. Its messages
-   * (a refused shape, an undone drag) show under the photo instead, next to
-   * where the drawing happens (8 Oct 2026).
+   * Annotators, Sidewalk step: the drawing tools (13 Oct 2026, replacing a row
+   * of six buttons above the photo that were mostly greyed out). Only the
+   * tools for what is happening show (sidewalkTools.js): Finish, Undo and
+   * Cancel while a shape is drawn, Delete point, Delete shape and Done while
+   * one is selected, none otherwise. Photo only, a view setting, is always
+   * there.
+   *
+   *   "desktop"  a bar at the top of the photo's card: what is happening on the
+   *              left, the tools on the right. One line at a fixed height, so
+   *              the photo never moves as the tools change.
+   *   "sheet"    at the top of the answers sheet on a phone or tablet: 44 px
+   *              buttons with an icon and a label, in a row of a fixed height.
+   *   "compact"  icons only, on the full-screen photo.
+   *
+   * The editor's messages (a refused shape, an undone drag) stay under the
+   * photo, next to where the drawing happens (8 Oct 2026).
    */
   private renderSidewalkToolbar(variant: "desktop" | "sheet" | "compact" = "desktop") {
     const { sidewalk, hideSidewalkFill } = this.state;
-    const drawing = Boolean(sidewalk.draft);
-    const send = (type: string, extra: Record<string, unknown> = {}) => () => this.dispatchSidewalk({ type, ...extra });
+    const touch = variant !== "desktop";
+    const context = sidewalkToolContext(sidewalk);
+    const tools = sidewalkTools(sidewalk, { touch });
+    const run = (action: string) => () => this.dispatchSidewalk({ type: action });
     const togglePhotoOnly = () => this.setState({ hideSidewalkFill: !hideSidewalkFill }, () => this.onShapeChange());
+    const photoOnly = SIDEWALK_TOOL_COPY.photoOnly;
 
-    // Phones and tablets (12 Oct 2026). "sheet": one sideways-scrolling row of
-    // 44 px buttons with an icon and a short label, at the top of the answers
-    // sheet. "compact": icons only, for the full-screen photo. The same enable
-    // rules as the desktop toolbar.
-    if (variant !== "desktop") {
+    if (touch) {
       const compact = variant === "compact";
-      const tools: Array<{ label: string; name: string; icon: React.ReactNode; disabled?: boolean; pressed?: boolean; onClick: () => void }> = [
-        { label: "Finish", name: "Finish shape", icon: <CheckIcon size={18} />, disabled: !drawing, onClick: send("CLOSE_SHAPE") },
-        { label: "Undo point", name: "Undo point", icon: <UndoIcon size={18} />, disabled: !drawing, onClick: send("UNDO_POINT") },
-        { label: "Cancel", name: "Cancel shape", icon: <CloseIcon size={18} />, disabled: !drawing, onClick: send("CANCEL_SHAPE") },
-        { label: "Delete point", name: "Delete point", icon: <PointMinusIcon size={18} />, disabled: drawing || sidewalk.selectedPoint == null, onClick: send("DELETE_POINT") },
-        { label: "Delete shape", name: "Delete shape", icon: <TrashIcon size={18} />, disabled: drawing || !sidewalk.selectedId, onClick: send("DELETE_SHAPE") },
-        { label: "Photo only", name: "Show photo only", icon: <PhotoIcon size={18} />, pressed: hideSidewalkFill, onClick: togglePhotoOnly },
-      ];
+      const base = "shrink-0 h-11 inline-flex items-center justify-center gap-1.5 rounded-control border text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-40";
+      const plain = "border-line bg-surface text-ink";
+      const filled = "border-primary bg-primary text-white";
+      // Beside other tools the Photo only button is its icon alone, so a
+      // phone's row holds them all without scrolling
+      const photoIconOnly = compact || tools.length > 0;
       return (
         <div
           id={compact ? undefined : "sidewalk-tools"}
           role="toolbar"
           aria-label="Drawing tools"
+          data-context={context}
           className={compact ? "flex items-center gap-1" : "h-11 flex items-center gap-2 overflow-x-auto overscroll-x-contain"}
         >
-          {tools.map((tool) => (
+          {tools.map((entry) => (
             <button
-              key={tool.label}
+              key={entry.key}
               type="button"
-              disabled={tool.disabled}
-              aria-label={compact ? tool.name : undefined}
-              title={compact ? tool.name : undefined}
-              aria-pressed={tool.pressed === undefined ? undefined : tool.pressed}
-              onClick={tool.onClick}
-              className={`shrink-0 h-11 inline-flex items-center justify-center gap-1.5 rounded-control border text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-40 ${compact ? "w-11" : "px-3"} ${tool.pressed ? "border-primary bg-primary text-white" : "border-line bg-surface text-ink"}`}
+              data-tool={entry.key}
+              disabled={entry.disabled}
+              aria-label={entry.name}
+              title={compact ? sidewalkToolTitle(entry, { keys: false }) : undefined}
+              onClick={run(entry.action)}
+              className={`${base} ${compact ? "w-11" : "px-3"} ${entry.primary ? filled : plain}`}
             >
-              {tool.icon}
-              {!compact && tool.label}
+              {SIDEWALK_TOOL_ICONS[entry.key](18)}
+              {!compact && entry.label}
             </button>
           ))}
+          <button
+            type="button"
+            data-tool="photoOnly"
+            aria-label={photoOnly.name}
+            title={photoIconOnly ? photoOnly.name : undefined}
+            aria-pressed={hideSidewalkFill}
+            onClick={togglePhotoOnly}
+            className={`${base} ${photoIconOnly ? "w-11" : "px-3"} ${hideSidewalkFill ? filled : plain}`}
+          >
+            <PhotoIcon size={18} />
+            {!photoIconOnly && photoOnly.label}
+          </button>
         </div>
       );
     }
 
     return (
-      <div id="sidewalk-tools" className="mb-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="neutral" disabled={!drawing} onClick={send("CLOSE_SHAPE")}>Finish shape</Button>
-          <Button size="sm" variant="neutral" disabled={!drawing} onClick={send("UNDO_POINT")}>Undo point</Button>
-          <Button size="sm" variant="neutral" disabled={!drawing} onClick={send("CANCEL_SHAPE")}>Cancel shape</Button>
-          <span className="w-px h-6 bg-line mx-1" aria-hidden="true" />
-          <Button size="sm" variant="neutral" disabled={drawing || sidewalk.selectedPoint == null} onClick={send("DELETE_POINT")}>Delete point</Button>
-          <Button size="sm" variant="neutral" disabled={drawing || !sidewalk.selectedId} onClick={send("DELETE_SHAPE")}>Delete shape</Button>
-          <span className="w-px h-6 bg-line mx-1" aria-hidden="true" />
-          <Button size="sm" variant={hideSidewalkFill ? "primary" : "neutral"} aria-pressed={hideSidewalkFill} onClick={togglePhotoOnly}>
-            Show photo only
-          </Button>
+      <div
+        id="sidewalk-tools"
+        role="toolbar"
+        aria-label="Drawing tools"
+        data-context={context}
+        className="min-h-[44px] flex items-center gap-2 px-1 pb-2"
+      >
+        {/* What the tools are for, or what to do next. Left out where a narrow window has no room for it. */}
+        <div className="flex-1 min-w-0">
+          <p role="status" className="hidden xl:block truncate text-sm font-semibold text-ink">
+            {sidewalkToolbarStatus(sidewalk, this.words)}
+          </p>
         </div>
+        {tools.map((entry) =>
+          entry.key === "done" ? (
+            // The same tick as Done in the Objects step's box panel
+            <button
+              key={entry.key}
+              type="button"
+              data-tool={entry.key}
+              aria-label={entry.name}
+              title={sidewalkToolTitle(entry)}
+              onClick={run(entry.action)}
+              className="shrink-0 w-[38px] h-[38px] flex items-center justify-center rounded-control bg-blue-50 hover:bg-blue-100 text-primary transition-colors border border-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              <CheckIcon size={18} />
+            </button>
+          ) : (
+            <Button
+              key={entry.key}
+              size="sm"
+              variant={entry.primary ? "primary" : "neutral"}
+              data-tool={entry.key}
+              disabled={entry.disabled}
+              aria-label={entry.name}
+              title={sidewalkToolTitle(entry)}
+              onClick={run(entry.action)}
+              className="shrink-0"
+            >
+              {SIDEWALK_TOOL_ICONS[entry.key](16)}
+              {entry.label}
+            </Button>
+          )
+        )}
+        {tools.length > 0 && <span className="shrink-0 w-px h-6 bg-line mx-1" aria-hidden="true" />}
+        <Button
+          size="sm"
+          variant={hideSidewalkFill ? "primary" : "neutral"}
+          data-tool="photoOnly"
+          aria-label={photoOnly.name}
+          title={photoOnly.name}
+          aria-pressed={hideSidewalkFill}
+          onClick={togglePhotoOnly}
+          className="shrink-0"
+        >
+          <PhotoIcon size={16} />
+          {photoOnly.label}
+        </Button>
       </div>
     );
   }
@@ -3631,7 +3711,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const { sidewalk } = this.state;
     const { polygons, noSidewalk } = sidewalk.mask;
     const hasShapes = polygons.length > 0 || Boolean(sidewalk.draft);
-    const number = (id: string) => id.replace(/^[a-z]+/, "");
+    const number = sidewalkShapeNumber;
     const selected = polygons.find((p) => p.id === sidewalk.selectedId);
     // "tap" with a finger, the desktop wording with a mouse (annotatorStepCopy.js)
     const hint = sidewalkOutlineHint(

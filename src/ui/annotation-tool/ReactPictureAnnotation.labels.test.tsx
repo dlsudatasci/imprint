@@ -175,7 +175,9 @@ describe("labels on the photo", () => {
     expect(tool.state.annotatorStep).toBe("sidewalk");
     expect(photoLabels(tool)).toEqual({});
     expect(host.textContent).not.toContain("Show object boxes");
-    expect(host.textContent).toContain("Show photo only");
+    // The button reads Photo only from 13 Oct 2026, and is named Show photo only
+    expect(host.querySelector('[data-tool="photoOnly"]')!.textContent).toBe("Photo only");
+    expect(host.querySelector('[data-tool="photoOnly"]')!.getAttribute("aria-label")).toBe("Show photo only");
     act(() => tool.dispatchSidewalk({ type: "SET_NO_SIDEWALK", value: true }));
     act(() => tool.enterObstructionStep());
     expect(tool.state.annotatorStep).toBe("obstructions");

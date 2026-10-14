@@ -86,6 +86,8 @@ export interface IRectShapeData extends IShapeData {
 
 export interface IShape {
   shapeStyle: IShapeStyle;
+  /** Where the Obstructions view last drew the label, in stage px; null when it drew none. */
+  labelRect: IShapeBase | null;
   onDragStart: (positionX: number, positionY: number) => void;
   onDrag: (positionX: number, positionY: number) => void;
   checkBoundary: (positionX: number, positionY: number) => boolean;
@@ -122,6 +124,9 @@ export class RectShape implements IShape {
   private dragStartOffset: { offsetX: number; offsetY: number };
 
   public readonly shapeStyle: IShapeStyle;
+
+  /** Where the Obstructions view last drew this box's label, in stage px; null when it drew none. */
+  public labelRect: IShapeBase | null = null;
 
   constructor(
     data: IAnnotation<IShapeData>,
@@ -210,6 +215,7 @@ export class RectShape implements IShape {
     const { x, y, width, height } = calculateTruePosition(
       this.annotationData.mark
     );
+    this.labelRect = null;
     if (variant === "obstructions") {
       if (this.annotationData.comment !== "not_an_object") {
         this.paintObstructionAnswer(canvas2D, { x, y, width, height }, displayLabel);
@@ -305,7 +311,8 @@ export class RectShape implements IShape {
     const { comment } = this.annotationData;
     if (comment) {
       const labelText = displayLabel ?? comment.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      this.paintLabel(
+      // Kept so a click on the label marks this box (pickJudgeLabel)
+      this.labelRect = this.paintLabel(
         canvas2D,
         x,
         y,
@@ -353,6 +360,7 @@ export class RectShape implements IShape {
     canvas2D.textBaseline = "middle";
     canvas2D.fillStyle = textColor;
     canvas2D.fillText(labelText, x + paddingX, y + rectH / 2);
+    return { x, y, width: rectW, height: rectH };
   };
 
   public adjustMark = ({

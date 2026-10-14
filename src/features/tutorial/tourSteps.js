@@ -111,7 +111,7 @@ const CONTRIBUTOR = [
   {
     title: "Your Answers",
     content: "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you draw are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Click any object to change its answer. Click the eye beside an object to hide its box on the photo while you work on boxes around it.",
-    touchContent: "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Tap any object to change its answer. Tap the eye beside an object to hide its box on the photo while you work on boxes around it.",
+    touchContent: "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Tap any object to change its answer. Tap the eye beside an object to hide its box on the photo while you work on boxes around it. To show a hidden box again, double-tap where it was.",
   },
   SEVERITY_STEP,
   SCENE_STEP,
@@ -131,14 +131,15 @@ const ANNOTATOR = [
   {
     title: "Objects in This Image",
     content: "This list shows every box in the image and which suggestions you still need to decide. Click a box in the list to select it. Click the eye beside an object to hide its box on the photo while you work on boxes around it.",
-    touchContent: "This list shows every box in the image and which suggestions you still need to decide. Tap a box in the list to select it. Tap the eye beside an object to hide its box on the photo while you work on boxes around it.",
+    touchContent: "This list shows every box in the image and which suggestions you still need to decide. Tap a box in the list to select it. Tap the eye beside an object to hide its box on the photo while you work on boxes around it. To show a hidden box again, double-tap where it was.",
   },
   ANNOTATOR_SUBMIT_STEP,
 ];
 
-// Annotators, Sidewalk step (6 Oct 2026). The toolbar sits right above the
-// photo, so their beacons go to the left of both rather than on top of the
-// toolbar's buttons or under the photo, where the card's beacon is.
+// Annotators, Sidewalk step (6 Oct 2026). The drawing tools are a bar at the
+// top of the photo's card (13 Oct 2026, before that a row above the card), so
+// their beacons go to the left of both rather than on top of the bar's buttons
+// or under the photo, where the card's beacon is.
 const SIDEWALK_TOUR = Object.freeze({
   targets: Object.freeze([".rp-stage", "#sidewalk-tools", "#sidewalk-guide", "#sidewalk-shapes", "button[type='submit']"]),
   placements: ["bottom", "bottom", "left", "top", "top"],
@@ -151,10 +152,10 @@ const SIDEWALK_TOUR = Object.freeze({
     },
     {
       title: "Drawing Tools",
-      content: "Finish shape closes the shape you are drawing, and Undo point and Cancel shape fix mistakes. Click a finished shape to select it, then drag its points, drag the handle in the middle of an edge to add a point, or delete a point or the whole shape. Show photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.",
-      // The desktop toolbar keeps its labels, so this names Finish shape and
-      // Cancel shape, not the sheet's short labels
-      touchContent: "Finish shape closes the shape you are drawing, and Undo point and Cancel shape fix mistakes. Tap a finished shape to select it, then drag its points, tap the dot in the middle of an edge to add a point, or delete a point or the whole shape. Show photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.",
+      // The bar shows only the tools that apply (13 Oct 2026, sidewalkTools.js),
+      // with the same labels on every device
+      content: "These tools change with what you are doing. While you draw a shape, Finish closes it, and Undo and Cancel fix mistakes. Click a finished shape to select it, then drag its points, drag the handle in the middle of an edge to add a point, or use Delete point and Delete shape. Photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.",
+      touchContent: "These tools change with what you are doing. While you draw a shape, Finish closes it, and Undo and Cancel fix mistakes. Tap a finished shape to select it, then drag its points, tap the dot in the middle of an edge to add a point, or use Delete point and Delete shape. Photo only hides the outline's fill so you can check the edges. The object boxes are hidden here and come back in the next step.",
     },
     {
       title: "What Counts as Walking Space",
@@ -239,15 +240,15 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
   copy: [
     {
       title: "Annotation Canvas",
-      content: "Dashed yellow boxes are model suggestions. Tap each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, tap Not an object. Pinch to zoom in on small objects.",
+      content: "Dashed yellow boxes are model suggestions. Tap each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, tap Not an object. While a box is open it is the only box on the photo, and the others come back when you close it. Pinch to zoom in on small objects.",
     },
     {
       title: "Add a Box",
-      content: "To label an object the model missed, tap Add box. A box appears in the middle of the photo. Drag its four corners to fit the object. A magnifier shows exactly where the corner sits.",
+      content: "To label an object the model missed, tap Add box. A box appears in the middle of the photo. Drag its four corners to fit the object. A magnifier shows exactly where the corner sits. Until you close it, it is the only box on the photo.",
     },
     {
       title: "Your Answers",
-      content: "Every answer is listed at the bottom of the screen, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. Pull the list up to see everything, and tap any object to change its answer.",
+      content: "Every answer is listed at the bottom of the screen, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. Pull the list up to see everything, and tap any object to change its answer. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye beside an object in the list pulled up hides one. To show a hidden box again, double-tap where it was.",
     },
     {
       title: "Severity",
@@ -277,15 +278,15 @@ const ANNOTATOR_TOUCH_TOURS = Object.freeze({
     copy: [
       {
         title: "Annotation Canvas",
-        content: "Box every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not. Tap each dashed yellow suggestion, check its category and fit the box if it is loose, then tap Keep, or tap Not an object if it marks nothing real. Pinch to zoom in on small objects.",
+        content: "Box every object from the 18 categories that you can see anywhere in the image, on the sidewalk or not. Tap each dashed yellow suggestion, check its category and fit the box if it is loose, then tap Keep, or tap Not an object if it marks nothing real. While a box is open it is the only box on the photo, and the others come back when you close it. Pinch to zoom in on small objects.",
       },
       {
         title: "Add a Box",
-        content: "Tap Add box for every object the suggestions missed. A box appears in the middle of the photo. Drag its four corners to fit the object. A magnifier shows exactly where the corner sits.",
+        content: "Tap Add box for every object the suggestions missed. A box appears in the middle of the photo. Drag its four corners to fit the object. A magnifier shows exactly where the corner sits. Until you close it, it is the only box on the photo.",
       },
       {
         title: "Objects in This Image",
-        content: "Every box is listed at the bottom of the screen with what is left to decide. Tap one to open it, or tap Next to go to the next suggestion to decide. Pull the list up for the eye that hides a box on the photo.",
+        content: "Every box is listed at the bottom of the screen, with the suggestions still to decide first. Tap one to open it, or tap Next to go to the next suggestion to decide. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye in the list pulled up hides one. To show a hidden box again, double-tap where it was.",
       },
       {
         title: "What to Box",
@@ -309,7 +310,7 @@ const ANNOTATOR_TOUCH_TOURS = Object.freeze({
       },
       {
         title: "Drawing Tools",
-        content: "Finish closes the shape you are drawing, and Undo point and Cancel fix mistakes. Tap a finished shape to select it, then drag its points, tap a dot in the middle of an edge to add a point, or delete a point or the whole shape. Photo only hides the fill so you can check the edges.",
+        content: "These tools change with what you are doing. While you draw a shape, Finish closes it, and Undo and Cancel fix mistakes. Tap a finished shape to select it, then drag its points, tap a dot in the middle of an edge to add a point, or use Delete point and Delete shape. Photo only hides the fill so you can check the edges.",
       },
       {
         title: "Sidewalk Outline",

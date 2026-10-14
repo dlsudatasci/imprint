@@ -26,7 +26,7 @@ import { isBelowMinimumSize, clampPointToImage, keepMarkInside, markArea, normal
 import { normalizeSubmittedMarks } from "@/util/validators/annotationSubmit";
 import { findNearDuplicates } from "@/features/annotate/objectStep";
 import { buildTrays, TRAY_COPY, sceneProgressLine } from "@/features/annotate/objectTrays";
-import { toggleHiddenId, withoutHiddenId, BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
+import { toggleHiddenId, withoutHiddenId, isDoubleTap, BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
 import { createEditSaver } from "@/util/editSaver";
 import { TAXONOMY_GUIDE, TAXONOMY_RULES } from "@/features/annotate/taxonomyGuide";
 import {
@@ -36,19 +36,29 @@ import {
   toggleObstructionPatch,
   finalizeObstructionAnswers,
   pickJudgeTarget,
+  pickJudgeLabel,
 } from "@/features/annotate/obstructionStep";
 import { OBSTRUCTION_GUIDE } from "@/features/annotate/obstructionGuide";
 import { annotatorStepHeading, annotatorStepsFor } from "@/features/annotate/annotatorSteps";
 import {
   initialSidewalkState,
   sidewalkReducer,
-  isNearFirstPoint,
+  closesDraft,
   findPointNear,
   findEdgeHandleNear,
   pickShape,
 } from "@/features/annotate/sidewalkEditor";
 import { annotatorStepParagraph, sidewalkOutlineHint, sidewalkSheetHint } from "@/features/annotate/annotatorStepCopy";
-import { summarizeObjectStep } from "@/features/annotate/objectStep";
+import {
+  SIDEWALK_TOOL_COPY,
+  sidewalkKeyAction,
+  sidewalkShapeNumber,
+  sidewalkToolContext,
+  sidewalkToolTitle,
+  sidewalkToolbarStatus,
+  sidewalkTools,
+} from "@/features/annotate/sidewalkTools";
+import { summarizeObjectStep, toDecideFirst } from "@/features/annotate/objectStep";
 import { SIDEWALK_GUIDE } from "@/features/annotate/sidewalkGuide";
 import { normalizeSidewalkMask, summarizeSidewalkMask } from "@/util/validators/sidewalkMask";
 
@@ -61,7 +71,7 @@ import SidewalkAnnotationState from "./annotation/SidewalkAnnotationState";
 import { paintSidewalk } from "./paintSidewalk";
 import DefaultInputSection, { type PanelVariant } from "./DefaultInputSection";
 import ObjectInputSection from "./ObjectInputSection";
-import ObjectTrays, { ObjectTraysPeek } from "./ObjectTrays";
+import ObjectTrays, { ObjectTraysPeek, SheetStepHeading } from "./ObjectTrays";
 import {
   defaultShapeStyle,
   drawnBoxStyle,
@@ -162,6 +172,16 @@ export const ADD_BOX_COPY = Object.freeze({
   hint: "Drag the corners to fit the object.",
 });
 
+/** The icon of each Sidewalk drawing tool (sidewalkTools.js), at a size. */
+const SIDEWALK_TOOL_ICONS: Record<string, (size: number) => React.ReactNode> = {
+  finish: (size) => <CheckIcon size={size} />,
+  undo: (size) => <UndoIcon size={size} />,
+  cancel: (size) => <CloseIcon size={size} />,
+  deletePoint: (size) => <PointMinusIcon size={size} />,
+  deleteShape: (size) => <TrashIcon size={size} />,
+  done: (size) => <CheckIcon size={size} />,
+};
+
 /** An annotator card on the desktop layout, or in the answers sheet on a phone or tablet. */
 type CardVariant = "desktop" | "sheet";
 
@@ -173,6 +193,20 @@ type LoupeTarget = { kind: "box"; id: string } | { kind: "sidewalk" };
 
 /** The sidewalk outline's blue, as paintSidewalk draws it. */
 const SIDEWALK_BLUE = "#2563eb";
+
+/** How near the first point, in CSS px, a mouse press closes a Sidewalk shape. */
+const SIDEWALK_CLOSE_PX = 12;
+
+/**
+ * How long after a finger or pen a mouse event on the photo is taken to be the
+ * browser's copy of the tap, and ignored (14 Oct 2026). iOS Safari sends those
+ * copies even though the tap's pointerdown is cancelled, so in Obstructions a
+ * tap marked a box and the copied mousedown unmarked it straight away.
+ */
+const COMPAT_MOUSE_MS = 1000;
+
+/** How near the first tap, in CSS px, the second of a double tap lands (isDoubleTap) */
+const DOUBLE_TAP_PX = 30;
 
 /** A media query's answer, false where there is no matchMedia (tests, old browsers). */
 const matches = (query: string) =>
@@ -776,6 +810,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   // (CSS px from the canvas's corner), and what the press started from
   private touchState = initialTouchState();
   private pointers = new Map<number, Point>();
+  /** When a finger or pen last touched the photo, for isMouseFromTouch */
+  private lastTouchAt = -Infinity;
+  /** The last tap on empty photo in Step 1, for showHiddenOnDoubleTap: { at, x, y } in ms and image px */
+  private lastEmptyTap: { at: number; x: number; y: number } | null = null;
   private touchStart: { boxId: string | null; mark: IShapeBase | null; downImage: Point; corner: Corner | null; grab: Point } | null = null;
   private pinchStart: { distance: number; mid: Point; view: View } | null = null;
   private viewAnimation: number | null = null;
@@ -835,8 +873,30 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     return !this.inSidewalkStep && !this.inObstructionStep;
   }
 
-  /** True for a box hidden on the photo. Only in Step 1: every box shows in the other steps. */
-  public isBoxHidden = (id: string) => this.inBoxStep && this.state.hiddenBoxIds.includes(id);
+  /**
+   * True for a box hidden on the photo. Only in Step 1: every box shows in the
+   * other steps. On a phone or tablet the open box is also the only one shown
+   * (focusedBoxId).
+   */
+  public isBoxHidden = (id: string) => {
+    if (!this.inBoxStep) return false;
+    if (this.state.hiddenBoxIds.includes(id)) return true;
+    const focused = this.focusedBoxId;
+    return focused !== null && id !== focused;
+  };
+
+  /**
+   * Phones and tablets, Step 1, both roles (14 Oct 2026): the open box, a
+   * suggestion tapped or a box just added, is the only box on the photo until
+   * it closes. Every other box is neither drawn nor tapped meanwhile, so a tap
+   * where one was closes the open box. The boxes the annotator hid stay
+   * hidden after; this is not stored in hiddenBoxIds.
+   */
+  private get focusedBoxId(): string | null {
+    if (!this.isSheet || !this.inBoxStep || this.selectedId == null) return null;
+    const id = this.selectedId;
+    return this.shapes.some((shape) => shape.getAnnotationData().id === id) ? id : null;
+  }
 
   /** The step list for this image: Sidewalk only on model-development images. */
   private get annotatorSteps() {
@@ -919,6 +979,30 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     return 8 / (this.scaleState.scale || 1);
   }
 
+  /**
+   * The mouse's reach to the first point to close a shape: 12 CSS px, in image
+   * px (14 Oct 2026). It was the 8 stage px tolerance, which the CSS scale of
+   * the desktop stage shrank to about 5 px on a laptop, smaller than the dot.
+   */
+  private sidewalkCloseReach() {
+    return cssToImage(SIDEWALK_CLOSE_PX, this.scaleState.scale, this.displayScale);
+  }
+
+  /**
+   * True when a press at this image point closes the shape being drawn. One
+   * test for the click, the enlarged first point under the mouse, and touch,
+   * so what the first point promises is what a press does.
+   */
+  public sidewalkClosesDraft(point: Point, reach = this.sidewalkCloseReach()) {
+    const { width, height } = this.imageSize();
+    return closesDraft(this.sidewalkState.draft, point, {
+      imageWidth: width,
+      imageHeight: height,
+      tolerance: this.sidewalkTolerance,
+      reach,
+    });
+  }
+
   public getSidewalkState() {
     return this.sidewalkState;
   }
@@ -964,7 +1048,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         state,
         toCanvas,
         hideFill: this.state.hideSidewalkFill,
-        nearFirstPoint: Boolean(state.draft && state.preview && isNearFirstPoint(state.draft, state.preview, this.sidewalkTolerance)),
+        nearFirstPoint: Boolean(state.preview && this.sidewalkClosesDraft(state.preview)),
         // Finger-sized handles once the photo has been touched
         touch: this.inputMode === "touch",
         displayScale: this.displayScale,
@@ -1165,17 +1249,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const tag = target?.tagName;
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || target?.isContentEditable) return;
 
-    const { draft, selectedId, selectedPoint } = this.sidewalkState;
-    let action: { type: string } | null = null;
-    if (event.key === "Enter" && draft) action = { type: "CLOSE_SHAPE" };
-    else if (event.key === "Escape") action = { type: draft ? "CANCEL_SHAPE" : "CLEAR_SELECTION" };
-    else if (event.key === "Backspace") {
-      if (draft) action = { type: "UNDO_POINT" };
-      else if (selectedPoint != null) action = { type: "DELETE_POINT" };
-    } else if (event.key === "Delete") {
-      if (selectedPoint != null) action = { type: "DELETE_POINT" };
-      else if (selectedId) action = { type: "DELETE_SHAPE" };
-    }
+    // Which key does what is decided in sidewalkTools.js, with the tools' tooltips
+    const type = sidewalkKeyAction(event.key, this.sidewalkState);
+    const action = type ? { type } : null;
     if (!action) return;
     event.preventDefault();
     this.dispatchSidewalk(action);
@@ -1395,10 +1471,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   )}
                 </div>
 
-                {inSidewalkStep && this.renderSidewalkToolbar()}
-
                 <div className="flex flex-col gap-4 mb-6">
                   <div className="w-full bg-surface-subtle rounded-card border border-line shadow-sm p-2">
+                    {/* The drawing tools are part of the photo's card (13 Oct 2026), so
+                        the three steps share one layout: heading, photo, list */}
+                    {inSidewalkStep && this.renderSidewalkToolbar()}
                     {canvasArea}
                     {/* Sidewalk messages, under the photo where the outline is drawn */}
                     {inSidewalkStep && this.state.sidewalk.message && (
@@ -1758,8 +1835,14 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           onNext={this.openNextToDecide}
           sceneLine={sceneProgressLine(this.state.sceneLevel)}
           onShowScene={this.showSceneSection}
+          hiddenIds={this.state.hiddenBoxIds}
+          onShowAll={this.showAllBoxes}
+          onHideAll={this.hideAllBoxes}
         />
       );
+      // Show all and Hide all are at the top of the sheet (14 Oct 2026). In
+      // full screen that top is not shown, so the lists keep their own.
+      const listVisibility = this.inFocus ? { onShowAll: this.showAllBoxes, onHideAll: this.hideAllBoxes } : {};
       body = (
         <>
           <ObjectTrays
@@ -1768,8 +1851,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             hiddenIds={this.state.hiddenBoxIds}
             onOpen={this.openTrayItem}
             onToggleHidden={this.toggleBoxHidden}
-            onShowAll={this.showAllBoxes}
-            onHideAll={this.hideAllBoxes}
+            {...listVisibility}
             stacked
           />
           {this.renderSceneQuestions("sheet")}
@@ -1909,9 +1991,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
 
     const toDecide = summarizeObjectStep(this.currentAnnotationData).toDecideIds;
+    // Show all and Hide all beside the step's name (14 Oct 2026), so a hidden
+    // box is a tap away without pulling the sheet up
+    const hiddenCount = sortedAnnotations.filter((box) => this.state.hiddenBoxIds.includes(box.id)).length;
     return (
       <div id="box-review-section-peek" className="px-4 pb-2">
-        {heading("objects")}
+        <SheetStepHeading
+          heading={annotatorStepHeading("objects", steps)}
+          hiddenCount={hiddenCount}
+          boxCount={sortedAnnotations.length}
+          onShowAll={this.showAllBoxes}
+          onHideAll={this.hideAllBoxes}
+        />
         <div className="h-11 flex items-center justify-between gap-3">
           {toDecide.length > 0 ? (
             <>
@@ -1930,8 +2021,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             <span className="text-sm font-semibold text-success">Every suggestion is decided.</span>
           )}
         </div>
+        {/* The suggestions still to decide first (14 Oct 2026), so none is out of sight along the row */}
         <ul aria-label="Objects in this image" className={chipRow}>
-          {sortedAnnotations.map((box) => {
+          {toDecideFirst(sortedAnnotations, toDecide).map((box) => {
             const tag = this.objectTag(box);
             return (
               <li key={box.id} className="shrink-0">
@@ -2558,6 +2650,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * small one near it with a finger's tolerances.
    */
   private touchJudgeTargetAt(point: Point): string | null {
+    const labelled = this.judgeLabelAt(point);
+    if (labelled) return labelled;
     const boxes = this.shapes.map((shape) => shape.getAnnotationData());
     const target = pickJudgeTarget(boxes, point.x, point.y);
     if (target) return target.id;
@@ -2577,11 +2671,21 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * Hidden boxes are skipped.
    */
   private touchBoxAt(point: Point): string | null {
+    return this.boxAtAmong(point, (id) => !this.isBoxHidden(id));
+  }
+
+  /** The box hidden by the annotator under a finger at this point (image px), as touchBoxAt picks. */
+  private hiddenBoxAt(point: Point): string | null {
+    const hidden = this.state.hiddenBoxIds;
+    return this.boxAtAmong(point, (id) => hidden.includes(id));
+  }
+
+  private boxAtAmong(point: Point, include: (id: string) => boolean): string | null {
     let best: string | null = null;
     let bestArea = Infinity;
     for (const shape of this.shapes) {
       const data = shape.getAnnotationData();
-      if (this.isBoxHidden(data.id) || !shape.checkBoundary(point.x, point.y)) continue;
+      if (!include(data.id) || !shape.checkBoundary(point.x, point.y)) continue;
       const area = Math.abs(data.mark.width * data.mark.height);
       if (area < bestArea) {
         best = data.id;
@@ -2590,7 +2694,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     if (best !== null) return best;
     const near = pickNearSmallBox(
-      this.shapes.map((shape) => (this.isBoxHidden(shape.getAnnotationData().id) ? null : shape.getAnnotationData().mark)),
+      this.shapes.map((shape) => (include(shape.getAnnotationData().id) ? shape.getAnnotationData().mark : null)),
       point.x,
       point.y,
       this.scaleState.scale,
@@ -2606,8 +2710,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    */
   private onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === "mouse" || !this.touchEnabled) return;
-    // Stops the browser's compatibility mouse events, so a tap is not handled twice
+    // Stops the browser's compatibility mouse events, so a tap is not handled
+    // twice. iOS Safari sends them anyway, so the mouse handlers also check
+    // isMouseFromTouch.
     event.preventDefault();
+    this.lastTouchAt = Date.now();
     try {
       // A finger that slides onto the sheet still reports to the photo
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -2653,6 +2760,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   private onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === "mouse" || !this.touchEnabled || !this.pointers.has(event.pointerId)) return;
+    this.lastTouchAt = Date.now();
     this.pointers.delete(event.pointerId);
     if (this.pointers.size < 2) this.pinchStart = null;
     this.routeTouch({ type: "up", id: event.pointerId });
@@ -2660,6 +2768,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   private onPointerCancel = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === "mouse" || !this.touchEnabled || !this.pointers.has(event.pointerId)) return;
+    this.lastTouchAt = Date.now();
     this.pointers.delete(event.pointerId);
     this.pinchStart = null;
     this.routeTouch({ type: "cancel", id: event.pointerId });
@@ -2688,7 +2797,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     return {
       drafting,
-      nearFirstPoint: Boolean(state.draft && state.draft.points.length >= 3 && isNearFirstPoint(state.draft, image, reach)),
+      nearFirstPoint: this.sidewalkClosesDraft(image, reach),
       pointIndex,
       edgeAfterIndex,
       shapeId: pickShape(state.mask.polygons, image)?.id ?? null,
@@ -2735,10 +2844,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       }
       case "place": {
         const point = this.toImage(effect.point);
-        const draft = this.sidewalkState.draft;
         this.sidewalkAiming = false;
         this.hideLoupe();
-        if (draft && draft.points.length >= 3 && isNearFirstPoint(draft, point, this.sidewalkHitDistance())) {
+        if (this.sidewalkClosesDraft(point, this.sidewalkHitDistance())) {
           this.dispatchSidewalk({ type: "CLOSE_SHAPE" });
         } else {
           this.dispatchSidewalk({ type: "ADD_POINT", point });
@@ -2845,6 +2953,25 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.applyTouchEffect(effect);
   }
 
+  /**
+   * Step 1 (14 Oct 2026): a second tap on empty photo, soon after and near the
+   * first, shows the hidden box under it again (isDoubleTap). The first tap
+   * did what a tap on empty photo does, closing an open box.
+   */
+  private showHiddenOnDoubleTap() {
+    const image = this.touchStart?.downImage;
+    if (!this.inBoxStep || !image) return;
+    const tap = { at: Date.now(), x: image.x, y: image.y };
+    const reach = cssToImage(DOUBLE_TAP_PX, this.scaleState.scale, this.displayScale);
+    if (!isDoubleTap(this.lastEmptyTap, tap, { reach })) {
+      this.lastEmptyTap = tap;
+      return;
+    }
+    this.lastEmptyTap = null;
+    const id = this.hiddenBoxAt(image);
+    if (id) this.setState({ hiddenBoxIds: withoutHiddenId(this.state.hiddenBoxIds, id) }, () => this.onShapeChange());
+  }
+
   /** The box the gesture works on: the one selected at the press, unless it is rejected. */
   private touchTarget() {
     const id = this.touchStart?.boxId;
@@ -2856,6 +2983,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private applyTouchEffect(effect: TouchEffect) {
     switch (effect.type) {
       case "select":
+        this.lastEmptyTap = null;
         // Obstructions: a tap on a real object toggles its mark. No panel, no selection.
         if (this.inObstructionStep) this.toggleObstruction(effect.boxId);
         else this.selectBoxById(effect.boxId);
@@ -2863,6 +2991,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       case "deselect":
         if (this.inObstructionStep) break;
         if (this.selectedId !== null) this.closePanel();
+        this.showHiddenOnDoubleTap();
         break;
       case "startCorner": {
         const shape = this.touchTarget();
@@ -3280,8 +3409,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       <div id="box-review-section" className="bg-surface rounded-card border border-line shadow-sm p-4 w-full">
         <div className="mb-3 flex items-center justify-between gap-3">
           <H3><span className="text-lg font-bold text-ink">Objects in This Image</span></H3>
-          {/* Boxes hidden on the photo (8 Oct 2026), and Hide all (10 Oct 2026) */}
-          {sortedAnnotations.length > 0 && (
+          {/* Boxes hidden on the photo (8 Oct 2026), and Hide all (10 Oct 2026).
+              In the sheet both sit beside the step's name, always in view (14 Oct 2026). */}
+          {sheet && hiddenCount > 0 && (
+            <span className="text-xs text-muted whitespace-nowrap">{BOX_VISIBILITY_COPY.hiddenCount(hiddenCount)}</span>
+          )}
+          {!sheet && sortedAnnotations.length > 0 && (
             <span className="inline-flex items-center gap-3 text-xs text-muted whitespace-nowrap">
               {hiddenCount > 0 && (
                 <>
@@ -3300,7 +3433,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           )}
         </div>
         <ul className="flex flex-wrap gap-2">
-          {sortedAnnotations.map((box) => {
+          {(sheet ? toDecideFirst(sortedAnnotations, summarizeObjectStep(this.currentAnnotationData).toDecideIds) : sortedAnnotations).map((box) => {
             const tag = tagFor(box);
             const isHidden = hidden.includes(box.id);
             const isOpen = box.id === openId;
@@ -3551,70 +3684,153 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   /**
-   * Annotators, Sidewalk step: the toolbar above the canvas. Its messages
-   * (a refused shape, an undone drag) show under the photo instead, next to
-   * where the drawing happens (8 Oct 2026).
+   * Obstructions: the real object whose label is under this image point, or
+   * null. A label is drawn over the boxes, so it is checked before them, by
+   * the mouse (JudgingAnnotationState) and a finger alike. Public so
+   * JudgingAnnotationState can call it.
+   */
+  public judgeLabelAt(point: Point): string | null {
+    const { originX, originY, scale } = this.scaleState;
+    const labels = this.shapes
+      .map((shape) => ({ data: shape.getAnnotationData(), rect: shape.labelRect }))
+      .filter(({ data, rect }) => rect && isRealObject(data) && !this.isBoxHidden(data.id))
+      .map(({ data, rect }) => ({ id: data.id, rect }));
+    return pickJudgeLabel(labels, point.x * scale + originX, point.y * scale + originY);
+  }
+
+  /**
+   * Annotators, Sidewalk step: the drawing tools (13 Oct 2026, replacing a row
+   * of six buttons above the photo that were mostly greyed out). Only the
+   * tools for what is happening show (sidewalkTools.js): Finish, Undo and
+   * Cancel while a shape is drawn, Delete point, Delete shape and Done while
+   * one is selected, none otherwise. Photo only, a view setting, is always
+   * there.
+   *
+   *   "desktop"  a bar at the top of the photo's card: what is happening on the
+   *              left, the tools on the right. One line at a fixed height, so
+   *              the photo never moves as the tools change.
+   *   "sheet"    at the top of the answers sheet on a phone or tablet: 44 px
+   *              buttons with an icon and a label, in a row of a fixed height.
+   *   "compact"  icons only, on the full-screen photo.
+   *
+   * The editor's messages (a refused shape, an undone drag) stay under the
+   * photo, next to where the drawing happens (8 Oct 2026).
    */
   private renderSidewalkToolbar(variant: "desktop" | "sheet" | "compact" = "desktop") {
     const { sidewalk, hideSidewalkFill } = this.state;
-    const drawing = Boolean(sidewalk.draft);
-    const send = (type: string, extra: Record<string, unknown> = {}) => () => this.dispatchSidewalk({ type, ...extra });
+    const touch = variant !== "desktop";
+    const context = sidewalkToolContext(sidewalk);
+    const tools = sidewalkTools(sidewalk, { touch });
+    const run = (action: string) => () => this.dispatchSidewalk({ type: action });
     const togglePhotoOnly = () => this.setState({ hideSidewalkFill: !hideSidewalkFill }, () => this.onShapeChange());
+    const photoOnly = SIDEWALK_TOOL_COPY.photoOnly;
 
-    // Phones and tablets (12 Oct 2026). "sheet": one sideways-scrolling row of
-    // 44 px buttons with an icon and a short label, at the top of the answers
-    // sheet. "compact": icons only, for the full-screen photo. The same enable
-    // rules as the desktop toolbar.
-    if (variant !== "desktop") {
+    if (touch) {
       const compact = variant === "compact";
-      const tools: Array<{ label: string; name: string; icon: React.ReactNode; disabled?: boolean; pressed?: boolean; onClick: () => void }> = [
-        { label: "Finish", name: "Finish shape", icon: <CheckIcon size={18} />, disabled: !drawing, onClick: send("CLOSE_SHAPE") },
-        { label: "Undo point", name: "Undo point", icon: <UndoIcon size={18} />, disabled: !drawing, onClick: send("UNDO_POINT") },
-        { label: "Cancel", name: "Cancel shape", icon: <CloseIcon size={18} />, disabled: !drawing, onClick: send("CANCEL_SHAPE") },
-        { label: "Delete point", name: "Delete point", icon: <PointMinusIcon size={18} />, disabled: drawing || sidewalk.selectedPoint == null, onClick: send("DELETE_POINT") },
-        { label: "Delete shape", name: "Delete shape", icon: <TrashIcon size={18} />, disabled: drawing || !sidewalk.selectedId, onClick: send("DELETE_SHAPE") },
-        { label: "Photo only", name: "Show photo only", icon: <PhotoIcon size={18} />, pressed: hideSidewalkFill, onClick: togglePhotoOnly },
-      ];
+      const base = "shrink-0 h-11 inline-flex items-center justify-center gap-1.5 rounded-control border text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-40";
+      const plain = "border-line bg-surface text-ink";
+      const filled = "border-primary bg-primary text-white";
+      // Beside other tools the Photo only button is its icon alone, so a
+      // phone's row holds them all without scrolling
+      const photoIconOnly = compact || tools.length > 0;
       return (
         <div
           id={compact ? undefined : "sidewalk-tools"}
           role="toolbar"
           aria-label="Drawing tools"
+          data-context={context}
           className={compact ? "flex items-center gap-1" : "h-11 flex items-center gap-2 overflow-x-auto overscroll-x-contain"}
         >
-          {tools.map((tool) => (
+          {tools.map((entry) => (
             <button
-              key={tool.label}
+              key={entry.key}
               type="button"
-              disabled={tool.disabled}
-              aria-label={compact ? tool.name : undefined}
-              title={compact ? tool.name : undefined}
-              aria-pressed={tool.pressed === undefined ? undefined : tool.pressed}
-              onClick={tool.onClick}
-              className={`shrink-0 h-11 inline-flex items-center justify-center gap-1.5 rounded-control border text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-40 ${compact ? "w-11" : "px-3"} ${tool.pressed ? "border-primary bg-primary text-white" : "border-line bg-surface text-ink"}`}
+              data-tool={entry.key}
+              disabled={entry.disabled}
+              aria-label={entry.name}
+              title={compact ? sidewalkToolTitle(entry, { keys: false }) : undefined}
+              onClick={run(entry.action)}
+              className={`${base} ${compact ? "w-11" : "px-3"} ${entry.primary ? filled : plain}`}
             >
-              {tool.icon}
-              {!compact && tool.label}
+              {SIDEWALK_TOOL_ICONS[entry.key](18)}
+              {!compact && entry.label}
             </button>
           ))}
+          <button
+            type="button"
+            data-tool="photoOnly"
+            aria-label={photoOnly.name}
+            title={photoIconOnly ? photoOnly.name : undefined}
+            aria-pressed={hideSidewalkFill}
+            onClick={togglePhotoOnly}
+            className={`${base} ${photoIconOnly ? "w-11" : "px-3"} ${hideSidewalkFill ? filled : plain}`}
+          >
+            <PhotoIcon size={18} />
+            {!photoIconOnly && photoOnly.label}
+          </button>
         </div>
       );
     }
 
     return (
-      <div id="sidewalk-tools" className="mb-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="neutral" disabled={!drawing} onClick={send("CLOSE_SHAPE")}>Finish shape</Button>
-          <Button size="sm" variant="neutral" disabled={!drawing} onClick={send("UNDO_POINT")}>Undo point</Button>
-          <Button size="sm" variant="neutral" disabled={!drawing} onClick={send("CANCEL_SHAPE")}>Cancel shape</Button>
-          <span className="w-px h-6 bg-line mx-1" aria-hidden="true" />
-          <Button size="sm" variant="neutral" disabled={drawing || sidewalk.selectedPoint == null} onClick={send("DELETE_POINT")}>Delete point</Button>
-          <Button size="sm" variant="neutral" disabled={drawing || !sidewalk.selectedId} onClick={send("DELETE_SHAPE")}>Delete shape</Button>
-          <span className="w-px h-6 bg-line mx-1" aria-hidden="true" />
-          <Button size="sm" variant={hideSidewalkFill ? "primary" : "neutral"} aria-pressed={hideSidewalkFill} onClick={togglePhotoOnly}>
-            Show photo only
-          </Button>
+      <div
+        id="sidewalk-tools"
+        role="toolbar"
+        aria-label="Drawing tools"
+        data-context={context}
+        className="min-h-[44px] flex items-center gap-2 px-1 pb-2"
+      >
+        {/* What the tools are for, or what to do next. Left out where a narrow window has no room for it. */}
+        <div className="flex-1 min-w-0">
+          <p role="status" className="hidden xl:block truncate text-sm font-semibold text-ink">
+            {sidewalkToolbarStatus(sidewalk, this.words)}
+          </p>
         </div>
+        {tools.map((entry) =>
+          entry.key === "done" ? (
+            // The same tick as Done in the Objects step's box panel
+            <button
+              key={entry.key}
+              type="button"
+              data-tool={entry.key}
+              aria-label={entry.name}
+              title={sidewalkToolTitle(entry)}
+              onClick={run(entry.action)}
+              className="shrink-0 w-[38px] h-[38px] flex items-center justify-center rounded-control bg-blue-50 hover:bg-blue-100 text-primary transition-colors border border-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              <CheckIcon size={18} />
+            </button>
+          ) : (
+            <Button
+              key={entry.key}
+              size="sm"
+              variant={entry.primary ? "primary" : "neutral"}
+              data-tool={entry.key}
+              disabled={entry.disabled}
+              aria-label={entry.name}
+              title={sidewalkToolTitle(entry)}
+              onClick={run(entry.action)}
+              className="shrink-0"
+            >
+              {SIDEWALK_TOOL_ICONS[entry.key](16)}
+              {entry.label}
+            </Button>
+          )
+        )}
+        {tools.length > 0 && <span className="shrink-0 w-px h-6 bg-line mx-1" aria-hidden="true" />}
+        <Button
+          size="sm"
+          variant={hideSidewalkFill ? "primary" : "neutral"}
+          data-tool="photoOnly"
+          aria-label={photoOnly.name}
+          title={photoOnly.name}
+          aria-pressed={hideSidewalkFill}
+          onClick={togglePhotoOnly}
+          className="shrink-0"
+        >
+          <PhotoIcon size={16} />
+          {photoOnly.label}
+        </Button>
       </div>
     );
   }
@@ -3631,7 +3847,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const { sidewalk } = this.state;
     const { polygons, noSidewalk } = sidewalk.mask;
     const hasShapes = polygons.length > 0 || Boolean(sidewalk.draft);
-    const number = (id: string) => id.replace(/^[a-z]+/, "");
+    const number = sidewalkShapeNumber;
     const selected = polygons.find((p) => p.id === sidewalk.selectedId);
     // "tap" with a finger, the desktop wording with a mouse (annotatorStepCopy.js)
     const hint = sidewalkOutlineHint(
@@ -4564,10 +4780,24 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
   };
 
+  /**
+   * True for a mouse event the browser made from a finger or pen: one while a
+   * finger is down or within COMPAT_MOUSE_MS of one, or one the browser says
+   * came from touch. A real mouse right after a tap is rare enough to lose.
+   */
+  private isMouseFromTouch(event?: React.MouseEvent<HTMLCanvasElement>) {
+    const capabilities = (event?.nativeEvent as (MouseEvent & { sourceCapabilities?: { firesTouchEvents?: boolean } }) | undefined)?.sourceCapabilities;
+    return this.pointers.size > 0 || Date.now() - this.lastTouchAt < COMPAT_MOUSE_MS || capabilities?.firesTouchEvents === true;
+  }
+
   private onMouseDown: MouseEventHandler<HTMLCanvasElement> = (event) => {
+    if (this.isMouseFromTouch(event)) return;
     // For telemetry, and the square handles (9 Oct 2026)
     this.inputTypesUsed.add("mouse");
     this.setInputMode("mouse");
+    // Obstructions (14 Oct 2026): a double-click is one click. Its second
+    // press used to toggle the box back, so a double-clicked box stayed unmarked.
+    if (this.inObstructionStep && event.detail > 1) return;
     const { offsetX, offsetY } = event.nativeEvent;
     const { positionX, positionY } = this.calculateMousePosition(
       offsetX,
@@ -4577,6 +4807,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   private onMouseMove: MouseEventHandler<HTMLCanvasElement> = (event) => {
+    if (this.isMouseFromTouch(event)) return;
     const { offsetX, offsetY } = event.nativeEvent;
     const { positionX, positionY } = this.calculateMousePosition(
       offsetX,
@@ -4593,7 +4824,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.currentAnnotationState.onMouseMove(positionX, positionY);
   };
 
-  private onMouseUp: MouseEventHandler<HTMLCanvasElement> = () => {
+  private onMouseUp: MouseEventHandler<HTMLCanvasElement> = (event) => {
+    if (this.isMouseFromTouch(event)) return;
     this.currentAnnotationState.onMouseUp();
     this.endMouseLoupe();
   };

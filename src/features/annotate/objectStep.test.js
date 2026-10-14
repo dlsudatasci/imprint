@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { summarizeObjectStep, findNearDuplicates } from "./objectStep.js";
+import { summarizeObjectStep, findNearDuplicates, toDecideFirst } from "./objectStep.js";
 
 const mark = (x, y, width, height) => ({ type: "RECT", x, y, width, height });
 
@@ -63,5 +63,20 @@ describe("findNearDuplicates", () => {
     const kept = { id: "s1", editable: false, selected: true, comment: "car", mark: mark(0, 0, 100, 100) };
     const drawnUpLeft = { id: "d1", editable: true, comment: "car", mark: mark(100, 100, -100, -100) };
     expect(findNearDuplicates([kept, drawnUpLeft])).toHaveLength(1);
+  });
+});
+
+describe("toDecideFirst", () => {
+  const boxes = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+
+  it("puts the suggestions still to decide first, each group in the order given", () => {
+    expect(toDecideFirst(boxes, ["d", "b"]).map((b) => b.id)).toEqual(["b", "d", "a", "c"]);
+  });
+
+  it("leaves the order alone when nothing or everything is left to decide, and does not mutate", () => {
+    expect(toDecideFirst(boxes, []).map((b) => b.id)).toEqual(["a", "b", "c", "d"]);
+    expect(toDecideFirst(boxes, ["a", "b", "c", "d"]).map((b) => b.id)).toEqual(["a", "b", "c", "d"]);
+    expect(boxes.map((b) => b.id)).toEqual(["a", "b", "c", "d"]);
+    expect(toDecideFirst(null, ["a"])).toEqual([]);
   });
 });

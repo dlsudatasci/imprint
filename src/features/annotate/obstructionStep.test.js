@@ -6,6 +6,7 @@ import {
   toggleObstructionPatch,
   finalizeObstructionAnswers,
   pickJudgeTarget,
+  pickJudgeLabel,
 } from "./obstructionStep.js";
 
 const rect = (x, y, width, height) => ({ type: "RECT", x, y, width, height });
@@ -96,5 +97,29 @@ describe("pickJudgeTarget", () => {
   it("returns null on an empty point", () => {
     expect(pickJudgeTarget([kept("s1")], 500, 500)).toBeNull();
     expect(pickJudgeTarget([], 0, 0)).toBeNull();
+  });
+});
+
+describe("pickJudgeLabel", () => {
+  // A thin post whose label runs past its right edge, over a car's label
+  const post = { id: "s1", rect: { x: 100, y: 50, width: 76, height: 20 } };
+  const car = { id: "s2", rect: { x: 150, y: 55, width: 45, height: 20 } };
+
+  it("returns the box whose label is under the point, outside the box itself", () => {
+    expect(pickJudgeLabel([post], 160, 60)).toBe("s1");
+    expect(pickJudgeLabel([post], 100, 50)).toBe("s1");
+    expect(pickJudgeLabel([post], 177, 60)).toBeNull();
+  });
+
+  it("picks the label painted last where labels overlap", () => {
+    expect(pickJudgeLabel([post, car], 160, 60)).toBe("s2");
+    expect(pickJudgeLabel([car, post], 160, 60)).toBe("s1");
+    expect(pickJudgeLabel([post, car], 120, 60)).toBe("s1");
+  });
+
+  it("skips boxes with no label and handles no labels", () => {
+    expect(pickJudgeLabel([{ id: "s3", rect: null }, post], 120, 60)).toBe("s1");
+    expect(pickJudgeLabel([], 120, 60)).toBeNull();
+    expect(pickJudgeLabel(null, 120, 60)).toBeNull();
   });
 });

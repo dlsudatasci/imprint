@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import ObjectTrays from "./ObjectTrays";
+import ObjectTrays, { ObjectTraysPeek, SheetStepHeading } from "./ObjectTrays";
 import { buildTrays } from "@/features/annotate/objectTrays";
 import { buildDisplayLabels } from "@/util/buildDisplayLabels";
 
@@ -224,3 +224,36 @@ describe("ObjectTrays Hide all and the open object", () => {
   });
 });
 
+// 14 Oct 2026: the first row of the sheet, the step's name with Show all and Hide all
+describe("SheetStepHeading", () => {
+  const html = (hiddenCount: number, boxCount: number) =>
+    renderToStaticMarkup(<SheetStepHeading heading="Step 1 of 3: Objects" hiddenCount={hiddenCount} boxCount={boxCount} onShowAll={() => undefined} onHideAll={() => undefined} />);
+
+  it("offers Hide all while a box shows, and Show all with how many are hidden", () => {
+    expect(html(0, 3)).toContain("Step 1 of 3: Objects");
+    expect(html(0, 3)).toContain(">Hide all<");
+    expect(html(0, 3)).not.toContain("Show all");
+    expect(html(1, 3)).toMatch(/Show all <span[^>]*>1<\/span>/);
+    expect(html(1, 3)).toContain(">Hide all<");
+    expect(html(3, 3)).not.toContain(">Hide all<");
+  });
+
+  it("has neither when there are no boxes, and 40 px buttons", () => {
+    expect(html(0, 0)).not.toContain("<button");
+    expect(html(1, 3)).toMatch(/<button[^>]*class="h-10 /);
+  });
+});
+
+describe("ObjectTraysPeek's first row", () => {
+  const trays = buildTrays([suggestion("a", "car"), suggestion("b", "tree")]);
+  const peek = (extra = {}) =>
+    renderToStaticMarkup(<ObjectTraysPeek trays={trays} selectedId={null} onOpen={() => undefined} onNext={() => undefined} sceneLine="Step 2" onShowScene={() => undefined} {...extra} />);
+
+  it("shows the step's name with Show all and Hide all only when it is given both", () => {
+    expect(peek()).not.toContain("Step 1: Identify Objects");
+    const withRow = peek({ hiddenIds: ["a"], onShowAll: () => undefined, onHideAll: () => undefined });
+    expect(withRow).toContain("Step 1: Identify Objects");
+    expect(withRow).toMatch(/Show all <span[^>]*>1<\/span>/);
+    expect(withRow).toContain(">Hide all<");
+  });
+});

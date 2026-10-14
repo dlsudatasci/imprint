@@ -47,3 +47,15 @@ export function findNearDuplicates(annotations = [], threshold = 0.8) {
   }
   return pairs;
 }
+
+/**
+ * The boxes with the suggestions still to decide first, each group in the
+ * order given (14 Oct 2026, phones and tablets). The chips at the top of the
+ * annotators' sheet scroll sideways, so a suggestion left to decide could sit
+ * out of sight behind the decided ones. The names ("Tree #1") do not change.
+ */
+export function toDecideFirst(boxes = [], toDecideIds = []) {
+  const toDecide = new Set(toDecideIds || []);
+  const list = boxes || [];
+  return [...list.filter((box) => toDecide.has(box.id)), ...list.filter((box) => !toDecide.has(box.id))];
+}

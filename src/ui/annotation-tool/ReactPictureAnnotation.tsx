@@ -105,7 +105,7 @@ import {
   TOUCH_NEAR_PX,
   TOUCH_SMALL_BOX_PX,
 } from "./touchGeometry";
-import { loupePlacement, loupeSource, LOUPE_SIZE_PX, LOUPE_MAGNIFICATION, LOUPE_BACKGROUND } from "./loupe";
+import { loupePlacement, loupeSource, LOUPE_SIZE_PX, LOUPE_MAGNIFICATION, LOUPE_BACKGROUND, type LoupeSide } from "./loupe";
 import {
   fitImage,
   applyView,
@@ -821,6 +821,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   // True while a mouse resize shows the magnifier, so each drag counts once
   private mouseLoupeShown = false;
   private loupeCanvasRef = React.createRef<HTMLCanvasElement>();
+  /** The box's floating panel on the desktop photo, which the magnifier keeps clear of when it can */
+  private floatingPanelRef = React.createRef<HTMLDivElement>();
   private sheetAreaRef = React.createRef<HTMLDivElement>();
   private sheetBodyRef = React.createRef<HTMLDivElement>();
   private sheetAreaObserver: ResizeObserver | null = null;
@@ -1397,6 +1399,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             />
             {showInput && !this.isSheet && (
               <div
+                ref={this.floatingPanelRef}
                 className={touch ? "rp-selected-input select-text" : "rp-selected-input"}
                 style={inputPosition}
                 onMouseDown={(e) => e.stopPropagation()}
@@ -2072,7 +2075,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   /**
    * The magnifier, over the photo while a box's corner or edge is dragged:
    * with a finger (corners) or the mouse (any of the eight handles), so it is
-   * the same on every device (10 Oct 2026). Never takes a press.
+   * the same on every device (10 Oct 2026). From 15 Oct 2026 it sits outside
+   * the box (showLoupe, loupePlacement). Never takes a press.
    */
   private renderLoupe() {
     const { loupe } = this.state;
@@ -3038,7 +3042,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const mark = shape.getAnnotationData().mark;
     Object.assign(mark, { x: next.x, y: next.y, width: next.width, height: next.height });
     this.onShapeChange({ quiet: true });
-    this.showLoupe(point, markCorners(mark)[start.corner], { kind: "box", id: shape.getAnnotationData().id });
+    this.showLoupe(point, markCorners(mark)[start.corner], { kind: "box", id: shape.getAnnotationData().id }, "touch");
   }
 
   /** The selected box moved by the finger's travel since the press, kept on the photo. */
@@ -3117,16 +3121,21 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   }
 
   private lastLoupe: { finger: Point; point: Point; target: LoupeTarget } | null = null;
+  /** The side of the box the magnifier sat on last, kept while it stays clear (loupePlacement) */
+  private loupeSide: LoupeSide | null = null;
 
   /**
-   * The magnifier over the point being dragged (a corner, or with the mouse
-   * any handle), placed above the finger or pointer (below it near the top).
-   * `finger` is CSS px on the canvas, `point` image px.
+   * The magnifier for the point being dragged: a box's corner, any handle with
+   * the mouse, or a Sidewalk point. For a box it sits outside the box, clear of
+   * the finger or pointer and, on the desktop photo, of the box's panel when it
+   * can (15 Oct 2026). For a Sidewalk point it goes above the finger (below it
+   * near the top). `finger` is CSS px on the canvas, `point` image px.
    */
-  private showLoupe(finger: Point, point: Point, target: LoupeTarget) {
-    const stage = this.stageSize();
-    const area = { width: stage.width * this.displayScale, height: stage.height * this.displayScale };
-    const { left, top } = loupePlacement(finger, area);
+  private showLoupe(finger: Point, point: Point, target: LoupeTarget, input: "touch" | "mouse" = "touch") {
+    const area = this.loupeArea();
+    const avoid = target.kind === "box" ? this.loupeAvoid(target.id, point) : {};
+    const { left, top, side } = loupePlacement(finger, area, LOUPE_SIZE_PX, { ...avoid, input, prefer: this.loupeSide });
+    this.loupeSide = side;
     this.lastLoupe = { finger, point, target };
     const now = this.state.loupe;
     if (!now || now.left !== left || now.top !== top) this.setState({ loupe: { left, top } });
@@ -3141,8 +3150,45 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     });
   }
 
+  /**
+   * The part of the photo area the magnifier may use, CSS px from its top-left
+   * corner: the whole stage, less what a pulled-up answers sheet covers.
+   */
+  private loupeArea() {
+    const stage = this.stageSize();
+    const ds = this.displayScale;
+    return { width: stage.width * ds, height: Math.max(0, stage.height - this.sheetCover()) * ds };
+  }
+
+  /**
+   * What the magnifier keeps clear of while a box is fitted, CSS px: the box as
+   * it is now, the point being dragged (image px in), and the box's floating
+   * panel when it is open on the desktop photo. Its size is read from the page,
+   * or taken as the panel's usual width and room when the page has none.
+   */
+  private loupeAvoid(id: string, point: Point) {
+    const shape = this.shapes.find((s) => s.getAnnotationData().id === id);
+    if (!shape) return {};
+    const ds = this.displayScale;
+    const p = this.calculateShapePosition(normalizeMark(shape.getAnnotationData().mark));
+    const box = { left: p.x * ds, top: p.y * ds, width: p.width * ds, height: p.height * ds };
+    const { originX, originY, scale } = this.scaleState;
+    const at = { x: (point.x * scale + originX) * ds, y: (point.y * scale + originY) * ds };
+    let panel: { left: number; top: number; width: number; height: number } | null = null;
+    if (this.state.showInput && !this.isSheet && this.selectedId === id) {
+      const { left = 0, top = 0 } = this.state.inputPosition;
+      const element = this.floatingPanelRef.current;
+      // syncPanel's panel width and the room it keeps below
+      const width = element?.offsetWidth || 290;
+      const height = element?.offsetHeight || 220;
+      panel = { left: left * ds, top: top * ds, width: width * ds, height: height * ds };
+    }
+    return { box, point: at, panel };
+  }
+
   private hideLoupe() {
     this.lastLoupe = null;
+    this.loupeSide = null;
     if (this.state.loupe) this.setState({ loupe: null });
   }
 
@@ -4848,7 +4894,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.mouseLoupeShown = true;
       this.loupeShownCount += 1;
     }
-    this.showLoupe({ x: offsetX * this.displayScale, y: offsetY * this.displayScale }, point, { kind: "box", id: this.selectedId });
+    this.showLoupe({ x: offsetX * this.displayScale, y: offsetY * this.displayScale }, point, { kind: "box", id: this.selectedId }, "mouse");
   }
 
   private endMouseLoupe() {

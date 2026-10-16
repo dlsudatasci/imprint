@@ -4,6 +4,53 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import ReactPictureAnnotation from "./ReactPictureAnnotation";
 import { readSessionData, writeSession, readCurrentCount, writeCurrentCount } from "@/util/sessionCache";
+import { LOUPE_SIZE_PX, LOUPE_BOX_GAP_PX, LOUPE_MARGIN_PX, LOUPE_FINGER_CLEAR_PX } from "./loupe";
+// The floating panel as syncPanel places it: 290 px wide, with 220 px of room below
+const PANEL_WIDTH = 290;
+const PANEL_ROOM_BELOW = 220;
+
+// The magnifier against the box being fitted (15 Oct 2026), CSS px in the photo area
+type LoupeTool = {
+  state: { loupe: { left: number; top: number } | null; inputPosition: { left: number; top: number }; showInput: boolean };
+  scaleState: { scale: number; originX: number; originY: number };
+  displayScale: number;
+  stageSize(): { width: number; height: number };
+  sheetCover(): number;
+  shapes: Array<{ getAnnotationData(): { id: string; mark: { x: number; y: number; width: number; height: number } } }>;
+};
+type Edges = { x1: number; y1: number; x2: number; y2: number };
+const asLoupeTool = (tool: unknown) => tool as LoupeTool;
+function loupeEdges(tool: unknown): Edges {
+  const loupe = asLoupeTool(tool).state.loupe!;
+  return { x1: loupe.left, y1: loupe.top, x2: loupe.left + LOUPE_SIZE_PX, y2: loupe.top + LOUPE_SIZE_PX };
+}
+/** The box as drawn now, CSS px, grown by the gap the magnifier keeps from it */
+function boxEdgesCss(tool: unknown, id: string): Edges {
+  const t = asLoupeTool(tool);
+  const m = t.shapes.find((sh) => sh.getAnnotationData().id === id)!.getAnnotationData().mark;
+  const { scale, originX, originY } = t.scaleState;
+  const ds = t.displayScale;
+  const x = (v: number) => (v * scale + originX) * ds;
+  const y = (v: number) => (v * scale + originY) * ds;
+  return {
+    x1: x(Math.min(m.x, m.x + m.width)) - LOUPE_BOX_GAP_PX,
+    y1: y(Math.min(m.y, m.y + m.height)) - LOUPE_BOX_GAP_PX,
+    x2: x(Math.max(m.x, m.x + m.width)) + LOUPE_BOX_GAP_PX,
+    y2: y(Math.max(m.y, m.y + m.height)) + LOUPE_BOX_GAP_PX,
+  };
+}
+const edgesOverlap = (a: Edges, b: Edges) => a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2;
+/** Inside the part of the photo area not under the sheet, 8 px in */
+function expectLoupeInPhoto(tool: unknown) {
+  const t = asLoupeTool(tool);
+  const loupe = loupeEdges(tool);
+  const ds = t.displayScale;
+  const stage = t.stageSize();
+  expect(loupe.x1).toBeGreaterThanOrEqual(LOUPE_MARGIN_PX);
+  expect(loupe.y1).toBeGreaterThanOrEqual(LOUPE_MARGIN_PX);
+  expect(loupe.x2).toBeLessThanOrEqual(stage.width * ds - LOUPE_MARGIN_PX);
+  expect(loupe.y2).toBeLessThanOrEqual((stage.height - t.sheetCover()) * ds - LOUPE_MARGIN_PX);
+}
 
 // Moving between images reloads the page
 vi.mock("next/router", () => ({ default: { reload: vi.fn() } }));
@@ -612,6 +659,38 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
     }
   });
 
+  it("keeps the magnifier outside the box, inside the photo and off the box's panel while a handle is dragged with the mouse, for both roles (15 Oct 2026)", () => {
+    for (const isAnnotator of [false, true]) {
+      window.localStorage.clear();
+      writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator } });
+      const tool = mount({ isAnnotator });
+      tool.currentImageElement = { width: 640, height: 360 };
+      act(() => tool.selectBoxById("a-car"));
+      const t = asLoupeTool(tool);
+      const check = () => {
+        const loupe = loupeEdges(tool);
+        expect(edgesOverlap(loupe, boxEdgesCss(tool, "a-car"))).toBe(false);
+        expectLoupeInPhoto(tool);
+        // The panel beside the box, as wide and tall as the tool takes it when the page has no layout
+        expect(t.state.showInput).toBe(true);
+        const ds = t.displayScale;
+        const { left, top } = t.state.inputPosition;
+        expect(edgesOverlap(loupe, { x1: left * ds, y1: top * ds, x2: (left + PANEL_WIDTH) * ds, y2: (top + PANEL_ROOM_BELOW) * ds })).toBe(false);
+      };
+      // The bottom-right corner, (300, 220). As before the magnifier sat on the car, 96 px above the pointer.
+      act(() => tool.onMouseDown(at(300, 220)));
+      act(() => tool.onMouseMove(at(330, 240)));
+      check();
+      act(() => tool.onMouseUp());
+      // The right edge's middle, now at (330, 170)
+      act(() => tool.onMouseDown(at(330, 170)));
+      act(() => tool.onMouseMove(at(360, 170)));
+      check();
+      act(() => tool.onMouseUp());
+      unmount();
+    }
+  });
+
   it("refuses to send a box left wholly off the photo, and says which", async () => {
     window.localStorage.clear();
     const rec = record();
@@ -714,6 +793,32 @@ describe("touch on the photo (9 Oct 2026)", () => {
     expect(markOf(tool, "a-car")).toMatchObject({ x: 130, y: 110, width: 200, height: 120 });
     act(() => vi.advanceTimersByTime(500));
     expect(box("a-car").mark).toMatchObject({ x: 130, y: 110 });
+  });
+
+  it("keeps the magnifier outside the box and off the finger while a corner is dragged, and above the sheet when it is pulled up (15 Oct 2026)", () => {
+    const tool = onPhone();
+    act(() => tool.selectBoxById("a-car"));
+    const clear = (x: number, y: number) => ({ x1: x - LOUPE_FINGER_CLEAR_PX, y1: y - LOUPE_FINGER_CLEAR_PX, x2: x + LOUPE_FINGER_CLEAR_PX, y2: y + LOUPE_FINGER_CLEAR_PX });
+    // The bottom-right corner, (300, 220)
+    fire("pointerdown", 305, 224);
+    fire("pointermove", 345, 254);
+    expect(edgesOverlap(loupeEdges(tool), boxEdgesCss(tool, "a-car"))).toBe(false);
+    expect(edgesOverlap(loupeEdges(tool), clear(345, 254))).toBe(false);
+    expectLoupeInPhoto(tool);
+    fire("pointerup", 345, 254);
+    expect(asLoupeTool(tool).state.loupe).toBeNull();
+
+    // The sheet pulled up over the bottom of the photo: the magnifier stays above it
+    (tool as unknown as { sheetPoints: Record<string, number> }).sheetPoints = { collapsed: 0, half: 300, full: 400, panel: 300 };
+    act(() => tool.setState({ sheetSnap: "half" }));
+    expect(asLoupeTool(tool).sheetCover()).toBe(300);
+    // The corner is now at (340, 250)
+    fire("pointerdown", 342, 252);
+    fire("pointermove", 360, 262);
+    expect(edgesOverlap(loupeEdges(tool), boxEdgesCss(tool, "a-car"))).toBe(false);
+    expect(edgesOverlap(loupeEdges(tool), clear(360, 262))).toBe(false);
+    expectLoupeInPhoto(tool);
+    fire("pointerup", 360, 262);
   });
 
   it("resizes the selected box from the corner dragged, showing the magnifier while it moves", () => {
@@ -984,6 +1089,19 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     } finally {
       now.mockRestore();
     }
+  });
+
+  it("Objects: the magnifier stays outside the box while a corner is dragged (15 Oct 2026)", () => {
+    const tool = annotator();
+    act(() => tool.selectBoxById("c-tree"));
+    // The tree's bottom-left corner, (400, 250)
+    fire("pointerdown", 402, 248);
+    fire("pointermove", 380, 290);
+    expect(asLoupeTool(tool).state.loupe).not.toBeNull();
+    expect(edgesOverlap(loupeEdges(tool), boxEdgesCss(tool, "c-tree"))).toBe(false);
+    expectLoupeInPhoto(tool);
+    fire("pointerup", 380, 290);
+    expect(asLoupeTool(tool).state.loupe).toBeNull();
   });
 
   it("the footer names the step's button and keeps it the submit button, with Back in later steps", () => {

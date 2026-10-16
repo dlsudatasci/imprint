@@ -1,41 +1,52 @@
 /**
- * Updates Image documents with new model predictions after a retraining cycle.
+ * Writes the obstruction classifier's proposed judgments into the Image
+ * records after a retraining cycle, and sets each image's modelVersion so new
+ * sessions serve, and annotations record, the retrained model (16 Oct 2026).
  *
- * Reads a JSON file produced by the offline ML pipeline (XGBoost classifier)
- * and writes the new bounding-box predictions into each Image's annotationList,
- * updating modelVersion so new sessions serve the retrained suggestions.
+ * Only the proposals change. Each suggestion an image already has keeps its
+ * id, category, box and confidence, and gains `proposedObstructs` and
+ * `obstructionProbability`. The detector's boxes are written once, before
+ * deployment, and never change (chapter_4.tex and chapter_5.tex, Human-in-the-
+ * Loop Workflow). Until 16 Oct 2026 this script replaced every image's
+ * suggestions with new boxes and new ids ("pred-0", "pred-1" ...), which that
+ * rules out, and which would have lost the answers of resumed sessions
+ * (annotationGet merges them by box id) and refused annotators' submissions
+ * (annotationSubmit checks the ids against the image).
  *
- * Input file format:
- *   {
- *     "modelVersion": "v1-retrained",
- *     "predictions": [
- *       {
- *         "imageID": 12345,
- *         "boxes": [
- *           { "x": 10, "y": 20, "width": 50, "height": 60, "category": "tree", "confidence": 0.92 }
- *         ]
- *       }
- *     ]
- *   }
+ * The input file and every check are described in
+ * src/util/validators/predictionUpdate.mjs. In short: every image in the file
+ * must exist, every suggestion of each image must get exactly one proposal,
+ * each proposal must agree with the decision threshold, and every image
+ * served to contributors must be in the file, since the whole pool is
+ * recomputed each cycle. If anything fails, nothing is written.
  *
  * Options:
- *   --input <file>   Path to predictions JSON (required)
- *   --dry-run        Validate and report without writing to the database
- *   --force          Overwrite even if images already have the same modelVersion
+ *   --input <file>     Path to the predictions JSON (required)
+ *   --dry-run          Check and report without writing
+ *   --force            Write images already at this modelVersion too
+ *   --allow-partial    Allow served images to be missing from the file (to
+ *                      finish a run that was split on purpose)
  *
  * Usage:
- *   node --env-file=.env scripts/update-predictions.mjs --input predictions.json
  *   node --env-file=.env scripts/update-predictions.mjs --input predictions.json --dry-run
+ *   node --env-file=.env scripts/update-predictions.mjs --input predictions.json
  */
 import { MongoClient } from "mongodb";
 import { parseArgs } from "node:util";
 import { readFile } from "node:fs/promises";
+import {
+  SERVED_POOL_STATUS,
+  validatePredictionFile,
+  planPredictionUpdate,
+  updateOperation,
+} from "../src/util/validators/predictionUpdate.mjs";
 
 const { values } = parseArgs({
   options: {
-    input:     { type: "string" },
+    input: { type: "string" },
     "dry-run": { type: "boolean", default: false },
-    force:     { type: "boolean", default: false },
+    force: { type: "boolean", default: false },
+    "allow-partial": { type: "boolean", default: false },
   },
 });
 
@@ -52,88 +63,24 @@ if (!values.input) {
   process.exit(1);
 }
 
-const VERSION_PATTERN = /^v\d+-\w[\w-]*$/;
-
-const TAXONOMY_CATEGORIES = new Set([
-  "bench", "bicycle", "bollard", "car", "construction_materials",
-  "electrical_box", "fire_hydrant", "garbage", "lamp_post",
-  "motorcycle", "movable_signage", "potted_plant", "street_sign",
-  "street_vendor_cart", "trash_bin", "tree", "tricycle", "utility_post",
-]);
-
-function validateBox(box, index) {
-  if (!box || typeof box !== "object") return `Box ${index}: not an object`;
-  const { x, y, width, height, category, confidence } = box;
-  if (typeof x !== "number" || typeof y !== "number" ||
-      typeof width !== "number" || typeof height !== "number") return `Box ${index}: non-numeric geometry`;
-  if (width <= 0 || height <= 0) return `Box ${index}: non-positive dimensions`;
-  if (typeof category !== "string" || !category) return `Box ${index}: missing category`;
-  if (!TAXONOMY_CATEGORIES.has(category)) return `Box ${index}: unknown category "${category}"`;
-  if (confidence !== undefined && confidence !== null) {
-    if (typeof confidence !== "number" || confidence < 0 || confidence > 1) return `Box ${index}: confidence outside [0, 1]`;
-  }
-  return null;
-}
-
-let raw;
-try {
-  raw = await readFile(values.input, "utf-8");
-} catch (err) {
-  console.error(`Cannot read input file: ${err.message}`);
-  process.exit(1);
-}
-
 let data;
 try {
-  data = JSON.parse(raw);
+  data = JSON.parse(await readFile(values.input, "utf-8"));
 } catch (err) {
-  console.error(`Invalid JSON: ${err.message}`);
+  console.error(`Cannot read ${values.input}: ${err.message}`);
   process.exit(1);
 }
 
-const { modelVersion, predictions } = data;
-
-if (!modelVersion || typeof modelVersion !== "string" || !VERSION_PATTERN.test(modelVersion)) {
-  console.error(`Invalid modelVersion "${modelVersion}". Expected format: v<number>-<name>`);
+const fileProblems = validatePredictionFile(data);
+if (fileProblems.length > 0) {
+  console.error(`The file has ${fileProblems.length} problem(s). Nothing was written.`);
+  for (const p of fileProblems.slice(0, 30)) console.error(`  - ${p}`);
+  if (fileProblems.length > 30) console.error(`  ... and ${fileProblems.length - 30} more`);
   process.exit(1);
 }
 
-if (!Array.isArray(predictions) || predictions.length === 0) {
-  console.error("predictions must be a non-empty array");
-  process.exit(1);
-}
-
-const seenIDs = new Set();
-for (let i = 0; i < predictions.length; i++) {
-  const entry = predictions[i];
-  if (!entry || typeof entry !== "object") {
-    console.error(`Entry ${i}: not an object`);
-    process.exit(1);
-  }
-  if (entry.imageID === undefined || entry.imageID === null) {
-    console.error(`Entry ${i}: missing imageID`);
-    process.exit(1);
-  }
-  if (seenIDs.has(entry.imageID)) {
-    console.error(`Entry ${i}: duplicate imageID ${entry.imageID}`);
-    process.exit(1);
-  }
-  seenIDs.add(entry.imageID);
-
-  if (!Array.isArray(entry.boxes)) {
-    console.error(`Entry ${i} (imageID=${entry.imageID}): boxes is not an array`);
-    process.exit(1);
-  }
-  for (let j = 0; j < entry.boxes.length; j++) {
-    const err = validateBox(entry.boxes[j], j);
-    if (err) {
-      console.error(`Entry ${i} (imageID=${entry.imageID}): ${err}`);
-      process.exit(1);
-    }
-  }
-}
-
-console.log(`Validated ${predictions.length} predictions for model ${modelVersion}`);
+const { modelVersion, decisionThreshold, predictions } = data;
+console.log(`File checked: ${predictions.length} image(s) for model ${modelVersion}, decision threshold ${decisionThreshold}`);
 
 const client = new MongoClient(uri);
 
@@ -143,97 +90,65 @@ try {
   const imageColl = db.collection("Image");
   console.log(`Connected to ${dbName}\n`);
 
-  const imageIDs = predictions.map((p) => p.imageID);
-  const existing = await imageColl.find(
-    { imageID: { $in: imageIDs } },
-    { projection: { imageID: 1, modelVersion: 1 } }
-  ).toArray();
-  const existingMap = new Map(existing.map((img) => [img.imageID, img]));
+  // Every image in the file, and every image served to contributors (to check the whole pool is covered)
+  const images = await imageColl
+    .find(
+      { $or: [{ imageID: { $in: predictions.map((p) => p.imageID) } }, { poolStatus: SERVED_POOL_STATUS }] },
+      { projection: { imageID: 1, modelVersion: 1, poolStatus: 1, annotationList: 1 } }
+    )
+    .toArray();
 
-  const missing = imageIDs.filter((id) => !existingMap.has(id));
-  if (missing.length > 0) {
-    console.warn(`  ⚠ ${missing.length} imageID(s) not found in Image collection (will be skipped):`);
-    if (missing.length <= 10) console.warn(`    ${missing.join(", ")}`);
-    else console.warn(`    ${missing.slice(0, 10).join(", ")} ... and ${missing.length - 10} more`);
-  }
+  const { problems, updates, counts } = planPredictionUpdate(data, images, {
+    force: values.force,
+    allowPartial: values["allow-partial"],
+  });
 
-  let skippedSameVersion = 0;
-  let updatedCount = 0;
-  let clearedCount = 0;
-
-  if (values["dry-run"]) {
-    for (const pred of predictions) {
-      if (!existingMap.has(pred.imageID)) continue;
-      const img = existingMap.get(pred.imageID);
-      if (!values.force && img.modelVersion === modelVersion) {
-        skippedSameVersion++;
-        continue;
-      }
-      if (pred.boxes.length === 0) clearedCount++;
-      else updatedCount++;
-    }
-    console.log("  (dry run — no changes written)");
+  if (problems.length > 0) {
+    console.error(`${problems.length} problem(s). Nothing was written.`);
+    for (const p of problems.slice(0, 30)) console.error(`  - ${p}`);
+    if (problems.length > 30) console.error(`  ... and ${problems.length - 30} more`);
+    process.exitCode = 1;
+  } else if (values["dry-run"]) {
+    console.log("  (dry run, nothing written)");
   } else {
-    const ops = [];
-    for (const pred of predictions) {
-      if (!existingMap.has(pred.imageID)) continue;
-      const img = existingMap.get(pred.imageID);
-      if (!values.force && img.modelVersion === modelVersion) {
-        skippedSameVersion++;
-        continue;
+    const now = new Date();
+    let modified = 0;
+    if (updates.length > 0) {
+      const result = await imageColl.bulkWrite(updates.map((u) => updateOperation(u, modelVersion, now)), { ordered: false });
+      modified = result.modifiedCount;
+      console.log(`  ✓ ${modified} image(s) written`);
+      if (result.matchedCount < updates.length) {
+        // An image changed between the read and the write: left as it was
+        console.error(`  ✗ ${updates.length - result.matchedCount} image(s) changed while the update ran and were left alone. Run the same file again.`);
+        process.exitCode = 1;
       }
-
-      const annotationList = pred.boxes.map((box, i) => ({
-        id: `pred-${i}`,
-        comment: box.category,
-        mark: { x: box.x, y: box.y, width: box.width, height: box.height },
-        editable: false,
-        selected: false,
-        confidence: box.confidence ?? null,
-      }));
-
-      ops.push({
-        updateOne: {
-          filter: { imageID: pred.imageID },
-          update: {
-            $set: {
-              annotationList,
-              modelVersion,
-              predictionUpdatedAt: new Date(),
-            },
-          },
-        },
-      });
-
-      if (pred.boxes.length === 0) clearedCount++;
-      else updatedCount++;
     }
 
-    if (ops.length > 0) {
-      const result = await imageColl.bulkWrite(ops, { ordered: false });
-      console.log(`  ✓ Bulk write: ${result.modifiedCount} image(s) modified`);
-    }
-
-    await db.collection("telemetry_logs").insertOne({
+    // A run that wrote nothing (every image already at this version) is not a cycle
+    if (modified > 0) await db.collection("telemetry_logs").insertOne({
       event: "MODEL_PREDICTIONS_UPDATED",
       modelVersion,
-      predictionsInFile: predictions.length,
-      imagesUpdated: updatedCount,
-      imagesCleared: clearedCount,
-      imagesMissing: missing.length,
-      imagesSkippedSameVersion: skippedSameVersion,
-      timestamp: new Date(),
+      decisionThreshold,
+      predictionsInFile: counts.imagesInFile,
+      imagesUpdated: modified,
+      imagesSkippedSameVersion: counts.imagesSkippedSameVersion,
+      proposalsWritten: counts.proposalsWritten,
+      servedImagesNotInFile: counts.servedImagesNotInFile,
+      partial: values["allow-partial"],
+      timestamp: now,
     });
-    console.log("  ✓ Logged MODEL_PREDICTIONS_UPDATED to telemetry_logs");
+    console.log(modified > 0 ? "  ✓ Logged MODEL_PREDICTIONS_UPDATED to telemetry_logs" : "  Nothing to write, so no cycle was logged");
   }
 
-  console.log(`\n  Summary:`);
+  console.log("\n  Summary:");
   console.log(`    Model version: ${modelVersion}`);
-  console.log(`    Predictions in file: ${predictions.length}`);
-  console.log(`    Images updated: ${updatedCount}`);
-  console.log(`    Images cleared (0 boxes): ${clearedCount}`);
-  console.log(`    Images not found: ${missing.length}`);
-  console.log(`    Skipped (already ${modelVersion}): ${skippedSameVersion}`);
+  console.log(`    Decision threshold: ${decisionThreshold}`);
+  console.log(`    Images in file: ${counts.imagesInFile}`);
+  console.log(`    Images to write: ${counts.imagesUpdated}`);
+  console.log(`    Proposals: ${counts.proposalsWritten}`);
+  console.log(`    Skipped (already ${modelVersion}): ${counts.imagesSkippedSameVersion}`);
+  console.log(`    Not served to contributors: ${counts.imagesNotServed}`);
+  console.log(`    Served images not in the file: ${counts.servedImagesNotInFile}`);
 } catch (err) {
   console.error("Error:", err.message);
   process.exitCode = 1;

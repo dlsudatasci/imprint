@@ -98,10 +98,12 @@ describe("GET /api/admin/retraining", () => {
       cycles: [{
         modelVersion: "v1-retrained",
         timestamp: cycleDate,
+        decisionThreshold: 0.42,
         predictionsInFile: 500,
         imagesUpdated: 480,
-        imagesCleared: 5,
-        imagesMissing: 15,
+        proposalsWritten: 3100,
+        imagesSkippedSameVersion: 20,
+        servedImagesNotInFile: 0,
       }],
       versionDist: [
         { _id: "v1-retrained", count: 480 },
@@ -118,7 +120,16 @@ describe("GET /api/admin/retraining", () => {
     expect(res._status).toBe(200);
     expect(res._json.cycleCount).toBe(1);
     expect(res._json.retrainingCycles[0].modelVersion).toBe("v1-retrained");
-    expect(res._json.retrainingCycles[0].imagesUpdated).toBe(480);
+    expect(res._json.retrainingCycles[0]).toEqual({
+      modelVersion: "v1-retrained",
+      timestamp: cycleDate,
+      decisionThreshold: 0.42,
+      predictionsInFile: 500,
+      imagesUpdated: 480,
+      proposalsWritten: 3100,
+      imagesSkippedSameVersion: 20,
+      servedImagesNotInFile: 0,
+    });
     expect(res._json.versionDistribution).toHaveLength(2);
     expect(res._json.versionDistribution[0].version).toBe("v1-retrained");
     expect(res._json.totalImages).toBe(500);

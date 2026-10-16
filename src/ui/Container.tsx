@@ -56,8 +56,8 @@ export function containerClass(width: ContainerWidth = 'page', className?: strin
 }
 
 /*
- * forwardRef is load-bearing, not boilerplate: ActionSection and CityStats both
- * hand this a ref that an IntersectionObserver watches to fade the section in.
+ * forwardRef is load-bearing, not boilerplate: CityStats hands this a ref that
+ * an IntersectionObserver watches to fade the section in.
  * Swallow the ref and the observer never fires and the section stays at
  * opacity-0 — invisible, with nothing in the console to say why.
  */

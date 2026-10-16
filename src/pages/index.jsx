@@ -4,8 +4,8 @@ import { LoadingScreen } from "@/ui";
 import { useIsomorphicLayoutEffect } from "@/hooks/useIsomorphicLayoutEffect";
 import Hero from "@/features/home/hero";
 import CityStats from "@/features/home/CityStats";
-import SubHero from "@/features/home/subhero";
-import ActionSection from "@/features/home/ActionSection";
+import HowItWorks from "@/features/home/HowItWorks";
+import ClosingSection from "@/features/home/ClosingSection";
 
 /**
  * The public landing page: hero, city map, contribution figures, and the call
@@ -121,8 +121,8 @@ export default function Index() {
 
       <Hero selectedCity={selectedCity} onCitySelect={setSelectedCity} />
       <CityStats selectedCity={selectedCity} onFirstLoad={handleFirstLoad} />
-      <SubHero />
-      <ActionSection />
+      <HowItWorks />
+      <ClosingSection />
     </Page>
   );
 }

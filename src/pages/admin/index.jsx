@@ -673,10 +673,12 @@ function RetrainingTab() {
                 <tr className="border-b border-line text-left">
                   <th className="px-4 py-3 font-semibold text-muted">Version</th>
                   <th className="px-4 py-3 font-semibold text-muted">Date</th>
-                  <th className="px-4 py-3 font-semibold text-muted text-right">Predictions</th>
+                  <th className="px-4 py-3 font-semibold text-muted text-right">Threshold</th>
+                  <th className="px-4 py-3 font-semibold text-muted text-right">Images</th>
                   <th className="px-4 py-3 font-semibold text-muted text-right">Updated</th>
-                  <th className="px-4 py-3 font-semibold text-muted text-right">Cleared</th>
-                  <th className="px-4 py-3 font-semibold text-muted text-right">Missing</th>
+                  <th className="px-4 py-3 font-semibold text-muted text-right">Proposals</th>
+                  <th className="px-4 py-3 font-semibold text-muted text-right">Skipped</th>
+                  <th className="px-4 py-3 font-semibold text-muted text-right">Served, not in file</th>
                 </tr>
               </thead>
               <tbody>
@@ -689,16 +691,22 @@ function RetrainingTab() {
                       {new Date(c.timestamp).toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-right text-body">
+                      {c.decisionThreshold ?? "-"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-body">
                       {c.predictionsInFile ?? "-"}
                     </td>
                     <td className="px-4 py-3 text-right text-body">
                       {c.imagesUpdated ?? "-"}
                     </td>
                     <td className="px-4 py-3 text-right text-body">
-                      {c.imagesCleared ?? "-"}
+                      {c.proposalsWritten ?? "-"}
                     </td>
                     <td className="px-4 py-3 text-right text-body">
-                      {c.imagesMissing ?? "-"}
+                      {c.imagesSkippedSameVersion ?? "-"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-body">
+                      {c.servedImagesNotInFile ?? "-"}
                     </td>
                   </tr>
                 ))}

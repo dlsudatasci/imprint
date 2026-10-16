@@ -38,13 +38,20 @@ export default async function handler(req, res) {
     db.collection("annotations").countDocuments({ status: "completed" }),
   ]);
 
+  // From 16 Oct 2026 update-predictions.mjs writes only the classifier's
+  // proposals and never clears or replaces an image's suggestions, so a cycle
+  // reports the proposals written, the images skipped as already current, and
+  // served images left out of a partial run, in place of images cleared and
+  // missing
   const retrainingCycles = cycles.map((c) => ({
     modelVersion: c.modelVersion,
     timestamp: c.timestamp,
+    decisionThreshold: c.decisionThreshold ?? null,
     predictionsInFile: c.predictionsInFile ?? null,
     imagesUpdated: c.imagesUpdated ?? null,
-    imagesCleared: c.imagesCleared ?? null,
-    imagesMissing: c.imagesMissing ?? null,
+    proposalsWritten: c.proposalsWritten ?? null,
+    imagesSkippedSameVersion: c.imagesSkippedSameVersion ?? null,
+    servedImagesNotInFile: c.servedImagesNotInFile ?? null,
   }));
 
   const versionDistribution = versionDist.map((v) => ({

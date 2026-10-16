@@ -5,9 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import ReactPictureAnnotation from "./ReactPictureAnnotation";
 import { readSessionData, writeSession, readCurrentCount, writeCurrentCount } from "@/util/sessionCache";
 import { LOUPE_SIZE_PX, LOUPE_BOX_GAP_PX, LOUPE_MARGIN_PX, LOUPE_FINGER_CLEAR_PX } from "./loupe";
-// The floating panel as syncPanel places it: 290 px wide, with 220 px of room below
-const PANEL_WIDTH = 290;
-const PANEL_ROOM_BELOW = 220;
+import { PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
 
 // The magnifier against the box being fitted (15 Oct 2026), CSS px in the photo area
 type LoupeTool = {

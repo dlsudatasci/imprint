@@ -22,3 +22,14 @@ export function panelPosition(
   return { left: useLeft ? left : right, top: Math.max(0, Math.min(box.y, photo.height - PANEL_ROOM_BELOW)) };
 }
 
+/**
+ * The floating panel's top once its real height is known (16 Oct 2026): moved
+ * up just enough that it ends at the photo's bottom, never above the photo's
+ * top. panelPosition keeps PANEL_ROOM_BELOW px for the panel, but a panel can
+ * be taller (a box answered Yes shows its severity row, a long category wraps
+ * the question), and the tool's photo frame clips whatever runs past its
+ * bottom. All in the photo's px.
+ */
+export function fitPanelTop(top: number, panelHeight: number, photoHeight: number) {
+  return Math.max(0, Math.min(top, photoHeight - panelHeight));
+}

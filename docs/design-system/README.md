@@ -281,6 +281,10 @@ or No as two equal buttons that fill with `bg-primary` once chosen. No closes it
 the severity picker. A box answered Yes shows "Severity 3" and a Change button, which reopens
 the picker. The severity's wording ("Significant narrowing") appears on the picker only. Not an object (suggestions) and Delete box (drawn boxes) are secondary
 buttons at its foot, never entries in the category list.
+On the desktop photo the panel opens beside the box (`panelPosition`) and, once rendered, moves up
+just enough to end at the photo's bottom when it is taller than the room kept for it
+(`fitPanelTop`, 16 Oct 2026), so its foot, with Not an object, is never cut off. The annotators'
+panel does the same.
 
 ### 9b. Phone and tablet: the sheet layout (added 9 Oct 2026, annotators from 12 Oct 2026)
 

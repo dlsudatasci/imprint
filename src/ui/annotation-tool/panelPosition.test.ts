@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { panelPosition, PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
+import { panelPosition, fitPanelTop, PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
 
 const photo = { width: 715, height: 402 };
 
@@ -15,5 +15,23 @@ describe("panelPosition", () => {
   it("keeps the panel's top level with the box, but never too low on the photo or above it", () => {
     expect(panelPosition({ x: 100, y: 350, width: 60 }, photo, 10).top).toBe(photo.height - PANEL_ROOM_BELOW);
     expect(panelPosition({ x: 100, y: 10, width: 60 }, { width: 715, height: 100 }, 10).top).toBe(0);
+  });
+});
+
+describe("fitPanelTop (16 Oct 2026)", () => {
+  it("leaves a panel that ends on the photo where it is", () => {
+    expect(fitPanelTop(380, 220, 600)).toBe(380);
+    expect(fitPanelTop(100, 283, 600)).toBe(100);
+    expect(fitPanelTop(0, 600, 600)).toBe(0);
+  });
+
+  it("moves a taller panel up until it ends at the photo's bottom", () => {
+    // A suggestion answered Yes, with its severity row, measured 245 px in Chromium
+    expect(fitPanelTop(380, 245, 600)).toBe(355);
+    expect(fitPanelTop(380, 283, 600)).toBe(317);
+  });
+
+  it("never moves it above the photo's top", () => {
+    expect(fitPanelTop(380, 700, 600)).toBe(0);
   });
 });

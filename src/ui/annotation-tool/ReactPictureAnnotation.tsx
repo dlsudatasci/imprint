@@ -130,7 +130,7 @@ import { H2 } from "../Typography";
 import { H3 } from "../Typography";
 import SceneQuestions, { type SceneLevel } from "./SceneQuestions";
 import Step1Card from "./Step1Card";
-import { panelPosition, PANEL_MARGIN } from "./panelPosition";
+import { panelPosition, fitPanelTop, PANEL_MARGIN, PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
 import Container from '../Container';
 import Checkbox from '../Checkbox';
 import {
@@ -907,7 +907,25 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     if (preProps.focus !== this.props.focus || layoutChanged) this.onFocusChange(preProps.focus === true && preProps.layout === "sheet");
     if (this.isSheet) this.followPanel();
+    else this.keepPanelOnPhoto();
   };
+
+  /**
+   * The desktop photo's floating panel, kept inside the photo once it has
+   * rendered (16 Oct 2026). panelPosition keeps PANEL_ROOM_BELOW px for it,
+   * but a panel can be taller (fitPanelTop), and the photo's frame clips what
+   * runs past its bottom: on a box low on the photo the panel's foot, with Not
+   * an object, was cut off. Moves it up just enough, and only when needed, so
+   * a panel that fits is where it always was.
+   */
+  private keepPanelOnPhoto() {
+    const element = this.floatingPanelRef.current;
+    if (!element || !this.state.showInput) return;
+    const position = this.state.inputPosition;
+    const top = position.top ?? 0;
+    const fitted = fitPanelTop(top, element.offsetHeight, this.stageSize().height);
+    if (fitted !== top) this.setState({ inputPosition: { ...position, top: fitted } });
+  }
 
   /**
    * Entering or leaving the full-screen photo (phones, 12 Oct 2026). The tool
@@ -2707,9 +2725,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (this.state.showInput && !this.isSheet && this.selectedId === id) {
       const { left = 0, top = 0 } = this.state.inputPosition;
       const element = this.floatingPanelRef.current;
-      // syncPanel's panel width and the room it keeps below
-      const width = element?.offsetWidth || 290;
-      const height = element?.offsetHeight || 220;
+      const width = element?.offsetWidth || PANEL_WIDTH;
+      const height = element?.offsetHeight || PANEL_ROOM_BELOW;
       panel = { left: left * ds, top: top * ds, width: width * ds, height: height * ds };
     }
     return { box, point: at, panel };

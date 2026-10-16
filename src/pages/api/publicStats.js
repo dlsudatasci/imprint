@@ -1,5 +1,6 @@
 import { connectToDatabase } from "@/util/mongodb";
 import { normalizeCityName } from "@/util/cities";
+import { commonObstructionsPipeline, obstructionsPerImagePipeline } from "@/util/validators/publicStats";
 
 /**
  * GET /api/publicStats             → totals across every city
@@ -45,29 +46,12 @@ export default async function handler(req, res) {
       },
     ]).toArray();
 
-    // Leaderboard of what actually blocks sidewalks. Confirmed model
-    // suggestions and user-drawn boxes are concatenated because both are real
-    // obstructions — only the provenance differs — then unwound so each box
-    // becomes its own row to group by label.
-    const obstructions = await db.collection("annotations").aggregate([
-      { $match: filter },
-      { $project: { boxes: { $concatArrays: [{ $ifNull: ["$selectedObjectsID", []] }, { $ifNull: ["$newObjects", []] }] } } },
-      { $unwind: "$boxes" },
-      { $match: { "boxes.comment": { $ne: "not_an_object" } } },
-      { $match: { $or: [{ "boxes.comment": { $exists: true, $ne: "" } }, { "boxes.isObstruction": true }] } },
-      { $group: { _id: { $ifNull: ["$boxes.comment", "Unknown"] }, count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 5 },
-    ]).toArray();
+    // What blocks sidewalks: boxes answered Yes to the obstruction question,
+    // the model's suggestions and contributors' own boxes alike
+    // (validators/publicStats.js, one rule for both figures)
+    const obstructions = await db.collection("annotations").aggregate(commonObstructionsPipeline(filter)).toArray();
 
-    const [avgObs] = await db.collection("annotations").aggregate([
-      { $match: filter },
-      { $project: { n: { $add: [
-        { $size: { $filter: { input: { $ifNull: ["$selectedObjectsID", []] }, as: "b", cond: { $ne: ["$$b.comment", "not_an_object"] } } } },
-        { $size: { $filter: { input: { $ifNull: ["$newObjects", []] }, as: "b", cond: { $ne: ["$$b.comment", "not_an_object"] } } } },
-      ] } } },
-      { $group: { _id: null, avg: { $avg: "$n" }, total: { $sum: "$n" } } },
-    ]).toArray() || [null];
+    const [avgObs] = await db.collection("annotations").aggregate(obstructionsPerImagePipeline(filter)).toArray() || [null];
 
     return res.status(200).json({
       city: citySlug ? req.query.city : "All Areas",

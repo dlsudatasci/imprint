@@ -46,6 +46,32 @@ export function boxStrokeColor({ selected, isRejected, editable }: { selected?: 
   return "#d97706";
 }
 
+/**
+ * Whether a box's outline is solid in the default view: a drawn box once it
+ * has a category, a suggestion once it is answered. Dashed otherwise. Shared
+ * with the landing page's preview of the task, so the two cannot drift.
+ */
+export function boxIsSolid({ selected, isRejected, editable, comment }: { selected?: boolean; isRejected?: boolean; editable?: boolean; comment?: string }) {
+  if (editable) return Boolean(comment);
+  return Boolean(selected || isRejected);
+}
+
+/**
+ * A box's outline in the default view: 3 px and solid once decided (see
+ * boxIsSolid), the style's line width and dashed 5 on 5 before. Shared with
+ * the landing page's preview.
+ */
+export function boxLineStyle(data: { selected?: boolean; isRejected?: boolean; editable?: boolean; comment?: string }, lineWidth = defaultShapeStyle.lineWidth) {
+  return boxIsSolid(data) ? { width: 3, dash: [] as number[] } : { width: lineWidth, dash: [5, 5] };
+}
+
+/** A box's label colours in the default view: its status colour, as boxStrokeColor. */
+export function boxLabelColors({ selected, editable }: { selected?: boolean; isRejected?: boolean; editable?: boolean }) {
+  if (editable) return { background: "#004aad", text: "white" }; // blue — user-drawn
+  if (selected) return { background: "#16a34a", text: "white" }; // green — confirmed
+  return { background: "#d97706", text: "#111827" }; // amber — rejected or undecided
+}
+
 export interface IShapeStyle {
   paddingX: number;
   paddingY: number;
@@ -236,33 +262,14 @@ export class RectShape implements IShape {
     canvas2D.shadowBlur = shadowBlur;
     canvas2D.shadowColor = shapeShadowStyle;
 
-    const { selected, isRejected, editable, comment } = this.annotationData;
+    const { comment } = this.annotationData;
 
     const strokeColor = boxStrokeColor(this.annotationData);
-    let isSolid = false;
-
-    if (editable) {
-      if (comment) {
-        isSolid = true;
-      }
-    } else if (selected) {
-      isSolid = true;
-    } else if (isRejected) {
-      isSolid = true;
-    } else {
-      isSolid = false;
-    }
-
-    let currentLineWidth = lineWidth;
-    if (isSolid) {
-      currentLineWidth = 3;
-      canvas2D.setLineDash([]);
-    } else {
-      canvas2D.setLineDash([5, 5]);
-    }
+    const line = boxLineStyle(this.annotationData, lineWidth);
+    canvas2D.setLineDash(line.dash);
 
     canvas2D.strokeStyle = strokeColor;
-    canvas2D.lineWidth = currentLineWidth;
+    canvas2D.lineWidth = line.width;
     canvas2D.strokeRect(x, y, width, height);
     canvas2D.setLineDash([]); // Reset dash for subsequent drawing (like shadows/labels)
 
@@ -273,21 +280,8 @@ export class RectShape implements IShape {
       if (comment) {
         const labelText = displayLabel ?? comment.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
-        let labelBgColor = "#d97706";
-        let labelTextColor = "#111827";
-
-        if (editable) {
-          labelBgColor = "#004aad"; // blue — user-drawn
-          labelTextColor = "white";
-        } else if (selected) {
-          labelBgColor = "#16a34a"; // green — confirmed
-          labelTextColor = "white";
-        } else if (isRejected) {
-          labelBgColor = "#d97706"; // warning
-          labelTextColor = "#111827";
-        }
-
-        this.paintLabel(canvas2D, x, y, labelText, labelBgColor, labelTextColor);
+        const label = boxLabelColors(this.annotationData);
+        this.paintLabel(canvas2D, x, y, labelText, label.background, label.text);
       }
     }
     canvas2D.restore();

@@ -100,6 +100,7 @@ function SeveritySlider({ value, onChange }: { value: number; onChange: (v: numb
         step={1}
         value={local}
         aria-label="Severity"
+        data-control="severity"
         aria-valuetext={`${local}, ${severityLabel(local)}`}
         className="severity-range"
         onInput={(e) => {
@@ -123,7 +124,7 @@ function SeveritySlider({ value, onChange }: { value: number; onChange: (v: numb
   );
 }
 
-function SeverityPicker({ initialValue, onConfirm, onBack, variant = "floating" }: {
+export function SeverityPicker({ initialValue, onConfirm, onBack, variant = "floating" }: {
   initialValue: number | null | undefined;
   onConfirm: (severity: number) => void;
   onBack: () => void;
@@ -141,6 +142,7 @@ function SeverityPicker({ initialValue, onConfirm, onBack, variant = "floating" 
       <p className="text-sm font-semibold text-ink mb-3 text-center">How severe is this obstruction?</p>
       <SeveritySlider value={localSeverity} onChange={setLocalSeverity} />
       <button
+        data-control="confirm"
         className={`w-full mt-3 py-2 rounded-control text-sm font-bold transition-all border border-primary bg-primary/10 text-primary hover:bg-primary/20${sheet ? ` ${TOUCH_TARGET}` : ""}`}
         onClick={() => onConfirm(localSeverity)}
       >
@@ -213,6 +215,7 @@ function CategoryField({ value, isCustom, setIsCustom, onChange, variant = "floa
     <div className="relative flex-1 min-w-0">
       <select
         aria-label="Category"
+        data-control="category"
         className={`w-full bg-surface-subtle border border-line rounded-control px-3 py-2 pr-8 ${textSize} font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer`}
         value={value && value !== NOT_AN_OBJECT ? value : "---"}
         onChange={(e) => {
@@ -242,15 +245,18 @@ function CategoryField({ value, isCustom, setIsCustom, onChange, variant = "floa
   );
 }
 
-function AnswerButton({ active, disabled, onClick, children, variant = "floating" }: {
+function AnswerButton({ active, disabled, onClick, children, variant = "floating", control }: {
   active: boolean;
   disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
   variant?: PanelVariant;
+  /** data-control, which the landing page's preview finds the button by */
+  control?: string;
 }) {
   return (
     <button
+      data-control={control}
       className={`py-2${variant === "sheet" ? ` ${TOUCH_TARGET}` : ""} rounded-control text-sm font-bold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${active
         ? "border-primary bg-primary text-white"
         : "border-line bg-surface text-ink hover:bg-surface-subtle"
@@ -402,8 +408,8 @@ const DefaultInputSection = ({
         Does <span className="font-semibold text-ink">{hasCategory ? translateValue(value) : "this object"}</span> obstruct the sidewalk?
       </p>
       <div className="grid grid-cols-2 gap-2">
-        <AnswerButton active={answer === "yes"} disabled={!hasCategory} onClick={onYes} variant={variant}>Yes</AnswerButton>
-        <AnswerButton active={answer === "no"} disabled={!hasCategory} onClick={onNo} variant={variant}>No</AnswerButton>
+        <AnswerButton active={answer === "yes"} disabled={!hasCategory} onClick={onYes} variant={variant} control="yes">Yes</AnswerButton>
+        <AnswerButton active={answer === "no"} disabled={!hasCategory} onClick={onNo} variant={variant} control="no">No</AnswerButton>
       </div>
 
       {/* The severity number only, styled like "Drawn by you". Its wording is on

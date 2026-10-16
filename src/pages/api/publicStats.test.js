@@ -7,6 +7,7 @@ vi.mock("@/util/mongodb", () => ({
 
 import { connectToDatabase } from "@/util/mongodb";
 import handler from "./publicStats.js";
+import { commonObstructionsPipeline, obstructionsPerImagePipeline } from "@/util/validators/publicStats";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -74,20 +75,19 @@ describe("GET /api/publicStats", () => {
     expect(res._status).toBe(405);
   });
 
-  it("leaderboard pipeline excludes not_an_object boxes", async () => {
+  it("counts only boxes answered Yes in both obstruction figures, for contributors", async () => {
     const mockDb = setupMockDb();
-    const req = createMockReq({ method: "GET", query: {} });
+    const req = createMockReq({ method: "GET", query: { city: "Makati" } });
     const res = createMockRes();
 
     await handler(req, res);
 
+    // Not an object, No answers and the old isObstruction field are covered in validators/publicStats.test.js
+    const filter = { city: "makati", source: { $ne: "annotator" } };
     const aggregateCalls = mockDb.collection("annotations").aggregate.mock.calls;
-    const leaderboardPipeline = aggregateCalls[1][0];
-    const matchAfterUnwind = leaderboardPipeline.find(
-      (stage, i) => i > 0 && stage.$match && stage.$match["boxes.comment"]
-    );
-    expect(matchAfterUnwind).toBeDefined();
-    expect(matchAfterUnwind.$match["boxes.comment"].$ne).toBe("not_an_object");
+    expect(aggregateCalls[1][0]).toEqual(commonObstructionsPipeline(filter));
+    expect(aggregateCalls[2][0]).toEqual(obstructionsPerImagePipeline(filter));
+    expect(JSON.stringify(aggregateCalls)).not.toContain("isObstruction");
   });
 
   it("response has the expected shape", async () => {

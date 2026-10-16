@@ -34,6 +34,10 @@ describe("tutorialImages", () => {
     }
   });
 
+  it("the first image suggests a lamp post, a tree, a car and a motorcycle, and no utility post (15 Oct 2026)", () => {
+    expect(TUTORIAL_IMAGES[0].annotationList.map((b) => b.comment)).toEqual(["lamp_post", "tree", "car", "motorcycle"]);
+  });
+
   it("every annotation box has the required shape fields", () => {
     const requiredBoxFields = ["id", "comment", "mark", "selected", "editable", "isRejected"];
     const requiredMarkFields = ["x", "y", "width", "height", "type"];

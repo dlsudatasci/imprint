@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { Container } from "@/ui";
+import { cityStatsItems } from "./cityStatsItems";
 
 /**
  * The contribution figures shown under the map on the landing page.
@@ -62,15 +63,7 @@ export default function CityStats({ selectedCity, onFirstLoad }) {
     return () => { stale = true; };
   }, [selectedCity, onFirstLoad]);
 
-  const statItems = stats
-    ? [
-        { label: "Sidewalk Images", value: stats.totalImages?.toLocaleString() || "0", sub: "collected for annotation" },
-        { label: "Annotations",     value: stats.totalAnnotations?.toLocaleString() || "0", sub: "bounding boxes submitted" },
-        { label: "Accessibility",   value: stats.avgAccessibilityRating > 0 ? `${stats.avgAccessibilityRating}/5` : "—", sub: "average sidewalk rating" },
-        { label: "Contributors",    value: stats.totalContributors?.toLocaleString() || "0", sub: "unique volunteers" },
-        { label: "Avg. Obstructions", value: stats.avgObstructionsPerImage > 0 ? stats.avgObstructionsPerImage : "—", sub: "per image" },
-      ]
-    : [];
+  const statItems = cityStatsItems(stats);
 
   const skeleton = (count) =>
     Array.from({ length: count }, (_, i) => (

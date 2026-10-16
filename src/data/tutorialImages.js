@@ -18,6 +18,9 @@
  * Edited 29 Sep 2026: labels converted to the taxonomy's underscore form
  * ("lamp post" -> "lamp_post") and the cracked pavement box removed, since
  * Section 4.2.1 excludes surface features from the taxonomy.
+ * Edited 15 Oct 2026: the first image's Utility Post suggestion removed, so it
+ * has four (Lamp Post, Tree, Car, Motorcycle), for a shorter walkthrough and
+ * the landing page's preview of the task, which plays this image (Rans).
  * Source MongoDB IDs saved in: tutorial-image-ids.txt
  */
 
@@ -80,20 +83,6 @@ const TUTORIAL_IMAGES = [
           "y": 176,
           "width": 25,
           "height": 35,
-          "type": "RECT"
-        },
-        "selected": false,
-        "editable": false,
-        "isRejected": false
-      },
-      {
-        "id": "tut1-box5",
-        "comment": "utility_post",
-        "mark": {
-          "x": 251,
-          "y": 7,
-          "width": 18,
-          "height": 153,
           "type": "RECT"
         },
         "selected": false,

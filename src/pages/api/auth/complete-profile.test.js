@@ -117,13 +117,24 @@ describe("POST /api/auth/complete-profile", () => {
 
     await handler(req, res);
 
-    expect(mocks.usersCol.updateOne).toHaveBeenCalledTimes(1);
+    expect(mocks.usersCol.updateOne).toHaveBeenCalledTimes(2);
     const [filter, update, options] = mocks.usersCol.updateOne.mock.calls[0];
     expect(filter).toHaveProperty("email");
     expect(update.$set).toHaveProperty("age", "20-24");
     expect(update.$set).toHaveProperty("occupation", "Software Engineer");
     expect(update.$set).toHaveProperty("temporaryMobility", "No");
     expect(options.upsert).toBe(true);
+  });
+
+  // The navbar's notifications show it (16 Oct 2026)
+  it("adds Completed your profile to the activity feed, after the profile is saved, keeping the newest 100", async () => {
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [filter, update, options] = mocks.usersCol.updateOne.mock.calls[1];
+    expect(filter).toHaveProperty("email");
+    expect(update.$push.activities.$each).toEqual([{ activity: "Completed your profile", date: expect.any(Date), tag: "profile" }]);
+    expect(update.$push.activities.$slice).toBe(-100);
+    expect(options).toBeUndefined();
   });
 
   it("returns 400 for invalid temporaryMobility", async () => {

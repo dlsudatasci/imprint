@@ -35,8 +35,12 @@ const base = [
   'inline-flex items-center justify-center gap-2',
   'font-bold border',
   'rounded-control',
-  // Hover feedback is a colour change alone — no lift, no shadow.
-  'transition-colors duration-300 ease-in-out',
+  // Hover feedback is a colour change alone — no lift, no shadow. Pressing
+  // answers at once (16 Oct 2026, apple-design: respond on press, not on
+  // release): the button settles to 97% over 100 ms while held. Colour keeps
+  // its 300 ms. Reduced motion keeps the colour change and drops the scale.
+  '[transition:color_300ms_ease-in-out,background-color_300ms_ease-in-out,border-color_300ms_ease-in-out,transform_100ms_ease-out]',
+  'enabled:active:scale-[0.97] motion-reduce:enabled:active:scale-100',
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2',
   'disabled:opacity-50 disabled:cursor-not-allowed',
 ].join(' ');

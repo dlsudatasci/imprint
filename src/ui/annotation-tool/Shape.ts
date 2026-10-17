@@ -110,6 +110,41 @@ export interface IRectShapeData extends IShapeData {
   type: "RECT";
 }
 
+/**
+ * Where a box's name goes on the photo, given the names already placed (17 Oct
+ * 2026, apple-design check). The first free spot of three:
+ *   1. its box's top-left corner, where names have always been,
+ *   2. just above its box, left edges aligned, when the corner is taken by an
+ *      earlier name (boxes side by side, a row of parked motorcycles),
+ *   3. below the earlier names it would cover, left edge on its box.
+ * A spot above the top of the canvas is not used. If none is free (only when
+ * names pile up past every check) it stays at the corner. The caller places
+ * names in the lists' order, so a name never moves when another box is
+ * clicked.
+ */
+export function placeLabel(
+  box: IShapeBase,
+  size: { width: number; height: number },
+  placed: IShapeBase[],
+  gap = 2
+): IShapeBase {
+  const at = (y: number) => ({ x: box.x, y, width: size.width, height: size.height });
+  const overlaps = (a: IShapeBase, b: IShapeBase) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  const free = (rect: IShapeBase) => rect.y >= 0 && !placed.some((p) => overlaps(rect, p));
+  const corner = at(box.y);
+  if (free(corner)) return corner;
+  const above = at(box.y - size.height - gap);
+  if (free(above)) return above;
+  let rect = corner;
+  for (let i = 0; i <= placed.length; i++) {
+    const hit = placed.find((p) => overlaps(rect, p));
+    if (!hit) return rect;
+    rect = at(hit.y + hit.height + gap);
+  }
+  return corner;
+}
+
 export interface IShape {
   shapeStyle: IShapeStyle;
   /** Where the Obstructions view last drew the label, in stage px; null when it drew none. */
@@ -122,8 +157,11 @@ export interface IShape {
     calculateTruePosition: (shapeData: IShapeBase) => IShapeBase,
     selected: boolean,
     displayLabel?: string,
-    variant?: PaintVariant
+    variant?: PaintVariant,
+    labelAt?: { x: number; y: number }
   ) => IShapeBase;
+  labelText: (displayLabel?: string) => string | null;
+  measureLabel: (canvas2D: CanvasRenderingContext2D, labelText: string) => { width: number; height: number };
   getAnnotationData: () => IAnnotation;
   adjustMark: (adjustBase: IShapeAdjustBase) => void;
   setComment: (comment: string) => void;
@@ -236,7 +274,8 @@ export class RectShape implements IShape {
     calculateTruePosition: (shapeData: IShapeBase) => IShapeBase,
     selectedAnnotation: boolean,
     displayLabel?: string,
-    variant: PaintVariant = "default"
+    variant: PaintVariant = "default",
+    labelAt?: { x: number; y: number }
   ) => {
     const { x, y, width, height } = calculateTruePosition(
       this.annotationData.mark
@@ -244,7 +283,7 @@ export class RectShape implements IShape {
     this.labelRect = null;
     if (variant === "obstructions") {
       if (this.annotationData.comment !== "not_an_object") {
-        this.paintObstructionAnswer(canvas2D, { x, y, width, height }, displayLabel);
+        this.paintObstructionAnswer(canvas2D, { x, y, width, height }, displayLabel, labelAt);
       }
       return { x, y, width, height };
     }
@@ -281,7 +320,7 @@ export class RectShape implements IShape {
         const labelText = displayLabel ?? comment.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
         const label = boxLabelColors(this.annotationData);
-        this.paintLabel(canvas2D, x, y, labelText, label.background, label.text);
+        this.paintLabel(canvas2D, labelAt?.x ?? x, labelAt?.y ?? y, labelText, label.background, label.text);
       }
     }
     canvas2D.restore();
@@ -293,7 +332,8 @@ export class RectShape implements IShape {
   private paintObstructionAnswer = (
     canvas2D: CanvasRenderingContext2D,
     { x, y, width, height }: IShapeBase,
-    displayLabel?: string
+    displayLabel?: string,
+    labelAt?: { x: number; y: number }
   ) => {
     const marked = this.annotationData.obstructs === true;
     canvas2D.save();
@@ -308,14 +348,31 @@ export class RectShape implements IShape {
       // Kept so a click on the label marks this box (pickJudgeLabel)
       this.labelRect = this.paintLabel(
         canvas2D,
-        x,
-        y,
+        labelAt?.x ?? x,
+        labelAt?.y ?? y,
         labelText,
         marked ? "#dc2626" : "#e5e7eb",
         marked ? "white" : "#111827"
       );
     }
     canvas2D.restore();
+  };
+
+  /** The name painted on this box, or null when it has none */
+  public labelText = (displayLabel?: string) => {
+    const { comment } = this.annotationData;
+    if (!comment) return null;
+    return displayLabel ?? comment.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  };
+
+  /** The size paintLabel draws a name at, so names can be placed before painting */
+  public measureLabel = (canvas2D: CanvasRenderingContext2D, labelText: string) => {
+    const { paddingX, paddingY, fontSize, fontFamily } = this.shapeStyle;
+    canvas2D.save();
+    canvas2D.font = `bold ${fontSize}px ${fontFamily}`;
+    const width = canvas2D.measureText(labelText).width + paddingX * 2;
+    canvas2D.restore();
+    return { width, height: fontSize + paddingY * 2 };
   };
 
   /**

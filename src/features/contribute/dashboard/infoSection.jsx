@@ -1,7 +1,8 @@
 import React from "react";
 import RecentSessionItem from "./recentSessionItem";
 import { Skeleton, Container } from "@/ui";
-import { MILESTONES, KILOMETERS_PER_ANNOTATION } from "@/util/milestones";
+import { metersForPhotos, nextMilestone, previousMilestone, stepProgress } from "@/util/milestones";
+import { DASHBOARD_COPY as COPY, labelStart, secondsPerPhoto } from "./dashboardCopy";
 
 /**
  * The lower half of the contributor dashboard: session history, the
@@ -13,11 +14,28 @@ import { MILESTONES, KILOMETERS_PER_ANNOTATION } from "@/util/milestones";
  *
  * Contributors only: annotators see none of this section (6 Oct 2026), so the
  * dashboard page does not render it for them.
+ *
+ * Audited 17 Oct 2026 (IMPRINT_dashboard_audit.md). Total contributions
+ * counts photos (users.totalAnnotations grows by one per finished photo), not
+ * obstructions as it said. The distance no longer says "safe" sidewalks, and
+ * the ladder is reachable (util/milestones.js). The next landmark used to
+ * read "the length of the length of ...". Headings run h2 under the page's h1.
+ *
+ * Laid out again the same day (apple-design pass): "Recent sessions" first
+ * (Rans: the more important of the two), then "Your progress", the distance
+ * and the three figures in one bordered card, since they answer the same
+ * question. The distance was a full-width solid
+ * blue block, the loudest thing on the page and louder than the one action
+ * that matters (Let's Annotate!). It is now a number on a card, with the
+ * brand blue kept for the bar. The bar runs from the last landmark passed to
+ * the next, so it moves visibly with each session. The session list no
+ * longer scrolls inside the page.
  */
 export default class DashboardInfo extends React.Component {
   state = {
     recentSessions: [],
     totalAnnotation: 0,
+    sessionsFailed: false,
     username: this.props.username,
     userId: this.props.userId,
     telemetryStats: null,
@@ -52,150 +70,131 @@ export default class DashboardInfo extends React.Component {
         fetch("/api/recentSessions")
       ]);
 
-      const extractUser = await extractUserRes.json();
-      const telemetryStats = await telemetryRes.json();
-      const recentSessionsData = await recentSessionsRes.json();
+      // A failed request reads as null, not as an empty answer (17 Oct 2026).
+      // Before, a failed /api/extractUser left Total contributions blank and a
+      // failed list read as "no sessions yet".
+      const read = (res) => (res.ok ? res.json().catch(() => null) : null);
+      const [extractUser, telemetryStats, recentSessionsData] = await Promise.all([
+        read(extractUserRes),
+        read(telemetryRes),
+        read(recentSessionsRes),
+      ]);
 
       this.setState({
-        recentSessions: recentSessionsData.sessions || [],
-        totalAnnotation: extractUser.annotationCount,
+        recentSessions: Array.isArray(recentSessionsData?.sessions) ? recentSessionsData.sessions : [],
+        sessionsFailed: !Array.isArray(recentSessionsData?.sessions),
+        totalAnnotation: Number.isFinite(extractUser?.annotationCount) ? extractUser.annotationCount : null,
         telemetryStats: telemetryStats,
         loading: false,
       });
     } catch (err) {
       console.error("Failed to fetch dashboard data:", err);
-      this.setState({ loading: false });
+      this.setState({ loading: false, sessionsFailed: true, totalAnnotation: null, telemetryStats: null });
     }
   }
 
   render() {
-    const { totalAnnotation, recentSessions, telemetryStats, loading } = this.state;
+    const { totalAnnotation, recentSessions, sessionsFailed, telemetryStats, loading } = this.state;
+    // null when its request failed: shown as "–" with the reason, never as 0
+    const totalKnown = totalAnnotation != null;
 
     // Deliberately no zeroed fallback. A `0` that becomes `47` a moment later
-    // reads as a real answer, so an unloaded stat renders as a skeleton and the
-    // banner is withheld entirely until there's a true distance to report.
+    // reads as a real answer, so an unloaded figure renders as a skeleton.
     const stats = telemetryStats;
 
-    const rawKmMapped = totalAnnotation * KILOMETERS_PER_ANNOTATION;
-    const kmMapped = rawKmMapped.toFixed(2);
+    const meters = metersForPhotos(totalAnnotation);
+    const next = nextMilestone(meters);
+    const previous = previousMilestone(meters);
+    const progress = stepProgress(meters);
+    const seconds = secondsPerPhoto(stats?.averageTimePerImageSeconds);
+    const streak = stats ? stats.currentStreak ?? 0 : null;
 
-    // First milestone still ahead of them — MILESTONES is sorted ascending, so
-    // find() gives the nearest one. Past the end of the list the fallback keeps
-    // a target 20km out rather than showing a finished bar with nothing next.
-    const currentMilestone = MILESTONES.find(m => m.km > rawKmMapped) || { name: "the next major highway", km: rawKmMapped + 20 };
-
-    const kmLeft = (currentMilestone.km - rawKmMapped).toFixed(2);
-    const milestoneProgress = Math.min((rawKmMapped / currentMilestone.km) * 100, 100);
-
-    const figure = (label, value, caption) => (
-      <div className="flex-1 p-6">
-        <p className="text-xs font-semibold text-muted uppercase tracking-wide">{label}</p>
-        {loading ? (
-          <Skeleton className="h-9 w-20 mt-3 mb-2" />
-        ) : (
-          <p className="text-4xl leading-none font-extrabold text-ink tracking-tight mt-2">{value}</p>
-        )}
-        <p className="text-sm text-muted mt-2 font-medium">{caption}</p>
+    const value = (content, skeletonClass = "h-9 w-20") =>
+      loading ? <Skeleton className={`${skeletonClass} mt-2`} /> : content;
+    const figure = (label, content, caption) => (
+      <div className="flex-1 p-6 sm:px-8">
+        <p className="text-sm font-semibold text-muted">{label}</p>
+        {value(<p className="mt-2 text-4xl leading-none font-extrabold text-ink tracking-[-0.03em] tabular-nums">{content}</p>)}
+        <p className="mt-2 text-sm text-muted">{caption}</p>
       </div>
     );
+    const unit = (text) => <span className="text-2xl font-bold text-subtle tracking-normal"> {text}</span>;
+    const heading = "font-display text-2xl sm:text-3xl font-bold text-ink tracking-[-0.02em]";
 
     return (
-      <section className="pb-12 min-h-[60vh] pt-2">
-        <Container>
-          <hr className="border-line border-t-2 mb-8" />
-
-          {/* ROW 1: Recent Sessions */}
-          <div className="mb-12">
-            <h3 className="text-2xl font-semibold text-ink tracking-tight mb-6 px-2">Recent Sessions</h3>
-
-            <div className="bg-surface rounded-card border border-line px-8 py-4">
-              <div className="flex-1 overflow-y-auto max-h-[380px] pr-2">
-                {loading ? (
-                  <div className="flex flex-col gap-4 py-4">
-                    <Skeleton className="h-14 w-full" />
-                    <Skeleton className="h-14 w-full" />
-                    <Skeleton className="h-14 w-full" />
-                  </div>
-                ) : (
-                  <ul className="flex flex-col">
-                    {recentSessions?.length > 0 ? (
-                      recentSessions.map((session, index) => (
-                        <RecentSessionItem sessionData={session} key={session.id || index} />
-                      ))
-                    ) : (
-                      <p className="text-[13px] text-subtle text-center mt-6">No recent sessions found.</p>
-                    )}
-                  </ul>
+      <section className="pb-20" data-dashboard-info>
+        <Container className="space-y-12">
+          {/* Recent sessions, in the page's own scroll (at most nine rows) */}
+          <section aria-labelledby="recent-title">
+            <h2 id="recent-title" className={heading}>{COPY.recentTitle}</h2>
+            <div className="mt-5 rounded-card border border-line bg-surface px-6 sm:px-8">
+              {loading ? (
+                <div className="flex flex-col gap-4 py-6">
+                  <Skeleton className="h-14 w-full" />
+                  <Skeleton className="h-14 w-full" />
+                  <Skeleton className="h-14 w-full" />
+                </div>
+              ) : sessionsFailed ? (
+                <p role="status" className="py-8 text-center text-sm text-muted">{COPY.loadFailed}</p>
+              ) : recentSessions?.length > 0 ? (
+                <ul className="flex flex-col">
+                  {recentSessions.map((session, index) => (
+                    <RecentSessionItem sessionData={session} key={session.id || index} />
+                  ))}
+                </ul>
+              ) : (
+                <p className="py-8 text-center text-sm text-muted">{COPY.noSessions}</p>
+              )}
+            </div>
+          </section>
+          {/* Your progress: the distance ladder and the three figures (chapter_5.tex) */}
+          <section aria-labelledby="progress-title">
+            <h2 id="progress-title" className={heading}>{COPY.progressTitle}</h2>
+            <div className="mt-5 rounded-card border border-line bg-surface">
+              <div className="p-6 sm:p-8">
+                <p className="text-sm font-semibold text-muted">{COPY.distanceLabel}</p>
+                {/* The UI face: the display face's old-style figures dip below the line */}
+                {value(
+                  <p className="mt-2 text-5xl sm:text-6xl leading-none font-extrabold text-ink tracking-[-0.035em] tabular-nums">
+                    {totalKnown ? COPY.distanceValue(meters) : "–"}
+                  </p>,
+                  "h-14 w-40"
+                )}
+                {!loading && !totalKnown && <p role="status" className="mt-3 text-body">{COPY.loadFailed}</p>}
+                {!loading && totalKnown && (
+                  <>
+                    <p className="mt-3 text-body">
+                      {next ? COPY.distanceNext(next.meters - meters, next.place) : COPY.distanceDone}
+                    </p>
+                    <div className="mt-6">
+                      <div className="mb-2 flex justify-between gap-4 text-sm font-semibold text-muted">
+                        {/* "The Pasig River", not "the Pasig River", at the start of a label */}
+                        <span>{previous ? labelStart(previous.place) : COPY.distanceStart}</span>
+                        {next && <span className="text-right text-ink">{labelStart(next.place)}</span>}
+                      </div>
+                      <div
+                        className="h-2 w-full overflow-hidden rounded-full bg-surface-subtle ring-1 ring-inset ring-line"
+                        role="progressbar"
+                        aria-valuenow={Math.round(progress)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={next ? `Progress toward the length of ${next.place}` : COPY.distanceDone}
+                      >
+                        <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
+
+              <div className="border-t border-line divide-y divide-line sm:flex sm:divide-y-0 sm:divide-x">
+                {/* Thousands separated, as the distance is: "1,284", not "1284" */}
+                {figure(COPY.figures.total.label, totalKnown ? totalAnnotation.toLocaleString("en-PH") : "–", COPY.figures.total.unit(totalAnnotation))}
+                {figure(COPY.figures.streak.label, streak == null ? "–" : <>{streak}{unit(COPY.figures.streak.unit(streak))}</>, COPY.figures.streak.caption)}
+                {figure(COPY.figures.time.label, seconds == null ? "–" : <>{seconds}{unit(COPY.figures.time.unit)}</>, COPY.figures.time.caption)}
+              </div>
             </div>
-          </div>
-
-          {/* Real-World Impact Banner */}
-          <div className="bg-primary rounded-card p-8 mb-12 text-white">
-            {loading ? (
-              <div className="flex flex-col gap-4">
-                <Skeleton className="h-9 w-2/3 bg-white/20" />
-                <Skeleton className="h-4 w-full bg-white/20" />
-              </div>
-            ) : (
-              <div className="w-full">
-                <h2 className="text-3xl lg:text-4xl font-extrabold mb-2 tracking-tight">
-                  You&apos;ve helped map {kmMapped}km of safe sidewalks.
-                </h2>
-                <p className="text-white/90 text-sm mb-6 font-medium">
-                  Only <strong className="font-bold">{kmLeft}km</strong> left to match the length of {currentMilestone.name}.
-                </p>
-
-                {/* Milestone Progress Bar */}
-                <div className="w-full">
-                  <div className="flex justify-between text-sm font-semibold text-white/80 mb-3 tracking-wide">
-                    <span>START</span>
-                    <span>{currentMilestone.km}km goal</span>
-                  </div>
-                  <div
-                    className="w-full h-3 bg-white/20 rounded-full overflow-hidden"
-                    role="progressbar"
-                    aria-valuenow={Math.round(milestoneProgress)}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label={`Progress toward ${currentMilestone.name}`}
-                  >
-                    <div
-                      className="h-full bg-white rounded-full transition-[width] duration-1000 ease-out"
-                      style={{ width: `${milestoneProgress}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-              </div>
-
-          {/* Contribution figures — one bordered row rather than a card each, so
-              the numbers read as a set instead of three competing panels */}
-          <div className="bg-surface border border-line rounded-card divide-y divide-line sm:flex sm:divide-y-0 sm:divide-x mb-12 w-full">
-            {figure(
-              "Total contributions",
-              totalAnnotation,
-              `${totalAnnotation === 1 ? 'obstruction' : 'obstructions'} annotated`,
-            )}
-            {figure(
-              "Active streak",
-              <>
-                {stats?.currentStreak ?? 0}
-                <span className="text-2xl font-bold text-subtle"> {stats?.currentStreak === 1 ? 'day' : 'days'}</span>
-              </>,
-              "consecutive days contributing",
-            )}
-            {figure(
-              "Image speed",
-              <>
-                {stats?.averageTimePerImageSeconds ?? "0.00"}
-                <span className="text-2xl font-bold text-subtle"> s</span>
-              </>,
-              "average per image",
-            )}
-          </div>
+          </section>
 
         </Container>
       </section>

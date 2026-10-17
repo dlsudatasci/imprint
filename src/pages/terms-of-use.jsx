@@ -3,6 +3,12 @@
  *
  * Shares its layout with /privacy through LegalShell, so the two read as a
  * pair. Section content is written inline here rather than fetched.
+ *
+ * The text is appendix_C.tex's. Three lines changed on 16 Oct 2026 (Rans),
+ * and appendix_C.tex changes with them: who may participate (any device,
+ * "digital literacy", pipeline_methodology.md §7u and §7w), the study period
+ * (no length, was "approximately eight weeks"), and the data collected (the
+ * device, browser and screen size recorded since 11 Oct 2026, §7u).
  */
 import Page from '@/ui/page';
 import Link from 'next/link';
@@ -60,7 +66,8 @@ export default function InformedConsent() {
                 <LegalSection title="Who May Participate">
                     <p>
                         You may participate if you are at least 18 years of age, have basic
-                        computer literacy, and have access to a desktop or laptop web browser.
+                        digital literacy, and have access to a web browser on a computer,
+                        tablet, or smartphone.
                         No prior experience in computer vision, mapping, or accessibility
                         assessment is required.
                     </p>
@@ -86,8 +93,7 @@ export default function InformedConsent() {
                     </ul>
                     <p className="mt-4">
                         You participate remotely, at times of your own choosing, for as long
-                        and as often as you wish over the study period of approximately eight
-                        weeks.
+                        and as often as you wish over the study period.
                     </p>
                 </LegalSection>
 
@@ -152,7 +158,8 @@ export default function InformedConsent() {
                         </li>
                         <li>
                             The data collected includes your annotations, the interface actions
-                            you take, the time you spend, and your questionnaire responses.
+                            you take, the time you spend, the type of device, browser, and screen
+                            size you use, and your questionnaire responses.
                         </li>
                         <li>
                             All data is stored on university-managed infrastructure and retained

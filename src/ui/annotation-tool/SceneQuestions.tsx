@@ -29,6 +29,9 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
   // Shown under a greyed-out question when the image has no sidewalk
   const notApplicable = "Not applicable. There is no sidewalk.";
   const prompt = sheet ? "text-xs text-muted mb-1.5" : "text-[11px] text-muted mb-1.5";
+  // Answer labels on a laptop are 11 px at the least (apple-design check, 17
+  // Oct 2026): they were 9 and 10 px, below what reads at arm's length, on the
+  // very answers a contributor picks. The sheet's are 12 px already.
   const optionLabel = (desktopSize: string) => sheet ? "text-xs font-semibold leading-tight text-center" : `${desktopSize} font-semibold leading-tight text-center`;
   // In the sheet a row of options wraps when it does not fit (12 Oct 2026):
   // on a 360 px phone the fifth accessibility option stuck out of its card,
@@ -100,7 +103,7 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
                 <div className="w-12 h-12 mb-1 flex items-end justify-center">
                   <SidewalkWidthIcon type={opt.icon} />
                 </div>
-                <span className={sheet ? "text-xs font-semibold leading-tight" : "text-[10px] font-semibold leading-tight"}>{opt.label}</span>
+                <span className={sheet ? "text-xs font-semibold leading-tight" : "text-[11px] font-semibold leading-tight"}>{opt.label}</span>
               </button>
             ))}
           </div>
@@ -130,7 +133,7 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
                 <div className="w-10 h-10 mb-1 flex items-center justify-center">
                   <SurfaceConditionIcon type={opt.icon} />
                 </div>
-                <span className={optionLabel("text-[10px]")}>{opt.label}</span>
+                <span className={optionLabel("text-[11px]")}>{opt.label}</span>
               </button>
             ))}
           </div>
@@ -161,7 +164,7 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
                 <div className="w-10 h-10 mb-1 flex items-center justify-center">
                   <WalkingComfortIcon type={opt.icon} />
                 </div>
-                <span className={optionLabel("text-[10px]")}>{opt.label}</span>
+                <span className={optionLabel("text-[11px]")}>{opt.label}</span>
               </button>
             ))}
           </div>
@@ -195,7 +198,7 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
                 <div className="w-8 h-8 mb-0.5 flex items-center justify-center">
                   <AccessibleToMeIcon type={opt.icon} />
                 </div>
-                <span className={optionLabel("text-[9px]")}>{opt.label}</span>
+                <span className={optionLabel("text-[11px]")}>{opt.label}</span>
               </button>
             ))}
           </div>

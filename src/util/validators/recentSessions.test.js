@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { bucketChartData, normalizeCityDisplay } from "./recentSessions.js";
+import { bucketChartData, normalizeCityDisplay, countObstructions } from "./recentSessions.js";
+import { STUDY_CITIES, normalizeCityName } from "@/util/cities";
+import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
 
 describe("bucketChartData", () => {
   it("passes through 5 or fewer items unchanged", () => {
@@ -40,13 +42,39 @@ describe("normalizeCityDisplay", () => {
     expect(normalizeCityDisplay("laspinas")).toBe("Las Piñas");
   });
 
-  it("passes through other slugs", () => {
-    expect(normalizeCityDisplay("makati")).toBe("makati");
-    expect(normalizeCityDisplay("manila")).toBe("manila");
+  it("names every study city as people write it (17 Oct 2026)", () => {
+    expect(normalizeCityDisplay("makati")).toBe("Makati");
+    expect(normalizeCityDisplay("quezoncity")).toBe("Quezon City");
+    expect(normalizeCityDisplay("paranaque")).toBe("Parañaque");
+    expect(normalizeCityDisplay("sanjuan")).toBe("San Juan");
+    for (const name of STUDY_CITIES) expect(normalizeCityDisplay(normalizeCityName(name))).toBe(name);
+  });
+
+  it("passes through a slug that is not a study city", () => {
+    expect(normalizeCityDisplay("somewhere")).toBe("somewhere");
   });
 
   it("returns Unknown for non-string input", () => {
     expect(normalizeCityDisplay(null)).toBe("Unknown");
     expect(normalizeCityDisplay(undefined)).toBe("Unknown");
+  });
+});
+
+describe("countObstructions (17 Oct 2026)", () => {
+  it("counts only boxes answered Yes, suggestions and drawn boxes alike", () => {
+    const annotation = {
+      selectedObjectsID: [
+        { obstructs: true, comment: "utility_post" },
+        { obstructs: false, comment: "tree" },
+        { obstructs: false, comment: NOT_AN_OBJECT },
+      ],
+      newObjects: [{ obstructs: true, comment: "motorcycle" }, { obstructs: null, comment: "car" }],
+    };
+    expect(countObstructions(annotation)).toBe(2);
+  });
+
+  it("is 0 for a missing annotation or one without boxes", () => {
+    expect(countObstructions(undefined)).toBe(0);
+    expect(countObstructions({})).toBe(0);
   });
 });

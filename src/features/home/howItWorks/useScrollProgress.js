@@ -35,6 +35,19 @@ export function stepToward(shown, target, rate = 0.2) {
 }
 
 /**
+ * Where the sticky frame sticks, in px from the top of the window (16 Oct
+ * 2026). The public pages' navbar became a sticky bar, so the frame now sticks
+ * under it (`top: var(--nav-h)`) rather than at 0. The frame starts to stick
+ * when the track's top reaches that line, so the track's position is measured
+ * from it. Anything that is not a length (jsdom, `auto`) counts as 0.
+ */
+export function stickyTop(frame) {
+  if (typeof window === "undefined" || !frame) return 0;
+  const top = parseFloat(window.getComputedStyle(frame).top);
+  return Number.isFinite(top) ? top : 0;
+}
+
+/**
  * The track's scroll progress, eased, for the preview to render.
  *
  * One requestAnimationFrame loop runs only while the shown value is still
@@ -62,13 +75,13 @@ export function useScrollProgress(trackRef, frameRef, { enabled = true, lead = 0
     };
     const read = () => {
       const rect = track.getBoundingClientRect();
-      target.current = progressFromRect(rect.top, rect.height, frame.clientHeight, lead * frame.clientHeight);
+      target.current = progressFromRect(rect.top - stickyTop(frame), rect.height, frame.clientHeight, lead * frame.clientHeight);
       if (!raf.current) raf.current = requestAnimationFrame(tick);
     };
 
     // Arriving partway down (a reload, a link to an anchor) starts there, without easing in
     const first = track.getBoundingClientRect();
-    shown.current = target.current = progressFromRect(first.top, first.height, frame.clientHeight, lead * frame.clientHeight);
+    shown.current = target.current = progressFromRect(first.top - stickyTop(frame), first.height, frame.clientHeight, lead * frame.clientHeight);
     setProgress(shown.current);
 
     window.addEventListener("scroll", read, { passive: true });

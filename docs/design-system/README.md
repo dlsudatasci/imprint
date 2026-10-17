@@ -82,7 +82,7 @@ correct but ubiquitous.
 | `label` | `font-semibold` 600 | 43 |
 | `body` | `font-medium` 500 | 43 |
 
-Retire: `font-black` (10) → `display` · `font-thin` (1, `help/helpItem.jsx:19`) → remove.
+Retire: `font-black` (10) → `display` · `font-thin` (1, `help/helpItem.jsx:19`, a file removed 16 Oct 2026) → remove.
 
 ### Scale by role
 | Role | Proposed | Today |
@@ -92,6 +92,17 @@ Retire: `font-black` (10) → `display` · `font-thin` (1, `help/helpItem.jsx:19
 | Section | `text-2xl · bold · ink` | 22 uses, mixed weights |
 | Body | `text-sm md:text-base · medium · body` | `text-sm` dominates (61) |
 | Meta | `text-xs · semibold · muted` | 21, already consistent |
+
+### Display sizes (added 16 Oct 2026)
+
+Two components for the public pages' big headings, `Display` (h1) and `Headline` (h2), in
+`Typography.tsx`. They set size, tracking and leading together, tighter as the type grows
+(apple-design, typography): `Display` is `text-5xl sm:text-6xl xl:text-7xl`, leading 1.04,
+tracking -0.03em, and `Headline` is `text-3xl sm:text-4xl lg:text-5xl`, leading 1.1 to 1.06,
+tracking -0.02em to -0.025em. Use them instead of passing a bigger size to `H1` or `H2`:
+`cn` does not merge Tailwind classes, so `H1`'s own `lg:text-5xl` wins over a `text-6xl`
+passed in. Figures (the landing page's statistics, step numbers) are the UI face with
+`tabular-nums`, since Ysabeau's figures are old-style and drop below the line.
 
 ---
 
@@ -140,11 +151,21 @@ over the page and needing to detach from it — earns one.
 |---|---|---|
 | `elev-rest` | *(no shadow)* `border border-line` | every content card and panel |
 | `elev-interactive` | `hover:border-subtle` | clickable cards |
-| `elev-overlay` | `shadow-2xl` | modals, dropdowns, floating toolbars, `AuthCard` |
+| `elev-overlay` | `shadow-2xl` | modals, dropdowns, floating toolbars |
 
 `elev-primary` (the `rgba(0,74,173,.3)` blue glow) is **deleted**, along with the
 `boxShadow.primary` token that backed it. `shadow-sm`, `shadow-md`, `shadow-lg`,
 `shadow-xl` and `shadow-inner` are no longer used anywhere in the app.
+
+`AuthCard` lost its shadow on 16 Oct 2026: it sits on the page rather than over it, so it is a
+resting surface (border, modal radius, no shadow). The landing page's map lost its
+`shadow-md` the same day.
+
+**Material (16 Oct 2026).** The public pages' navbar is the one translucent surface:
+`.nav-material` in `globals.scss`, the page ground at 72% over `backdrop-filter:
+saturate(180%) blur(20px)`. Its edge is a scroll-edge line (`data-scrolled`), a 1 px shadow
+at 8% ink shown only once the page has scrolled under it. With reduce transparency it is
+solid ground, and with increase contrast solid ground with a `line` edge.
 
 ---
 
@@ -190,6 +211,7 @@ Four variants, two sizes, **one component**. Replaces five competing systems.
 | Weight | `font-bold` | bold 88 : semibold 43 |
 | Radius | `rounded-xl` | 7:5 over `[2rem]` — see D3 |
 | Hover (primary) | `bg-primary-hover` — colour only | see D6 |
+| Press | `enabled:active:scale-[0.97]`, transform over 100 ms, colour still 300 ms | 16 Oct 2026, apple-design: respond on press. Off with reduced motion |
 | Disabled | `opacity-50 cursor-not-allowed` | consistent where present |
 
 Variants: `primary` (filled) · `secondary` (outline, primary) · `neutral` (outline, gray-200) · `danger`.
@@ -235,7 +257,7 @@ thumbnails and the tutorial tooltip's close button.
 | Content card | `bg-surface border border-line rounded-card p-6`, hover `border-subtle` | settled — revised by D6, no shadow |
 | Modal | `bg-surface rounded-modal p-8 max-w-md w-full shadow-2xl border border-line` | settled — the one place `rounded-modal` and `shadow-2xl` still apply |
 | Stat figures | one bordered row, `divide-x divide-line`, no card chrome | settled — revised by D6. The old `bg-white/60 backdrop-blur-md` glass tiles are gone |
-| Auth container | `AuthCard` — `max-w-md rounded-modal shadow-2xl p-8 sm:p-10` | settled — see D4 |
+| Auth container | `AuthCard` — `max-w-md rounded-modal border p-6 sm:p-10`, no shadow, inside `AuthScreen` | revised 16 Oct 2026 (§5), was `shadow-2xl` (D4) |
 
 ### 9a. Answers under the photo (contributor Step 1, added 7 Oct 2026)
 
@@ -276,6 +298,20 @@ padding or outline. The photo well around them is the frame.
 - **The open box's chip** (10 Oct 2026): `border-primary bg-primary-50 ring-2 ring-primary/40`
   with `aria-current`, in the contributors' lists and the annotators' Objects in This Image.
 - **Motion**: the chip appearing (`motion-safe:animate-tray-land`, §6) is the only animation.
+
+**Photo credit** (16 Oct 2026, both roles): a line under the photo in its card, and at the
+end of the answers sheet on phones and tablets (`PhotoCredit`, `text-[11px] text-muted`).
+"Photo by a Mapillary contributor, CC BY-SA 4.0. View on Mapillary" with a link to the
+image, or "Photo from an earlier research group, CC BY 4.0." (public copy describes that
+collection rather than naming it). Links
+open in a new tab. Both sources are among the reference images, so it gives nothing away.
+
+**Box names and answer labels** (17 Oct 2026, apple-design check). A box's name sits at
+its top-left corner. When an earlier name (in the lists' order) has that spot, it goes just
+above the box, then below the earlier names (`placeLabel` in `Shape.ts`), so names never
+cover each other and never move when a box is clicked. Step 2's answer labels are 11 px at
+the least on a laptop (`SceneQuestions`, desktop variant), 12 px in the sheet. They were 9
+and 10 px. The landing preview and the guide's stills show the same labels.
 
 The box panel (`DefaultInputSection`) asks the same question of every box: category, then Yes
 or No as two equal buttons that fill with `bg-primary` once chosen. No closes it, Yes opens
@@ -463,6 +499,10 @@ Below the city figures, the landing page plays the contributor task as the visit
 - **What it shows**: the annotation page as contributors see it on a laptop (the Step 1 card,
   Step 2 beside it, Next Image under them), without the session thumbnails and the
   "Sidewalk #n" title.
+- **Under the navbar (16 Oct 2026)**: the public navbar is sticky, so the frame sticks at
+  `top: var(--nav-h)` and is `calc(100svh - var(--nav-h))` tall. `useScrollProgress` reads the
+  frame's `top` (`stickyTop`), so the preview still starts and ends where the frame starts and
+  stops sticking. With reduced motion the stills are the same height.
 - **The frame**: in the page's `Container` margins like the hero and its map, as tall as the
   screen less `py-4 lg:py-6`, `rounded-card border border-line bg-ground` like the map.
 - **The camera** films it: the whole page, then close in on the photo for Steps 1 to 3 without a break (fitted
@@ -511,6 +551,84 @@ Below the city figures, the landing page plays the contributor task as the visit
   right, stacked on phones. Nothing else (Rans: better looking, not more extravagant).
 
 ---
+
+### 9d. Public pages (added 16 Oct 2026)
+
+Every page a visitor can reach without signing in, and the chrome around them, redesigned
+together (spec `IMPRINT_public_redesign.md`, apple-design). The copy of each page is in a
+`*Copy.js` module next to it, checked by tests for em dashes and semicolons, and, for the
+About page, the guide and the Privacy Policy, against the manuscript and the tool.
+
+- **Navbar** (`navbarMain`): `h-16` (64 px, `--nav-h`) at every width. On the public layout
+  it is `sticky top-0` and `.nav-material` (§5). The contributor layout keeps it in the page,
+  so nothing floats over the annotation tool, the annotators' sticky guides or the tutorial's
+  tour. Links are muted, the current page ink and semibold with `aria-current="page"` (no
+  underline). Volunteer is the bar's one filled button (`Button size="sm"`). Menus grow from
+  their button (`origin-top-right`, 200 ms ease-out, fade only with reduced motion), are
+  `inert` while closed, and close on Escape, a click outside and a page change. On a phone
+  the menu is a full-width panel under the bar with 48 px rows. The notification tray shows
+  the profile reminder (or "No new notifications."), then under **Earlier** the user's last
+  three entries of their own activity feed (`notificationHistory`, read once from
+  `/api/extractUser` when the tray first opens), each with its date. The signed-in shortcut
+  follows one rule everywhere (`annotateShortcut` in `navCopy.js`).
+- **Skip to content**: the public layout's first focusable element, shown on focus.
+- **Footer**: the old footer's dark ground (`bg-accent`, back on 17 Oct 2026, Rans: the light
+  version looked bad), white text, `text-sm`, on one centre
+  line like the old footer. Centred: the old footer's "Thank you for joining us in knowing our
+  streets better." (display face, `text-2xl`) with its invitation and the Email and GitHub
+  buttons in their old white outline, filling white on hover. No name, tagline or photo credit line (Rans, 17 Oct 2026). Photos are credited one
+  by one where they are annotated. Below a hairline (`border-white/15`), the old bottom row on a `1fr auto 1fr`
+  grid so the copyright sits exactly in the middle: the lab's logo in its own cream (`HXIL`)
+  left, the copyright, the site's pages right. On a phone the row stacks, centred: pages,
+  logo, copyright.
+- **Guide pictures**: each step of the annotation guide has one, 16:10 in a bordered frame.
+  Steps inside the tool use a still of the landing preview (`GuideStill`). "Start a session"
+  draws the session picker from its own words and size cards (`SessionPickerStill`, from
+  `SessionSizeOptions`), laid out at 800 x 500 and scaled to the frame.
+- **Long-form pages** (About): a centred `Display`, then one idea per section, sections
+  `py-16 lg:py-24`, all on the one page ground with no alternating bands (17 Oct 2026, Rans:
+  the white and off-white bands looked bad). Space separates the sections. Cards are white
+  (`bg-surface`) and border-led, with chips inside them on the ground. Photos are `rounded-modal`, 4:3.
+- **Reading pages** (Informed Consent, Privacy Policy): `Container width="reading"`, no card.
+  A segmented control (`rounded-full`, the current document `bg-surface` with a border)
+  switches between the two. Body `text-base leading-7`.
+- **Guide** (`/demo`, `/contribute/help`): a support article. Contents as chips, one section
+  per step with the landing preview's still beside it (`GuideStill`, 16:10), and a quick
+  reference built from `taskFacts.js`.
+- **Auth screens**: `AuthScreen` around `AuthCard` (§9). Visible labels, hints with the
+  server's rules, `autoComplete` on every field, "Continue with Google" with the inline
+  `GoogleMark`.
+- **404**: `src/pages/404.jsx`, a `Display` with a way home.
+- **Map**: the OpenStreetMap and CARTO credits are on the map again (`MapAttribution`).
+
+---
+
+### 9e. Contributor dashboard (added 17 Oct 2026)
+
+Laid out with the apple-design principles, like §9d. `src/pages/contribute/index.jsx` and
+`src/features/contribute/dashboard/`.
+
+- **Top**: a two-column grid from 768 px, aligned to the bottom. Left: "Welcome back,"
+  (`text-lg semibold muted`), the username (`font-display text-5xl lg:text-6xl extrabold`,
+  leading 1.04, tracking -0.03em, `text-primary`) and the annotator badge. Right: the actions,
+  one filled `Button` and one `neutral`. No rotating facts (removed 17 Oct 2026). Links wrap
+  their `Button` with `tabIndex={-1}`, so Tab stops once per action.
+- **Recent sessions first, then Your progress** (Rans, 17 Oct 2026: the sessions matter more).
+- **Your progress**: one bordered card. The distance in the UI face (`text-5xl sm:text-6xl
+  extrabold tabular-nums`, tracking -0.035em, since Ysabeau's figures are old-style), the next
+  landmark in one sentence, and a rounded bar (`h-2`, `bg-surface-subtle` with a
+  `line` ring, fill `bg-primary`) from the last landmark passed to the next. No load
+  animation. Under a `border-t`, the three figures as the stat row (§9).
+- **No solid brand-colour blocks.** The distance used to be a full-width `bg-primary` panel,
+  louder than the page's one action. The brand blue is for the username, the filled button
+  and the bars.
+- **Recent sessions**: one bordered card, rows on a `minmax(0,1fr) 10rem 7rem` grid from
+  768 px so the chart and the "Accessible to me" answer line up down the list, labels
+  `text-xs semibold muted` on one line. The active row spans the two columns with its count,
+  Resume Session and an `h-1.5` bar. The list never scrolls inside the page (it holds at
+  most nine rows).
+- Section headings `font-display text-2xl sm:text-3xl bold`, tracking -0.02em, `mt-5` to
+  their card, sections `space-y-12`.
 
 ## 10. Icons
 

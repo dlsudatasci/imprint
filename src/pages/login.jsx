@@ -8,6 +8,10 @@ import Image from "next/image";
 import Page from "@/ui/page";
 import InteractiveObstructions from "@/ui/InteractiveObstructions";
 import { AuthCard, Button, Input, Badge, Checkbox, Container } from "@/ui";
+import GoogleMark from "@/features/auth/GoogleMark";
+import { AUTH_COPY, RESEARCHER_EMAIL } from "@/features/auth/authCopy";
+
+const COPY = AUTH_COPY.login;
 
 /**
  * Sign-in page, offering both a password account and Google.
@@ -19,6 +23,13 @@ import { AuthCard, Button, Input, Badge, Checkbox, Container } from "@/ui";
  * The animated scene alongside the form shows boxes being drawn around
  * obstructions, so a visitor can see what contributing involves before signing
  * up.
+ *
+ * 16 Oct 2026 (IMPRINT_public_redesign.md): wording from authCopy.js ("Log
+ * in", "Continue with Google", a specific error), the inline Google mark in
+ * place of an image from svgrepo.com, autocomplete on both fields so password
+ * managers fill them, the card without a shadow (AuthCard), and the row under
+ * the fields wraps instead of breaking "Forgot password?" over two lines on a
+ * phone.
  */
 export default function Login() {
   const [loadingForm, setLoading] = useState(false);
@@ -44,7 +55,7 @@ export default function Login() {
   // unverified email can't prove ownership), so point them at the right door.
   const providerNotice =
     router.query.error === "UsePassword"
-      ? "That email already has a password account. Please log in with your username and password."
+      ? COPY.usePassword
       : null;
 
   useEffect(() => {
@@ -77,15 +88,15 @@ export default function Login() {
   }
   return (
     <Page
-      title="Login - Imprint"
-      description="Login to Imprint! Login to Imprint in order to contribute to our platform."
+      title="Log in - Imprint"
+      description="Log in to Imprint to keep annotating sidewalks."
       contribute={false}
     >
       {/* On the page shell, not full-bleed: that is what puts the 3D panel's
           left edge under the logo and the auth card's right edge under the nav
           links. Bleeding to the viewport edge put this page on its own grid,
           so nothing here lined up with the navbar above it. */}
-      <Container className="min-h-screen flex flex-col lg:flex-row">
+      <Container className="flex flex-col lg:flex-row lg:min-h-[calc(100vh_-_var(--nav-h))]">
 
         {/* Left Side: Interactive 3D Canvas (Hidden on small screens).
             55/45 rather than the 58/50 this used to be — those totalled 108%,
@@ -108,38 +119,36 @@ export default function Login() {
             card's edge is the shell's edge — the line the nav links end on —
             and centred below lg, where the panel is hidden and there is nothing
             to align to. */}
-        <div className="w-full lg:w-[45%] py-8 sm:py-12 lg:pl-12 relative flex flex-col items-center lg:items-end justify-start min-h-screen lg:min-h-0 z-10">
+        <div className="w-full lg:w-[45%] pt-8 pb-20 sm:pt-12 lg:pl-12 relative flex flex-col items-center lg:items-end justify-start z-10">
 
           <AuthCard
-            className="relative z-10 lg:-mt-4"
+            className="relative z-10"
             masthead={
               <Image
                 src="/images/logo/imprint.png"
-                alt="Imprint Logo"
-                width={80}
-                height={80}
-                className="w-20 h-20 object-contain"
+                alt="Imprint"
+                width={56}
+                height={56}
+                className="w-14 h-14 object-contain"
               />
             }
-            title="Welcome back!"
+            title={COPY.title}
             subtitle={
               <>
-                Don&apos;t have an account?
-                <Link href="/register">
-                  <span className="text-primary ml-2 font-bold transition-colors duration-300 cursor-pointer hover:underline">
-                    Register Here
-                  </span>
+                {COPY.newHere}{" "}
+                <Link href="/register" className="font-semibold text-primary hover:underline">
+                  {COPY.createAccount}
                 </Link>
               </>
             }
             footer={
               <>
-                If you&apos;re experiencing problems logging in to your account, please contact me at:{' '}
+                {COPY.trouble}{" "}
                 <a
-                  href="mailto:francis_bawa@dlsu.edu.ph"
-                  className="text-body font-semibold hover:text-primary transition-colors duration-300 inline-block mt-1"
+                  href={`mailto:${RESEARCHER_EMAIL}`}
+                  className="text-body font-semibold hover:text-primary transition-colors duration-300"
                 >
-                  francis_bawa@dlsu.edu.ph
+                  {RESEARCHER_EMAIL}
                 </a>
               </>
             }
@@ -154,20 +163,24 @@ export default function Login() {
               <div className="space-y-5 mb-6">
                 <Input
                   type="text"
-                  placeholder="Username"
+                  placeholder={COPY.username}
                   name="username"
-                  aria-label="Username"
+                  aria-label={COPY.username}
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   required
                   onFocus={() => fireReaction("nod")}
                 />
                 <Input
                   type={showPassword ? "text" : "password"}
-                  placeholder="Password"
+                  placeholder={COPY.password}
                   name="password"
-                  aria-label="Password"
+                  aria-label={COPY.password}
+                  autoComplete="current-password"
                   required
                   onFocus={() => fireReaction("nod")}
-                  error={loginError ? "Invalid credentials. Please try again." : null}
+                  error={loginError ? COPY.invalid : null}
                   trailing={
                     // eslint-disable-next-line react/forbid-elements -- affordance inside Input's trailing slot, not a standalone button
                     <button
@@ -181,23 +194,21 @@ export default function Login() {
                   }
                 />
 
-                <div className="flex justify-between items-center">
+                <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2">
                   <Checkbox
                     name="rememberMe"
-                    label="Remember me for 30 days"
+                    label={COPY.remember}
                     labelClassName="text-muted"
                   />
-                  <Link href="/forgot-password">
-                    <span className="text-xs font-semibold text-primary transition-colors duration-300 cursor-pointer hover:underline">
-                      Forgot Password?
-                    </span>
+                  <Link href="/forgot-password" className="text-sm font-semibold text-primary whitespace-nowrap hover:underline">
+                    {COPY.forgot}
                   </Link>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <Button submit fullWidth disabled={loadingForm}>
-                  {loadingForm ? "Logging in..." : "Login"}
+                  {loadingForm ? COPY.submitting : COPY.submit}
                 </Button>
 
                 <Button
@@ -205,13 +216,8 @@ export default function Login() {
                   fullWidth
                   onClick={() => signIn("google", { callbackUrl: `${window.location.origin}/contribute` })}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://www.svgrepo.com/show/475656/google-color.svg"
-                    alt=""
-                    className="w-5 h-5"
-                  />
-                  Log in with Google
+                  <GoogleMark />
+                  {AUTH_COPY.google}
                 </Button>
               </div>
             </form>

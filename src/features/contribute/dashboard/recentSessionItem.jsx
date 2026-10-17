@@ -1,152 +1,125 @@
-import { Button, ConfirmDialog } from "@/ui";
-import React, { useState } from "react";
 import Link from "next/link";
-import { clearSession } from "@/util/sessionCache";
+import { DASHBOARD_COPY as COPY, accessWord, sessionDate } from "./dashboardCopy";
 
 /**
  * One row in the dashboard's session history.
  *
- * Renders two ways. A finished session shows its results: the obstruction
- * sparkline and average accessibility score. The active session shows Resume
- * and Stop instead, since what matters there is getting back to work.
+ * Renders two ways. A finished session shows its results: an obstruction
+ * chart and the average "Accessible to Me" answer. The active session shows
+ * how far it got and a link back into it.
  *
  * There is at most one active session, and /api/recentSessions puts it first.
+ *
+ * Audited 17 Oct 2026 (IMPRINT_dashboard_audit.md):
+ * - The chart counted every box ruled on, No and Not an object included. It
+ *   now counts obstructions, boxes answered Yes (countObstructions), and is
+ *   labelled "Obstructions per photo".
+ * - "Avg Score" did not say which question it averaged, and on a scale where
+ *   1 is best the number read backwards. It is now "Accessible to me" with
+ *   the nearest answer word ("Mostly accessible"), still color-coded
+ *   (chapter_5.tex).
+ * - The active row repeated the page's own Resume and Stop buttons. It now
+ *   shows its progress and a Resume link. Stopping is done once, at the top
+ *   of the page, behind a confirmation.
+ * - Dates in Philippine time, city names as people write them, labels in
+ *   sentence case, thumbnails decorative.
+ * - Laid out on a grid from 768 px (apple-design pass): the chart and the
+ *   answer sit in fixed columns with their labels on one line, so rows line
+ *   up down the list. They used to float at different heights. The active
+ *   session shows a small progress bar beside its count.
  */
 export default function RecentSessionItem({ sessionData }) {
-  const { isActive, currentCount, date, location, totalImages, imageUrls, chartData = [], averageScore } = sessionData;
-  const [showAbandonModal, setShowAbandonModal] = useState(false);
+  const { isActive, currentCount, date, location, totalImages, imageUrls = [], chartData = [], averageScore } = sessionData;
 
-  const handleStopSession = async () => {
-    try {
-      await fetch("/api/annotationAbandon", { method: "POST" });
-      clearSession();
-      // Full reload so getServerSideProps re-reads the updated annotation total
-      window.location.reload();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const jsDate = new Date(date);
-  const options = {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  };
-  const stringDate = jsDate.toLocaleDateString("en-US", options);
-
-  // Score Color Logic — 1-5 accessibility scale where 1 = easily accessible,
-  // 5 = not accessible. Lower score = better, so thresholds are inverted.
   const numericScore = parseFloat(averageScore);
-  let scoreBg = "bg-line text-body";
-  if (numericScore > 0 && numericScore <= 2) {
-    scoreBg = "bg-primary text-white"; // Good (easily/mostly accessible)
-  } else if (numericScore <= 3.5) {
-    scoreBg = "bg-primary-100 text-primary"; // Mid (some difficulty)
-  } else if (numericScore > 3.5) {
-    scoreBg = "bg-line text-ink"; // Concerning (very difficult / not accessible)
-  }
+  const word = accessWord(numericScore);
 
-  // Bars scale against this session's own busiest image, not a global maximum —
-  // the shape of the run is what's interesting, not cross-session comparison.
-  // The 1 floor keeps an all-zero session from dividing by zero.
-  const maxAnnotations = Math.max(...chartData, 1);
+  // 1 is Easily accessible and 5 Not accessible, so lower is better
+  let scoreClass = "bg-line text-body";
+  if (numericScore > 0 && numericScore <= 2) scoreClass = "bg-primary text-white";
+  else if (numericScore > 2 && numericScore <= 3.5) scoreClass = "bg-primary-100 text-primary";
+  else if (numericScore > 3.5) scoreClass = "bg-line text-ink";
+
+  // Bars scale against this session's own busiest photo, since the shape of
+  // the run is the point. The 1 floor keeps an all-zero session from dividing by zero.
+  const maxCount = Math.max(...chartData, 1);
+  // currentCount is the photo they are on, so one less is the number done
+  const done = Math.max(0, (currentCount || 1) - 1);
+  const meta = [sessionDate(date), isActive ? COPY.inProgress : location].filter(Boolean).join(" · ");
+
+  const label = "text-xs font-semibold text-muted";
 
   return (
-    <li className="border-b border-line-card py-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-transparent">
-
-      {/* Left: Date, Location, and Images */}
-      <div className="flex flex-col gap-3 flex-1">
-        <div>
-          <p className="text-sm text-muted font-semibold uppercase tracking-wider">
-            {stringDate} • {location}
-          </p>
-        </div>
-
+    <li className="grid gap-5 border-b border-line-card py-5 last:border-b-0 md:grid-cols-[minmax(0,1fr)_10rem_7rem] md:items-start md:gap-8">
+      <div className="flex min-w-0 flex-col gap-3">
+        <p className={`text-sm font-semibold ${isActive ? "text-primary" : "text-muted"}`}>{meta}</p>
         <div className="flex items-center gap-2">
           {imageUrls.map((url, idx) => (
-            <div key={idx} className="shrink-0 w-14 h-14 relative rounded-control overflow-hidden border border-line bg-surface-subtle">
+            <div key={idx} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-control border border-line bg-surface-subtle">
               {url ? (
                 /* eslint-disable-next-line @next/next/no-img-element -- remote dataset URLs aren't on a configured next/image domain */
-                <img src={url} alt={`Annotation ${idx}`} className="object-cover w-full h-full" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-subtle text-xs">IMG</div>
-              )}
+                <img src={url} alt="" className="h-full w-full object-cover" />
+              ) : null}
             </div>
           ))}
           {totalImages > 3 && (
-            <div className="shrink-0 w-14 h-14 rounded-control bg-surface-subtle border border-line flex items-center justify-center font-bold text-body">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-control border border-line bg-surface-subtle font-bold text-body tabular-nums">
               +{totalImages - 3}
             </div>
           )}
         </div>
       </div>
 
-      {/* Right: Chart and Score OR Active Session Buttons */}
-      <div className="flex items-center justify-end gap-8 w-full md:w-auto mt-4 md:mt-0">
-
-        {isActive ? (
-          <div className="flex flex-row space-x-3 w-full justify-end">
-            <Button variant="neutral" size="sm" onClick={() => setShowAbandonModal(true)}>
-              Stop Session
-            </Button>
-            <Link href="/contribute/annotate" className="flex">
-              <Button size="sm" className="whitespace-nowrap">
-                {/* currentCount is the image they're *on*, so subtract one to
-                    show images finished. Clamped at 0 for a session where they
-                    haven't submitted anything yet. */}
-                Resume Session ({Math.max(0, currentCount - 1)}/{totalImages})
-              </Button>
+      {isActive ? (
+        <div className="flex flex-col gap-3 md:col-span-2 md:pt-7" data-session-progress>
+          <div className="flex items-baseline justify-between gap-4">
+            <p className="text-sm text-body tabular-nums">{COPY.progress(done, totalImages)}</p>
+            <Link
+              href="/contribute/annotate"
+              className="rounded-control text-sm font-semibold text-primary underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              {COPY.resumeSession}
             </Link>
           </div>
-        ) : (
-          <>
-            {/* Bar Chart */}
-            <div className="flex flex-col items-center">
-              <p className="text-[10px] font-bold text-subtle uppercase tracking-widest mb-2">Obstruction Density</p>
-              <div className="flex items-end gap-1 h-10 border-b border-line-card pb-px">
-                {chartData.map((val, idx) => {
-                  const heightPercent = Math.max((val / maxAnnotations) * 100, 5); // min 5% height for visibility
-                  return (
-                    <div key={idx} className="w-3 relative group flex items-end h-full">
-                      <div
-                        className="w-full bg-primary/60 rounded-t-sm group-hover:bg-primary transition-colors duration-300"
-                        style={{ height: `${heightPercent}%` }}
-                      ></div>
-                      {/* Tooltip */}
-                      <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 transform -translate-x-1/2 bg-ink text-white text-[10px] px-2 py-1 rounded pointer-events-none transition-opacity z-10">
-                        {val}
-                      </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-subtle ring-1 ring-inset ring-line" aria-hidden="true">
+            <div className="h-full rounded-full bg-primary" style={{ width: `${totalImages ? (done / totalImages) * 100 : 0}%` }} />
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-6 md:contents">
+          <div data-session-chart>
+            <p className={label}>{COPY.chartLabel}</p>
+            <div className="mt-2 flex h-14 items-end gap-1 border-b border-line-card pb-px">
+              {chartData.map((val, idx) => {
+                const heightPercent = Math.max((val / maxCount) * 100, 5); // at least 5% so a zero still shows
+                return (
+                  <div key={idx} className="group relative flex h-full w-3 items-end">
+                    <div className="w-full rounded-t-sm bg-primary/60 transition-colors duration-300 group-hover:bg-primary" style={{ height: `${heightPercent}%` }} />
+                    <div className="pointer-events-none absolute -top-8 left-1/2 z-10 -translate-x-1/2 rounded bg-ink px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100">
+                      {val}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
+          </div>
 
-            {/* Average Score. Hidden when the session has no accessibility
-                answers, as for annotators, who skip the scene-level step. */}
-            {averageScore != null && (
-              <div className="flex flex-col items-center justify-center">
-                <p className="text-[10px] font-bold text-subtle uppercase tracking-widest mb-1">Avg Score</p>
-                <div className={`w-14 h-14 rounded-control flex items-center justify-center text-xl font-extrabold border border-line ${scoreBg}`}>
-                  {numericScore > 0 ? numericScore : "-"}
+          {/* Empty when the session has no accessibility answers (annotators, or only photos with no sidewalk) */}
+          <div data-session-access>
+            {averageScore != null && numericScore > 0 && (
+              <>
+                <p className={label}>{COPY.accessLabel}</p>
+                <div className="mt-2 flex items-center gap-3 md:flex-col md:items-start md:gap-1">
+                  <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-control border border-line text-xl font-extrabold tabular-nums ${scoreClass}`}>
+                    {numericScore}
+                  </div>
+                  {word && <p className="text-xs text-muted">{word}</p>}
                 </div>
-              </div>
+              </>
             )}
-          </>
-        )}
-      </div>
-
-      {/* Stop Confirmation Modal */}
-      <ConfirmDialog
-        open={showAbandonModal}
-        title="Stop Session?"
-        description="Are you sure you want to stop this session? Images you have already submitted will be saved, but progress on the current image will be lost."
-        confirmLabel="Yes, Stop Session"
-        destructive
-        onCancel={() => setShowAbandonModal(false)}
-        onConfirm={handleStopSession}
-      />
+          </div>
+        </div>
+      )}
     </li>
   );
 }

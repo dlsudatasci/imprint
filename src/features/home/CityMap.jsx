@@ -1,4 +1,4 @@
-import { IconButton } from "@/ui";
+import { IconButton, tokens } from "@/ui";
 import { useEffect, useCallback, useState } from "react";
 import L from "leaflet";
 import {
@@ -156,6 +156,23 @@ function CityPolygons({ selectedCity, onCitySelect }) {
 }
 
 /**
+ * The map's credits (16 Oct 2026). OpenStreetMap's license and CARTO's
+ * basemap terms both ask for them on the map itself, and until then they were
+ * switched off (`attributionControl={false}`) while the TileLayer still carried
+ * them. Added here without Leaflet's own "Leaflet" prefix, small, in the
+ * corner the zoom buttons do not use.
+ */
+function MapAttribution() {
+  const map = useMap();
+  useEffect(() => {
+    const control = L.control.attribution({ position: "bottomright", prefix: false });
+    control.addTo(map);
+    return () => { control.remove(); };
+  }, [map]);
+  return null;
+}
+
+/**
  * The interactive city map on the landing page. Clicking a city filters the
  * figures underneath it.
  *
@@ -183,13 +200,14 @@ export default function CityMap({ selectedCity, onCitySelect }) {
       className={`${
         isFullscreen
           ? "fixed inset-0 z-[9999] rounded-none"
-          : "w-full h-full min-h-[400px] rounded-card relative z-0"
-      } overflow-hidden shadow-md border border-line`}
+          : "w-full h-[400px] lg:h-[480px] rounded-card relative z-0"
+      } overflow-hidden border border-line bg-surface-subtle`}
     >
       {/* Fullscreen toggle button */}
       <IconButton
         onClick={() => setIsFullscreen((f) => !f)}
-        className="absolute top-3 right-3 z-[10000] shadow-md"
+        size="sm"
+        className="absolute top-3 right-3 z-[10000]"
         title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
         aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
       >
@@ -222,8 +240,9 @@ export default function CityMap({ selectedCity, onCitySelect }) {
         dragging={true}
         attributionControl={false}
         className="h-full w-full"
-        style={{ minHeight: isFullscreen ? "100vh" : "400px", background: "#f8f9fa" }}
+        style={{ background: tokens.color.surfaceSubtle }}
       >
+        <MapAttribution />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
           url={`https://{s}.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}{r}.png?key=${process.env.NEXT_PUBLIC_CARTO_KEY || ""}`}

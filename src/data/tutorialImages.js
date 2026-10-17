@@ -21,6 +21,10 @@
  * Edited 15 Oct 2026: the first image's Utility Post suggestion removed, so it
  * has four (Lamp Post, Tree, Car, Motorcycle), for a shorter walkthrough and
  * the landing page's preview of the task, which plays this image (Rans).
+ * Edited 16 Oct 2026: each image says it is an ATLAS-3 frame (`source`), so the
+ * tutorial shows the same photo credit as a session (PhotoCredit). The three
+ * frames are the ATLAS-3 frames excluded from the corpus
+ * (pipeline_methodology.md §7h and Section 8), 640 by 360, Las Piñas.
  * Source MongoDB IDs saved in: tutorial-image-ids.txt
  */
 
@@ -31,6 +35,7 @@ const TUTORIAL_IMAGES = [
     "url": "/images/tutorial/tutorial-1.jpg",
     "city": "laspinas",
     "modelVersion": "tutorial-v1",
+    "source": "atlas3",
     "isReference": false,
     "annotationList": [
       {
@@ -97,6 +102,7 @@ const TUTORIAL_IMAGES = [
     "url": "/images/tutorial/tutorial-2.jpg",
     "city": "laspinas",
     "modelVersion": "tutorial-v1",
+    "source": "atlas3",
     "isReference": false,
     "annotationList": [
       {
@@ -149,6 +155,7 @@ const TUTORIAL_IMAGES = [
     "url": "/images/tutorial/tutorial-3.jpg",
     "city": "laspinas",
     "modelVersion": "tutorial-v1",
+    "source": "atlas3",
     "isReference": false,
     "annotationList": [
       {

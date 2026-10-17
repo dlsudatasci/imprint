@@ -2,7 +2,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { ObjectId } from "mongodb";
-import { bucketChartData, normalizeCityDisplay } from "@/util/validators/recentSessions";
+import { bucketChartData, normalizeCityDisplay, countObstructions } from "@/util/validators/recentSessions";
 
 /**
  * GET|POST /api/recentSessions — the session history shown on the dashboard.
@@ -100,11 +100,12 @@ export default async function handler(req, res) {
       // A batch tops up from other cities when the user's own run dry, so a
       // session can legitimately span several — label it rather than picking
       // one arbitrarily
-      let location = "Unknown";
+      // null when no annotation names a city, and the row then shows the date alone
+      let location = null;
       if (cities.size === 1) {
         location = normalizeCityDisplay(Array.from(cities)[0]);
       } else if (cities.size > 1) {
-        location = "Mixed Locations";
+        location = "Several cities";
       }
       
       // null when nothing in the session has an accessibility answer, as for
@@ -142,16 +143,11 @@ export default async function handler(req, res) {
         }
       }
 
-      // Obstruction count per image, in the order they were annotated — the
-      // sparkline reads left-to-right as the session progressed
+      // Obstructions per image, in the order they were annotated, so the
+      // chart reads left to right as the session went. Only boxes answered
+      // Yes count (countObstructions, 17 Oct 2026).
       for (const imgId of completedImageIDs) {
-        const ann = annotationMap[imgId];
-        if (ann) {
-          const count = (ann.selectedObjectsID?.length || 0) + (ann.newObjects?.length || 0);
-          chartData.push(count);
-        } else {
-          chartData.push(0);
-        }
+        chartData.push(countObstructions(annotationMap[imgId]));
       }
 
       const finalChartData = bucketChartData(chartData);
@@ -198,7 +194,7 @@ export default async function handler(req, res) {
         id: activeSession._id,
         isActive: true,
         date: activeSession.createdAt,
-        location: "Active Session",
+        location: null,
         totalImages: totalImages,
         currentCount: currentCount,
         imageUrls: activeImageUrls,

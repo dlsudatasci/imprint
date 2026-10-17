@@ -1066,6 +1066,62 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     expect(button(host.querySelector("#box-review-section"), "Hide all")).toBeUndefined();
   });
 
+  it("Objects: a new box with no category goes with the suggestions still to decide, at the front of the chips and the list (17 Oct 2026)", () => {
+    const tool = annotator();
+    const peekChips = () =>
+      Array.from(host.querySelector("#box-review-section-peek")!.querySelectorAll('ul[aria-label="Objects in this image"] li')).map((li) => li.textContent);
+    const listChips = () => Array.from(host.querySelector("#box-review-section")!.querySelectorAll("li")).map((li) => li.textContent);
+    act(() => {
+      data(tool, "a-car").selected = true;
+      tool.setState({});
+    });
+    // A box added and closed without a category: after the suggestions still to decide, before the kept car
+    act(() => (host.querySelector("#add-box-button") as HTMLButtonElement).click());
+    const added = tool.shapes.map((sh) => sh.getAnnotationData()).find((d) => d.editable)!;
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    // A drawn box has the pencil, read out as "drawn by you", and says No category until it has one
+    expect(peekChips()).toEqual(["Utility Post #1To decide", "Tree #1To decide", "Select a category, drawn by youNo category", "Car #1Kept"]);
+    expect(listChips()).toEqual(["Utility Post #1To decide", "Tree #1To decide", "Select a category, drawn by youNo category", "Car #1Kept"]);
+    // With a category it is finished, and goes back after the decided ones
+    act(() => {
+      (added as unknown as { comment: string }).comment = "bench";
+      tool.setState({});
+    });
+    expect(peekChips()).toEqual(["Utility Post #1To decide", "Tree #1To decide", "Car #1Kept", "Bench #1, drawn by you"]);
+    expect(listChips()).toEqual(["Utility Post #1To decide", "Tree #1To decide", "Car #1Kept", "Bench #1, drawn by you"]);
+  });
+
+  it("Objects: the count and Next take in a box with no category, and the row says so once every box is decided (17 Oct 2026)", () => {
+    const tool = annotator();
+    const peek = () => host.querySelector("#box-review-section-peek")!;
+    keepAll(tool);
+    act(() => tool.setState({}));
+    expect(peek().textContent).toContain("Every box is decided.");
+    act(() => (host.querySelector("#add-box-button") as HTMLButtonElement).click());
+    const added = tool.shapes.map((sh) => sh.getAnnotationData()).find((d) => d.editable)!;
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    // Every suggestion is decided, but the new box is still left
+    expect(peek().textContent).toContain("To decide 1");
+    expect(peek().textContent).not.toContain("Every box is decided.");
+    act(() => button(peek(), "Next")!.click());
+    expect(tool.selectedId).toBe(added.id);
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    // With a suggestion left too, Next opens the first chip, the suggestion
+    act(() => {
+      data(tool, "b-pole").selected = false;
+      tool.setState({});
+    });
+    expect(peek().textContent).toContain("To decide 2");
+    act(() => button(peek(), "Next")!.click());
+    expect(tool.selectedId).toBe("b-pole");
+    act(() => {
+      data(tool, "b-pole").selected = true;
+      (added as unknown as { comment: string }).comment = "bench";
+      (tool as unknown as { onClose(): void }).onClose();
+    });
+    expect(peek().textContent).toContain("Every box is decided.");
+  });
+
   it("Objects: a double tap where a hidden box is shows it again, and two slow taps do not (14 Oct 2026)", () => {
     const tool = annotator();
     act(() => tool.toggleBoxHidden("c-tree"));
@@ -1260,6 +1316,15 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     act(() => root!.render(element({ isAnnotator: true, layout: "sheet", askSidewalk: true, focus: true, onExitFocus })));
     expect(tool.state.sheetSnap).toBe("collapsed");
     expect(tool.selectedId).toBe("a-car");
+  });
+
+  it("full screen: the chip on the photo counts a box added without a category with the suggestions left (17 Oct 2026)", () => {
+    const tool = annotator({ focus: true });
+    const chip = () => host.querySelector("[data-focus-chip] span")!.textContent;
+    expect(chip()).toBe("3 to decide");
+    act(() => (host.querySelector("#add-box-button") as HTMLButtonElement).click());
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    expect(chip()).toBe("4 to decide");
   });
 
   // Later on 12 Oct 2026: before, Details left full screen and nothing could be
@@ -1784,5 +1849,43 @@ describe("the Sidewalk step's drawing tools (13 Oct 2026)", () => {
     act(() => toolButton(chip(), "finish").click());
     expect(names(chip())).toEqual(["deletePoint", "deleteShape", "photoOnly"]);
     expect(toolButton(chip(), "deletePoint").title).toBe("Delete point. Tap a point of the shape first.");
+  });
+});
+
+
+// 17 Oct 2026: annotators' chips mark a drawn box with the contributors' pencil, and say No category until it has one
+describe("annotators' object chips on the desktop (17 Oct 2026)", () => {
+  it("puts the pencil before a drawn box's name, No category on a box without one, and no tag on a drawn box with one", () => {
+    window.localStorage.clear();
+    const rec = record();
+    rec.annotationList.push(
+      { id: "zz-new", mark: mark(500, 40, 60, 60), editable: true, selected: false, isRejected: false } as never,
+      { id: "zz-bench", comment: "bench", mark: mark(500, 200, 60, 40), editable: true, selected: false, isRejected: false } as never,
+    );
+    writeSession({ total: 1, current: 1, data: { imgRecords: [rec], isAnnotator: true } });
+    const tool = mount({ isAnnotator: true });
+    tool.currentImageElement = { width: 640, height: 360 };
+    // A kept suggestion whose category is not on the list needs one too
+    act(() => {
+      const car = tool.shapes.find((sh) => sh.getAnnotationData().id === "a-car")!.getAnnotationData() as unknown as { selected: boolean; comment: string };
+      car.selected = true;
+      car.comment = "truck";
+      tool.setState({});
+    });
+    const items = () => Array.from(host.querySelectorAll("#box-review-section li"));
+    const itemFor = (text: string) => items().find((li) => li.textContent!.startsWith(text))!;
+    const newBox = itemFor("Select a category");
+    expect(newBox.querySelector("svg[data-drawn]")).not.toBeNull();
+    expect(newBox.textContent).toContain("Select a category, drawn by youNo category");
+    const bench = itemFor("Bench #1");
+    expect(bench.querySelector("svg[data-drawn]")).not.toBeNull();
+    expect(bench.querySelector("button")!.textContent).toBe("Bench #1, drawn by you");
+    expect(bench.textContent).not.toContain("Drawn");
+    // Suggestions have no pencil
+    const truck = itemFor("Truck #1");
+    expect(truck.querySelector("svg[data-drawn]")).toBeNull();
+    expect(truck.textContent).toContain("No category");
+    expect(itemFor("Utility Post #1").textContent).toContain("To decide");
+    expect(host.textContent).not.toMatch(/Drawn(?! by)/);
   });
 });

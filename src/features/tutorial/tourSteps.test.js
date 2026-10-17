@@ -296,7 +296,7 @@ describe("the touch tour", () => {
       expect(steps[2].content).toContain("To show a hidden box again, double-tap where it was.");
     }
     const annotatorList = buildTourSteps(true, "objects", "touch")[2].content;
-    expect(annotatorList).toContain("with the suggestions still to decide first");
+    expect(annotatorList).toContain("with what is left first: the suggestions still to decide and the boxes with no category yet");
     expect(annotatorList).toContain("Hide all and Show all, beside the step's name");
     expect(buildTourSteps(false, "objects", "touch")[2].content).toContain("Hide all and Show all, beside the step's name");
   });

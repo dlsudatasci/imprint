@@ -286,7 +286,7 @@ const ANNOTATOR_TOUCH_TOURS = Object.freeze({
       },
       {
         title: "Objects in This Image",
-        content: "Every box is listed at the bottom of the screen, with the suggestions still to decide first. Tap one to open it, or tap Next to go to the next suggestion to decide. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye in the list pulled up hides one. To show a hidden box again, double-tap where it was.",
+        content: "Every box is listed at the bottom of the screen, with what is left first: the suggestions still to decide and the boxes with no category yet. Tap one to open it, or tap Next to go to the next one left. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye in the list pulled up hides one. To show a hidden box again, double-tap where it was.",
       },
       {
         title: "What to Box",

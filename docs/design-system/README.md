@@ -253,7 +253,8 @@ padding or outline. The photo well around them is the frame.
   `rounded-card border border-line bg-surface-subtle` box with its title and no count.
 - **Empty slots**: while objects are still to decide, each list ends with chip-sized dashed
   slots with a "+" (three while the list is empty, one once it has chips), so it is clear that
-  answers will go there. None once every object is answered.
+  answers will go there. None once every object is answered. An image with no objects at all
+  shows three in each list (17 Oct 2026), since the boxes the contributor draws go there.
 - **Not an object**: a muted label and plain chips under the lists, named by the model's own
   category.
 - **Chips** are the only element: `h-7 rounded-control border text-xs font-semibold`, and a

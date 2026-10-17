@@ -92,13 +92,17 @@ describe("buildTrays", () => {
 
 describe("ghostSlotCount", () => {
   it.each([
-    [0, 0, 0],
-    [4, 0, 0],
-    [0, 2, 3],
-    [1, 2, 1],
-    [5, 1, 1],
-  ])("%i chips with %i still to decide gives %i empty slots", (items, toDecide, expected) => {
-    expect(ghostSlotCount(items, toDecide)).toBe(expected);
+    [4, 0, 4, 0],
+    [0, 0, 1, 0],
+    [0, 2, 2, 3],
+    [1, 2, 3, 1],
+    [5, 1, 6, 1],
+  ])("%i chips with %i still to decide, of %i objects, gives %i empty slots", (items, toDecide, objects, expected) => {
+    expect(ghostSlotCount(items, toDecide, objects)).toBe(expected);
+  });
+
+  it("gives three to each list on an image with no objects at all, where boxes the contributor draws will go (17 Oct 2026)", () => {
+    expect(ghostSlotCount(0, 0, 0)).toBe(3);
   });
 });
 

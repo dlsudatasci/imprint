@@ -199,7 +199,7 @@ function AnswerList({ tray, trays, actions, tourId }: {
 }) {
   const items = trays[tray];
   const id = LIST_IDS[tray];
-  const slots = ghostSlotCount(items.length, trays.toDecide.length);
+  const slots = ghostSlotCount(items.length, trays.toDecide.length, trays.total + trays.removed.length);
   return (
     <section id={id} aria-labelledby={`${id}-title`} className="min-w-0 rounded-card border border-line bg-surface-subtle px-3 pt-2.5 pb-3">
       <h3 id={`${id}-title`} className="text-sm font-semibold text-ink mb-2">

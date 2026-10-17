@@ -110,9 +110,13 @@ export function buildTrays(boxes, { labels } = {}) {
 /**
  * Empty slots after a list's chips, so each list shows that answers will go
  * there: three while it is empty, one once it has chips, none when nothing is
- * left to decide.
+ * left to decide. An image with no objects at all (no suggestions, nothing
+ * drawn yet, none marked Not an object) shows three in each list (17 Oct
+ * 2026), since the boxes the contributor draws will go there; before, its
+ * lists were blank.
  */
-export function ghostSlotCount(itemCount, toDecideCount) {
+export function ghostSlotCount(itemCount, toDecideCount, objectCount) {
+  if (objectCount === 0) return 3;
   if (!toDecideCount) return 0;
   return itemCount === 0 ? 3 : 1;
 }

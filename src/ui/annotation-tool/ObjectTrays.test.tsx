@@ -111,10 +111,19 @@ describe("ObjectTrays", () => {
     expect(html).not.toContain('data-slot="empty"');
   });
 
-  it("says when the image has no objects at all", () => {
+  it("says when the image has no objects at all, and still shows both lists with their empty slots (17 Oct 2026)", () => {
     const html = render([]);
     expect(html).toContain("No suggestions in this image. Draw a box around any object the model missed.");
-    expect(count(html, "data-empty-list")).toBe(2);
+    for (const id of ["object-tray-not-obstructions", "object-tray-obstructions"]) {
+      expect(count(list(html, id), 'data-slot="empty"')).toBe(3);
+    }
+    expect(html).not.toContain("data-empty-list");
+  });
+
+  it("shows no empty slots when every suggestion was marked Not an object", () => {
+    const html = render([suggestion("a", "not_an_object", { isRejected: true, obstructs: false, initialState: { comment: "car", mark } })]);
+    expect(html).toContain("Every object is answered.");
+    expect(html).not.toContain('data-slot="empty"');
   });
 
   it("lists boxes marked Not an object by the model's category, apart from the answers", () => {

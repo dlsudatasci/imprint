@@ -18,3 +18,20 @@ export function normalizeCityName(displayName) {
     .replace(/ñ/g, "n")
     .replace(/[^a-z0-9]/g, "");
 }
+
+/** The twelve study cities as people write them (chapter_4.tex, Study Area) */
+export const STUDY_CITIES = Object.freeze([
+  "Caloocan", "Las Piñas", "Makati", "Mandaluyong", "Manila", "Marikina",
+  "Muntinlupa", "Parañaque", "Pasay", "Pasig", "Quezon City", "San Juan",
+]);
+
+const DISPLAY_BY_SLUG = new Map(STUDY_CITIES.map((name) => [normalizeCityName(name), name]));
+
+/**
+ * A stored slug back to the name people know ("quezoncity" to "Quezon City",
+ * 17 Oct 2026). A slug that is not a study city comes back unchanged.
+ */
+export function cityDisplayName(slug) {
+  if (typeof slug !== "string" || !slug) return "";
+  return DISPLAY_BY_SLUG.get(normalizeCityName(slug)) ?? slug;
+}

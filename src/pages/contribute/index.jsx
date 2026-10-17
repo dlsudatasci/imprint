@@ -11,22 +11,17 @@ import Page from "@/ui/page";
 
 import DashboardInfo from "../../features/contribute/dashboard/infoSection";
 
-import { Button, Badge, Container } from "@/ui";
+import { Button, Badge, Container, ConfirmDialog } from "@/ui";
+import { DASHBOARD_COPY as COPY } from "@/features/contribute/dashboard/dashboardCopy";
 import ContentSkeleton from "@/features/layout/contentSkeleton";
 
-const FUN_FACTS = [
-  "Wheelchair ramps need a 1:12 max slope to be safe.",
-  "1.3 billion people globally experience a disability.",
-  "Tactile paving was invented in Japan in 1965.",
-  "Safe wheelchair turning space is 1.5m minimum.",
-  "Trees along sidewalks reduce surface heat by 10-20°C.",
-  "Metro Manila is ranked among the least walkable cities.",
-  "A standard wheelchair needs 0.9m clear width.",
-  "Over 50% of the world lives in urban areas."
-];
 
 /**
  * The contributor dashboard, where everyone lands after signing in.
+ *
+ * Audited 17 Oct 2026 (IMPRINT_dashboard_audit.md): its words come from
+ * dashboardCopy.js and Stop Session asks first. The rotating "fun facts"
+ * were removed (Rans, 17 Oct 2026).
  *
  * It also enforces the order of onboarding: choose a username (Google sign-ins
  * only), finish the tutorial, complete the profile, then annotate. The main
@@ -48,7 +43,7 @@ export default function ContributePage({ session, liveUser = null }) {
     total: 0,
   });
   const [isTutorialSession, setIsTutorialSession] = useState(false);
-  const [randomFact, setRandomFact] = useState("");
+  const [confirmStop, setConfirmStop] = useState(false);
 
   // _app hands `session` to SessionProvider and never passes it to the page,
   // and useSession refetches the token's copy in the background (on window
@@ -66,13 +61,6 @@ export default function ContributePage({ session, liveUser = null }) {
   // getServerSideProps reads this straight from the database on every request,
   // so it stays correct even if the JWT is stale from another device
   const hasCompletedDemo = user.hasCompletedTutorial === true;
-
-  useEffect(() => {
-    // Picked client-side: choosing during SSR makes the server and client HTML
-    // disagree and triggers a hydration error
-    const randomIndex = Math.floor(Math.random() * FUN_FACTS.length);
-    setRandomFact(FUN_FACTS[randomIndex]);
-  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -149,7 +137,7 @@ export default function ContributePage({ session, liveUser = null }) {
   // for the first render, so gating on it alone is consistent.
   if (loading) {
     return (
-      <Page title="Dashboard - Imprint Contribute" contribute>
+      <Page title={COPY.pageTitle} contribute>
         <ContentSkeleton />
       </Page>
     );
@@ -160,118 +148,116 @@ export default function ContributePage({ session, liveUser = null }) {
 
   return (
     <Page
-      title="Dashboard - Imprint Contribute"
+      title={COPY.pageTitle}
       description="Contribute to Imprint! Let's make our streets accessible for all."
       contribute
     >
-      <section className="pt-12 pb-6">
+      {/* The top of the page (17 Oct 2026, apple-design pass). The greeting
+          on the left, the actions on the right, one filled button among them.
+          Each link wraps its Button with
+          tabIndex={-1}, as on the home page, so Tab stops once per action. */}
+      <section className="pt-12 pb-12 lg:pt-16">
         <Container className="relative z-10">
-
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-
-            {/* Left Side: Welcome Text */}
-            <div className="w-full md:w-auto">
-              <p className="text-muted font-semibold text-xl mb-1">Welcome back,</p>
-              <h1 className="font-display text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight text-primary">
+          <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <div className="min-w-0">
+              <p className="text-lg font-semibold text-muted">{hasCompletedDemo ? COPY.welcomeBack : COPY.welcome}</p>
+              <h1 className="mt-1 font-display text-5xl lg:text-6xl font-extrabold tracking-[-0.03em] leading-[1.04] text-primary break-words">
                 {username}.
               </h1>
               {userRole === "annotator" && (
-                <Badge tone="success">Annotator</Badge>
+                <div className="mt-3">
+                  <Badge tone="success">{COPY.annotatorBadge}</Badge>
+                </div>
               )}
             </div>
 
-            {/* Right Side: Fun Fact & Action Buttons */}
-            <div className="flex flex-col items-start md:items-end w-full md:w-auto mt-4 md:mt-0 gap-3">
-              {/* Fun Fact Pill */}
-              {!hasSession && !isTutorialSession && randomFact && (
-                <Badge tone="warning">
-                  <span>{randomFact}</span>
-                </Badge>
-              )}
-
-              <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 w-full md:w-auto">
+            <div className="flex flex-col gap-3 sm:flex-row md:justify-end">
               {isTutorialSession ? (
                 <>
-                  <Link href="/contribute/tutorial" className="flex-1 md:flex-none flex">
-                    <Button fullWidth>Resume Tutorial</Button>
+                  <Link href="/contribute/tutorial" tabIndex={-1} className="flex">
+                    <Button fullWidth>{COPY.resumeTutorial}</Button>
                   </Link>
-                  {/* eslint-disable-next-line react/forbid-elements -- dashboard action button */}
-                  <button
-                    type="button"
+                  {/* Nothing in the tutorial is saved, so it stops without asking */}
+                  <Button
+                    variant="neutral"
                     onClick={() => {
                       clearSession();
                       setIsTutorialSession(false);
                     }}
-                    className="flex-1 md:flex-none"
                   >
-                    <Button variant="neutral" fullWidth>Stop Tutorial</Button>
-                  </button>
+                    {COPY.stopTutorial}
+                  </Button>
                 </>
               ) : !hasSession ? (
                 <>
                   {!hasCompletedDemo ? (
                     <Link
                       href={isLoadingSession ? "" : "/contribute/tutorial"}
-                      className={`flex-1 md:flex-none flex ${isLoadingSession ? "opacity-50 pointer-events-none" : ""}`}
+                      tabIndex={-1}
+                      className={`flex ${isLoadingSession ? "opacity-50 pointer-events-none" : ""}`}
                     >
-                      <Button fullWidth>
-                        {isLoadingSession ? "Loading..." : "Start Demo Tutorial"}
-                      </Button>
+                      <Button fullWidth>{isLoadingSession ? COPY.loading : COPY.startTutorial}</Button>
                     </Link>
                   ) : user.isProfileIncomplete ? (
-                    <Link href="/complete-profile" className="flex-1 md:flex-none flex">
-                      <Button fullWidth>Complete Profile to Start</Button>
+                    <Link href="/complete-profile" tabIndex={-1} className="flex">
+                      <Button fullWidth>{COPY.completeProfile}</Button>
                     </Link>
                   ) : (
                     <Link
                       href={isLoadingSession ? "" : "/contribute/annotate"}
-                      className={`flex-1 md:flex-none flex ${isLoadingSession ? "opacity-50 pointer-events-none" : ""}`}
+                      tabIndex={-1}
+                      className={`flex ${isLoadingSession ? "opacity-50 pointer-events-none" : ""}`}
                     >
-                      <Button fullWidth>
-                        {isLoadingSession ? "Loading..." : "Let's Annotate!"}
-                      </Button>
+                      <Button fullWidth>{isLoadingSession ? COPY.loading : COPY.annotate}</Button>
                     </Link>
                   )}
 
                   {hasCompletedDemo && (
-                     <Link href="/contribute/tutorial" className="flex-1 md:flex-none flex">
-                        <Button variant="neutral" fullWidth>Replay Tutorial</Button>
-                     </Link>
+                    <Link href="/contribute/tutorial" tabIndex={-1} className="flex">
+                      <Button variant="neutral" fullWidth>{COPY.replayTutorial}</Button>
+                    </Link>
                   )}
                 </>
-              ) : hasSession ? (
+              ) : (
                 <>
-                  <Link href="/contribute/annotate" className="flex-1 md:flex-none flex">
-                    <Button fullWidth>Resume Session</Button>
+                  <Link href="/contribute/annotate" tabIndex={-1} className="flex">
+                    <Button fullWidth>{COPY.resumeSession}</Button>
                   </Link>
-                  {/* eslint-disable-next-line react/forbid-elements -- dashboard action button */}
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await fetch("/api/annotationAbandon", { method: "POST" });
-                        clearSession();
-                        setSessionState({ status: "none", current: 0, total: 0 });
-                      } catch (e) {
-                        console.error(e);
-                      }
-                    }}
-                    className="flex-1 md:flex-none"
-                  >
-                    <Button variant="neutral" fullWidth>Stop Session</Button>
-                  </button>
+                  {/* Stopping ends the session, so it asks first, as the
+                      annotation screen does (17 Oct 2026). It used to stop on
+                      the first click. */}
+                  <Button variant="neutral" onClick={() => setConfirmStop(true)}>
+                    {COPY.stopSession}
+                  </Button>
                 </>
-              ) : null}
-              </div>
+              )}
             </div>
           </div>
-
         </Container>
       </section>
       {/* The lower dashboard (Recent Sessions, the distance banner, contribution
           figures) is for contributors only. Annotators see none of it (6 Oct 2026).
           userRole comes from the database, overlaid in getServerSideProps. */}
       {userRole !== "annotator" && <DashboardInfo username={username} userId={userId} />}
+      <ConfirmDialog
+        open={confirmStop}
+        title={COPY.stopDialog.title}
+        description={COPY.stopDialog.description}
+        confirmLabel={COPY.stopDialog.confirm}
+        destructive
+        onCancel={() => setConfirmStop(false)}
+        onConfirm={async () => {
+          setConfirmStop(false);
+          try {
+            await fetch("/api/annotationAbandon", { method: "POST" });
+            clearSession();
+            // A full reload, as the session's row does, so the totals below re-read
+            window.location.reload();
+          } catch (e) {
+            console.error(e);
+          }
+        }}
+      />
     </Page>
   );
 }

@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { writeSession } from "@/util/sessionCache";
 import { CONTRIBUTOR_OPTIONS, sessionOptionsFor } from "./sessionOptions";
+import SessionSizeOptions, { SESSION_PICKER_COPY as COPY } from "./SessionSizeOptions";
 
 import { Button, Card, Container } from "@/ui";
 
@@ -106,7 +107,7 @@ export default function AnnotationSessionSelection() {
                   become available.
                 </p>
                 <div className="mt-10">
-                  <Link href="/contribute" className="inline-flex">
+                  <Link href="/contribute" tabIndex={-1} className="inline-flex">
                     <Button>Return to Dashboard</Button>
                   </Link>
                 </div>
@@ -114,63 +115,32 @@ export default function AnnotationSessionSelection() {
             ) : (
               <>
                 <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-ink tracking-tight">
-                  How many images would you like to annotate?
+                  {COPY.title}
                 </h2>
                 <p className="mt-3 text-muted font-medium leading-relaxed mx-auto">
-                  Each image takes about 30 seconds on average. You&apos;ll identify
-                  obstructions, rate sidewalk accessibility, and identify the surface type.
+                  {COPY.lead}
                 </p>
 
                 <hr className="my-6 border-line-card" />
 
-                {/* Selection Cards */}
-                <div className="flex flex-wrap justify-center gap-5 mt-2">
-                  {options.map((option) => {
-                    const isSelected = selected === option.count;
-                    return (
-                      // eslint-disable-next-line react/forbid-elements -- selectable card, not a Button variant: it carries its own selected state and sizing
-                      <button
-                        key={option.count}
-                        onClick={() => setSelected(option.count)}
-                        disabled={loading}
-                        className={`
-                          group flex flex-col items-center justify-center
-                          w-28 sm:w-32 py-6 rounded-card border-2
-                          transition-colors duration-300 cursor-pointer
-                          ${isSelected
-                            ? "border-primary bg-primary-50"
-                            : "border-line bg-surface hover:border-subtle"
-                          }
-                          disabled:cursor-not-allowed
-                        `}
-                      >
-                        <span className={`text-4xl sm:text-5xl font-extrabold tracking-tight transition-colors duration-300 ${isSelected ? "text-primary" : "text-body group-hover:text-ink"}`}>
-                          {option.label}
-                        </span>
-                        {option.time && (
-                          <span className={`text-sm font-semibold mt-2 transition-colors duration-300 ${isSelected ? "text-primary/70" : "text-subtle"}`}>
-                            {option.time}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                <SessionSizeOptions options={options} selected={selected} onSelect={setSelected} disabled={loading} />
 
                 {/* Action Buttons */}
                 <div className="flex flex-col sm:flex-row justify-center gap-4 mt-10">
+                  {/* tabIndex -1: Tab stops on the Button, not the link and the Button (17 Oct 2026) */}
                   <Link
                     href={loading ? "" : "/contribute"}
+                    tabIndex={-1}
                     className={`flex-1 sm:flex-none flex ${loading ? "opacity-50 pointer-events-none" : ""}`}
                   >
-                    <Button variant="neutral" fullWidth>Cancel</Button>
+                    <Button variant="neutral" fullWidth>{COPY.cancel}</Button>
                   </Link>
                   <Button
                     className="flex-1 sm:flex-none"
                     onClick={startSession}
                     disabled={!selected || loading}
                   >
-                    {loading ? "Starting..." : "Start Session"}
+                    {loading ? COPY.starting : COPY.start}
                   </Button>
                 </div>
               </>

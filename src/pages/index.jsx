@@ -106,8 +106,8 @@ export default function Index() {
 
   return (
     <Page
-      title="Home - Imprint"
-      description="Welcome to Imprint! Help us learn more about our streets."
+      title="Imprint"
+      description="Welcome to Imprint! A crowdsourcing platform for mapping what gets in the way on Metro Manila's sidewalks."
       contribute={false}
     >
       {showLoader && (

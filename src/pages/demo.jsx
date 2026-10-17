@@ -1,4 +1,3 @@
-import { H1, Container } from "@/ui";
 import Page from '@/ui/page';
 import HelpDirectory from '@/features/contribute/help';
 
@@ -6,18 +5,17 @@ import HelpDirectory from '@/features/contribute/help';
  * The annotation guide, viewable without an account. Renders the same content
  * that /contribute/help shows to signed-in contributors.
  *
- * Not linked from the navbar at present, so it is reachable only by its URL.
+ * Linked from the footer and the About page since 16 Oct 2026, when the guide
+ * was rewritten to match the tool (it had been left unlinked while it showed
+ * an older version).
  */
 export default function DemoPage() {
     return (
         <Page
-            title="Help - Imprint Contribute"
-            description="Learn more how to use Imprint as a crowdsourcing platform."
+            title="Annotation guide - Imprint"
+            description="How an Imprint session goes, step by step, with the tool's own buttons and questions."
             contribute={false}
         >
-            <Container as="section">
-                <H1><span className="font-bold text-primary">Imprint</span> Annotation Guide</H1>
-            </Container>
             <HelpDirectory />
         </Page>
     );

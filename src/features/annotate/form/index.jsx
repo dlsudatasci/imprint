@@ -296,6 +296,7 @@ export default function AnnotateForm({
   const tool = (
     <ReactPictureAnnotation
       image={data.url}
+      photoSource={{ source: data.source, sourceImageId: data.sourceImageId }}
       onSelect={onSelect}
       onChange={onChange}
       width={640 * 1.5}

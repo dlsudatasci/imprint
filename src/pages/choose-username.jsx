@@ -4,7 +4,10 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 
 import Page from "@/ui/page";
-import { AuthCard, Button, Input, Checkbox, Container } from "@/ui";
+import { AuthCard, AuthScreen, Button, Input, Checkbox } from "@/ui";
+import { AUTH_COPY } from "@/features/auth/authCopy";
+
+const COPY = AUTH_COPY.username;
 
 /**
  * Asks someone who signed in with Google to choose a username.
@@ -13,6 +16,10 @@ import { AuthCard, Button, Input, Checkbox, Container } from "@/ui";
  * public annotations. Contributors are credited by username instead — a real
  * name is far more identifying than most people expect when the work involves
  * labelling photos of streets near where they live.
+ *
+ * 16 Oct 2026 (IMPRINT_public_redesign.md): AuthScreen, the same welcome as
+ * before (authCopy.js), the username rule as a hint, and a description for
+ * the page. The consent and age lines are unchanged (appendix_C.tex).
  */
 export default function ChooseUsername() {
     const [loadingForm, setLoading] = useState(false);
@@ -80,18 +87,21 @@ export default function ChooseUsername() {
     if (loading || !session?.user?.isNewGoogleUser) return null;
 
     return (
-        <Page title="Choose Username - Imprint" contribute={false}>
-            <Container as="section" className="py-4 my-12 mb-32 flex flex-col items-center justify-center">
+        <Page title="Choose a username - Imprint" description="Choose the username Imprint shows for your account." contribute={false}>
+            <AuthScreen>
                 <AuthCard
-                    title="Welcome to Imprint!"
-                    subtitle="Please choose a username to continue."
+                    title={COPY.title}
+                    subtitle={COPY.subtitle}
                 >
                     <form onSubmit={onSubmit}>
                         <Input
-                            label="Choose a Username"
+                            label={COPY.label}
                             type="text"
-                            placeholder="Unique Username"
                             name="username"
+                            autoComplete="username"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                            hint={COPY.hint}
                             required
                             onInput={(e) => e.target.setCustomValidity("")}
                             error={serverError || null}
@@ -108,7 +118,7 @@ export default function ChooseUsername() {
                                   href="/terms-of-use"
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="cursor-pointer text-primary font-bold hover:underline"
+                                  className="cursor-pointer text-primary font-semibold hover:underline"
                                 >
                                   Informed Consent Form
                                 </Link>
@@ -124,11 +134,11 @@ export default function ChooseUsername() {
                         </div>
 
                         <Button submit fullWidth disabled={loadingForm}>
-                            {loadingForm ? "Saving..." : "Continue to Dashboard"}
+                            {loadingForm ? COPY.submitting : COPY.submit}
                         </Button>
                     </form>
                 </AuthCard>
-            </Container>
+            </AuthScreen>
         </Page>
     );
 }

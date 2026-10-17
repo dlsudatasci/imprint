@@ -51,13 +51,50 @@
 /**
  * Navbar height, for the pages that need to fill the space below it.
  *
- * Derived from navbarMain's `py-5 md:py-10` plus its 30px logo. It lives here
- * rather than as a literal inside a page because a literal rots silently — if
- * that padding ever changes, this is the single place that follows it.
+ * navbarMain's bar is `h-16` at every width (16 Oct 2026, was `py-5 md:py-10`
+ * around a 30px logo, 70px and 110px). It lives here rather than as a literal
+ * inside a page because a literal rots silently. The login page's scene and
+ * the landing page's preview frame both measure from it.
  */
-:root { --nav-h: 70px; }
-@media (min-width: 768px) {
-  :root { --nav-h: 110px; }
+:root { --nav-h: 64px; }
+
+/**
+ * The navbar's material (16 Oct 2026, apple-design: a translucent layer that
+ * floats over the page rather than an opaque strip). The page ground at 72%
+ * with the content behind it blurred, so the bar reads as part of the page
+ * while text scrolls under it. `data-scrolled` adds the scroll-edge line only
+ * once something is under the bar, instead of a divider that is always there.
+ *
+ * Reduce transparency makes it solid, and increase contrast adds a solid edge.
+ */
+.nav-material {
+  background-color: rgba(248, 247, 249, 0.72);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 1px 0 rgba(17, 24, 39, 0);
+  transition: box-shadow var(--t-base) ease-in-out, background-color var(--t-base) ease-in-out;
+}
+.nav-material[data-scrolled="true"] {
+  box-shadow: 0 1px 0 rgba(17, 24, 39, 0.08);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .nav-material { background-color: var(--c-ground); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .nav-material {
+    background-color: var(--c-ground);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  .nav-material,
+  .nav-material[data-scrolled="true"] {
+    background-color: var(--c-ground);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: 0 1px 0 var(--c-line);
+  }
 }
 
 body {
@@ -127,11 +164,6 @@ h1, h2, h3 {
 
 .rp-selected-input {
   position: absolute;
-}
-
-.gifContainer {
-  width: 80vw;
-  max-width: 60rem;
 }
 
 /* ---------------------------------------------------------------------------

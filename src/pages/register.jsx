@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 
 import Page from "@/ui/page";
-import { AuthCard, Button, Input, Checkbox, Container } from "@/ui";
+import { AuthCard, AuthScreen, Button, Input, Checkbox } from "@/ui";
+import GoogleMark from "@/features/auth/GoogleMark";
+import { AUTH_COPY } from "@/features/auth/authCopy";
+
+const COPY = AUTH_COPY.register;
 
 /**
  * Sign-up for a password account.
@@ -19,6 +23,12 @@ import { AuthCard, Button, Input, Checkbox, Container } from "@/ui";
  * itself, and the server refuses to create it without them. Until 6 Oct 2026
  * the button waited for these boxes and reported the missing tick under the
  * Submit button, off screen, so clicking it seemed to do nothing.
+ *
+ * 16 Oct 2026 (IMPRINT_public_redesign.md): wording from authCopy.js ("Create
+ * account" for Submit, "Continue with Google"), a hint under the username and
+ * the password with the rules the server applies (USERNAME_PATTERN,
+ * MIN_PASSWORD_LENGTH), autocomplete so password managers offer a new
+ * password, and the inline Google mark in place of an image from svgrepo.com.
  *
  * Field errors use the browser's own validation bubbles rather than messages
  * rendered on the page. That is why each input clears its custom message as
@@ -71,7 +81,7 @@ export default function Register() {
     const passwordInput = e.currentTarget.password;
 
     if (password !== confirmPassword) {
-      confirmInput.setCustomValidity("Passwords do not match");
+      confirmInput.setCustomValidity(COPY.mismatch);
       confirmInput.reportValidity();
       setLoading(false);
       return;
@@ -109,16 +119,16 @@ export default function Register() {
             setServerError(data.message);
           }
         } else if (res.status === 500) {
-          setServerError("There seems to be something wrong with our servers");
+          setServerError(COPY.serverError);
         } else {
-          setServerError("An unexpected error occurred");
+          setServerError(COPY.unexpected);
         }
       } catch (err) {
         // A thrown fetch (offline, DNS, connection reset) used to skip both the
         // error message and setLoading(false) below, leaving the button stuck
         // on "Registering..." with nothing said.
         console.error("Registration request failed:", err);
-        setServerError("Couldn't reach the server. Check your connection and try again.");
+        setServerError(COPY.offline);
       }
     }
 
@@ -127,20 +137,18 @@ export default function Register() {
 
   return (
     <Page
-      title="Register - Imprint"
-      description="Register to Imprint! Register to Imprint in order to contribute to our platform."
+      title="Create account - Imprint"
+      description="Create an Imprint account to start annotating sidewalks."
       contribute={false}
     >
-      <Container as="section" className="py-4 my-12 mb-32 flex flex-col items-center justify-center">
+      <AuthScreen>
         <AuthCard
-          title="Register to Imprint"
+          title={COPY.title}
           subtitle={
             <>
-              Already have an account?
-              <Link href="/login">
-                <span className="text-primary ml-2 font-bold transition-colors duration-300 cursor-pointer hover:underline">
-                  Login Here
-                </span>
+              {COPY.haveAccount}{" "}
+              <Link href="/login" className="font-semibold text-primary hover:underline">
+                {COPY.login}
               </Link>
             </>
           }
@@ -152,51 +160,51 @@ export default function Register() {
               className="mb-6"
               onClick={handleGoogleSignIn}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="https://www.svgrepo.com/show/475656/google-color.svg"
-                alt=""
-                className="w-5 h-5"
-              />
-              Sign up with Google
+              <GoogleMark />
+              {AUTH_COPY.google}
             </Button>
 
             <div className="flex items-center gap-3 mb-6">
               <hr className="flex-1 border-line" />
-              <span className="text-xs font-semibold text-subtle uppercase tracking-widest">or</span>
+              <span className="text-xs font-medium text-muted">{AUTH_COPY.or}</span>
               <hr className="flex-1 border-line" />
             </div>
 
             <div className="space-y-4">
               <Input
-                label="Username"
+                label={COPY.username}
                 type="text"
-                placeholder="Username"
                 name="username"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                hint={COPY.usernameHint}
                 required
                 onInput={(e) => e.target.setCustomValidity("")}
               />
               <Input
-                label="Email"
+                label={COPY.email}
                 type="email"
-                placeholder="hello@website.com"
+                placeholder={COPY.emailPlaceholder}
                 name="email"
+                autoComplete="email"
                 required
                 onInput={(e) => e.target.setCustomValidity("")}
               />
               <Input
-                label="Password"
+                label={COPY.password}
                 type="password"
-                placeholder="Password"
                 name="password"
+                autoComplete="new-password"
+                hint={COPY.passwordHint}
                 required
                 onInput={(e) => e.target.setCustomValidity("")}
               />
               <Input
-                label="Confirm Password"
+                label={COPY.confirmPassword}
                 type="password"
-                placeholder="Confirm Password"
                 name="confirmPassword"
+                autoComplete="new-password"
                 required
                 onInput={(e) => e.target.setCustomValidity("")}
               />
@@ -213,7 +221,7 @@ export default function Register() {
                       href="/terms-of-use"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="cursor-pointer text-primary font-bold hover:underline"
+                      className="cursor-pointer text-primary font-semibold hover:underline"
                     >
                       Informed Consent Form
                     </Link>
@@ -229,17 +237,17 @@ export default function Register() {
             </div>
 
             <Button submit fullWidth className="mt-6" disabled={loadingForm}>
-              {loadingForm ? "Loading..." : "Submit"}
+              {loadingForm ? COPY.submitting : COPY.submit}
             </Button>
 
             {serverError && (
-              <p className="text-sm mt-6 text-danger font-medium text-center bg-danger-soft p-3 rounded-control border border-danger-border">
+              <p role="alert" className="text-sm mt-6 text-danger font-medium text-center bg-danger-soft p-3 rounded-control border border-danger-border">
                 {serverError}
               </p>
             )}
           </form>
         </AuthCard>
-      </Container>
+      </AuthScreen>
     </Page>
   );
 }

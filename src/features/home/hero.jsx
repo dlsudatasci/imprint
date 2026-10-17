@@ -1,6 +1,8 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { H1, P, Button, Container } from "@/ui";
+import { useSession } from "next-auth/react";
+import { Display, P, Button, Container } from "@/ui";
+import { HERO_COPY as COPY } from "./heroCopy";
 
 // ssr:false is required, not an optimization — Leaflet reaches for `window` at
 // import time and throws during server rendering. The skeleton reserves the
@@ -8,37 +10,48 @@ import { H1, P, Button, Container } from "@/ui";
 const CityMap = dynamic(() => import("./CityMap"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[400px] bg-surface-subtle animate-pulse flex items-center justify-center rounded-card border border-line">
-      <p className="text-sm font-medium text-subtle">Loading Map...</p>
+    <div className="w-full h-[400px] lg:h-[480px] bg-surface-subtle animate-pulse motion-reduce:animate-none flex items-center justify-center rounded-card border border-line">
+      <p className="text-sm font-medium text-subtle">Loading map...</p>
     </div>
   ),
 });
 
+/**
+ * The top of the landing page: what Imprint asks of a volunteer, the way in,
+ * and the city map.
+ *
+ * Redesigned 16 Oct 2026 (IMPRINT_public_redesign.md): the welcome and its
+ * line stay (heroCopy.js), the heading is display size with tracking that
+ * tightens as it grows (apple-design), and there is one
+ * filled button. Like the join card at the end of the page, that button reads
+ * Start volunteering for visitors and Go to your dashboard for anyone signed
+ * in, and shows nothing while the session is loading so the wrong one never
+ * flashes. Its height is reserved, so nothing moves when it appears.
+ */
 export default function Hero({ selectedCity, onCitySelect }) {
+  const { status } = useSession();
+  const cta = status === "authenticated" ? COPY.ctaSignedIn : status === "unauthenticated" ? COPY.ctaSignedOut : null;
+
   return (
-    <Container as="section" className="flex flex-col items-center lg:flex-row lg:justify-between py-10 md:py-5 mb-6 gap-10 lg:gap-16">
-      <div className="flex flex-col mx-auto lg:mx-0 justify-center w-full max-w-md lg:max-w-lg xl:max-w-xl">
-        <H1>
-          Welcome to <span className="font-bold text-primary">Imprint</span>
-        </H1>
-        <div className="mt-4">
-          <P>
-            We aim to accelerate crowdsourced streetscape data collection to
-            understand how people perceive accessibility, safety, and
-            walkability in urban environments.
-          </P>
-        </div>
-        <div className="mt-6 flex gap-4">
-          <Link href="/contribute">
-            <Button variant="secondary">Volunteer</Button>
-          </Link>
-          <Link href="/about">
-            <Button variant="neutral">Learn More</Button>
+    <Container as="section" aria-labelledby="hero-title" className="flex flex-col items-center gap-10 pt-10 pb-12 lg:flex-row lg:items-center lg:gap-16 lg:pt-16 lg:pb-16">
+      <div className="flex w-full max-w-xl flex-col lg:max-w-none lg:basis-[44%] lg:shrink-0">
+        <Display id="hero-title">
+          {COPY.titleLead} <span className="text-primary">{COPY.titleName}</span>
+        </Display>
+        <P className="mt-6 text-base leading-relaxed md:text-lg">{COPY.lead}</P>
+        <div className="mt-8 flex min-h-[3.25rem] flex-wrap items-center gap-3">
+          {cta && (
+            <Link href="/contribute" tabIndex={-1}>
+              <Button>{cta}</Button>
+            </Link>
+          )}
+          <Link href="/about" tabIndex={-1}>
+            <Button variant="neutral">{COPY.secondary}</Button>
           </Link>
         </div>
       </div>
 
-      <div className="w-full lg:flex-1 min-w-[50%]">
+      <div className="w-full lg:flex-1">
         <CityMap selectedCity={selectedCity} onCitySelect={onCitySelect} />
       </div>
     </Container>

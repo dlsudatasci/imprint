@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TAXONOMY_CATEGORIES, TAXONOMY_SET, isTaxonomyCategory } from "./taxonomy";
+import { TAXONOMY_CATEGORIES, TAXONOMY_SET, TAXONOMY_BY_PERMANENCE, isTaxonomyCategory } from "./taxonomy";
 
 describe("TAXONOMY_CATEGORIES", () => {
   it("has exactly 18 categories", () => {
@@ -54,5 +54,16 @@ describe("isTaxonomyCategory", () => {
     expect(isTaxonomyCategory("")).toBe(false);
     expect(isTaxonomyCategory(null)).toBe(false);
     expect(isTaxonomyCategory(undefined)).toBe(false);
+  });
+});
+
+describe("TAXONOMY_BY_PERMANENCE", () => {
+  it("holds every category exactly once, 8 temporary and 10 permanent as in Table 4.1", () => {
+    const { temporary, permanent } = TAXONOMY_BY_PERMANENCE;
+    expect(temporary).toHaveLength(8);
+    expect(permanent).toHaveLength(10);
+    const all = [...temporary, ...permanent];
+    expect(new Set(all).size).toBe(all.length);
+    expect([...all].sort()).toEqual([...TAXONOMY_CATEGORIES].sort());
   });
 });

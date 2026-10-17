@@ -81,6 +81,7 @@ import {
   PaintVariant,
   RectShape,
   boxStrokeColor,
+  placeLabel,
 } from "./Shape";
 import Transformer, { ITransformer, TransformerMode } from "./Transformer";
 import randomId from "./utils/randomId";
@@ -119,6 +120,7 @@ import {
   type View,
 } from "./viewTransform";
 import BottomSheet, { NO_SCROLL_STYLE, type SheetSnap, type SheetPoints } from "../BottomSheet";
+import PhotoCredit, { type PhotoSource } from "./PhotoCredit";
 import { summarizeInputTypes, classifyDevice } from "@/util/validators/deviceTelemetry";
 import {
   readSessionData,
@@ -227,6 +229,8 @@ interface IReactPictureAnnotationProps {
   width: number;
   height: number;
   image: string;
+  /** Where the photo comes from, for its credit line (PhotoCredit, 16 Oct 2026) */
+  photoSource?: PhotoSource | null;
   annotationStyle: IShapeStyle;
   defaultAnnotationSize?: number[];
   username: string;
@@ -1166,7 +1170,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               // with the landing page's preview)
               <Step1Card
                 className="mb-6"
-                photo={canvasArea}
+                photo={
+                  <>
+                    {canvasArea}
+                    <PhotoCredit photo={this.props.photoSource} className="px-1 pt-1.5" />
+                  </>
+                }
                 answers={
                   <ObjectTrays
                     trays={buildTrays(sortedAnnotations, { labels: displayLabels })}
@@ -1207,6 +1216,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                         the three steps share one layout: heading, photo, list */}
                     {inSidewalkStep && this.renderSidewalkToolbar()}
                     {canvasArea}
+                    <PhotoCredit photo={this.props.photoSource} className="px-1 pt-1.5" />
                     {/* Sidewalk messages, under the photo where the outline is drawn */}
                     {inSidewalkStep && this.state.sidewalk.message && (
                       <p role="status" className="text-xs text-muted px-1 pt-2">{this.state.sidewalk.message}</p>
@@ -1374,7 +1384,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       body = <div className="px-3 pt-1 pb-4">{panel("sheet")}</div>;
     } else if (annotator) {
       header = this.renderAnnotatorSheetHeader(sortedAnnotations, displayLabels);
-      body = this.renderAnnotatorSheetBody(sortedAnnotations, displayLabels);
+      body = (
+        <>
+          {this.renderAnnotatorSheetBody(sortedAnnotations, displayLabels)}
+          <PhotoCredit photo={this.props.photoSource} className="px-4 pt-1 pb-4" />
+        </>
+      );
     } else {
       const trays = buildTrays(sortedAnnotations, { labels: displayLabels });
       header = (
@@ -1405,6 +1420,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             stacked
           />
           {this.renderSceneQuestions("sheet")}
+          <PhotoCredit photo={this.props.photoSource} className="px-4 pt-1 pb-4" />
         </>
       );
     }
@@ -3889,11 +3905,46 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.currentAnnotationState = annotationState;
   };
 
+  /**
+   * Where each box's name goes on the photo (17 Oct 2026, apple-design check).
+   * Names were painted at their box's top-left corner as each box was drawn,
+   * so boxes side by side (a row of parked motorcycles, or any two boxes on a
+   * phone, where the photo is small) painted their names over each other:
+   * "Car #1" read "r #1". Names are now placed before painting, in the lists'
+   * order, each moved down below an earlier name it would cover (placeLabel).
+   * The order is the lists', not the drawing order, which changes on every
+   * click, so no name moves when a box is clicked. The selected box keeps its
+   * spot though its name is not painted, for the same reason.
+   */
+  private labelSpots(labels: Map<string, string>, variant: string): Map<string, { x: number; y: number }> {
+    const spots = new Map<string, { x: number; y: number }>();
+    if (!this.canvas2D || !this.paintsBoxes) return spots;
+    const rank = new Map(Array.from(labels.keys()).map((id, i) => [id, i] as [string, number]));
+    const named = this.shapes
+      .filter((shape) => {
+        const data = shape.getAnnotationData();
+        if (this.isBoxHidden(data.id) || !data.comment) return false;
+        return !(variant === "obstructions" && data.comment === "not_an_object");
+      })
+      .sort((a, b) => (rank.get(a.getAnnotationData().id) ?? Infinity) - (rank.get(b.getAnnotationData().id) ?? Infinity));
+    const placed: IShapeBase[] = [];
+    for (const shape of named) {
+      const data = shape.getAnnotationData();
+      const text = shape.labelText(labels.get(data.id));
+      if (!text) continue;
+      const rect = placeLabel(this.calculateShapePosition(data.mark), shape.measureLabel(this.canvas2D, text), placed);
+      placed.push(rect);
+      spots.set(data.id, { x: rect.x, y: rect.y });
+    }
+    return spots;
+  }
+
   public selectAnnotation = (data) => {
     // Numbered in the lists' order, not drawing order
     const labels = buildDisplayLabelsInOrder(this.currentAnnotationData);
     this.paintSidewalkLayer();
     const variant = this.paintVariant;
+    const spots = this.labelSpots(labels, variant);
     for (const item of this.shapes) {
       if (!this.paintsBoxes) break;
       if (this.isBoxHidden(item.getAnnotationData().id)) continue;
@@ -3903,7 +3954,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         this.calculateShapePosition,
         isSelected,
         labels.get(item.getAnnotationData().id),
-        variant
+        variant,
+        spots.get(item.getAnnotationData().id)
       );
 
       if (isSelected) {
@@ -3950,6 +4002,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       // Obstructions locks the boxes: nothing is selected or transformed.
       // Sidewalk shows none.
       const variant = this.paintVariant;
+      const spots = this.labelSpots(labels, variant);
       for (const item of this.shapes) {
         if (!this.paintsBoxes) break;
         if (this.isBoxHidden(item.getAnnotationData().id)) continue;
@@ -3959,7 +4012,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           this.calculateShapePosition,
           isSelected,
           labels.get(item.getAnnotationData().id),
-          variant
+          variant,
+          spots.get(item.getAnnotationData().id)
         );
 
         if (isSelected) {

@@ -34,3 +34,35 @@ export const TAXONOMY_SET = new Set(TAXONOMY_CATEGORIES);
 export function isTaxonomyCategory(category) {
   return TAXONOMY_SET.has(category);
 }
+
+/**
+ * The taxonomy grouped by permanence, as Table 4.1 (tab:obstruction_categories
+ * in chapter_4.tex) lists it, in its order (16 Oct 2026, for the About page and
+ * the annotation guide). Temporary objects come and go with daily street use,
+ * permanent ones are fixed infrastructure. taxonomy.test.js checks the two
+ * groups hold every category exactly once.
+ */
+export const TAXONOMY_BY_PERMANENCE = Object.freeze({
+  temporary: Object.freeze([
+    "car",
+    "motorcycle",
+    "tricycle",
+    "bicycle",
+    "street_vendor_cart",
+    "construction_materials",
+    "garbage",
+    "movable_signage",
+  ]),
+  permanent: Object.freeze([
+    "trash_bin",
+    "utility_post",
+    "lamp_post",
+    "street_sign",
+    "fire_hydrant",
+    "electrical_box",
+    "bench",
+    "tree",
+    "potted_plant",
+    "bollard",
+  ]),
+});

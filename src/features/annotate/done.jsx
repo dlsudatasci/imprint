@@ -141,8 +141,9 @@ export default function AnnotationDone({ data, total }) {
 
         {/* Action Buttons */}
         <div className="flex flex-col items-center gap-4 w-full max-w-sm mb-16">
+          {/* Links wrapping a Button take tabIndex -1, so Tab stops once, on the Button (17 Oct 2026) */}
           {session?.user?.isProfileIncomplete ? (
-            <Link href="/complete-profile" className="w-full flex">
+            <Link href="/complete-profile" tabIndex={-1} className="w-full flex">
               <Button fullWidth>Complete Profile to Continue</Button>
             </Link>
           ) : (
@@ -150,19 +151,19 @@ export default function AnnotationDone({ data, total }) {
               Start Another Session
             </Button>
           )}
-          <Link href="/contribute" className="w-full flex">
+          <Link href="/contribute" tabIndex={-1} className="w-full flex">
             <Button variant="neutral" fullWidth>Return to Dashboard</Button>
           </Link>
 
           {crossedMilestone && (
             <div className="mt-8 w-full">
               <div className="border-2 border-primary rounded-card px-6 py-5 text-center bg-surface">
-                <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-2">
+                <p className="text-xs font-semibold text-primary mb-2">
                   New milestone
                 </p>
                 <p className="text-body font-medium">
-                  Your annotations now cover the same distance as{' '}
-                  <span className="text-ink font-bold">{crossedMilestone.name}</span>.
+                  Your annotations now cover the length of{' '}
+                  <span className="text-ink font-bold">{crossedMilestone.place}</span>.
                 </p>
               </div>
             </div>

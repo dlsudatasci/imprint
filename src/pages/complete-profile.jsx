@@ -6,7 +6,10 @@ import CreatableSelect from "react-select/creatable";
 import cities from "@/data/cities.json";
 
 import Page from "@/ui/page";
-import { AuthCard, Button, Radio, tokens, Container } from "@/ui";
+import { AuthCard, AuthScreen, Button, Radio, tokens } from "@/ui";
+import { AUTH_COPY } from "@/features/auth/authCopy";
+
+const COPY = AUTH_COPY.profile;
 import { PROFILE_QUESTIONS, optionsFor, buildProfileBody } from "@/features/profile/profileFields";
 
 /**
@@ -24,6 +27,9 @@ import { PROFILE_QUESTIONS, optionsFor, buildProfileBody } from "@/features/prof
  * city-first image draw for contributors. It accepts new entries rather than
  * offering a fixed list; a city with no matching images simply has no effect on
  * which images get handed out.
+ *
+ * 16 Oct 2026 (IMPRINT_public_redesign.md): AuthScreen, the wording in
+ * authCopy.js (unchanged from before), and the occupation field matches Input.
  */
 export default function CompleteProfile() {
     const [loadingForm, setLoading] = useState(false);
@@ -184,11 +190,11 @@ export default function CompleteProfile() {
     );
 
     return (
-        <Page title="Complete Profile - Imprint" contribute={false}>
-            <Container as="section" className="py-4 my-12 mb-32 flex flex-col items-center justify-center">
+        <Page title="Complete your profile - Imprint" description="A few questions before your first Imprint session." contribute={false}>
+            <AuthScreen>
                 <AuthCard
-                    title="Almost there!"
-                    subtitle="We just need a few more details to set up your Imprint profile so you can start mapping with us."
+                    title={COPY.title}
+                    subtitle={COPY.subtitle}
                 >
                     <form onSubmit={onSubmit}>
                         <label className="font-semibold text-sm text-ink mb-2 block" htmlFor="frequentlyWalkedCities">
@@ -221,7 +227,7 @@ export default function CompleteProfile() {
                             onChange={(e) => setOccupation(e.target.value)}
                             maxLength={100}
                             placeholder={PROFILE_QUESTIONS.occupation.placeholder}
-                            className="w-full mb-4 px-3 py-2.5 text-sm rounded-control border border-line bg-surface-subtle text-ink placeholder:text-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                            className="w-full mb-4 p-3 text-base font-medium rounded-control border border-line bg-surface-subtle text-ink placeholder:text-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                         />
 
                         {selectField("accessibilityFamiliarity", accessibilityFamiliarity, setAccessibilityFamiliarity)}
@@ -231,17 +237,17 @@ export default function CompleteProfile() {
                         {radioField("walkingFrequency", "mb-8")}
 
                         <Button submit fullWidth disabled={loadingForm}>
-                            {loadingForm ? "Finalizing Profile..." : "Complete Setup"}
+                            {loadingForm ? COPY.submitting : COPY.submit}
                         </Button>
 
                         {serverError && (
-                            <p className="text-sm mt-6 text-danger font-medium text-center bg-danger-soft p-3 rounded-control border border-danger-border">
+                            <p role="alert" className="text-sm mt-6 text-danger font-medium text-center bg-danger-soft p-3 rounded-control border border-danger-border">
                                 {serverError}
                             </p>
                         )}
                     </form>
                 </AuthCard>
-            </Container>
+            </AuthScreen>
         </Page>
     );
 }

@@ -31,7 +31,7 @@ export type { ContainerProps, ContainerWidth } from './Container';
 export { default as Card } from './Card';
 export type { CardProps, CardElevation, CardPadding } from './Card';
 
-export { default as AuthCard } from './AuthCard';
+export { default as AuthCard, AuthScreen } from './AuthCard';
 export type { AuthCardProps } from './AuthCard';
 
 export { default as ConfirmDialog } from './ConfirmDialog';
@@ -63,7 +63,7 @@ export type { IconProps } from './icons';
 export { default as Badge } from './Badge';
 export type { BadgeProps, BadgeTone } from './Badge';
 
-export { H1, H2, H3, P, Meta } from './Typography';
+export { H1, H2, H3, P, Meta, Display, Headline } from './Typography';
 
 export { default as Logo } from './logo';
 

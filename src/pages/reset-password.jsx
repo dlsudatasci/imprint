@@ -3,7 +3,11 @@ import { useRouter } from "next/router";
 import Image from "next/image";
 import Link from "next/link";
 import Page from "@/ui/page";
-import { AuthCard, Button, Input } from "@/ui";
+import { AuthCard, AuthScreen, Button, Input } from "@/ui";
+import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from "@/util/validation";
+import { AUTH_COPY } from "@/features/auth/authCopy";
+
+const COPY = AUTH_COPY.reset;
 import { EyeIcon, EyeOffIcon } from "@/ui";
 
 /**
@@ -14,6 +18,11 @@ import { EyeIcon, EyeOffIcon } from "@/ui";
  *
  * That check is for convenience only. The endpoint verifies the token again
  * before changing anything.
+ *
+ * 16 Oct 2026 (IMPRINT_public_redesign.md): the length rule comes from
+ * MIN_PASSWORD_LENGTH and MAX_PASSWORD_LENGTH, the server's own (it was a 6
+ * typed in here), plus AuthScreen, wording from authCopy.js, autocomplete
+ * and announced results.
  */
 export default function ResetPassword() {
     const router = useRouter();
@@ -62,19 +71,19 @@ export default function ResetPassword() {
         setError("");
 
         if (!token || !email) {
-            setError("Invalid reset link. Please request a new one.");
+            setError(COPY.missingLink);
             setLoading(false);
             return;
         }
 
         if (newPassword !== confirmPassword) {
-            setError("Passwords do not match.");
+            setError(COPY.mismatch);
             setLoading(false);
             return;
         }
 
-        if (newPassword.length < 6) {
-            setError("Password must be at least 6 characters long.");
+        if (newPassword.length < MIN_PASSWORD_LENGTH || newPassword.length > MAX_PASSWORD_LENGTH) {
+            setError(COPY.lengthRule);
             setLoading(false);
             return;
         }
@@ -107,29 +116,28 @@ export default function ResetPassword() {
 
     return (
         <Page
-            title="Create New Password - Imprint"
+            title="Set a new password - Imprint"
             description="Create a new password for your Imprint account."
             contribute={false}
         >
-            <div className="min-h-screen w-full flex items-start justify-center pt-20 pb-12 px-4 sm:px-6 lg:px-8 relative z-10 bg-ground">
+            <AuthScreen>
                 <AuthCard
-                    className="mt-8"
                     masthead={
                         <Image
                             src="/images/logo/imprint.png"
-                            alt="Imprint Logo"
-                            width={80}
-                            height={80}
-                            className="w-20 h-20 object-contain"
+                            alt="Imprint"
+                            width={56}
+                            height={56}
+                            className="w-14 h-14 object-contain"
                         />
                     }
-                    title="Set new password"
-                    subtitle="Please enter your new password below."
+                    title={COPY.title}
+                    subtitle={COPY.subtitle}
                 >
                     {pageStatus === "loading" && (
                         <div className="w-full text-center space-y-4 py-8">
-                            <div className="mx-auto w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                            <p className="text-sm text-muted font-medium">Verifying reset link...</p>
+                            <div className="mx-auto w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin motion-reduce:animate-none"></div>
+                            <p role="status" className="text-sm text-muted font-medium">{COPY.checking}</p>
                         </div>
                     )}
 
@@ -140,11 +148,11 @@ export default function ResetPassword() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                 </svg>
                             </div>
-                            <p className="text-sm font-medium p-4 bg-danger-soft rounded-control text-danger border border-danger-border">
-                                This password reset link is invalid or has expired. Valid tokens can only be used once. Please request a new one.
+                            <p role="alert" className="text-sm font-medium p-4 bg-danger-soft rounded-control text-danger border border-danger-border">
+                                {COPY.invalid}
                             </p>
                             <Link href="/forgot-password" className="block pt-2">
-                                <Button fullWidth>Request New Link</Button>
+                                <Button fullWidth>{COPY.requestNew}</Button>
                             </Link>
                         </div>
                     )}
@@ -154,8 +162,9 @@ export default function ResetPassword() {
                             <div className="space-y-4 mb-6">
                                 <Input
                                     type={showPassword ? "text" : "password"}
-                                    placeholder="New Password"
-                                    aria-label="New Password"
+                                    placeholder={COPY.newPassword}
+                                    aria-label={COPY.newPassword}
+                                    autoComplete="new-password"
                                     value={newPassword}
                                     onChange={(e) => setNewPassword(e.target.value)}
                                     required
@@ -173,8 +182,9 @@ export default function ResetPassword() {
                                 />
                                 <Input
                                     type={showPassword ? "text" : "password"}
-                                    placeholder="Confirm New Password"
-                                    aria-label="Confirm New Password"
+                                    placeholder={COPY.confirmPassword}
+                                    aria-label={COPY.confirmPassword}
+                                    autoComplete="new-password"
                                     value={confirmPassword}
                                     onChange={(e) => setConfirmPassword(e.target.value)}
                                     required
@@ -183,7 +193,7 @@ export default function ResetPassword() {
                             </div>
 
                             <Button submit fullWidth disabled={loading}>
-                                {loading ? "Resetting..." : "Reset Password"}
+                                {loading ? COPY.submitting : COPY.submit}
                             </Button>
                         </form>
                     )}
@@ -195,16 +205,16 @@ export default function ResetPassword() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                                 </svg>
                             </div>
-                            <p className="text-sm font-medium p-3 bg-success-soft rounded-control text-success border border-success-border">
+                            <p role="status" className="text-sm font-medium p-3 bg-success-soft rounded-control text-success border border-success-border">
                                 {message}
                             </p>
                             <Link href="/login" className="block pt-2">
-                                <Button fullWidth>Return to Login</Button>
+                                <Button fullWidth>{COPY.toLogin}</Button>
                             </Link>
                         </div>
                     )}
                 </AuthCard>
-            </div>
+            </AuthScreen>
         </Page>
     );
 }

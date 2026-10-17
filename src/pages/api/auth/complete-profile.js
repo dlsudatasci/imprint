@@ -4,6 +4,9 @@ import { connectToDatabase } from "@/util/mongodb";
 import { validateDemographics, validateOccupation, validateCities } from "@/util/validators/completeProfile";
 import { newAccountFields } from "@/util/validators/newAccountRole";
 
+/** The activity-feed line written when a profile is completed (16 Oct 2026). */
+const PROFILE_ACTIVITY = "Completed your profile";
+
 /**
  * POST /api/auth/complete-profile — saves a contributor's demographic answers.
  *
@@ -113,6 +116,23 @@ export default function handler(req, res) {
                 { email: session.user.email },
                 updateDoc,
                 { upsert: true }
+            );
+
+            // The activity feed's entry for it (16 Oct 2026), which the
+            // navbar's notifications show under Earlier. A second write: the
+            // upsert above may create `activities` with $setOnInsert, and one
+            // update cannot also $push to the same field. Capped at the
+            // newest 100 like every other entry (userActivity.js).
+            await db.collection("users").updateOne(
+                { email: session.user.email },
+                {
+                    $push: {
+                        activities: {
+                            $each: [{ activity: PROFILE_ACTIVITY, date: new Date(), tag: "profile" }],
+                            $slice: -100,
+                        },
+                    },
+                }
             );
 
             return res.status(200).json({ message: "Profile successfully completed" });

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { Container } from "@/ui";
-import { cityStatsItems } from "./cityStatsItems";
+import { cityStatsItems, obstructionLabel } from "./cityStatsItems";
 
 /**
  * The contribution figures shown under the map on the landing page.
@@ -78,13 +78,13 @@ export default function CityStats({ selectedCity, onFirstLoad }) {
     <Container
       as="section"
       ref={sectionRef}
-      className={`pt-8 pb-12 transition-all duration-700 ease-out ${
-        isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+      className={`pt-8 pb-12 transition-[opacity,transform] duration-700 ease-out motion-reduce:transition-none ${
+        isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 motion-reduce:opacity-100 motion-reduce:translate-y-0"
       }`}
     >
       {/* Header */}
       <div className="mb-8">
-        <h2 className="text-2xl lg:text-3xl font-extrabold text-ink tracking-tight">
+        <h2 className="font-display text-3xl lg:text-4xl font-extrabold text-ink tracking-[-0.02em]">
           {selectedCity || "All Areas"}{" "}
           <span className="font-medium text-subtle">at a glance</span>
         </h2>
@@ -101,7 +101,7 @@ export default function CityStats({ selectedCity, onFirstLoad }) {
           ? skeleton(5)
           : statItems.map((item) => (
               <div key={item.label} className="py-5 border-t-2 border-primary/20">
-                <p className="text-3xl lg:text-4xl font-extrabold text-ink tracking-tight leading-none mb-1.5">
+                <p className="text-4xl lg:text-5xl font-extrabold text-ink tracking-[-0.03em] tabular-nums leading-none mb-2">
                   {item.value}
                 </p>
                 <p className="text-sm font-bold text-body">{item.label}</p>
@@ -113,10 +113,10 @@ export default function CityStats({ selectedCity, onFirstLoad }) {
       {/* Common Obstructions */}
       {!loading && stats?.commonObstructions?.length > 0 && (
         <div>
-          <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">
+          <h3 className="font-sans text-sm font-semibold text-ink mb-4">
             Common Obstructions
             {selectedCity && (
-              <span className="normal-case tracking-normal font-medium text-subtle">
+              <span className="font-medium text-muted">
                 {" "}in {selectedCity}
               </span>
             )}
@@ -124,11 +124,11 @@ export default function CityStats({ selectedCity, onFirstLoad }) {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6">
             {stats.commonObstructions.map((obs, i) => (
               <div key={obs.type} className="py-4 border-t-2 border-line-card">
-                <p className="text-2xl font-extrabold text-ink tracking-tight leading-none mb-1">
+                <p className="text-3xl font-extrabold text-ink tracking-[-0.03em] tabular-nums leading-none mb-1.5">
                   {obs.count}
                 </p>
-                <p className="text-sm font-bold text-body capitalize">
-                  {obs.type.replace(/_/g, " ")}
+                <p className="text-sm font-bold text-body">
+                  {obstructionLabel(obs.type)}
                 </p>
                 <p className="text-xs text-subtle mt-0.5">#{i + 1} most common</p>
               </div>

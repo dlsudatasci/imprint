@@ -2,7 +2,10 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import Page from "@/ui/page";
-import { AuthCard, Button, Input } from "@/ui";
+import { AuthCard, AuthScreen, Button, Input } from "@/ui";
+import { AUTH_COPY } from "@/features/auth/authCopy";
+
+const COPY = AUTH_COPY.forgot;
 
 /**
  * Requests a password reset link by email.
@@ -13,7 +16,12 @@ import { AuthCard, Button, Input } from "@/ui";
  * account.
  *
  * Only applies to password accounts. Someone who signed up with Google has no
- * password to reset and receives nothing.
+ * password to reset and receives nothing, which the page now says under the
+ * form (16 Oct 2026), so they are not left waiting for an email.
+ *
+ * 16 Oct 2026 (IMPRINT_public_redesign.md): the same AuthScreen as the other
+ * auth pages (it had its own full-height wrapper), wording from authCopy.js,
+ * autocomplete, and the result announced to screen readers.
  */
 export default function ForgotPassword() {
     const [email, setEmail] = useState("");
@@ -57,25 +65,24 @@ export default function ForgotPassword() {
             description="Request a password reset link for your Imprint account."
             contribute={false}
         >
-            <div className="min-h-screen w-full flex items-start justify-center pt-20 pb-12 px-4 sm:px-6 lg:px-8 relative z-10 bg-ground">
+            <AuthScreen>
                 <AuthCard
-                    className="mt-8"
                     masthead={
                         <Image
                             src="/images/logo/imprint.png"
-                            alt="Imprint Logo"
-                            width={80}
-                            height={80}
-                            className="w-20 h-20 object-contain"
+                            alt="Imprint"
+                            width={56}
+                            height={56}
+                            className="w-14 h-14 object-contain"
                         />
                     }
-                    title="Reset your password"
-                    subtitle="Enter your email address and we'll send you a link to reset your password."
+                    title={COPY.title}
+                    subtitle={COPY.subtitle}
                     footer={
                         <Link href="/login">
                             <span className="font-semibold text-muted hover:text-ink transition-colors duration-300 cursor-pointer inline-flex items-center justify-center gap-2">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-                                Back to log in
+                                {COPY.back}
                             </span>
                         </Link>
                     }
@@ -83,8 +90,9 @@ export default function ForgotPassword() {
                     <form onSubmit={handleSubmit} className="w-full">
                         <Input
                             type="email"
-                            placeholder="Email Address"
-                            aria-label="Email Address"
+                            placeholder={COPY.email}
+                            aria-label={COPY.email}
+                            autoComplete="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
@@ -93,17 +101,18 @@ export default function ForgotPassword() {
                         />
 
                         {message && (
-                            <p className="text-xs mb-4 text-success font-medium p-3 bg-success-soft rounded-control text-center border border-success-border">
+                            <p role="status" className="text-sm mb-4 text-success font-medium p-3 bg-success-soft rounded-control text-center border border-success-border">
                                 {message}
                             </p>
                         )}
 
                         <Button submit fullWidth disabled={loading}>
-                            {loading ? "Sending..." : "Send Reset Link"}
+                            {loading ? COPY.submitting : COPY.submit}
                         </Button>
+                        <p className="mt-4 text-xs text-muted text-center">{COPY.googleNote}</p>
                     </form>
                 </AuthCard>
-            </div>
+            </AuthScreen>
         </Page>
     );
 }

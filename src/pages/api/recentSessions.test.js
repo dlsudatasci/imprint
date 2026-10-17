@@ -157,6 +157,26 @@ describe("GET /api/recentSessions", () => {
       expect(res._json.sessions[0].averageScore).toBeNull();
     });
 
+    // 17 Oct 2026 (IMPRINT_dashboard_audit.md)
+    it("charts obstructions only and names the city as people write it", async () => {
+      const { annotationsCol } = setupMocks({ completedSessions: completed });
+      annotationsCol.find.mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([
+          {
+            imageID: 1, city: "quezoncity",
+            selectedObjectsID: [{ obstructs: true, comment: "tree" }, { obstructs: false, comment: "car" }, { obstructs: false, comment: "not_an_object" }],
+            newObjects: [{ obstructs: true, comment: "motorcycle" }],
+          },
+          { imageID: 2, city: "quezoncity", selectedObjectsID: [{ obstructs: false, comment: "tree" }], newObjects: [] },
+        ]),
+      });
+      const res = createMockRes();
+      await handler(createMockReq({ method: "GET" }), res);
+
+      expect(res._json.sessions[0].chartData).toEqual([2, 0]);
+      expect(res._json.sessions[0].location).toBe("Quezon City");
+    });
+
     it("still averages contributors' accessibility answers", async () => {
       const { annotationsCol } = setupMocks({ completedSessions: completed });
       annotationsCol.find.mockReturnValue({

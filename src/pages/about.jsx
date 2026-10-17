@@ -4,7 +4,7 @@
 import Page from '@/ui/page';
 import AboutSection from '@/features/about';
 
-export default function LandingPage() {
+export default function AboutPage() {
   return (
     <Page
       title="About - Imprint"

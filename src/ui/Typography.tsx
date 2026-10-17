@@ -25,6 +25,48 @@ export function H1({ className, children }: Props) {
   );
 }
 
+/**
+ * The display sizes (16 Oct 2026, apple-design typography): tracking tightens
+ * and leading closes up as the type grows, so the size, tracking and leading
+ * are set together here rather than at each call site. `cn` does not merge
+ * Tailwind classes, so a page passing `text-6xl` to H1 could lose to H1's own
+ * `lg:text-5xl`. Use these instead of resizing H1 and H2.
+ *
+ * Display: the one big heading at the top of a public page (h1 by default).
+ * Headline: a section's statement heading on a long-form page (h2 by default).
+ */
+type DisplayProps = Props & { as?: 'h1' | 'h2' | 'h3'; id?: string };
+
+export function Display({ as: Tag = 'h1', id, className, children }: DisplayProps) {
+  return (
+    <Tag
+      id={id}
+      className={cn(
+        'font-display font-extrabold text-ink text-balance',
+        'text-5xl leading-[1.04] tracking-[-0.03em] sm:text-6xl xl:text-7xl',
+        className,
+      )}
+    >
+      {children}
+    </Tag>
+  );
+}
+
+export function Headline({ as: Tag = 'h2', id, className, children }: DisplayProps) {
+  return (
+    <Tag
+      id={id}
+      className={cn(
+        'font-display font-extrabold text-ink text-balance',
+        'text-3xl leading-[1.1] tracking-[-0.02em] sm:text-4xl lg:text-5xl lg:leading-[1.06] lg:tracking-[-0.025em]',
+        className,
+      )}
+    >
+      {children}
+    </Tag>
+  );
+}
+
 /** Section heading within a page, and card titles. */
 export function H2({ className, children }: Props) {
   return <h2 className={cn(heading, 'text-3xl', className)}>{children}</h2>;

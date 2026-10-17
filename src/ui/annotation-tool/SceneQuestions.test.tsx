@@ -72,3 +72,16 @@ describe("SceneQuestions", () => {
     expect(option("overallAccessibility:1").className).not.toContain("border-primary bg-primary/10");
   });
 });
+
+// apple-design check, 17 Oct 2026: the answers were 9 and 10 px on a laptop
+describe("answer labels", () => {
+  it("are 11 px at the least on a laptop, 12 px in the sheet", () => {
+    const desktop = renderToStaticMarkup(<SceneQuestions sceneLevel={empty} variant="desktop" onAnswer={() => undefined} />);
+    expect(desktop).not.toMatch(/text-\[(9|10)px\]/);
+    for (const label of ["Wide", "Easy to traverse", "Somewhat uncomfortable", "Easily accessible", "Not accessible"]) {
+      expect(desktop).toMatch(new RegExp(`text-\\[11px\\][^"]*">${label}<`));
+    }
+    const sheet = renderToStaticMarkup(<SceneQuestions sceneLevel={empty} variant="sheet" onAnswer={() => undefined} />);
+    expect(sheet).not.toMatch(/text-\[(9|10|11)px\]/);
+  });
+});

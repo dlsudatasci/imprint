@@ -102,6 +102,17 @@ const Caption = forwardRef(function Caption({ active, children }, ref) {
 });
 
 /**
+ * The screen below the navbar (16 Oct 2026). The public pages' navbar became
+ * a sticky 64 px bar (`--nav-h`), so the frame sticks under it and is that
+ * much shorter, and the preview is never under the bar. svh where the browser
+ * has it, so a phone's address bar showing and hiding does not change it.
+ * useScrollProgress reads the frame's `top`, so the scroll still starts and
+ * ends where the frame starts and stops sticking.
+ */
+const SCREEN_BELOW_NAV = "h-[calc(100vh-var(--nav-h))] supports-[height:100svh]:h-[calc(100svh-var(--nav-h))]";
+const STICKY_FRAME = `sticky top-[var(--nav-h)] ${SCREEN_BELOW_NAV}`;
+
+/**
  * The preview's frame: in the page's margins like the map above it, as tall
  * as the screen less a margin, bordered and rounded like the map.
  */
@@ -122,7 +133,7 @@ function ScrollPreview() {
     // phone's address bar showing and hiding does not change the track, and
     // vh before that. Tailwind needs the classes written out in full.
     <div ref={trackRef} data-track className="relative h-[460vh] supports-[height:100svh]:h-[460svh]">
-      <div ref={frameRef} className="sticky top-0 h-screen supports-[height:100svh]:h-svh">
+      <div ref={frameRef} className={STICKY_FRAME}>
         <Container className="h-full py-4 lg:py-6">
           <div
             data-frame
@@ -149,7 +160,7 @@ function StepPreview() {
   const frame = demoFrame(STILL_TICKS[index] / TICKS);
   const total = COPY.chapters.length;
   return (
-    <Container className="h-screen supports-[height:100svh]:h-svh py-4 lg:py-6">
+    <Container className={cn(SCREEN_BELOW_NAV, "py-4 lg:py-6")}>
       <div className={FRAME_BOX}>
         <div className="absolute inset-0" inert aria-hidden="true">
           <DemoStage frame={frame} captionRef={captionRef} instant />
@@ -172,9 +183,9 @@ function StepPreview() {
 export default function HowItWorks() {
   const reduced = useMediaQuery(REDUCED_MOTION_QUERY);
   return (
-    <section aria-labelledby="how-it-works-title" className="pt-16 lg:pt-24">
+    <section id="how-it-works" aria-labelledby="how-it-works-title" className="scroll-mt-16 pt-16 lg:pt-24">
       <Container className="text-center pb-8 lg:pb-12">
-        <p className="text-xs font-semibold uppercase tracking-wider text-primary">{COPY.eyebrow}</p>
+        <p className="text-sm font-semibold text-primary">{COPY.eyebrow}</p>
         <H2 className="mt-3 text-4xl sm:text-5xl lg:text-6xl tracking-tight">
           <span id="how-it-works-title">{COPY.title}</span>
         </H2>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { summarizeObjectStep, findNearDuplicates, toDecideFirst } from "./objectStep.js";
+import { summarizeObjectStep, findNearDuplicates, toDecideFirst, unfinishedObjectIds } from "./objectStep.js";
 
 const mark = (x, y, width, height) => ({ type: "RECT", x, y, width, height });
 
@@ -29,10 +29,45 @@ describe("summarizeObjectStep", () => {
     expect(summarizeObjectStep(boxes).toDecideIds).toEqual(["s3", "s4"]);
   });
 
+  it("lists the real boxes with no category from the list: kept suggestions, then drawn boxes (17 Oct 2026)", () => {
+    expect(summarizeObjectStep(boxes).unlabeledIds).toEqual(["s0", "d1"]);
+    // A box just added has no comment at all
+    expect(summarizeObjectStep([{ id: "d9", editable: true, selected: false, mark: mark(0, 0, 10, 10) }]).unlabeledIds).toEqual(["d9"]);
+  });
+
   it("handles an image with no boxes", () => {
     expect(summarizeObjectStep([])).toEqual({
-      suggestions: 0, decided: 0, kept: 0, notAnObject: 0, drawn: 0, unlabeled: 0, toDecideIds: [],
+      suggestions: 0, decided: 0, kept: 0, notAnObject: 0, drawn: 0, unlabeled: 0, unlabeledIds: [], toDecideIds: [],
     });
+  });
+});
+
+describe("unfinishedObjectIds", () => {
+  it("is the suggestions still to decide, then the real boxes with no category (17 Oct 2026)", () => {
+    const boxes = [
+      { id: "s2", editable: false, selected: true, comment: "car", mark: mark(0, 0, 10, 10) },
+      { id: "s1", editable: false, selected: false, comment: "tree", mark: mark(0, 0, 10, 10) },
+      { id: "s3", editable: false, selected: false, isRejected: true, comment: "not_an_object", mark: mark(0, 0, 10, 10) },
+      { id: "d1", editable: true, selected: false, mark: mark(0, 0, 10, 10) },
+      { id: "d2", editable: true, selected: false, comment: "bollard", mark: mark(0, 0, 10, 10) },
+    ];
+    expect(unfinishedObjectIds(boxes)).toEqual(["s1", "d1"]);
+    // Once the new box has a category and the tree is kept, nothing is left
+    const done = boxes.map((b) => (b.id === "d1" ? { ...b, comment: "bench" } : b.id === "s1" ? { ...b, selected: true } : b));
+    expect(unfinishedObjectIds(done)).toEqual([]);
+    expect(unfinishedObjectIds([])).toEqual([]);
+    expect(unfinishedObjectIds(undefined)).toEqual([]);
+  });
+
+  it("puts a new box with no category among the first chips, ahead of decided ones and in the order given", () => {
+    const sorted = [
+      { id: "s1", editable: false, selected: true, comment: "car" },
+      { id: "s2", editable: false, selected: false, comment: "tree" },
+      { id: "s3", editable: false, selected: false, isRejected: true, comment: "not_an_object" },
+      { id: "d1", editable: true, selected: false, comment: "bench" },
+      { id: "d2", editable: true, selected: false },
+    ].map((b) => ({ ...b, mark: mark(0, 0, 10, 10) }));
+    expect(toDecideFirst(sorted, unfinishedObjectIds(sorted)).map((b) => b.id)).toEqual(["s2", "d2", "s1", "s3", "d1"]);
   });
 });
 

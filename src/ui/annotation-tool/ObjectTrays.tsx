@@ -82,8 +82,8 @@ const toneClass = (tone: Tone, drawn: boolean) => {
   }
 };
 
-/** A pencil: this box was drawn by the contributor. */
-function DrawnMark() {
+/** A pencil: this box was drawn by the contributor, or from 17 Oct 2026 by the annotator (their chips use it too). */
+export function DrawnMark() {
   return (
     <svg
       data-drawn

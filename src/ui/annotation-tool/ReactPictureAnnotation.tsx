@@ -58,7 +58,7 @@ import {
   sidewalkToolbarStatus,
   sidewalkTools,
 } from "@/features/annotate/sidewalkTools";
-import { summarizeObjectStep, toDecideFirst } from "@/features/annotate/objectStep";
+import { toDecideFirst, unfinishedObjectIds } from "@/features/annotate/objectStep";
 import { SIDEWALK_GUIDE } from "@/features/annotate/sidewalkGuide";
 import { normalizeSidewalkMask, summarizeSidewalkMask } from "@/util/validators/sidewalkMask";
 
@@ -71,7 +71,7 @@ import SidewalkAnnotationState from "./annotation/SidewalkAnnotationState";
 import { paintSidewalk } from "./paintSidewalk";
 import DefaultInputSection, { type PanelVariant } from "./DefaultInputSection";
 import ObjectInputSection from "./ObjectInputSection";
-import ObjectTrays, { ObjectTraysPeek, SheetStepHeading } from "./ObjectTrays";
+import ObjectTrays, { ObjectTraysPeek, SheetStepHeading, DrawnMark } from "./ObjectTrays";
 import {
   defaultShapeStyle,
   drawnBoxStyle,
@@ -1540,7 +1540,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       );
     }
 
-    const toDecide = summarizeObjectStep(this.currentAnnotationData).toDecideIds;
+    // What is left (17 Oct 2026): the suggestions still to decide and the boxes
+    // with no category, in the chips' order, so Next opens the first chip
+    const left = unfinishedObjectIds(this.currentAnnotationData);
+    const chips = toDecideFirst(sortedAnnotations, left);
+    const nextId = chips.length > 0 && left.includes(chips[0].id) ? chips[0].id : null;
     // Show all and Hide all beside the step's name (14 Oct 2026), so a hidden
     // box is a tap away without pulling the sheet up
     const hiddenCount = sortedAnnotations.filter((box) => this.state.hiddenBoxIds.includes(box.id)).length;
@@ -1554,26 +1558,27 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           onHideAll={this.hideAllBoxes}
         />
         <div className="h-11 flex items-center justify-between gap-3">
-          {toDecide.length > 0 ? (
+          {nextId ? (
             <>
               <span className="text-sm font-semibold text-ink">
-                To decide <span className="font-medium text-muted tabular-nums">{toDecide.length}</span>
+                To decide <span className="font-medium text-muted tabular-nums">{left.length}</span>
               </span>
               <button
                 type="button"
-                onClick={() => this.selectBoxById(toDecide[0])}
+                onClick={() => this.selectBoxById(nextId)}
                 className="h-11 px-4 rounded-control border border-primary bg-primary text-white text-sm font-bold"
               >
                 {TRAY_COPY.next}
               </button>
             </>
           ) : (
-            <span className="text-sm font-semibold text-success">Every suggestion is decided.</span>
+            <span className="text-sm font-semibold text-success">Every box is decided.</span>
           )}
         </div>
-        {/* The suggestions still to decide first (14 Oct 2026), so none is out of sight along the row */}
+        {/* What is left first, so none is out of sight along the row: the suggestions
+            still to decide (14 Oct 2026) and boxes with no category (17 Oct 2026) */}
         <ul aria-label="Objects in this image" className={chipRow}>
-          {toDecideFirst(sortedAnnotations, toDecide).map((box) => {
+          {chips.map((box) => {
             const tag = this.objectTag(box);
             return (
               <li key={box.id} className="shrink-0">
@@ -1582,8 +1587,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   onClick={() => this.selectBoxById(box.id)}
                   className="h-10 px-2.5 inline-flex items-center gap-1.5 rounded-control border border-line bg-surface whitespace-nowrap"
                 >
+                  {box.editable && <DrawnMark />}
                   <span className="text-xs font-semibold text-ink">{labelOf(box)}</span>
-                  <span className={`text-xs font-bold rounded-control px-1 ${tag.className}`}>{tag.text}</span>
+                  {box.editable && <span className="sr-only">, {TRAY_COPY.drawnTitle.toLowerCase()}</span>}
+                  {tag && <span className={`text-xs font-bold rounded-control px-1 ${tag.className}`}>{tag.text}</span>}
                 </button>
               </li>
             );
@@ -1800,7 +1807,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     // Nothing selected: what is left, and the way to the lists, Step 2 and Next Image
     const count = this.annotatorObjectStep
-      ? summarizeObjectStep(this.currentAnnotationData).toDecideIds.length
+      ? unfinishedObjectIds(this.currentAnnotationData).length
       : buildTrays(this.currentAnnotationData).toDecide.length;
     if (count === 0 && sheetUp) return null;
     return (
@@ -2971,10 +2978,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * Annotators: the "Objects in This Image" card under the canvas. Keeps the
    * box-review-section id, which the tutorial points at.
    */
-  /** An annotator box's status, as its chip shows it: Drawn, Kept, Not an object or To decide. */
-  private objectTag(box: IAnnotation) {
-    if (box.editable) return { text: "Drawn", className: "bg-blue-50 text-primary border border-blue-200" };
-    if (box.selected === true) return { text: "Kept", className: "bg-primary text-white" };
+  /**
+   * An annotator box's status, as its chip shows it: To decide, Kept, Not an
+   * object or No category, or null for a drawn box with a category. From
+   * 17 Oct 2026 a drawn box has the contributors' pencil before its name
+   * instead of a Drawn tag, and a box still needing a category (a box just
+   * added, or a kept suggestion whose category is not on the list) says so,
+   * in the same red as To decide, since both are left to do.
+   */
+  private objectTag(box: IAnnotation): { text: string; className: string } | null {
+    const noCategory = { text: "No category", className: "bg-danger-soft text-danger" };
+    if (box.editable) return isTaxonomyCategory(box.comment) ? null : noCategory;
+    if (box.selected === true) return isTaxonomyCategory(box.comment) ? { text: "Kept", className: "bg-primary text-white" } : noCategory;
     if (box.comment === NOT_AN_OBJECT) return { text: "Not an object", className: "bg-surface-subtle text-muted border border-line" };
     return { text: "To decide", className: "bg-danger-soft text-danger" };
   }
@@ -3025,7 +3040,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           )}
         </div>
         <ul className="flex flex-wrap gap-2">
-          {(sheet ? toDecideFirst(sortedAnnotations, summarizeObjectStep(this.currentAnnotationData).toDecideIds) : sortedAnnotations).map((box) => {
+          {(sheet ? toDecideFirst(sortedAnnotations, unfinishedObjectIds(this.currentAnnotationData)) : sortedAnnotations).map((box) => {
             const tag = tagFor(box);
             const isHidden = hidden.includes(box.id);
             const isOpen = box.id === openId;
@@ -3042,8 +3057,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                   className="flex items-center gap-1.5 pl-2 pr-1 py-1 cursor-pointer rounded-control"
                   onClick={() => this.selectBoxById(box.id)}
                 >
+                  {box.editable && <DrawnMark />}
                   <span className="text-xs font-semibold text-ink whitespace-nowrap">{labelOf(box)}</span>
-                  <span className={`${sheet ? "text-xs" : "text-[10px]"} font-bold rounded-control px-1 whitespace-nowrap ${tag.className}`}>{tag.text}</span>
+                  {box.editable && <span className="sr-only">, {TRAY_COPY.drawnTitle.toLowerCase()}</span>}
+                  {tag && <span className={`${sheet ? "text-xs" : "text-[10px]"} font-bold rounded-control px-1 whitespace-nowrap ${tag.className}`}>{tag.text}</span>}
                 </button>
                 <button
                   type="button"

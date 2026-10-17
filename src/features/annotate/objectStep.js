@@ -17,6 +17,8 @@ export function summarizeObjectStep(annotations = []) {
   const suggestions = boxes.filter((b) => !b.editable);
   const drawnBoxes = boxes.filter((b) => b.editable);
   const keptBoxes = suggestions.filter((b) => b.selected === true);
+  // Real boxes with no category from the list yet: a box just drawn or added, usually
+  const unlabeledIds = [...keptBoxes, ...drawnBoxes].filter((b) => !isTaxonomyCategory(b.comment)).map((b) => b.id);
 
   return {
     suggestions: suggestions.length,
@@ -24,9 +26,20 @@ export function summarizeObjectStep(annotations = []) {
     kept: keptBoxes.length,
     notAnObject: suggestions.filter((b) => b.selected !== true && isNotAnObject(b)).length,
     drawn: drawnBoxes.length,
-    unlabeled: [...keptBoxes, ...drawnBoxes].filter((b) => !isTaxonomyCategory(b.comment)).length,
+    unlabeled: unlabeledIds.length,
+    unlabeledIds,
     toDecideIds: suggestions.filter((b) => !isDecidedForObjects(b)).map((b) => b.id),
   };
+}
+
+/**
+ * The boxes Step 1 still waits on (17 Oct 2026, an annotators' suggestion):
+ * the suggestions still to decide, and the real boxes with no category, such
+ * as a box just added. Both block Next (validateObjectStep).
+ */
+export function unfinishedObjectIds(annotations = []) {
+  const { toDecideIds, unlabeledIds } = summarizeObjectStep(annotations);
+  return [...toDecideIds, ...unlabeledIds];
 }
 
 /**
@@ -49,10 +62,12 @@ export function findNearDuplicates(annotations = [], threshold = 0.8) {
 }
 
 /**
- * The boxes with the suggestions still to decide first, each group in the
- * order given (14 Oct 2026, phones and tablets). The chips at the top of the
- * annotators' sheet scroll sideways, so a suggestion left to decide could sit
- * out of sight behind the decided ones. The names ("Tree #1") do not change.
+ * The boxes with the given ones first, each group in the order given (14 Oct
+ * 2026, phones and tablets). The chips at the top of the annotators' sheet
+ * scroll sideways, so a box left to finish could sit out of sight behind the
+ * decided ones. The tool passes unfinishedObjectIds: suggestions still to
+ * decide and, from 17 Oct 2026, boxes with no category. The names
+ * ("Tree #1") do not change.
  */
 export function toDecideFirst(boxes = [], toDecideIds = []) {
   const toDecide = new Set(toDecideIds || []);

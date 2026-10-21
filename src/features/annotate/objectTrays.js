@@ -88,18 +88,21 @@ export function trayOf(box) {
  * @param {Array<object> | null | undefined} boxes
  * @param {{ labels?: Map<string, string | null> }} [options]
  */
+/** A box's name in the lists. A Not an object box is named by the model's own category ("Car"), since its label only repeats that. */
+function trayLabel(box, tray, labels) {
+  const original = box.initialState?.comment;
+  const removedLabel = tray === TRAYS.removed && original && original !== NOT_AN_OBJECT ? formatLabel(original) : null;
+  return removedLabel || labels?.get(box.id) || formatLabel(box.comment) || FALLBACK_LABEL;
+}
+
 export function buildTrays(boxes, { labels } = {}) {
   const trays = { toDecide: [], notObstructions: [], obstructions: [], removed: [] };
   for (const box of boxes || []) {
     const tray = trayOf(box);
     if (!tray) continue;
-    // Under the "Not an object" heading a box is named by the model's own
-    // category ("Car"), since its current label only repeats the heading
-    const original = box.initialState?.comment;
-    const removedLabel = tray === TRAYS.removed && original && original !== NOT_AN_OBJECT ? formatLabel(original) : null;
     trays[tray].push({
       id: box.id,
-      label: removedLabel || labels?.get(box.id) || formatLabel(box.comment) || FALLBACK_LABEL,
+      label: trayLabel(box, tray, labels),
       drawn: box.editable === true,
     });
   }
@@ -119,4 +122,69 @@ export function ghostSlotCount(itemCount, toDecideCount, objectCount) {
   if (objectCount === 0) return 3;
   if (!toDecideCount) return 0;
   return itemCount === 0 ? 3 : 1;
+}
+
+/**
+ * Contributors on a phone or tablet (21 Oct 2026): the top of the answers
+ * sheet shows every object in one row of chips, as the annotators' does,
+ * instead of the Not obstructions and Obstructions rows. What is left comes
+ * first, so going through the suggestions is a matter of the first chip, and
+ * each chip says what it is. The lists themselves are still there with the
+ * sheet pulled up.
+ *
+ *   toDecide        no answer yet (a drawn box with no category included)
+ *   noSeverity      answered Yes with no severity, which also stops Next Image
+ *   obstruction     answered Yes
+ *   notObstruction  answered No
+ *   removed         Not an object
+ */
+export const PEEK_STATUS = Object.freeze({
+  toDecide: "toDecide",
+  noSeverity: "noSeverity",
+  obstruction: "obstruction",
+  notObstruction: "notObstruction",
+  removed: "removed",
+});
+
+export const PEEK_TAG = Object.freeze({
+  toDecide: "To decide",
+  noSeverity: "No severity",
+  obstruction: "Obstruction",
+  notObstruction: "Not an obstruction",
+  removed: "Not an object",
+});
+
+const LEFT = new Set([PEEK_STATUS.toDecide, PEEK_STATUS.noSeverity]);
+
+/** A contributor's object as its chip shows it, or null for anything that is not a box. */
+export function peekStatus(box, { askSeverity = true } = {}) {
+  const tray = trayOf(box);
+  if (tray === TRAYS.toDecide) return PEEK_STATUS.toDecide;
+  if (tray === TRAYS.removed) return PEEK_STATUS.removed;
+  if (tray === TRAYS.notObstructions) return PEEK_STATUS.notObstruction;
+  if (tray === TRAYS.obstructions) return askSeverity && box.severity == null ? PEEK_STATUS.noSeverity : PEEK_STATUS.obstruction;
+  return null;
+}
+
+/**
+ * The chips, in the order given (the caller passes the lists' order), with
+ * what is left first. Each is { id, label, drawn, status }. `left` counts what
+ * is left and `nextId` is the first of it, for Next. Does not mutate the boxes.
+ *
+ * @param {Array<object> | null | undefined} boxes
+ * @param {{ labels?: Map<string, string | null>, askSeverity?: boolean }} [options]
+ */
+export function buildPeekChips(boxes, { labels, askSeverity = true } = {}) {
+  const items = [];
+  for (const box of boxes || []) {
+    const status = peekStatus(box, { askSeverity });
+    if (!status) continue;
+    items.push({ id: box.id, label: trayLabel(box, trayOf(box), labels), drawn: box.editable === true, status });
+  }
+  const left = items.filter((item) => LEFT.has(item.status));
+  return {
+    chips: [...left, ...items.filter((item) => !LEFT.has(item.status))],
+    left: left.length,
+    nextId: left.length > 0 ? left[0].id : null,
+  };
 }

@@ -235,10 +235,10 @@ export default function ContributePage({ session, liveUser = null }) {
           </div>
         </Container>
       </section>
-      {/* The lower dashboard (Recent Sessions, the distance banner, contribution
-          figures) is for contributors only. Annotators see none of it (6 Oct 2026).
-          userRole comes from the database, overlaid in getServerSideProps. */}
-      {userRole !== "annotator" && <DashboardInfo username={username} userId={userId} />}
+      {/* The lower dashboard (Recent sessions, Your progress), for both roles.
+          Annotators saw none of it from 6 Oct 2026; it is back for them from
+          21 Oct 2026, Recent sessions included. */}
+      <DashboardInfo username={username} userId={userId} />
       <ConfirmDialog
         open={confirmStop}
         title={COPY.stopDialog.title}

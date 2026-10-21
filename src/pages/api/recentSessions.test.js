@@ -192,9 +192,9 @@ describe("GET /api/recentSessions", () => {
     });
   });
 
-  // Annotators see no Recent Sessions list (4 Oct 2026)
-  it("returns no sessions to an annotator without reading the sessions collection", async () => {
-    const { sessionsCol, usersCol } = setupMocks({
+  // Annotators see their Recent sessions again (21 Oct 2026; none from 4 Oct)
+  it("returns an annotator's sessions too", async () => {
+    const { sessionsCol } = setupMocks({
       userRole: "annotator",
       completedSessions: [{ _id: "s1", userId: MOCK_USER_ID, status: "completed", completedImageIDs: [1], createdAt: new Date() }],
     });
@@ -202,9 +202,7 @@ describe("GET /api/recentSessions", () => {
     await handler(createMockReq({ method: "GET" }), res);
 
     expect(res._status).toBe(200);
-    expect(res._json).toEqual({ sessions: [] });
-    expect(usersCol.findOne).toHaveBeenCalledWith(expect.anything(), { projection: { role: 1 } });
-    expect(sessionsCol.find).not.toHaveBeenCalled();
-    expect(sessionsCol.findOne).not.toHaveBeenCalled();
+    expect(sessionsCol.find).toHaveBeenCalled();
+    expect(res._json.sessions).toHaveLength(1);
   });
 });

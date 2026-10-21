@@ -25,7 +25,7 @@ import { isTaxonomyCategory } from "@/util/taxonomy";
 import { isBelowMinimumSize, clampPointToImage, keepMarkInside, markArea, normalizeMark, pickNearSmallBox } from "@/util/boxGeometry";
 import { normalizeSubmittedMarks } from "@/util/validators/annotationSubmit";
 import { findNearDuplicates } from "@/features/annotate/objectStep";
-import { buildTrays, TRAY_COPY, sceneProgressLine } from "@/features/annotate/objectTrays";
+import { buildTrays, buildPeekChips, TRAY_COPY, sceneProgressLine } from "@/features/annotate/objectTrays";
 import { toggleHiddenId, withoutHiddenId, isDoubleTap, BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
 import { createEditSaver } from "@/util/editSaver";
 import { TAXONOMY_GUIDE, TAXONOMY_RULES } from "@/features/annotate/taxonomyGuide";
@@ -59,6 +59,7 @@ import {
   sidewalkTools,
 } from "@/features/annotate/sidewalkTools";
 import { toDecideFirst, unfinishedObjectIds } from "@/features/annotate/objectStep";
+import { messageVisibleMs } from "@/features/annotate/stepMessage";
 import { SIDEWALK_GUIDE } from "@/features/annotate/sidewalkGuide";
 import { normalizeSidewalkMask, summarizeSidewalkMask } from "@/util/validators/sidewalkMask";
 
@@ -71,7 +72,7 @@ import SidewalkAnnotationState from "./annotation/SidewalkAnnotationState";
 import { paintSidewalk } from "./paintSidewalk";
 import DefaultInputSection, { type PanelVariant } from "./DefaultInputSection";
 import ObjectInputSection from "./ObjectInputSection";
-import ObjectTrays, { ObjectTraysPeek, SheetStepHeading, DrawnMark } from "./ObjectTrays";
+import ObjectTrays, { ObjectTraysPeek, SheetStepHeading, DrawnMark, SheetNextButton } from "./ObjectTrays";
 import {
   defaultShapeStyle,
   drawnBoxStyle,
@@ -405,6 +406,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       overallAccessibility: null as number | null,
     },
     error: null as string | null,
+    // Counts each message shown, so the same one shown again restarts its
+    // timer (21 Oct 2026, showMessage)
+    errorSeq: 0,
     isRejected: false,
     obstructs: undefined as boolean | undefined,
     severity: undefined as number | null | undefined,
@@ -863,6 +867,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   public componentDidUpdate = (preProps: IReactPictureAnnotationProps, prevState: this["state"]) => {
     const { image } = this.props;
+    if (prevState) this.timeMessage(prevState);
     // Contributors' Step 2 answers are saved as they change, like the boxes
     if (prevState && prevState.sceneLevel !== this.state.sceneLevel) this.scheduleEditSave();
     // A switch between the desktop and sheet layouts (an iPad rotated) builds
@@ -962,6 +967,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   }
 
   public componentWillUnmount = () => {
+    if (this.messageTimer) clearTimeout(this.messageTimer);
     this.resizeObserver?.disconnect();
     this.sheetAreaObserver?.disconnect();
     this.cancelViewAnimation();
@@ -1071,7 +1077,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         onDelete={this.onDelete}
         onClose={this.onClose}
         belowMinimumSize={this.selectedBelowMinimumSize()}
-        onHide={this.inBoxStep ? this.hideOpenBox : undefined}
+        // In the sheet the eye is on the line with the box's name instead (21 Oct 2026)
+        onHide={this.inBoxStep && variant !== "sheet" ? this.hideOpenBox : undefined}
         variant={variant}
       />
     ) : inputElement(
@@ -1095,7 +1102,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.onRestoreObject,
       this.state.originalComment,
       variant,
-      this.inBoxStep ? this.hideOpenBox : undefined,
+      this.inBoxStep && variant !== "sheet" ? this.hideOpenBox : undefined,
     );
 
     // The canvas, the same in every layout
@@ -1237,17 +1244,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
         </div>{/* end flex row */}
 
-        {/* Error Message Display */}
-        {this.state.error && (
-          <div className="flex justify-center mt-6 mb-4">
-            <div className="bg-danger-soft border border-danger-border text-danger px-6 py-3 rounded-control flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="shrink-0 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-              <span className="font-medium">{this.state.error}</span>
-            </div>
-          </div>
-        )}
+        {/* The message (showMessage). Always in the page, so it can arrive and
+            leave the same way (21 Oct 2026): it fades in as its space opens, and
+            out as its space closes, so Next Image glides instead of jumping. */}
+        {this.renderDesktopMessage()}
 
         <div className="flex justify-center my-10 gap-4">
           {this.renderActions("desktop")}
@@ -1364,7 +1364,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     sortedAnnotations: IAnnotation[],
     displayLabels: Map<string, string>,
   ) {
-    const { showInput, sheetSnap, sheetCollapsed, error } = this.state;
+    const { showInput, sheetSnap, sheetCollapsed } = this.state;
 
     const open = showInput ? this.selectedShape()?.getAnnotationData() : null;
     const openLabel = open
@@ -1376,11 +1376,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     let header: React.ReactNode;
     let body: React.ReactNode;
     if (showInput) {
-      header = (
-        <div className="h-11 px-4 pb-2 flex items-center">
-          <span className="text-sm font-semibold text-ink truncate">{openLabel || TRAY_COPY.fallbackLabel}</span>
-        </div>
-      );
+      header = this.renderSheetPanelTitle(openLabel || TRAY_COPY.fallbackLabel, "h-11 px-4");
       body = <div className="px-3 pt-1 pb-4">{panel("sheet")}</div>;
     } else if (annotator) {
       header = this.renderAnnotatorSheetHeader(sortedAnnotations, displayLabels);
@@ -1395,6 +1391,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       header = (
         <ObjectTraysPeek
           trays={trays}
+          peek={this.contributorPeek(sortedAnnotations, displayLabels)}
           selectedId={null}
           onOpen={this.openTrayItem}
           onNext={this.openNextToDecide}
@@ -1425,16 +1422,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       );
     }
 
-    const footer = (
-      <>
-        {error && (
-          <p role="alert" className="mb-2 px-3 py-2 rounded-control bg-danger-soft border border-danger-border text-danger text-sm font-medium">
-            {error}
-          </p>
-        )}
-        {this.renderActions("sheet")}
-      </>
-    );
+    // The message is not in the footer (21 Oct 2026): it floats over the top
+    // of the photo (renderSheetMessage), so the sheet never changes height for it
+    const footer = this.renderActions("sheet");
 
     // The full-screen photo (12 Oct 2026): no top bar, and the sheet at rest
     // is its handle alone, so the photo has the screen either way up. Pulled
@@ -1447,7 +1437,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (focus) {
       body = showInput ? (
         <>
-          <p className="px-4 pt-3 text-sm font-semibold text-ink truncate">{openLabel || TRAY_COPY.fallbackLabel}</p>
+          {this.renderSheetPanelTitle(openLabel || TRAY_COPY.fallbackLabel, "h-11 px-4 mt-1")}
           {body}
         </>
       ) : annotator ? (
@@ -1464,6 +1454,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       <div className="relative flex-1 min-h-0" data-layout="sheet" data-focus={focus ? "true" : undefined} data-no-scroll>
         <div ref={this.sheetAreaRef} data-no-scroll className="absolute inset-x-0 top-0 overflow-hidden" style={{ ...NO_SCROLL_STYLE, bottom: sheetCollapsed }}>
           {canvasArea}
+          {this.renderSheetMessage(focus)}
         </div>
         <BottomSheet
           id="answer-sheet"
@@ -1477,6 +1468,32 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         >
           <div onFocusCapture={this.onSheetFocus}>{body}</div>
         </BottomSheet>
+      </div>
+    );
+  }
+
+  /**
+   * The line above an open box's panel in the sheet: its name, and Hide on
+   * photo at the other end (21 Oct 2026, both roles). The eye used to sit in
+   * the panel's first row, beside the check that closes the panel, and a tap
+   * meant for the check hid the box, which looked as if it had not been added.
+   * Here it is apart from every answer and says what it does. Box step only.
+   */
+  private renderSheetPanelTitle(label: string, className: string) {
+    return (
+      <div className={`${className} flex items-center justify-between gap-3`}>
+        <span className="text-sm font-semibold text-ink truncate">{label}</span>
+        {this.inBoxStep && (
+          <button
+            type="button"
+            onClick={this.hideOpenBox}
+            title={BOX_VISIBILITY_COPY.hideOpen}
+            className="shrink-0 -mr-2 h-11 px-2 inline-flex items-center gap-1.5 rounded-control text-xs font-semibold text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          >
+            <EyeOffIcon size={16} />
+            {BOX_VISIBILITY_COPY.hideShort}
+          </button>
+        )}
       </div>
     );
   }
@@ -1579,13 +1596,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               <span className="text-sm font-semibold text-ink">
                 To decide <span className="font-medium text-muted tabular-nums">{left.length}</span>
               </span>
-              <button
-                type="button"
-                onClick={() => this.selectBoxById(nextId)}
-                className="h-11 px-4 rounded-control border border-primary bg-primary text-white text-sm font-bold"
-              >
-                {TRAY_COPY.next}
-              </button>
+              <SheetNextButton onPress={() => this.selectBoxById(nextId)} />
             </>
           ) : (
             <span className="text-sm font-semibold text-success">Every box is decided.</span>
@@ -1824,7 +1835,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // Nothing selected: what is left, and the way to the lists, Step 2 and Next Image
     const count = this.annotatorObjectStep
       ? unfinishedObjectIds(this.currentAnnotationData).length
-      : buildTrays(this.currentAnnotationData).toDecide.length;
+      : this.contributorPeek(orderOfAppearance(this.currentAnnotationData)).left;
     if (count === 0 && sheetUp) return null;
     return (
       <span data-focus-chip className={`${chip} h-11 ${count > 0 ? withButton : "px-1"}`}>
@@ -2067,10 +2078,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.animateView(IDENTITY_VIEW);
   };
 
+  /**
+   * Contributors on a phone or tablet: every object as a chip at the top of
+   * the sheet, what is left first (21 Oct 2026). `sorted` is in the lists' order.
+   */
+  private contributorPeek(sorted: IAnnotation[], labels?: Map<string, string>) {
+    return buildPeekChips(sorted, { labels: labels ?? buildDisplayLabelsInOrder(sorted), askSeverity: this.askSeverity });
+  }
+
+  /** Next at the top of the sheet: the first chip left, so it is the one Next opens. */
   private openNextToDecide = () => {
-    const sorted = orderOfAppearance(this.currentAnnotationData);
-    const next = buildTrays(sorted, { labels: buildDisplayLabelsInOrder(sorted) }).toDecide[0];
-    if (next) this.openTrayItem(next.id);
+    const nextId = this.contributorPeek(orderOfAppearance(this.currentAnnotationData)).nextId;
+    if (nextId) this.openTrayItem(nextId);
   };
 
   /**
@@ -3145,7 +3164,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     const check = validateObjectStep(this.currentAnnotationData, { words: this.words });
     if (!check.valid) {
-      if (!restoring) this.showStepError(check.error);
+      if (!restoring) this.showStepError(check.error, check.boxIds);
       return;
     }
 
@@ -3181,13 +3200,135 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   /**
-   * An annotator step's error. On a phone or tablet the sheet collapses and
-   * any panel closes, so the top of the sheet (what is left to decide, the
-   * drawing tools or the confirmation) is in view with the message.
+   * An annotator step's error. When it is about boxes the first of them opens
+   * (openFirstUnfinished). Otherwise, on a phone or tablet, the sheet
+   * collapses and any panel closes, so the top of the sheet (what is left to
+   * decide, the drawing tools or the confirmation) is in view with the message.
    */
-  private showStepError(error: string | undefined) {
-    this.setState({ error: error ?? null });
-    this.showSection();
+  private showStepError(error: string | undefined, boxIds?: string[]) {
+    this.showMessage(error ?? null);
+    if (!this.openFirstUnfinished(boxIds)) this.showSection();
+  }
+
+  private messageTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Shows a message under the photo, or over it on a phone or tablet, which
+   * goes by itself after it has been read (21 Oct 2026, stepMessage.js). The same
+   * message shown again, by trying again, stays its full time again. Every
+   * message goes through here, so none stays for the rest of the image.
+   */
+  private showMessage(error: string | null) {
+    if (error) this.lastMessage = error;
+    this.setState({ error, errorSeq: this.state.errorSeq + 1 });
+  }
+
+  /** The last message shown: still in the page while it leaves, so it goes the way it came */
+  private lastMessage = "";
+
+  /**
+   * Desktop: the message above the step's buttons (21 Oct 2026). Its row opens
+   * to the message's height as it fades in, and closes as it fades out, on the
+   * same ease both ways. A plain fade with reduced motion.
+   */
+  private renderDesktopMessage() {
+    const shown = Boolean(this.state.error);
+    return (
+      <div
+        aria-hidden={!shown}
+        className={`grid motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-opacity motion-reduce:duration-200 ${shown ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="flex justify-center pt-6 pb-4">
+            <div className="bg-danger-soft border border-danger-border text-danger px-6 py-3 rounded-control flex items-center gap-2">
+              <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="shrink-0 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <span role="alert" className="font-medium">{shown ? this.state.error : this.lastMessage}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /**
+   * Phones and tablets: the message floats over the top of the photo, a
+   * frosted card (21 Oct 2026, apple-design). It used to sit in the sheet's
+   * footer, where coming and going changed the sheet's height and so the
+   * photo's. It materializes, fading in as it grows from 96% and comes into
+   * focus, and leaves the same way, over 0.3 s; a cross-fade with reduced
+   * motion, and a solid card with reduced transparency. It sits below the
+   * controls at the top of the photo (Fit, and in full screen the status chip),
+   * so it covers none of them. It never takes a tap.
+   */
+  private renderSheetMessage(focus: boolean) {
+    const shown = Boolean(this.state.error);
+    return (
+      <div
+        aria-hidden={!shown}
+        className="pointer-events-none absolute inset-x-0 z-30 flex justify-center px-4"
+        // Below the row of controls at the top of the photo (Fit while zoomed, the
+        // tutorial's "Tap ? to see the tour again", in full screen the status chip)
+        style={{ top: focus ? "calc(env(safe-area-inset-top) + 68px)" : 64 }}
+      >
+        <div
+          className={`max-w-sm w-full flex items-start gap-2.5 px-4 py-3 rounded-2xl border border-white/50 bg-surface/90 backdrop-blur-xl backdrop-saturate-150 shadow-[0_8px_30px_rgba(15,23,42,0.22)] [@media(prefers-reduced-transparency:reduce)]:bg-surface [@media(prefers-reduced-transparency:reduce)]:backdrop-blur-none motion-safe:transition-[opacity,transform,filter] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-opacity motion-reduce:duration-200 ${shown ? "opacity-100 scale-100 blur-0" : "opacity-0 scale-[0.96] -translate-y-2 blur-[2px]"}`}
+        >
+          <span className="mt-px text-danger">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="shrink-0 h-[18px] w-[18px]" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+          </span>
+          <p role="alert" className="text-sm font-semibold leading-snug tracking-[0.005em] text-ink">
+            {shown ? this.state.error : this.lastMessage}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  /** Starts a shown message's timer, or stops it when the message has gone another way (componentDidUpdate). */
+  private timeMessage(prevState: this["state"]) {
+    const { error, errorSeq } = this.state;
+    if (prevState.error === error && prevState.errorSeq === errorSeq) return;
+    if (this.messageTimer) clearTimeout(this.messageTimer);
+    this.messageTimer = null;
+    if (!error) return;
+    const seq = errorSeq;
+    // Its time up, it goes; the page animates it out (renderDesktopMessage, renderSheetMessage)
+    this.messageTimer = setTimeout(() => {
+      this.messageTimer = null;
+      if (this.state.errorSeq === seq) this.setState({ error: null });
+    }, messageVisibleMs(error));
+  }
+
+  /**
+   * After a failed Next or Next Image (21 Oct 2026, both roles, every layout):
+   * opens the first box the message is about, in the lists' order (the order
+   * the chips and Next use), so it is plain which box is left and its panel is
+   * there to finish it. On a phone or tablet the sheet comes up to the box's
+   * panel, with the message in its footer, also in full screen; on the desktop
+   * photo its panel opens beside it and the photo is scrolled into view if it
+   * is out of view. A hidden box shows again. False when there is no such box
+   * (Step 2, the outline, the Obstructions confirmation), for the caller to
+   * show the message as before.
+   */
+  private openFirstUnfinished(boxIds?: string[]): boolean {
+    if (!this.inBoxStep || !boxIds || boxIds.length === 0) return false;
+    const wanted = new Set(boxIds);
+    const first = orderOfAppearance(this.currentAnnotationData).find((box) => wanted.has(box.id));
+    if (!first || !this.shapes.some((shape) => shape.getAnnotationData().id === first.id)) return false;
+    if (this.isSheet) {
+      // The panel height first, so followPanel keeps it, also in full screen
+      this.lastPanelId = null;
+      this.setState({ sheetSnap: "panel" }, () => this.selectBoxById(first.id));
+      return true;
+    }
+    this.selectBoxById(first.id);
+    const reduced = typeof window !== "undefined" && matches("(prefers-reduced-motion: reduce)");
+    this.canvasWrapperRef.current?.scrollIntoView?.({ behavior: reduced ? "auto" : "smooth", block: "nearest" });
+    return true;
   }
 
   /** Moving between steps on a phone or tablet collapses the sheet. */
@@ -3215,7 +3356,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private onObjectsNext = () => {
     const check = validateObjectStep(this.currentAnnotationData, { words: this.words });
     if (!check.valid) {
-      this.showStepError(check.error);
+      this.showStepError(check.error, check.boxIds);
       return;
     }
     if (this.askSidewalk) this.enterSidewalkStep();
@@ -3244,7 +3385,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (!this.askSidewalk) return;
     const check = validateObjectStep(this.currentAnnotationData, { words: this.words });
     if (!check.valid) {
-      if (!restoring) this.showStepError(check.error);
+      if (!restoring) this.showStepError(check.error, check.boxIds);
       return;
     }
 
@@ -3715,8 +3856,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     );
     if (offPhoto) {
       const label = buildDisplayLabelsInOrder(this.currentAnnotationData).get(offPhoto.id) || "A box";
-      this.setState({ error: `${label} is outside the photo. Move it onto the photo or delete it.` });
-      this.showSection("objects");
+      this.showMessage(`${label} is outside the photo. Move it onto the photo or delete it.`);
+      if (!this.openFirstUnfinished([offPhoto.id])) this.showSection("objects");
       return;
     }
 
@@ -3799,9 +3940,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     });
 
     if (!validationResult.valid) {
-      this.setState({ error: validationResult.error });
-      // On a phone, show the part the message is about
-      this.showSection((validationResult as { section?: string }).section);
+      this.showMessage(validationResult.error);
+      // The first box the message is about opens; otherwise, on a phone, the
+      // part of the screen it is about shows
+      const { section, boxIds } = validationResult as { section?: string; boxIds?: string[] };
+      if (!this.openFirstUnfinished(boxIds)) this.showSection(section);
       return;
     }
 
@@ -3830,10 +3973,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       });
     } catch {
       this.submitInFlight = false;
-      this.setState({
-        submitting: false,
-        error: "We couldn't save that annotation. Check your connection and try again.",
-      });
+      this.setState({ submitting: false });
+      this.showMessage("We couldn't save that annotation. Check your connection and try again.");
       return;
     }
     if (res.status === 200) {
@@ -3865,10 +4006,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         }
       }
       this.submitInFlight = false;
-      this.setState({
-        submitting: false,
-        error: message || "We couldn't save that annotation. Check your connection and try again.",
-      });
+      this.setState({ submitting: false });
+      this.showMessage(message || "We couldn't save that annotation. Check your connection and try again.");
     }
   };
 

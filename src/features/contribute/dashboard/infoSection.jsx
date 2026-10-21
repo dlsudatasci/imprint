@@ -12,8 +12,9 @@ import { DASHBOARD_COPY as COPY, labelStart, secondsPerPhoto } from "./dashboard
  * very different amounts to compute, and a slow telemetry aggregation shouldn't
  * hold up the session list.
  *
- * Contributors only: annotators see none of this section (6 Oct 2026), so the
- * dashboard page does not render it for them.
+ * For both roles. Annotators saw none of this section from 6 Oct 2026 (and no
+ * Recent sessions from 4 Oct); from 21 Oct 2026 they see all of it again.
+ * Their sessions have no accessibility average, which the rows leave empty.
  *
  * Audited 17 Oct 2026 (IMPRINT_dashboard_audit.md). Total contributions
  * counts photos (users.totalAnnotations grows by one per finished photo), not

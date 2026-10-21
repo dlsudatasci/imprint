@@ -44,7 +44,7 @@ describe("contributor dashboard (/contribute)", () => {
     });
   });
 
-  it("hides the lower dashboard for an annotator even when the browser's token still says contributor", async () => {
+  it("shows the lower dashboard to an annotator too, with the badge from the database (21 Oct 2026)", async () => {
     setupDb({ _id: new ObjectId(USER_ID), role: "annotator", hasCompletedTutorial: true, age: 30 });
     const { props } = await getServerSideProps({ req: {}, res: {} });
     // What _app passes on: everything except `session`
@@ -52,7 +52,7 @@ describe("contributor dashboard (/contribute)", () => {
     const { session, ...pageProps } = props;
     useSession.mockReturnValue({ data: staleToken(), status: "authenticated" });
     const html = renderToStaticMarkup(<ContributePage {...pageProps} />);
-    expect(html).not.toContain("dashboard-info");
+    expect(html).toContain("dashboard-info");
     expect(html).toContain("Annotator");
   });
 

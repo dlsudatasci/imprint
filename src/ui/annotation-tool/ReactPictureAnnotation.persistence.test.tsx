@@ -6,6 +6,7 @@ import ReactPictureAnnotation from "./ReactPictureAnnotation";
 import { readSessionData, writeSession, readCurrentCount, writeCurrentCount } from "@/util/sessionCache";
 import { LOUPE_SIZE_PX, LOUPE_BOX_GAP_PX, LOUPE_MARGIN_PX, LOUPE_FINGER_CLEAR_PX } from "./loupe";
 import { PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
+import { messageVisibleMs } from "@/features/annotate/stepMessage";
 
 // The magnifier against the box being fitted (15 Oct 2026), CSS px in the photo area
 type LoupeTool = {
@@ -1887,5 +1888,238 @@ describe("annotators' object chips on the desktop (17 Oct 2026)", () => {
     expect(truck.textContent).toContain("No category");
     expect(itemFor("Utility Post #1").textContent).toContain("To decide");
     expect(host.textContent).not.toMatch(/Drawn(?! by)/);
+  });
+});
+
+// 21 Oct 2026: a failed Next or Next Image opens the box left to finish; on a
+// phone the eye sits on the line with the open box's name; contributors see
+// every object in one row at the top of the sheet
+describe("what a failed Next opens, the sheet's eye, and the contributors' chip row (21 Oct 2026)", () => {
+  const realMatchMedia = window.matchMedia;
+  const realRect = HTMLCanvasElement.prototype.getBoundingClientRect;
+  let coarse = false;
+  beforeEach(() => {
+    coarse = false;
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes("coarse") ? coarse : query.includes("prefers-reduced-motion"),
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+    HTMLCanvasElement.prototype.getBoundingClientRect = function () {
+      return { left: 0, top: 0, width: 960, height: 600, right: 960, bottom: 600, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    };
+  });
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    HTMLCanvasElement.prototype.getBoundingClientRect = realRect;
+  });
+
+  type Box = { selected?: boolean; isRejected?: boolean; obstructs?: boolean | null; severity?: number | null; comment?: string };
+  type SheetTool = Tool & { state: Tool["state"] & { sheetSnap: string; showInput: boolean } };
+  const data = (tool: Tool, id: string) => tool.shapes.find((sh) => sh.getAnnotationData().id === id)!.getAnnotationData() as unknown as Box;
+  const set = (tool: Tool, changes: Record<string, Box>) =>
+    act(() => {
+      for (const [id, patch] of Object.entries(changes)) Object.assign(data(tool, id), patch);
+      tool.setState({});
+    });
+  const open = (role: "annotator" | "contributor", options: MountOptions = {}) => {
+    const isAnnotator = role === "annotator";
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator } });
+    const tool = mount({ isAnnotator, ...options }) as SheetTool;
+    tool.currentImageElement = { width: 640, height: 360 };
+    return tool;
+  };
+  const submitButton = () => host.querySelector("button[type='submit']") as HTMLButtonElement;
+  const press = () => act(() => submitButton().click());
+  const submitNow = async (tool: Tool) => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    await act(async () => {
+      await tool.submit();
+    });
+  };
+  const SCENE = { sidewalkWidth: "wide", surfaceCondition: "easy", walkability: "comfortable", overallAccessibility: 1 };
+
+  it("annotators, desktop: Next opens the first suggestion still to decide, then the first box with no category", () => {
+    const tool = open("annotator");
+    set(tool, { "a-car": { selected: true } });
+    press();
+    expect(tool.state.error).toContain("Keep or Not an object");
+    expect(tool.selectedId).toBe("b-pole");
+    expect(tool.state.showInput).toBe(true);
+    // Every suggestion decided, one kept with a category not on the list
+    set(tool, { "b-pole": { selected: true }, "c-tree": { selected: true, comment: "truck" } });
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    press();
+    expect(tool.state.error).toContain("choose a category");
+    expect(tool.selectedId).toBe("c-tree");
+  });
+
+  it("annotators, phone: the sheet comes up to the box's panel with the message, in full screen too", () => {
+    coarse = true;
+    const tool = open("annotator", { layout: "sheet" });
+    set(tool, { "a-car": { selected: true } });
+    press();
+    expect(tool.selectedId).toBe("b-pole");
+    expect(tool.state.sheetSnap).toBe("panel");
+    // The message floats over the photo, in view with the panel
+    expect(host.querySelector("[role='alert']")!.textContent).toContain("Keep or Not an object");
+    unmount();
+    const full = open("annotator", { layout: "sheet", focus: true });
+    act(() => full.setState({}));
+    expect(full.state.sheetSnap).toBe("collapsed");
+    press();
+    expect(full.selectedId).toBe("a-car");
+    expect(full.state.sheetSnap).toBe("panel");
+  });
+
+  it("contributors, desktop: Next Image opens the first unanswered object, then a Yes with no severity, and nothing for Step 2", async () => {
+    const tool = open("contributor");
+    set(tool, { "a-car": { selected: true, obstructs: true, severity: 3 } });
+    act(() => tool.setState({ sceneLevel: SCENE }));
+    await submitNow(tool);
+    expect(tool.state.error).toContain("Yes or No");
+    expect(tool.selectedId).toBe("b-pole");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    set(tool, { "b-pole": { isRejected: true, obstructs: false }, "c-tree": { selected: true, obstructs: true, severity: null } });
+    await submitNow(tool);
+    expect(tool.state.error).toContain("severity");
+    expect(tool.selectedId).toBe("c-tree");
+    // Step 2 left: no box opens
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    set(tool, { "c-tree": { severity: 2 } });
+    act(() => tool.setState({ sceneLevel: { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null } }));
+    await submitNow(tool);
+    expect(tool.state.error).toContain("sidewalk width");
+    expect(tool.selectedId).toBeNull();
+  });
+
+  it("contributors, phone: the sheet comes up to the first unanswered object's panel", async () => {
+    coarse = true;
+    const tool = open("contributor", { layout: "sheet" });
+    await submitNow(tool);
+    expect(tool.selectedId).toBe("a-car");
+    expect(tool.state.sheetSnap).toBe("panel");
+  });
+
+  it("phone, both roles: Hide on photo is on the line with the open box's name, not beside the panel's buttons", () => {
+    for (const role of ["annotator", "contributor"] as const) {
+      coarse = true;
+      const tool = open(role, { layout: "sheet" });
+      act(() => tool.selectBoxById("a-car"));
+      const sheet = host.querySelector("#answer-sheet")!;
+      const hide = Array.from(sheet.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Hide on photo")!;
+      expect(hide).toBeDefined();
+      expect(hide.closest("[data-sheet-scroll]")).toBeNull();
+      expect(hide.parentElement!.textContent).toContain("Car #1");
+      // The panel itself has no eye
+      expect(sheet.querySelector('[data-sheet-scroll] button[aria-label="Hide this box on the photo"]')).toBeNull();
+      act(() => hide.click());
+      expect(tool.isBoxHidden("a-car")).toBe(true);
+      expect(tool.selectedId).toBeNull();
+      unmount();
+    }
+  });
+
+  it("desktop: the floating panel keeps its eye", () => {
+    const tool = open("annotator");
+    act(() => tool.selectBoxById("a-car"));
+    expect(host.querySelector('.rp-selected-input button[aria-label="Hide this box on the photo"]')).not.toBeNull();
+    expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent?.trim() === "Hide on photo")).toBe(false);
+  });
+
+  it("contributors, phone: one row of every object at the top of the sheet, what is left first, with the lists still pulled up", () => {
+    coarse = true;
+    const tool = open("contributor", { layout: "sheet" });
+    set(tool, { "a-car": { selected: true, obstructs: true, severity: 3 }, "c-tree": { selected: true, obstructs: true, severity: null } });
+    const peek = host.querySelector("#box-review-section-peek")!;
+    const chips = Array.from(peek.querySelectorAll("#box-review-chips-peek li")).map((li) => li.textContent);
+    expect(chips).toEqual(["Utility Post #1To decide", "Tree #1No severity", "Car #1Obstruction"]);
+    expect(peek.textContent).toContain("Still to decide 2");
+    expect(peek.textContent).not.toContain("Not obstructions");
+    // Pulled up, the answers are still in their lists
+    const body = host.querySelector("#answer-sheet [data-sheet-scroll]")!;
+    expect(body.textContent).toContain("Not obstructions");
+    expect(body.textContent).toContain("Obstructions");
+    // Next opens the first chip left
+    const next = Array.from(peek.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Next")!;
+    act(() => next.click());
+    expect(tool.selectedId).toBe("b-pole");
+  });
+
+  it("a message goes by itself after it has been read, and trying again shows it its full time again", () => {
+    const tool = open("annotator");
+    set(tool, { "a-car": { selected: true } });
+    press();
+    const message = "Please click Keep or Not an object on every suggested box.";
+    expect(tool.state.error).toBe(message);
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    // Nearly its time, then Next again: it stays its full time from now
+    act(() => vi.advanceTimersByTime(messageVisibleMs(message) - 100));
+    expect(tool.state.error).toBe(message);
+    press();
+    act(() => vi.advanceTimersByTime(messageVisibleMs(message) - 100));
+    expect(tool.state.error).toBe(message);
+    // Its time up, it goes
+    act(() => vi.advanceTimersByTime(200));
+    expect(tool.state.error).toBeNull();
+    // Hidden as it leaves (its words stay for the way out)
+    expect(host.querySelector("[role='alert']")!.closest("[aria-hidden]")!.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("desktop: the message's row opens and closes with it, its words kept while it leaves", () => {
+    const tool = open("annotator");
+    const row = () => host.querySelector("[role='alert']")!.closest("[aria-hidden]") as HTMLElement;
+    // In the page before any message, closed
+    expect(row().getAttribute("aria-hidden")).toBe("true");
+    expect(row().className).toContain("grid-rows-[0fr]");
+    press();
+    const message = tool.state.error!;
+    expect(row().getAttribute("aria-hidden")).toBe("false");
+    expect(row().className).toContain("grid-rows-[1fr]");
+    act(() => vi.advanceTimersByTime(messageVisibleMs(message)));
+    expect(tool.state.error).toBeNull();
+    // Closing, with the same words, not cut off
+    expect(row().className).toContain("grid-rows-[0fr]");
+    expect(row().textContent).toContain(message);
+  });
+
+  it("phone: the message floats over the photo, not in the sheet's footer, so the sheet keeps its height", () => {
+    coarse = true;
+    const tool = open("contributor", { layout: "sheet" });
+    press();
+    const alert = host.querySelector("[role='alert']")!;
+    expect(alert.textContent).toBe(tool.state.error);
+    expect(alert.closest("#answer-sheet")).toBeNull();
+    expect(alert.closest(".pointer-events-none")).not.toBeNull();
+    // The footer is the step's buttons alone
+    const footer = submitButton().parentElement!.closest(".z-20")!;
+    expect(footer.querySelector("[role='alert']")).toBeNull();
+    act(() => vi.advanceTimersByTime(messageVisibleMs(tool.state.error!)));
+    expect(alert.closest("[aria-hidden]")!.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("phone, both roles: Next beside the count is plain tinted text with a full-size target", () => {
+    for (const role of ["annotator", "contributor"] as const) {
+      coarse = true;
+      open(role, { layout: "sheet" });
+      const next = Array.from(host.querySelectorAll("#box-review-section-peek button")).find((b) => b.textContent?.trim() === "Next")!;
+      expect(next.className).toContain("h-11");
+      expect(next.className).toContain("text-primary");
+      expect(next.className).toContain("active:opacity-40");
+      // No fill: Next Image stays the one filled button
+      expect(next.className).not.toMatch(/\bbg-/);
+      expect(next.querySelector("svg")).not.toBeNull();
+      unmount();
+    }
+  });
+
+  it("contributors, full screen: the chip on the photo counts a Yes with no severity as left", () => {
+    coarse = true;
+    const tool = open("contributor", { layout: "sheet", focus: true });
+    set(tool, { "a-car": { selected: true, obstructs: true, severity: null }, "b-pole": { isRejected: true, obstructs: false } });
+    expect(host.querySelector("[data-focus-chip] span")!.textContent).toBe("2 still to decide");
   });
 });

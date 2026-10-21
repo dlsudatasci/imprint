@@ -185,9 +185,11 @@ layout, and is the more common source of accidental animation.
 One keyframe animation exists: `animate-tray-land`, a chip appearing in a contributor answer
 list (scale 0.92 to 1 over 180 ms, §9a). It is always used as `motion-safe:animate-tray-land`.
 
-On phones and tablets (§9b, 9 Oct 2026) two more things move: the answers sheet slides to its
-resting point (`transform` over 200 ms ease-out, `motion-safe:` classes), and the photo pans
-over 180 ms to keep an opened box clear of the sheet (in code). With
+On phones and tablets (§9b, 9 Oct 2026) two more things move: the answers sheet moves to its
+resting point, and the photo pans over 180 ms to keep an opened box clear of the sheet (in
+code). From 21 Oct 2026 the sheet moves on a critically damped spring (`springStep` in
+`sheetSnap.js`, 0.3 s response, no bounce) that starts at the finger's speed, instead of a
+200 ms ease-out transition, and can be grabbed again mid-way. With
 `prefers-reduced-motion: reduce` both happen at once.
 
 On the landing page (15 Oct 2026) a preview of the contributor task plays as the page scrolls
@@ -294,7 +296,9 @@ padding or outline. The photo well around them is the frame.
   annotators' Objects in This Image list uses the same eye. From 10 Oct 2026 the top line also
   has **Hide all** (beside Show all, until every box is hidden), and the box panel has the same
   eye (`EyeOffIcon`, "Hide this box on the photo"), which hides the open box and closes its
-  panel.
+  panel. In the sheet on a phone or tablet (21 Oct 2026, both roles) that eye is a labelled
+  **Hide on photo** button on the line with the open box's name instead, away from the
+  panel's check and close buttons, which it sat beside and was tapped in their place.
 - **The open box's chip** (10 Oct 2026): `border-primary bg-primary-50 ring-2 ring-primary/40`
   with `aria-current`, in the contributors' lists and the annotators' Objects in This Image.
 - **Motion**: the chip appearing (`motion-safe:animate-tray-land`, §6) is the only animation.
@@ -351,13 +355,22 @@ with their three steps. There is no device gate.
   body that scrolls, and a footer (the action bar) that is always in view above the home
   indicator. Only the header drags, and it allows sideways scrolling for its chip rows. Resting
   points: collapsed (header and footer), half, full (all but 8 px), and panel while a box is
-  open (its panel and the footer, at most 60%). The handle is a 36 x 5 px pill in a 44 px
-  button ("Show more", "Show less").
-- **The sheet's top part** (`ObjectTraysPeek`): "Still to decide n" with Next, then the
-  Not obstructions and Obstructions rows (44 px each, chips scrolling sideways, an empty dashed
-  slot when a row is empty), then the Step 2 line, which pulls the sheet up to Step 2. Fixed
-  heights, so the photo area never changes size as objects are answered. With a box open the
-  top shows only its name and the body shows its panel (`variant="sheet"`).
+  open (its panel and the footer, at most 60%). From 21 Oct 2026 none of them is higher than
+  the content needs, so a short panel or list pulled up leaves no empty space under it. It
+  follows the finger 1:1, and a release lands at the point nearest where its speed carries it
+  (`projectRelease`, deceleration 0.99), a flick going at least one point its way. The handle
+  is a 36 x 5 px pill in a 44 px button ("Show more", "Show less").
+- **The sheet's top part** (`ObjectTraysPeek`): "Still to decide n" with Next (from 21 Oct
+  2026 `SheetNextButton`, both roles: plain `text-primary` text with a chevron in a 44 px
+  target, dimming to 40% the moment it is pressed, so the footer's Next Image stays the one
+  filled button), then every
+  object in one 44 px row of chips scrolling sideways (21 Oct 2026, `buildPeekChips`; before,
+  the Not obstructions and Obstructions rows), what is left first, each with the pencil if
+  drawn and a tag: To decide or No severity in red, Obstruction solid blue, Not an obstruction
+  light blue, Not an object grey. The lists stay in the body. Then the Step 2 line, which pulls
+  the sheet up to Step 2. Fixed heights, so the photo area never changes size as objects are
+  answered. With a box open the top shows its name with Hide on photo, and the body its panel
+  (`variant="sheet"`).
 - **Touch handles**: four round corner handles, a 20 px dot (white, a 2.5 px ring in the box's
   colour, a soft shadow) with a 44 px reach. No edge handles. A rejected box gets none.
 - **Magnifier**: a 112 px circle showing the photo at 2.5 times its display scale, the box's
@@ -451,8 +464,16 @@ device with a screen whose shorter side is under 600 px (`isPhone`).
   160 px to scroll (a phone held sideways, about 390 px tall) it goes straight to full, and a
   box's panel takes the height it needs. A box selected on the photo leaves the sheet down.
   Answering a box, and moving to the next step, put it down again. A message from Next Image
-  or a step button brings it up. The same elements as outside full screen, so nothing is
-  rebuilt on the way in or out.
+  or a step button brings it up, and when the message is about boxes (21 Oct 2026, both roles,
+  every layout) it brings up the first of them instead, its panel open, in the lists' order:
+  a suggestion still to decide, a box with no category, a Yes with no severity, a box off the
+  photo. On the desktop photo that box's panel opens beside it. Every such message goes by
+  itself after at least 5 s (2 s plus 0.3 s a word, `stepMessage.js`); trying again shows it
+  its full time again. It arrives and leaves the same way, never changing the layout in one
+  jump: on a phone or tablet a frosted card over the top of the photo, below its controls,
+  that fades in from 96% and a 2 px blur over 0.3 s (not in the footer, which resized the
+  sheet); on the desktop photo its row opens and closes with it, so Next Image glides. The same elements as outside
+  full screen, so nothing is rebuilt on the way in or out.
 - **Status chip**, top left, white and rounded, 44 px: a selected box's name with Delete (a
   box the person drew, `TrashIcon`) and **Details**. Nothing selected: "3 still to decide"
   with **Answers** (contributors) or "3 to decide" with **Details** (annotators). Sidewalk:
@@ -599,7 +620,11 @@ About page, the guide and the Privacy Policy, against the manuscript and the too
   server's rules, `autoComplete` on every field, "Continue with Google" with the inline
   `GoogleMark`.
 - **404**: `src/pages/404.jsx`, a `Display` with a way home.
-- **Map**: the OpenStreetMap and CARTO credits are on the map again (`MapAttribution`).
+- **Map**: the OpenStreetMap and CARTO credits are on the map again (`MapAttribution`). From
+  21 Oct 2026 it is 280 px tall on a phone, 320 on a tablet and 380 beside the welcome on a
+  desktop (`MAP_HEIGHT_CLASS`), about the height of the text beside it. On a phone or tablet
+  one finger scrolls the page and two move and zoom the map, with a frosted "Use two fingers to
+  move the map" note while one finger moves on it.
 
 ---
 

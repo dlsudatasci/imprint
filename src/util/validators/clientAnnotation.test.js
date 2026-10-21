@@ -228,24 +228,24 @@ describe("validateAnnotationForSubmit for annotators (Objects step)", () => {
 
   it("fails on an untouched suggestion with the Keep message", () => {
     const untouched = { id: "s3", editable: false, selected: false, comment: "tree" };
-    expect(validateAnnotationForSubmit(annotatorInput([kept, untouched]))).toEqual({ valid: false, error: KEEP_MESSAGE });
+    expect(validateAnnotationForSubmit(annotatorInput([kept, untouched]))).toEqual({ valid: false, error: KEEP_MESSAGE, boxIds: ["s3"] });
   });
 
   it("fails on an old No answer (rejected with a taxonomy category) with the Keep message", () => {
     const oldNo = { id: "s3", editable: false, selected: false, isRejected: true, comment: "tree", obstructs: false };
-    expect(validateAnnotationForSubmit(annotatorInput([kept, oldNo]))).toEqual({ valid: false, error: KEEP_MESSAGE });
+    expect(validateAnnotationForSubmit(annotatorInput([kept, oldNo]))).toEqual({ valid: false, error: KEEP_MESSAGE, boxIds: ["s3"] });
   });
 
   it("fails on a free-text category with the category message", () => {
     const truck = { ...drawn, comment: "truck" };
-    expect(validateAnnotationForSubmit(annotatorInput([kept, truck]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+    expect(validateAnnotationForSubmit(annotatorInput([kept, truck]))).toEqual({ valid: false, error: CATEGORY_MESSAGE, boxIds: ["d1"] });
     const keptTruck = { ...kept, comment: "truck" };
-    expect(validateAnnotationForSubmit(annotatorInput([keptTruck]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+    expect(validateAnnotationForSubmit(annotatorInput([keptTruck]))).toEqual({ valid: false, error: CATEGORY_MESSAGE, boxIds: ["s1"] });
   });
 
   it("fails on a '---' or empty category with the category message", () => {
-    expect(validateAnnotationForSubmit(annotatorInput([{ ...drawn, comment: "---" }]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
-    expect(validateAnnotationForSubmit(annotatorInput([{ ...drawn, comment: "" }]))).toEqual({ valid: false, error: CATEGORY_MESSAGE });
+    expect(validateAnnotationForSubmit(annotatorInput([{ ...drawn, comment: "---" }]))).toEqual({ valid: false, error: CATEGORY_MESSAGE, boxIds: ["d1"] });
+    expect(validateAnnotationForSubmit(annotatorInput([{ ...drawn, comment: "" }]))).toEqual({ valid: false, error: CATEGORY_MESSAGE, boxIds: ["d1"] });
   });
 
   it("asks for no severity or scene answers", () => {
@@ -392,5 +392,48 @@ describe("validateSidewalkStep", () => {
       .toBe("Please tick the box to confirm that the objects you did not mark do not obstruct the sidewalk.");
     expect(validateAnnotationForSubmit({ ...base, existingAnnotations: [kept], sidewalkMask: goodMask, obstructionsConfirmed: true }))
       .toEqual({ valid: true });
+  });
+});
+
+// 21 Oct 2026: a failure about boxes lists them, so the tool opens one to finish
+describe("the boxes a failed check is about", () => {
+  const box = (id, extra) => ({ id, mark: { x: 0, y: 0, width: 10, height: 10 }, ...extra });
+  const scene = { sidewalkWidth: "wide", surfaceCondition: 1, walkability: 1, overallAccessibility: 1 };
+  const contributor = (existing) => ({
+    existingAnnotations: existing,
+    newObjects: existing.filter((b) => b.editable),
+    selectedObjects: existing.filter((b) => !b.editable && (b.selected || b.isRejected)),
+    sceneLevel: scene,
+  });
+
+  it("annotators: every suggestion still to decide, then every box with no category", () => {
+    const undecidedA = box("s1", { editable: false, selected: false, comment: "tree" });
+    const undecidedB = box("s2", { editable: false, selected: false, comment: "car" });
+    const noCategory = box("d1", { editable: true, comment: "---" });
+    expect(validateObjectStep([undecidedA, noCategory, undecidedB]).boxIds).toEqual(["s1", "s2"]);
+    expect(validateObjectStep([box("s1", { editable: false, selected: true, comment: "tree" }), noCategory]).boxIds).toEqual(["d1"]);
+    expect(validateObjectStep([]).boxIds).toBeUndefined();
+  });
+
+  it("contributors: the unanswered suggestions, the unlabeled boxes, the unanswered drawn boxes, then the Yes answers with no severity", () => {
+    const unanswered = box("s1", { editable: false, selected: false, isRejected: false, comment: "tree" });
+    const yes = box("s2", { editable: false, selected: true, comment: "car", obstructs: true, severity: 3 });
+    expect(validateAnnotationForSubmit(contributor([unanswered, yes])).boxIds).toEqual(["s1"]);
+    const unlabeled = box("d1", { editable: true, comment: "---", obstructs: false });
+    expect(validateAnnotationForSubmit(contributor([yes, unlabeled])).boxIds).toEqual(["d1"]);
+    const drawnUnanswered = box("d2", { editable: true, comment: "bench", obstructs: null });
+    expect(validateAnnotationForSubmit(contributor([yes, drawnUnanswered])).boxIds).toEqual(["d2"]);
+    const noSeverityA = box("s3", { editable: false, selected: true, comment: "car", obstructs: true, severity: null });
+    const noSeverityB = box("d3", { editable: true, comment: "bench", obstructs: true, severity: null });
+    const result = validateAnnotationForSubmit(contributor([yes, noSeverityA, noSeverityB]));
+    expect(result.error).toContain("severity");
+    expect(result.boxIds).toEqual(["s3", "d3"]);
+  });
+
+  it("lists no boxes for Step 2", () => {
+    const yes = box("s2", { editable: false, selected: true, comment: "car", obstructs: true, severity: 3 });
+    const result = validateAnnotationForSubmit({ ...contributor([yes]), sceneLevel: { ...scene, sidewalkWidth: null } });
+    expect(result.section).toBe("scene");
+    expect(result.boxIds).toBeUndefined();
   });
 });

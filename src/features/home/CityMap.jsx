@@ -10,6 +10,7 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import boundaries from "@/data/cityBoundaries.json";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 // Fallback palette, cycled by feature order. A city can override this by
 // setting `properties.color` in cityBoundaries.json — prefer doing that, since
@@ -56,26 +57,38 @@ function InvalidateOnResize({ isFullscreen }) {
 }
 
 /**
- * Mouse-wheel and pinch zoom (2 Oct 2026).
+ * Mouse-wheel zoom, and dragging and pinching with fingers (2 Oct 2026, the
+ * fingers 21 Oct 2026).
  *
  * MapContainer reads its options only once, when the map is created, so the
  * earlier `scrollWheelZoom={isFullscreen}` never turned zoom on in fullscreen.
  * The handlers are switched here instead:
- *   - fullscreen: wheel and pinch zoom always on;
- *   - inline: wheel zoom turns on once the map is clicked and off again when
- *     the pointer leaves it, so scrolling down the page past the map never gets
- *     caught by the map. Pinch zoom stays off inline for the same reason on
- *     phones (the + and - buttons still work).
+ *   - fullscreen: dragging, wheel and pinch zoom always on;
+ *   - inline with a mouse: the map drags, and wheel zoom turns on once the map
+ *     is clicked and off again when the pointer leaves it, so scrolling down
+ *     the page past the map never gets caught by the map;
+ *   - inline on a phone or tablet (`touch`): one finger scrolls the page and
+ *     two fingers move and zoom the map, as maps embedded in web pages do.
+ *     One finger used to drag the map, so a swipe that began on it moved the
+ *     map instead of the page, which is most swipes on a phone. Leaflet then
+ *     marks the map `touch-action: pan-x pan-y`, so the browser scrolls.
  */
-function ZoomControlByMode({ isFullscreen }) {
+function ZoomControlByMode({ isFullscreen, touch }) {
   const map = useMap();
   useEffect(() => {
     if (isFullscreen) {
+      map.dragging.enable();
       map.scrollWheelZoom.enable();
       map.touchZoom.enable();
       return undefined;
     }
     map.scrollWheelZoom.disable();
+    if (touch) {
+      map.dragging.disable();
+      map.touchZoom.enable();
+      return undefined;
+    }
+    map.dragging.enable();
     map.touchZoom.disable();
     const turnOn = () => map.scrollWheelZoom.enable();
     const turnOff = () => map.scrollWheelZoom.disable();
@@ -86,7 +99,59 @@ function ZoomControlByMode({ isFullscreen }) {
       map.off("click", turnOn);
       el.removeEventListener("mouseleave", turnOff);
     };
-  }, [map, isFullscreen]);
+  }, [map, isFullscreen, touch]);
+  return null;
+}
+
+/** A finger moving this far, px, means the swipe was meant for the page (or the map) */
+const ONE_FINGER_SLOP_PX = 10;
+/** How long the two-finger hint stays after the finger lifts, ms */
+const HINT_MS = 1200;
+
+/**
+ * Inline on a phone or tablet: a one-finger swipe on the map scrolls the page,
+ * and a short note on the map says how to move it instead (21 Oct 2026). Gone
+ * once two fingers are down, and soon after the finger lifts. Passive
+ * listeners, so the page's scrolling is never held up.
+ */
+function TwoFingerHint({ active, onChange }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!active) {
+      onChange(false);
+      return undefined;
+    }
+    const el = map.getContainer();
+    let start = null;
+    let timer = null;
+    const clear = () => { if (timer) clearTimeout(timer); timer = null; };
+    const onStart = (e) => {
+      clear();
+      if (e.touches.length === 1) start = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      else { start = null; onChange(false); }
+    };
+    const onMove = (e) => {
+      if (!start || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > ONE_FINGER_SLOP_PX) onChange(true);
+    };
+    const onEnd = () => {
+      start = null;
+      clear();
+      timer = setTimeout(() => onChange(false), HINT_MS);
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: true });
+    el.addEventListener("touchend", onEnd, { passive: true });
+    el.addEventListener("touchcancel", onEnd, { passive: true });
+    return () => {
+      clear();
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [map, active, onChange]);
   return null;
 }
 
@@ -172,6 +237,13 @@ function MapAttribution() {
   return null;
 }
 
+export const MAP_COPY = Object.freeze({
+  twoFingers: "Use two fingers to move the map",
+});
+
+/** The inline map's height on a phone, a tablet and a desktop (21 Oct 2026, see CityMap) */
+export const MAP_HEIGHT_CLASS = "h-[280px] sm:h-[320px] lg:h-[380px]";
+
 /**
  * The interactive city map on the landing page. Clicking a city filters the
  * figures underneath it.
@@ -180,12 +252,22 @@ function MapAttribution() {
  * Leaflet uses `window` as soon as it is imported, so pulling this into a
  * server-rendered page breaks the build.
  *
- * Inline, wheel zoom starts once the map is clicked and pinch zoom is off. The
- * map sits partway down the page, and one that captures scrolling traps anyone
- * trying to scroll or swipe past it. Fullscreen enables both (ZoomControlByMode).
+ * Inline, wheel zoom starts once the map is clicked, and on a phone or tablet
+ * one finger scrolls the page while two move the map. The map sits partway
+ * down the page, and one that captures scrolling traps anyone trying to scroll
+ * or swipe past it. Fullscreen enables everything (ZoomControlByMode).
+ *
+ * Smaller from 21 Oct 2026 (apple-design): 280 px tall on a phone, 320 on a
+ * tablet and 380 beside the welcome on a desktop, about the height of the text
+ * it sits beside, so it supports the page instead of taking it over. At 400
+ * and 480 it filled a phone's screen below the buttons and stood taller than
+ * the welcome on a desktop. The skeleton in hero.jsx keeps the same heights.
  */
 export default function CityMap({ selectedCity, onCitySelect }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // A finger is the main pointer: phones and tablets
+  const touch = useMediaQuery("(pointer: coarse)") === true;
+  const [hint, setHint] = useState(false);
 
   // ESC key exits fullscreen
   useEffect(() => {
@@ -200,7 +282,7 @@ export default function CityMap({ selectedCity, onCitySelect }) {
       className={`${
         isFullscreen
           ? "fixed inset-0 z-[9999] rounded-none"
-          : "w-full h-[400px] lg:h-[480px] rounded-card relative z-0"
+          : `w-full ${MAP_HEIGHT_CLASS} rounded-card relative z-0`
       } overflow-hidden border border-line bg-surface-subtle`}
     >
       {/* Fullscreen toggle button */}
@@ -251,10 +333,22 @@ export default function CityMap({ selectedCity, onCitySelect }) {
         />
         <FitBounds />
         <InvalidateOnResize isFullscreen={isFullscreen} />
-        <ZoomControlByMode isFullscreen={isFullscreen} />
+        <ZoomControlByMode isFullscreen={isFullscreen} touch={touch} />
+        <TwoFingerHint active={touch && !isFullscreen} onChange={setHint} />
         <MapDeselect onCitySelect={onCitySelect} />
         <CityPolygons selectedCity={selectedCity} onCitySelect={onCitySelect} />
       </MapContainer>
+
+      {/* The two-finger note (TwoFingerHint): a dark, frosted layer over the map
+          with the words in white, never in the way of a tap */}
+      <div
+        aria-hidden={!hint}
+        className={`pointer-events-none absolute inset-0 z-[1001] grid place-items-center bg-ink/45 backdrop-blur-[2px] motion-safe:transition-opacity motion-safe:duration-200 ${hint ? "opacity-100" : "opacity-0"}`}
+      >
+        <p role="status" className="px-4 text-center text-sm font-semibold tracking-[0.01em] text-white">
+          {hint ? MAP_COPY.twoFingers : ""}
+        </p>
+      </div>
     </div>
   );
 }

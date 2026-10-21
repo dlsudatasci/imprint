@@ -6,11 +6,13 @@ import { HERO_COPY as COPY } from "./heroCopy";
 
 // ssr:false is required, not an optimization — Leaflet reaches for `window` at
 // import time and throws during server rendering. The skeleton reserves the
-// map's height so the rest of the page doesn't jump when it arrives.
+// map's height so the rest of the page doesn't jump when it arrives: the same
+// heights as MAP_HEIGHT_CLASS in CityMap.jsx, written out here so Tailwind
+// sees them without loading Leaflet.
 const CityMap = dynamic(() => import("./CityMap"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[400px] lg:h-[480px] bg-surface-subtle animate-pulse motion-reduce:animate-none flex items-center justify-center rounded-card border border-line">
+    <div className="w-full h-[280px] sm:h-[320px] lg:h-[380px] bg-surface-subtle animate-pulse motion-reduce:animate-none flex items-center justify-center rounded-card border border-line">
       <p className="text-sm font-medium text-subtle">Loading map...</p>
     </div>
   ),

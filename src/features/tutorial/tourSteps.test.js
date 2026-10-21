@@ -255,7 +255,7 @@ describe("the touch tour", () => {
       ".rp-stage",
       "#add-box-button",
       "#box-review-section-peek",
-      "#box-review-obstructions-peek",
+      "#box-review-chips-peek",
       "#scene-level-section",
       "button[type='submit']",
     ]);

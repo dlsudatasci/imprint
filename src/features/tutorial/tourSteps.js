@@ -219,7 +219,7 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
     ".rp-stage",
     "#add-box-button",
     "#box-review-section-peek",
-    "#box-review-obstructions-peek",
+    "#box-review-chips-peek",
     SCENE_SECTION,
     "button[type='submit']",
   ]),
@@ -227,7 +227,7 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
     ".rp-stage",
     "#add-box-button",
     "#box-review-section-peek",
-    "#box-review-obstructions-peek",
+    "#box-review-chips-peek",
     `#scene-level-peek, ${SCENE_SECTION}`,
     "button[type='submit']",
   ]),
@@ -248,7 +248,7 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
     },
     {
       title: "Your Answers",
-      content: "Every answer is listed at the bottom of the screen, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. Pull the list up to see everything, and tap any object to change its answer. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye beside an object in the list pulled up hides one. To show a hidden box again, double-tap where it was.",
+      content: "Every object is listed at the bottom of the screen, with what is left first and what you answered for each. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. Pull the list up for your answers in Not obstructions and Obstructions, and tap any object to change its answer. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye beside an object in the list pulled up hides one. To show a hidden box again, double-tap where it was.",
     },
     {
       title: "Severity",

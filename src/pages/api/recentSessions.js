@@ -16,8 +16,10 @@ import { bucketChartData, normalizeCityDisplay, countObstructions } from "@/util
  * Note this runs a couple of queries per session in a loop. That is fine at a
  * limit of eight, but worth combining into a single query if the limit grows.
  *
- * Annotators get an empty list (decided 4 Oct 2026). The dashboard does not
- * show them the list, and this keeps an old cached page from showing it either.
+ * Annotators get their sessions too (21 Oct 2026). From 4 Oct 2026 they got an
+ * empty list, and from 6 Oct the dashboard showed them none of its lower half;
+ * both are back for them now. Their rows have no accessibility average, since
+ * annotators answer no scene-level questions (see below).
  */
 export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
@@ -34,14 +36,6 @@ export default async function handler(req, res) {
   try {
     const { db } = await connectToDatabase();
     const userId = session.user._id;
-
-    // The role comes from the database, since an admin can change it after sign-in
-    const userRecord = await db
-      .collection("users")
-      .findOne({ _id: new ObjectId(userId) }, { projection: { role: 1 } });
-    if (userRecord?.role === "annotator") {
-      return res.status(200).json({ sessions: [] });
-    }
 
     // 1. Fetch completed or abandoned sessions for the user, sorted by newest first
     const sessions = await db

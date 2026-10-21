@@ -1,6 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { cn } from "./cn";
-import { snapPoints, clampSheet, nearestSnap, SNAP_ORDER } from "./sheetSnap";
+import { snapPoints, clampSheet, nearestSnap, springStep, SNAP_ORDER } from "./sheetSnap";
 
 /**
  * The answers sheet on phones and tablets (contributors, 9 Oct 2026,
@@ -22,6 +21,13 @@ import { snapPoints, clampSheet, nearestSnap, SNAP_ORDER } from "./sheetSnap";
  * The sheet slides with a transform and the photo above it never resizes, so
  * the photo's canvas is not rebuilt during a drag. No animation with reduced
  * motion.
+ *
+ * From 21 Oct 2026 it moves like a sheet on iOS (apple-design): it follows the
+ * finger 1:1, a release lands where its speed carries it, and it gets there on
+ * a critically damped spring that starts at the finger's speed, instead of a
+ * fixed 200 ms slide. It can be grabbed again mid-way and follows the finger
+ * from where it is on the screen. It never rests higher than its content needs
+ * (sheetSnap.js), and the content shows as it is pulled up.
  *
  * `compact` is the sheet under the full-screen photo (12 Oct 2026): at rest
  * only the handle shows, and the footer comes up with the sheet. The same
@@ -66,6 +72,31 @@ export const NO_SCROLL_STYLE: React.CSSProperties = { overflow: "clip" };
 // A vertical move on the header past this many px drags the sheet. Below it
 // the press stays a tap on whatever it landed on (a chip, Next).
 const DRAG_SLOP_PX = 8;
+// The release speed is measured over the drag's last 100 ms, and is nothing
+// if the finger stood still for 80 ms before lifting
+const VELOCITY_WINDOW_MS = 100;
+const STILL_MS = 80;
+// The spring has arrived within half a pixel and 10 px a second
+const SETTLE_PX = 0.5;
+const SETTLE_SPEED = 10;
+
+/** Springs only where they can run, and the viewer has not asked for less motion. */
+function animates() {
+  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function" || typeof window.matchMedia !== "function") return false;
+  return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+type Drag = { id: number; startY: number; startPos: number; dragging: boolean; samples: Array<{ y: number; t: number }> };
+
+/** Upward speed over the last samples, px per ms; 0 if the finger stood still before lifting. */
+function releaseVelocity(samples: Drag["samples"], endT: number) {
+  const last = samples[samples.length - 1];
+  if (!last || endT - last.t > STILL_MS) return 0;
+  const recent = samples.filter((p) => last.t - p.t <= VELOCITY_WINDOW_MS);
+  const first = recent[0];
+  const dt = last.t - first.t;
+  return dt > 0 ? (first.y - last.y) / dt : 0;
+}
 
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
@@ -101,7 +132,71 @@ export default function BottomSheet({ id, snap, onSnapChange, header, children, 
   const rest = points[snap] ?? points.collapsed;
 
   const [dragPos, setDragPos] = useState<number | null>(null);
-  const drag = useRef<{ id: number; startY: number; startPos: number; dragging: boolean; lastY: number; lastT: number; v: number } | null>(null);
+  const drag = useRef<Drag | null>(null);
+  // The spring's position while it runs, px; null at rest
+  const [springPos, setSpringPos] = useState<number | null>(null);
+  // Where the sheet is on the screen and how fast it moves (px, px per s,
+  // positive upwards): a new spring or a new drag starts from here
+  const live = useRef({ pos: rest, vel: 0 });
+  const target = useRef(rest);
+  const frame = useRef<number | null>(null);
+
+  const stopSpring = () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    frame.current = null;
+  };
+
+  /** Moves the sheet to `to` from where it is, starting at `velocity` px/s. A running spring just takes the new point. */
+  const springTo = (to: number, velocity: number) => {
+    target.current = to;
+    live.current.vel = velocity;
+    const there = Math.abs(live.current.pos - to) < SETTLE_PX && Math.abs(velocity) < SETTLE_SPEED;
+    if (!animates() || there) {
+      stopSpring();
+      live.current = { pos: to, vel: 0 };
+      setSpringPos(null);
+      return;
+    }
+    setSpringPos(live.current.pos);
+    if (frame.current !== null) return;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(0.064, Math.max(0, (now - last) / 1000));
+      last = now;
+      const displacement = live.current.pos - target.current;
+      const next = springStep(displacement, live.current.vel, dt);
+      // Arrived, or about to pass its point after a very fast throw: stop on it
+      const passed = displacement !== 0 && Math.sign(next.x) !== Math.sign(displacement) && next.x !== 0;
+      if (passed || (Math.abs(next.x) < SETTLE_PX && Math.abs(next.v) < SETTLE_SPEED)) {
+        frame.current = null;
+        live.current = { pos: target.current, vel: 0 };
+        setSpringPos(null);
+        return;
+      }
+      live.current = { pos: target.current + next.x, vel: next.v };
+      setSpringPos(live.current.pos);
+      frame.current = requestAnimationFrame(tick);
+    };
+    frame.current = requestAnimationFrame(tick);
+  };
+
+  // A new resting point (another snap, or the content changed size) is sprung
+  // to from where the sheet is now. The first measure places it without a slide.
+  const lastRest = useRef(rest);
+  useIsoLayoutEffect(() => {
+    const from = lastRest.current;
+    if (from === rest) return;
+    lastRest.current = rest;
+    if (drag.current?.dragging) return;
+    if (from === 0) {
+      live.current = { pos: rest, vel: 0 };
+      target.current = rest;
+      return;
+    }
+    springTo(rest, live.current.vel);
+  }, [rest]);
+
+  useEffect(() => stopSpring, []);
 
   // Told only when a point moves
   const { collapsed, half, full: fullPoint, panel } = points;
@@ -111,33 +206,37 @@ export default function BottomSheet({ id, snap, onSnapChange, header, children, 
     onPointsRef.current?.({ collapsed, half, full: fullPoint, panel }, container);
   }, [collapsed, half, fullPoint, panel, container]);
 
-  const position = dragPos ?? rest;
+  const position = dragPos ?? springPos ?? rest;
   const toggle = () => onSnapChange(snap === "collapsed" ? "half" : "collapsed");
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    drag.current = { id: e.pointerId, startY: e.clientY, startPos: rest, dragging: false, lastY: e.clientY, lastT: e.timeStamp, v: 0 };
+    drag.current = { id: e.pointerId, startY: e.clientY, startPos: live.current.pos, dragging: false, samples: [{ y: e.clientY, t: e.timeStamp }] };
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
-    const dy = e.clientY - d.startY;
     if (!d.dragging) {
-      if (Math.abs(dy) <= DRAG_SLOP_PX) return;
+      if (Math.abs(e.clientY - d.startY) <= DRAG_SLOP_PX) return;
       d.dragging = true;
+      // Grabbed mid-way: the sheet follows the finger from where it is on the screen
+      stopSpring();
+      d.startPos = live.current.pos;
+      d.startY = e.clientY;
       try {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       } catch {
         // Not an active pointer (a synthetic event): the drag still works while over the header
       }
     }
-    const dt = e.timeStamp - d.lastT;
+    d.samples.push({ y: e.clientY, t: e.timeStamp });
+    if (d.samples.length > 12) d.samples.shift();
     // Upwards is positive: the sheet grows as the finger goes up
-    if (dt > 0) d.v = (d.lastY - e.clientY) / dt;
-    d.lastY = e.clientY;
-    d.lastT = e.timeStamp;
-    setDragPos(clampSheet(d.startPos - dy, points));
+    const pos = clampSheet(d.startPos - (e.clientY - d.startY), points);
+    live.current = { pos, vel: releaseVelocity(d.samples, e.timeStamp) * 1000 };
+    setSpringPos(null);
+    setDragPos(pos);
   };
 
   const endDrag = (e: React.PointerEvent) => {
@@ -146,27 +245,29 @@ export default function BottomSheet({ id, snap, onSnapChange, header, children, 
     drag.current = null;
     if (!d.dragging) return;
     const names = snap === "panel" ? ["collapsed", "panel", "full"] : [...SNAP_ORDER];
-    const next = nearestSnap(clampSheet(d.startPos - (e.clientY - d.startY), points), d.v, points, snap, names) as SheetSnap;
+    const release = clampSheet(d.startPos - (e.clientY - d.startY), points);
+    const velocity = releaseVelocity(d.samples, e.timeStamp);
+    const next = nearestSnap(release, velocity, points, snap, names) as SheetSnap;
+    // The spring takes over at the finger's speed, from where the finger left it
+    live.current = { pos: release, vel: velocity * 1000 };
     setDragPos(null);
+    springTo(points[next], velocity * 1000);
     onSnapChange(next);
   };
 
   const full = points.full;
-  const bodyHeight = Math.max(0, rest - headerH - footerH);
+  // Up to where the sheet is shown, so the content is there as it is pulled up
+  const bodyHeight = Math.max(0, Math.max(rest, position) - headerH - footerH);
   // Compact: the footer is off the screen at rest and rises under the handle
   const footerShift = compact ? Math.min(footerH, Math.max(0, points.collapsed + footerH - position)) : 0;
-  const footerAway = compact && snap === "collapsed" && dragPos === null;
-  const slide = dragPos === null ? "motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out" : "transition-none";
+  const footerAway = compact && snap === "collapsed" && dragPos === null && springPos === null;
 
   return (
     <div ref={containerRef} data-no-scroll className="absolute inset-0 pointer-events-none overflow-hidden" style={NO_SCROLL_STYLE}>
       <section
         id={id}
         aria-label="Your answers"
-        className={cn(
-          "absolute inset-x-0 z-10 pointer-events-auto flex flex-col bg-surface rounded-t-2xl shadow-[0_-8px_24px_rgba(15,23,42,0.18)]",
-          slide
-        )}
+        className="absolute inset-x-0 z-10 pointer-events-auto flex flex-col bg-surface rounded-t-2xl shadow-[0_-8px_24px_rgba(15,23,42,0.18)] will-change-transform"
         style={{
           bottom: footerH,
           height: Math.max(0, full - footerH),
@@ -205,7 +306,7 @@ export default function BottomSheet({ id, snap, onSnapChange, header, children, 
       <div
         ref={footerRef}
         inert={footerAway}
-        className={cn("absolute inset-x-0 bottom-0 z-20 pointer-events-auto bg-surface border-t border-line px-4 pt-3", compact && slide)}
+        className="absolute inset-x-0 bottom-0 z-20 pointer-events-auto bg-surface border-t border-line px-4 pt-3"
         style={{
           paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))",
           transform: footerShift > 0 ? `translateY(${footerShift}px)` : undefined,

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import ObjectTrays, { ObjectTraysPeek, SheetStepHeading } from "./ObjectTrays";
-import { buildTrays } from "@/features/annotate/objectTrays";
+import { buildTrays, buildPeekChips } from "@/features/annotate/objectTrays";
 import { buildDisplayLabels } from "@/util/buildDisplayLabels";
 
 // Contributor Step 1: lists of answers under the photo (7 Oct 2026)
@@ -254,9 +254,10 @@ describe("SheetStepHeading", () => {
 });
 
 describe("ObjectTraysPeek's first row", () => {
-  const trays = buildTrays([suggestion("a", "car"), suggestion("b", "tree")]);
+  const boxes = [suggestion("a", "car"), suggestion("b", "tree")];
+  const trays = buildTrays(boxes);
   const peek = (extra = {}) =>
-    renderToStaticMarkup(<ObjectTraysPeek trays={trays} selectedId={null} onOpen={() => undefined} onNext={() => undefined} sceneLine="Step 2" onShowScene={() => undefined} {...extra} />);
+    renderToStaticMarkup(<ObjectTraysPeek trays={trays} peek={buildPeekChips(boxes)} selectedId={null} onOpen={() => undefined} onNext={() => undefined} sceneLine="Step 2" onShowScene={() => undefined} {...extra} />);
 
   it("shows the step's name with Show all and Hide all only when it is given both", () => {
     expect(peek()).not.toContain("Step 1: Identify Objects");
@@ -264,5 +265,44 @@ describe("ObjectTraysPeek's first row", () => {
     expect(withRow).toContain("Step 1: Identify Objects");
     expect(withRow).toMatch(/Show all <span[^>]*>1<\/span>/);
     expect(withRow).toContain(">Hide all<");
+  });
+});
+
+// 21 Oct 2026: every object in one row at the top of the contributors' sheet, what is left first
+describe("ObjectTraysPeek's chip row", () => {
+  const drawn = (id: string, extra = {}): Box => ({ id, mark, comment: "bench", editable: true, selected: false, ...extra });
+  const boxes = [
+    suggestion("a", "car", { selected: true, obstructs: true, severity: 3 }),
+    suggestion("b", "tree"),
+    suggestion("c", "lamp_post", { isRejected: true, obstructs: false }),
+    suggestion("d", "utility_post", { selected: true, obstructs: true, severity: null }),
+    drawn("e", { comment: "---" }),
+    suggestion("f", "bollard", { isRejected: true, comment: "not_an_object", initialState: { comment: "bollard" } }),
+  ];
+  const render = () =>
+    renderToStaticMarkup(
+      <ObjectTraysPeek trays={buildTrays(boxes)} peek={buildPeekChips(boxes)} selectedId={null} onOpen={() => undefined} onNext={() => undefined} sceneLine="Step 2" onShowScene={() => undefined} />
+    );
+  const chipTexts = (html: string) => Array.from(html.matchAll(/<li[^>]*>(.*?)<\/li>/g)).map((m) => m[1].replace(/<[^>]+>/g, ""));
+
+  it("shows one row of every object, no answer lists, with what is left first and a tag on each", () => {
+    const html = render();
+    expect(html).toContain('id="box-review-chips-peek"');
+    expect(html).not.toContain(">Not obstructions<");
+    expect(html).not.toContain(">Obstructions<");
+    expect(chipTexts(html)).toEqual([
+      "TreeTo decide",
+      "Utility PostNo severity",
+      "Select a category, drawn by youTo decide",
+      "CarObstruction",
+      "Lamp PostNot an obstruction",
+      "BollardNot an object",
+    ]);
+    // The drawn box has the pencil
+    expect(html.match(/data-drawn/g)).toHaveLength(1);
+  });
+
+  it("counts what is left, the Yes with no severity included", () => {
+    expect(render()).toMatch(/Still to decide <span[^>]*>3<\/span>/);
   });
 });

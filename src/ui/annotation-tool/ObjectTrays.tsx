@@ -1,6 +1,6 @@
 import React from "react";
 import { cn } from "../cn";
-import { TRAYS, TRAY_COPY, buildTrays, ghostSlotCount } from "@/features/annotate/objectTrays";
+import { TRAYS, TRAY_COPY, buildTrays, ghostSlotCount, PEEK_TAG, type buildPeekChips } from "@/features/annotate/objectTrays";
 import { BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
 import { EyeIcon, EyeOffIcon } from "../icons";
 
@@ -323,8 +323,40 @@ export function SheetStepHeading({ heading, hiddenCount, boxCount, onShowAll, on
   );
 }
 
+type Peek = ReturnType<typeof buildPeekChips>;
+
+/**
+ * Next beside "Still to decide" and "To decide" at the top of the sheet, both
+ * roles (21 Oct 2026, apple-design). It was a 44 px filled button, as loud as
+ * Next Image in the footer and touching the chips under it. Now it is plain
+ * tinted text with a chevron, as a secondary action is in an iOS sheet: Next
+ * Image stays the one filled button, and there is room above the chips. It
+ * dims the moment it is pressed and comes back as the finger lifts. The
+ * button keeps the 44 px a finger needs.
+ */
+export function SheetNextButton({ onPress }: { onPress(): void }) {
+  return (
+    <button
+      type="button"
+      onClick={onPress}
+      className={cn(
+        "shrink-0 -mr-2 h-11 pl-2 pr-1 inline-flex items-center gap-0.5 rounded-control text-sm font-semibold text-primary",
+        "transition-opacity duration-200 active:opacity-40 active:duration-0",
+        FOCUS
+      )}
+    >
+      {TRAY_COPY.next}
+      <svg aria-hidden="true" viewBox="0 0 16 16" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 3.5L10.5 8 6 12.5" />
+      </svg>
+    </button>
+  );
+}
+
 export interface ObjectTraysPeekProps {
   trays: Trays;
+  /** Every object in one row with what is left first (buildPeekChips, 21 Oct 2026) */
+  peek: Peek;
   selectedId: string | null;
   /** Select the box and open its panel */
   onOpen(id: string): void;
@@ -341,40 +373,67 @@ export interface ObjectTraysPeekProps {
   onHideAll?(): void;
 }
 
-/** One answer list as a row: its title and count, then its chips scrolling sideways. */
-function PeekRow({ tray, trays, actions, id }: {
-  tray: "notObstructions" | "obstructions";
-  trays: Trays;
-  actions: ChipActions;
-  id?: string;
-}) {
-  const items = trays[tray];
+// A chip's tag at the top of the sheet: red for what is left, as on the
+// annotators' chips, solid blue for Yes, light blue for No, grey for Not an object
+const PEEK_TAG_CLASS: Record<string, string> = {
+  toDecide: "bg-danger-soft text-danger",
+  noSeverity: "bg-danger-soft text-danger",
+  obstruction: "bg-primary text-white",
+  notObstruction: "bg-blue-50 text-primary border border-blue-200",
+  removed: "bg-surface-subtle text-muted border border-line",
+};
+
+/**
+ * Every object as a chip in one row that scrolls sideways (21 Oct 2026), what
+ * is left first, each with the pencil if it was drawn and a tag saying what
+ * it is. A chip opens its box. The tour's Severity step points at it.
+ */
+function PeekChips({ peek, selectedId, onOpen }: { peek: Peek; selectedId: string | null; onOpen(id: string): void }) {
   return (
-    <div id={id} className="h-11 flex items-center gap-2 min-w-0">
-      <span className="w-[7.5rem] shrink-0 text-xs font-semibold text-ink whitespace-nowrap">
-        {TRAY_COPY[tray]} <span className="font-medium text-muted tabular-nums">{items.length}</span>
-      </span>
-      <ul aria-label={TRAY_COPY[tray]} className={cn("flex-1 min-w-0 flex items-center overflow-x-auto overscroll-x-contain", CHIP_GAP)}>
-        {items.map((item) => (
-          <Chip key={item.id} item={item} tone={tray} actions={actions} />
-        ))}
-        {items.length === 0 && <EmptySlot />}
-      </ul>
-    </div>
+    <ul
+      id="box-review-chips-peek"
+      aria-label="Objects in this image"
+      className={cn("h-11 flex items-center overflow-x-auto overscroll-x-contain", CHIP_GAP)}
+    >
+      {peek.chips.map((item) => (
+        <li key={item.id} className="shrink-0">
+          <button
+            type="button"
+            aria-current={selectedId === item.id ? "true" : undefined}
+            title={item.drawn ? TRAY_COPY.drawnTitle : undefined}
+            onMouseDown={stopPress}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen(item.id);
+            }}
+            className={cn(
+              "h-10 px-2.5 inline-flex items-center gap-1.5 rounded-control border whitespace-nowrap",
+              selectedId === item.id ? SELECTED_CHIP : "border-line bg-surface",
+              FOCUS
+            )}
+          >
+            {item.drawn && <DrawnMark />}
+            <span className="text-xs font-semibold text-ink">{item.label}</span>
+            {item.drawn && <span className="sr-only">, {TRAY_COPY.drawnTitle.toLowerCase()}</span>}
+            <span className={cn("text-xs font-bold rounded-control px-1", PEEK_TAG_CLASS[item.status])}>{PEEK_TAG[item.status]}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
 /**
  * The top of the answers sheet on a phone or tablet (9 Oct 2026), always in
  * view, like the driver card in Grab: how many objects are still to decide with
- * Next, the two lists as rows of chips, and a line saying Step 2 is further
- * up. Every row has a fixed height, so the sheet's collapsed height, and with
- * it the photo's, does not change as objects are answered. The touch tour
- * points at it (box-review-section-peek).
+ * Next, every object as a chip in one row with what is left first (21 Oct
+ * 2026; before, the Not obstructions and Obstructions lists as two rows), and
+ * a line saying Step 2 is further up. Every row has a fixed height, so the
+ * sheet's collapsed height, and with it the photo's, does not change as
+ * objects are answered. The touch tour points at it (box-review-section-peek).
  */
-export function ObjectTraysPeek({ trays, selectedId, onOpen, onNext, sceneLine, onShowScene, hiddenIds = [], onShowAll, onHideAll }: ObjectTraysPeekProps) {
+export function ObjectTraysPeek({ trays, peek, selectedId, onOpen, onNext, sceneLine, onShowScene, hiddenIds = [], onShowAll, onHideAll }: ObjectTraysPeekProps) {
   const { toDecide, total, removed } = trays;
-  const actions: ChipActions = { selectedId, onOpen, hidden: new Set() };
   const everyItem = [...toDecide, ...trays.notObstructions, ...trays.obstructions, ...removed];
   const hidden = new Set(hiddenIds);
   return (
@@ -389,18 +448,12 @@ export function ObjectTraysPeek({ trays, selectedId, onOpen, onNext, sceneLine, 
         />
       )}
       <div className="h-11 flex items-center justify-between gap-3">
-        {toDecide.length > 0 ? (
+        {peek.left > 0 ? (
           <>
             <span className="text-sm font-semibold text-ink">
-              {TRAY_COPY.toDecideTitle} <span className="font-medium text-muted tabular-nums">{toDecide.length}</span>
+              {TRAY_COPY.toDecideTitle} <span className="font-medium text-muted tabular-nums">{peek.left}</span>
             </span>
-            <button
-              type="button"
-              onClick={onNext}
-              className={cn("h-11 px-4 rounded-control border border-primary bg-primary text-white text-sm font-bold", FOCUS)}
-            >
-              {TRAY_COPY.next}
-            </button>
+            <SheetNextButton onPress={onNext} />
           </>
         ) : total > 0 || removed.length > 0 ? (
           <span className="text-sm font-semibold text-success">{TRAY_COPY.allAnswered}</span>
@@ -408,8 +461,7 @@ export function ObjectTraysPeek({ trays, selectedId, onOpen, onNext, sceneLine, 
           <span className="text-xs text-muted line-clamp-2">{TRAY_COPY.noObjectsTouch}</span>
         )}
       </div>
-      <PeekRow tray="notObstructions" trays={trays} actions={actions} />
-      <PeekRow tray="obstructions" trays={trays} actions={actions} id="box-review-obstructions-peek" />
+      <PeekChips peek={peek} selectedId={selectedId} onOpen={onOpen} />
       <button
         type="button"
         id="scene-level-peek"

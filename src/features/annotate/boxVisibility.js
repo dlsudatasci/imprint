@@ -51,4 +51,6 @@ export const BOX_VISIBILITY_COPY = Object.freeze({
   // 10 Oct 2026: every box hidden at once, and the open box hidden from its panel
   hideAll: "Hide all",
   hideOpen: "Hide this box on the photo",
+  // The button above an open box's panel on a phone or tablet (21 Oct 2026)
+  hideShort: "Hide on photo",
 });

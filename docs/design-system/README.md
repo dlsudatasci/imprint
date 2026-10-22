@@ -201,7 +201,8 @@ On the landing page (15 Oct 2026) a preview of the contributor task plays as the
 size as it arrives, then pins with `position: sticky`, and the next scroll goes close in.
 A cursor moves between boxes and buttons, and a camera glides close in on the photo and back
 out to the whole page. The camera never moves within a shot: the step card fades out of the way
-instead. It is the one place motion follows the scroll. With `prefers-reduced-motion: reduce` it does not move at all: one still per step with
+instead. On phones and tablets (22 Oct 2026) a fingertip taps instead, the answers sheet moves on the
+tool's spring and the photo pans as the tool's does, with no camera. It is the one place motion follows the scroll. With `prefers-reduced-motion: reduce` it does not move at all: one still per step with
 Previous step and Next step.
 
 ---
@@ -582,6 +583,31 @@ Below the city figures, the landing page plays the contributor task as the visit
   goes straight past it. The drawing is `inert` and `aria-hidden`, and the chapters are in the page
   as text (an `sr-only` list). With `prefers-reduced-motion: reduce` it is one still per step.
 - **The script and its answers** are in `src/features/home/howItWorks/demoScript.js`.
+- **Phones and tablets (22 Oct 2026, spec `IMPRINT_landing_touch_preview.md`)**: wherever the
+  tool itself uses its sheet layout (`useAnnotateLayout`: under 1024 px, and on every touch
+  device, an iPad held sideways too), the preview plays the tool's phone screen instead
+  (`TouchStage.jsx`, script `touchScript.js`): the photo on the dark screen, the answers in the
+  bottom sheet, and a fingertip (a see-through grey dot ringed in white, lighter while it
+  travels, pressed while it taps or drags) instead of the cursor. The same track, chapters and
+  answers as on a laptop, given the way a phone gives them: Tree #1 tapped on the photo, Next
+  for the rest in the tool's order, Add box with its corners dragged (the hint, then the
+  magnifier), the Step 2 line pulling the sheet up, Next Image. No camera: the whole screen is
+  always in view. The chapter is a band across the top of the frame, where the tool's top bar
+  would be (left out, as the laptop preview leaves out the progress strip), so it never covers
+  the sheet. It keeps room for two lines of text, so the screen under it never changes size,
+  and its bottom edge carries the progress line. The screen is laid out at the size of the
+  space it is shown in, and below 520 by 320 design px it is laid out at that size and scaled
+  down to fit. Built from the tool's pieces (the sheet variants of `DefaultInputSection`,
+  `SeverityPicker` and `SceneQuestions`, `ObjectTraysPeek`, stacked `ObjectTrays`) and its pure
+  geometry (`snapPoints` and `springStep` for the sheet, `fitImage`, `panLimits` and
+  `ensureVisible` with `keepPhotoInPlace` for the photo, `placeLabel` for the names, `loupePlacement` and `loupeSource`
+  for the magnifier). Still copies, kept in step by `TouchStage.test.jsx` where they can be: the
+  photo's boxes and round handles, Add box, the full-screen button (only with a finger as the
+  primary pointer, as in the tool), the hint, the magnifier, the line above an open box's panel,
+  the sheet's frame (checked against `BottomSheet`'s classes) and the open category list.
+  Checked against the tool in a browser: the sheet rests at the same heights and the photo
+  sits at the same place in every state. With reduced motion, one still per chapter, as on a
+  laptop.
 - **The join card** (`ClosingSection`, 15 Oct 2026) is the end of the page, the Metro Manila and
   impact sections removed. Plain on purpose: `rounded-modal border border-line bg-surface`, no
   shadow (D6), the heading (`H2`, `lg:text-4xl`) and its line on the left and the button on the

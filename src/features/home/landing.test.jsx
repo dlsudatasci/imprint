@@ -4,11 +4,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 vi.mock("next-auth/react", () => ({ useSession: vi.fn() }));
 
 import { useSession } from "next-auth/react";
-import HowItWorks, { STILL_TICKS } from "./HowItWorks";
+import HowItWorks, { STILL_TICKS, TOUCH_STILL_TICKS } from "./HowItWorks";
 import ClosingSection from "./ClosingSection";
 import { HOW_IT_WORKS_COPY } from "./howItWorks/howItWorksCopy";
 import { CLOSING_COPY } from "./closingCopy";
 import { CHAPTERS, TICKS } from "./howItWorks/demoScript";
+import { TOUCH_CHAPTERS } from "./howItWorks/touchScript";
 import { cityStatsItems } from "./cityStatsItems";
 
 /** Every string in a copy object, functions called with sample numbers */
@@ -39,6 +40,21 @@ describe("landing page copy", () => {
     expect(HOW_IT_WORKS_COPY.chapters).toHaveLength(CHAPTERS.length);
     expect(STILL_TICKS).toHaveLength(CHAPTERS.length);
     STILL_TICKS.forEach((tick) => {
+      expect(tick).toBeGreaterThanOrEqual(0);
+      expect(tick).toBeLessThanOrEqual(TICKS);
+    });
+  });
+
+  it("on phones and tablets, has the same chapter titles, one still each, and Not an object only for the model's boxes", () => {
+    expect(HOW_IT_WORKS_COPY.touchChapters).toHaveLength(TOUCH_CHAPTERS.length);
+    expect(HOW_IT_WORKS_COPY.touchChapters.map((c) => c.title)).toEqual(HOW_IT_WORKS_COPY.chapters.map((c) => c.title));
+    const [, answer, draw] = HOW_IT_WORKS_COPY.touchChapters;
+    expect(answer.text).toContain("Not an object");
+    expect(draw.text).not.toContain("Not an object");
+    // Short enough for two lines on a 320 px phone (the band keeps room for two)
+    for (const c of HOW_IT_WORKS_COPY.touchChapters) expect(c.text.length).toBeLessThanOrEqual(70);
+    expect(TOUCH_STILL_TICKS).toHaveLength(TOUCH_CHAPTERS.length);
+    TOUCH_STILL_TICKS.forEach((tick) => {
       expect(tick).toBeGreaterThanOrEqual(0);
       expect(tick).toBeLessThanOrEqual(TICKS);
     });

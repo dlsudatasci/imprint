@@ -13,6 +13,8 @@ import {
   ENTRANCE_END,
   HOLD_END,
   cardFadedAt,
+  replay,
+  initialState,
 } from "./demoScript";
 import { buildTrays } from "@/features/annotate/objectTrays";
 import { buildDisplayLabels } from "@/util/buildDisplayLabels";
@@ -229,5 +231,19 @@ describe("the preview script", () => {
     const before = JSON.stringify(DEMO_IMAGES);
     demoFrame(1);
     expect(JSON.stringify(DEMO_IMAGES)).toBe(before);
+  });
+});
+
+describe("replay (shared with the phone and tablet script, 22 Oct 2026)", () => {
+  it("is how demoFrame plays the steps: the same screen and cursor at every tick", () => {
+    for (let tick = 0; tick <= TICKS; tick += 7.5) {
+      const state = initialState();
+      const cursor = replay(STEPS, tick, state);
+      const frame = demoFrame(tick / TICKS);
+      expect(cursor).toEqual(frame.cursor);
+      expect(state.boxes).toEqual(frame.boxes);
+      expect(state.scene).toEqual(frame.scene);
+      expect(state.selectedId).toBe(frame.selectedId);
+    }
   });
 });

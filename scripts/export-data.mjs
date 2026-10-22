@@ -26,6 +26,13 @@
  * images also carry sidewalkMask ({ noSidewalk, polygons }), null on reference
  * images. Contributor rows have no sidewalkMask.
  *
+ * Scene answers are exported on the scale where higher is better, in every
+ * mode (22 Oct 2026, src/util/validators/sceneScale.mjs): surfaceCondition 1
+ * Difficult or dangerous to 3 Easy to traverse, walkability 1 Uncomfortable to
+ * 3 Comfortable, overallAccessibility 1 Not accessible to 5 Easily accessible.
+ * Answers saved before then ran the other way and are turned round here, so
+ * every exported row with answers says sceneScale: 2.
+ *
  * Usage:
  *   node --env-file=.env scripts/export-data.mjs --retraining
  *   node --env-file=.env scripts/export-data.mjs --full --output ./my-exports
@@ -41,6 +48,17 @@ import {
   buildRetrainingRows, pseudonymize, toCsvRow, writeCsv,
 } from "../src/util/validators/retrainingExport.mjs";
 import { buildSidewalkMaskRows, toJsonl } from "../src/util/validators/sidewalkMaskExport.mjs";
+import { SCENE_SCALE, sceneAnswersOf } from "../src/util/validators/sceneScale.mjs";
+
+/**
+ * A row, or a reference entry, with its scene answers on the scale where
+ * higher is better and marked so (22 Oct 2026). Rows with no answers keep
+ * sceneLevel: null and get no mark.
+ */
+function onCurrentScale(record) {
+  if (!record || !record.sceneLevel) return record;
+  return { ...record, sceneLevel: sceneAnswersOf(record), sceneScale: SCENE_SCALE };
+}
 
 const { values } = parseArgs({
   options: {
@@ -162,6 +180,11 @@ try {
           out.pseudoUserId = pseudonymize(out.userId);
         }
 
+        if (collName === "annotations") return onCurrentScale(out);
+        if (collName === "Image" && Array.isArray(out.referenceGroundTruth)) {
+          out.referenceGroundTruth = out.referenceGroundTruth.map(onCurrentScale);
+        }
+
         return out;
       });
 
@@ -195,7 +218,7 @@ try {
 
     const groundTruthMap = new Map();
     for (const img of refImages) {
-      groundTruthMap.set(img.imageID, img.referenceGroundTruth || null);
+      groundTruthMap.set(img.imageID, img.referenceGroundTruth ? img.referenceGroundTruth.map(onCurrentScale) : null);
     }
 
     const pairs = refAnnotations.map((ann) => {
@@ -221,7 +244,7 @@ try {
           h: box.mark?.height ?? null,
         })),
         notAnObjectCount,
-        sceneLevel: ann.sceneLevel || null,
+        sceneLevel: sceneAnswersOf(ann),
       };
     });
 

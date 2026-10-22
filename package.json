@@ -14,6 +14,7 @@
     "build:ui": "node scripts/build-ui.mjs",
     "db:indexes": "node --env-file=.env scripts/ensure-indexes.mjs",
     "db:migrate": "node --env-file=.env scripts/migrate-image-schema.mjs",
+    "db:remove-admin-sessions": "node --env-file=.env scripts/remove-admin-sessions.mjs",
     "db:apply-roles": "node --env-file=.env scripts/apply-roles.mjs",
     "db:promote-reserve": "node --env-file=.env scripts/promote-reserve.mjs",
     "db:set-role": "node --env-file=.env scripts/set-role.mjs"

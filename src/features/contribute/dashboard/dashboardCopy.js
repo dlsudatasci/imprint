@@ -41,8 +41,23 @@ export const DASHBOARD_COPY = Object.freeze({
   loadFailed: "This could not be loaded. Refresh the page to try again.",
   inProgress: "In progress",
   progress: (done, total) => `${done} of ${total} ${total === 1 ? "photo" : "photos"} done`,
-  chartLabel: "Obstructions per photo",
+  // The session's chart (22 Oct 2026, sessionChart.js): a column per photo up
+  // to ten, then ten groups of neighbouring photos
+  chartLabel: "Obstructions found",
+  chartSummary: (total, photos) => `${total} in ${photos} ${photos === 1 ? "photo" : "photos"}`,
+  chartNone: (photos) => `None in ${photos} ${photos === 1 ? "photo" : "photos"}`,
+  chartCount: (n) => `${n} ${n === 1 ? "obstruction" : "obstructions"}`,
+  chartPhoto: (from, to) => (to === undefined || to === from ? `Photo ${from}` : `Photos ${from} to ${to}`),
+  chartTableCaption: "Obstructions found in each photo",
   accessLabel: "Accessible to me",
+  // A session with no Accessible to Me answers, beside sessions that have them
+  // (every photo had no sidewalk, so the question was skipped)
+  accessNone: "No sidewalk rated",
+  // Five sessions at a time (22 Oct 2026)
+  showMore: "Show more",
+  showFewer: "Show fewer",
+  loadingMore: "Loading...",
+  moreFailed: "Those could not be loaded. Try again.",
   progressTitle: "Your progress",
   distanceLabel: "Sidewalk you've helped map",
   distanceValue: (meters) => formatDistance(meters),
@@ -59,10 +74,11 @@ export const DASHBOARD_COPY = Object.freeze({
 const ACCESS_ANSWERS = SCENE_QUESTIONS.find((q) => q.name === "Accessible to Me").answers;
 
 /**
- * The answer word nearest a session's average "Accessible to Me" (1 Easily
- * accessible to 5 Not accessible), so "2.4" reads as "Mostly accessible".
- * The number alone read as a score where higher is better, and the old label
- * "Avg Score" did not say which question it averaged.
+ * The answer word nearest a session's average "Accessible to Me", so "3.6"
+ * reads as "Mostly accessible". The old label "Avg Score" did not say which
+ * question it averaged. From 22 Oct 2026 the scale runs 1 Not accessible to 5
+ * Easily accessible (validators/sceneScale.mjs), so higher is better, as a
+ * score reads; it ran the other way, and "1" was the best answer.
  */
 export function accessWord(average) {
   const n = Number(average);

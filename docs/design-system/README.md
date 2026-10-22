@@ -216,7 +216,9 @@ Four variants, two sizes, **one component**. Replaces five competing systems.
 | Press | `enabled:active:scale-[0.97]`, transform over 100 ms, colour still 300 ms | 16 Oct 2026, apple-design: respond on press. Off with reduced motion |
 | Disabled | `opacity-50 cursor-not-allowed` | consistent where present |
 
-Variants: `primary` (filled) · `secondary` (outline, primary) · `neutral` (outline, gray-200) · `danger`.
+Variants: `primary` (filled) · `secondary` (outline, primary) · `neutral` (outline, gray-200) · `danger` · `plain`
+(22 Oct 2026: tinted text, no border or fill, dimming to 40% while pressed, for a secondary
+action in a list, such as Show more under the dashboard's Recent sessions).
 
 The mobile menu toggle is **not** a button variant — it uses `IconButton`, the square
 icon-button component this section called for.
@@ -489,9 +491,19 @@ device with a screen whose shorter side is under 600 px (`isPhone`).
   bar and the top of the sheet. A tour that would start there starts on leaving. Its first
   step says where the full-screen button is, on phones and on tablets.
 
+**Step 2's order (22 Oct 2026).** Every question's answers run worst to best, left to right,
+and the numbered ones are stored that way, higher is better: Sidewalk Width None, Narrow,
+Moderate, Wide; Surface Condition 1 Difficult or dangerous to 3 Easy to traverse; Walking
+Comfort 1 Uncomfortable to 3 Comfortable; Accessible to Me 1 Not accessible to 5 Easily
+accessible. They ran best to worst, and "1" for the best answer read as the worst score.
+`validators/sceneScale.mjs` says how answers saved before then are read (the testing database's old rows are left as they are). Step 1's severity is
+unchanged: 1 Minor inconvenience to 5 Impassable, where higher is more severe.
+
 **Step 2 in the sheet.** A row of options wraps when it does not fit (`flex-wrap`), and the
-five accessibility options go three and two under 390 px. Before 12 Oct 2026 the fifth stuck
-out of its card on a 360 px phone. The desktop layout keeps one row per question.
+five accessibility options go three and two under 400 px. Before 12 Oct 2026 the fifth stuck
+out of its card on a 360 px phone; until 22 Oct 2026 the split was under 390 px, but five do not
+fit at 390 either, and Easily accessible sat alone across the row. The desktop layout keeps one
+row per question.
 
 **The tutorial on touch (12 Oct 2026).** The touch tours (sheet layout) have **no beacons**:
 over the photo and the sheet they blocked swipes and drags. The top bar's ? button replays the
@@ -647,11 +659,53 @@ Laid out with the apple-design principles, like §9d. `src/pages/contribute/inde
 - **No solid brand-colour blocks.** The distance used to be a full-width `bg-primary` panel,
   louder than the page's one action. The brand blue is for the username, the filled button
   and the bars.
-- **Recent sessions**: one bordered card, rows on a `minmax(0,1fr) 10rem 7rem` grid from
-  768 px so the chart and the "Accessible to me" answer line up down the list, labels
-  `text-xs semibold muted` on one line. The active row spans the two columns with its count,
-  Resume Session and an `h-1.5` bar. The list never scrolls inside the page (it holds at
-  most nine rows).
+- **Recent sessions** (laid out again 22 Oct 2026): one bordered card, five finished sessions
+  at a time (`/api/recentSessions?offset=&limit=`, `hasMore`), the active one first above
+  them. A `plain` `Button` (`size="sm"`, `min-h-11`) at the foot says Show more, then Show
+  fewer once everything is in; a failed load says so beside it. Not endless scroll, which
+  would push Your progress out of reach, and not numbered pages, heavy for a summary. The
+  list never scrolls inside the page.
+  - **Row**: from 768 px a `minmax(0,1fr) 10rem 8rem` grid (`minmax(0,1fr) 10rem` without
+    Accessible to me), as on a laptop, so the chart and the answer line up down the list. Each
+    column of a finished session is a label in a 20 px box (`h-5`, bottom-aligned: the date
+    level with "Obstructions found" and "Accessible to me", those two centred), its picture in a
+    72 px band 8 px under it (the thumbnails, the chart's plot, the answer's tile, each on the
+    band's floor), then a caption (`text-xs muted`): the cities under the thumbnails, the total
+    under the chart and the answer word under the tile, those two centred (22 Oct 2026, Rans).
+    On a phone the thumbnails, then the chart with Accessible to me beside
+    it (`minmax(7.25rem,10rem) minmax(6.5rem,1fr)`, `gap-2`: each label on one line at 360 px,
+    and the chart's column never wider than the chart, so it starts under the thumbnails on a
+    wide phone; the plot as wide as its column, up to 160 px).
+  - **Where**: the date above the thumbnails, the cities under them from 768 px (beside the
+    date on a phone, "Oct 21, 2026 · Makati City", where the line may wrap), most photos first:
+    "Makati City" (one city says so; "Quezon City" stays as it is), "Makati and San Juan",
+    "Makati, San Juan and Pasig", "Makati, San Juan and 2 more", the whole list in `title`. It
+    said "Several cities". The session in progress keeps
+    "Oct 17, 2026 · In progress" above its thumbnails.
+  - **Thumbnails**: five from 1024 px, four on a tablet or phone, then a `+n` tile counting the
+    rest. 72 px, in slots of one size whatever the number of photos (`grid`,
+    `repeat(5 or 6, minmax(0,4.5rem))`), so one photo is as big as one of ten; where 72 px do
+    not fit they share the row (about 55 px on an 820 px tablet, 44 at 768, 40 to 54 on phones).
+  - **Chart** ("Obstructions found", dataviz skill): compact columns side by side, the total
+    in words under them (`12 in 10 photos`): one per photo up to ten, ten groups
+    of neighbouring photos past that (`sessionChart.js`), a grouped column as tall as its
+    photos' average. The plot is always ten slots wide (`w-40`, its `border-line` baseline
+    across it), so the charts line up down the list, and a session of fewer photos sits in its
+    middle (Rans: one column alone on the left looked stranded). One series, so no legend:
+    columns `bg-primary/45`, 12 px wide in 16 px slots (a 4 px gap), tops rounded 4 px; the
+    tallest is the one full `bg-primary` column, its count on its cap. On a phone, beside
+    Accessible to me, the slots share what is left (`flex-1`, at most 16 px). Hovering a column fills
+    it and fades in (150 ms, none with reduced motion) a two-line tip, count then photos,
+    under 110 px wide and anchored by the column's third of the plot so it never leaves it; an
+    `sr-only` table has every count. No axis labels. It was five averaged columns, then (22 Oct
+    2026, first pass) one per photo across the row, too many to read at 50 (Rans).
+  - **Accessible to me**: contributors' Step 2 answer, the average on its colour in a 64 px
+    square (`text-xl extrabold`) on the band's floor, level with the chart's baseline, the
+    nearest answer word under it; label, tile and word centred in the column as the chart's are. 5 Easily accessible:
+    `bg-primary` from 4, `bg-primary-100` from 2.5, `bg-line` under that (22 Oct 2026; it was
+    1 Easily accessible, lower better). Annotators answer no scene questions, so the column is shown only
+    when a session in the list has an answer; a session without one, in a list with it,
+    shows "–" and "No sidewalk rated".
 - Section headings `font-display text-2xl sm:text-3xl bold`, tracking -0.02em, `mt-5` to
   their card, sections `space-y-12`.
 

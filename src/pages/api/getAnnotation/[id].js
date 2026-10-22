@@ -2,6 +2,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]";
 import { ObjectId } from "mongodb";
+import { sceneAnswersOf } from "@/util/validators/sceneScale.mjs";
 
 /**
  * GET /api/getAnnotation/[id] — one submitted annotation, combined with the
@@ -65,7 +66,8 @@ const handler = async (req, res) => {
       newObjects: annotationRecord.newObjects,
       accessibilityRating: annotationRecord.accessibilityRating,
       sceneRatings: annotationRecord.sceneRatings,
-      sceneLevel: annotationRecord.sceneLevel,
+      // On the scale where higher is better, whichever it was answered on (22 Oct 2026)
+      sceneLevel: sceneAnswersOf(annotationRecord),
       pavementType: annotationRecord.pavementType,
       username: annotationRecord.username,
       date: annotationRecord.date,

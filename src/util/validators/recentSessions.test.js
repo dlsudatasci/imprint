@@ -1,39 +1,53 @@
 import { describe, it, expect } from "vitest";
-import { bucketChartData, normalizeCityDisplay, countObstructions } from "./recentSessions.js";
+import { normalizeCityDisplay, countObstructions, sessionPlaces, pageParams, RECENT_SESSIONS_PAGE } from "./recentSessions.js";
 import { STUDY_CITIES, normalizeCityName } from "@/util/cities";
 import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
 
-describe("bucketChartData", () => {
-  it("passes through 5 or fewer items unchanged", () => {
-    expect(bucketChartData([1, 2, 3])).toEqual([1, 2, 3]);
-    expect(bucketChartData([1, 2, 3, 4, 5])).toEqual([1, 2, 3, 4, 5]);
+// 22 Oct 2026: "Several cities" said nothing; the cities are named, most photos first
+describe("sessionPlaces", () => {
+  it("names one, two or three cities, most photos first", () => {
+    // One city says so (22 Oct 2026), without doubling Quezon City's own
+    expect(sessionPlaces(new Map([["makati", 4]]))).toEqual({ label: "Makati City", names: ["Makati"] });
+    expect(sessionPlaces(new Map([["quezoncity", 2]])).label).toBe("Quezon City");
+    expect(sessionPlaces(new Map([["laspinas", 2]])).label).toBe("Las Piñas City");
+    expect(sessionPlaces(new Map([["sanjuan", 2], ["makati", 5]])).label).toBe("Makati and San Juan");
+    expect(sessionPlaces(new Map([["pasig", 1], ["makati", 5], ["sanjuan", 2]])).label).toBe("Makati, San Juan and Pasig");
   });
 
-  it("passes through empty array", () => {
-    expect(bucketChartData([])).toEqual([]);
+  it("names two and counts the rest past three, keeping the whole list", () => {
+    const places = sessionPlaces(new Map([["makati", 5], ["sanjuan", 3], ["pasig", 2], ["quezoncity", 1], ["manila", 1]]));
+    expect(places.label).toBe("Makati, San Juan and 3 more");
+    expect(places.names).toEqual(["Makati", "San Juan", "Pasig", "Manila", "Quezon City"]);
   });
 
-  it("returns null/undefined as-is", () => {
-    expect(bucketChartData(null)).toBeNull();
-    expect(bucketChartData(undefined)).toBeUndefined();
+  it("orders a tie by name, and counts slugs that read the same as one city", () => {
+    expect(sessionPlaces(new Map([["pasig", 2], ["makati", 2]])).label).toBe("Makati and Pasig");
+    expect(sessionPlaces({ sanjuan: 1, "san juan": 1 }).names).toHaveLength(1);
   });
 
-  it("buckets 10 items into 5", () => {
-    const data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    const result = bucketChartData(data);
-    expect(result).toHaveLength(5);
+  it("has no label when no photo names a city", () => {
+    expect(sessionPlaces(new Map())).toEqual({ label: null, names: [] });
+    expect(sessionPlaces(undefined)).toEqual({ label: null, names: [] });
+  });
+});
+
+// 22 Oct 2026: five sessions at a time
+describe("pageParams", () => {
+  it("starts at the newest five", () => {
+    expect(pageParams({})).toEqual({ offset: 0, limit: RECENT_SESSIONS_PAGE });
+    expect(RECENT_SESSIONS_PAGE).toBe(5);
+    expect(pageParams()).toEqual({ offset: 0, limit: 5 });
   });
 
-  it("buckets all-zero arrays to all zeros", () => {
-    const data = Array(40).fill(0);
-    const result = bucketChartData(data);
-    expect(result).toEqual([0, 0, 0, 0, 0]);
+  it("reads whole numbers from the query, as strings or arrays", () => {
+    expect(pageParams({ offset: "5", limit: "5" })).toEqual({ offset: 5, limit: 5 });
+    expect(pageParams({ offset: ["10"], limit: ["3"] })).toEqual({ offset: 10, limit: 3 });
   });
 
-  it("averages values within each bucket", () => {
-    const data = [10, 10, 20, 20, 30, 30, 40, 40, 50, 50];
-    const result = bucketChartData(data);
-    expect(result).toEqual([10, 20, 30, 40, 50]);
+  it("falls back on anything else, and sends at most 20", () => {
+    expect(pageParams({ offset: "-1", limit: "0" })).toEqual({ offset: 0, limit: 5 });
+    expect(pageParams({ offset: "2.5", limit: "abc" })).toEqual({ offset: 0, limit: 5 });
+    expect(pageParams({ limit: "500" }).limit).toBe(20);
   });
 });
 

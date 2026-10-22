@@ -6,6 +6,7 @@ import { ObjectId } from "mongodb";
 import { sanitizeReportedTotal } from "@/util/validators/annotationComplete";
 import { shouldShowNasaTlx } from "@/util/validators/nasaTlx";
 import { takesContributorInstruments } from "@/util/validators/contributorInstruments";
+import { SCENE_SCALE } from "@/util/validators/sceneScale.mjs";
 
 /**
  * POST /api/annotationComplete — called when a contributor finishes a full
@@ -105,6 +106,8 @@ const handler = async (req, res) => {
                                         userId,
                                         source: ann.source,
                                         sceneLevel: ann.sceneLevel,
+                                        // The scale the answers are on (22 Oct 2026, validators/sceneScale.mjs)
+                                        ...(ann.sceneScale === SCENE_SCALE ? { sceneScale: SCENE_SCALE } : {}),
                                         selectedObjectsID: ann.selectedObjectsID,
                                         newObjects: ann.newObjects,
                                         // Made on the fixed canvas (9 Oct 2026)

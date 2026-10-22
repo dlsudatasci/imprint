@@ -1,6 +1,7 @@
 import { connectToDatabase } from "@/util/mongodb";
 import { normalizeCityName } from "@/util/cities";
 import { commonObstructionsPipeline, obstructionsPerImagePipeline } from "@/util/validators/publicStats";
+import { currentScaleExpr } from "@/util/validators/sceneScale.mjs";
 
 /**
  * GET /api/publicStats             → totals across every city
@@ -40,7 +41,9 @@ export default async function handler(req, res) {
         $group: {
           _id: null,
           total: { $sum: 1 },
-          avgRating: { $avg: "$sceneLevel.overallAccessibility" },
+          // 5 Easily accessible to 1 Not accessible, rows answered before
+          // 22 Oct 2026 turned round (validators/sceneScale.mjs)
+          avgRating: { $avg: currentScaleExpr("overallAccessibility") },
           users: { $addToSet: "$userId" },
         },
       },

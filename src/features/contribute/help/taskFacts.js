@@ -20,27 +20,31 @@ export const SEVERITY_SCALE = Object.freeze([
   Object.freeze({ value: 5, label: "Impassable" }),
 ]);
 
-/** Step 2, the four questions about the sidewalk, as SceneQuestions shows them. */
+/**
+ * Step 2, the four questions about the sidewalk, as SceneQuestions shows them:
+ * each one's answers worst to best (22 Oct 2026), so an answer's place in its
+ * list is its stored number less one (validators/sceneScale.mjs).
+ */
 export const SCENE_QUESTIONS = Object.freeze([
   Object.freeze({
     name: "Sidewalk Width",
     prompt: "How much usable walking space does this sidewalk have?",
-    answers: Object.freeze(["Wide", "Moderate", "Narrow", "None"]),
+    answers: Object.freeze(["None", "Narrow", "Moderate", "Wide"]),
   }),
   Object.freeze({
     name: "Surface Condition",
     prompt: "How does the walking surface affect movement?",
-    answers: Object.freeze(["Easy to traverse", "Some difficulty", "Difficult or dangerous"]),
+    answers: Object.freeze(["Difficult or dangerous", "Some difficulty", "Easy to traverse"]),
   }),
   Object.freeze({
     name: "Walking Comfort",
     prompt: "How comfortable does this sidewalk look for walking?",
-    answers: Object.freeze(["Comfortable", "Somewhat uncomfortable", "Uncomfortable"]),
+    answers: Object.freeze(["Uncomfortable", "Somewhat uncomfortable", "Comfortable"]),
   }),
   Object.freeze({
     name: "Accessible to Me",
     prompt: "Could you personally navigate this sidewalk?",
-    answers: Object.freeze(["Easily accessible", "Mostly accessible", "Somewhat difficult", "Very difficult", "Not accessible"]),
+    answers: Object.freeze(["Not accessible", "Very difficult", "Somewhat difficult", "Mostly accessible", "Easily accessible"]),
   }),
 ]);
 

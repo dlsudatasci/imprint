@@ -36,31 +36,37 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
   // In the sheet a row of options wraps when it does not fit (12 Oct 2026):
   // on a 360 px phone the fifth accessibility option stuck out of its card,
   // and on a 320 px one the third comfort option did. The five options go
-  // three and two under 390 px, where five in a row have no room.
+  // three and two under 400 px, where five in a row have no room. It was
+  // under 390 px until 22 Oct 2026, but they do not fit at 390 either, and
+  // there the last answer, Easily accessible now the answers run worst to
+  // best, sat alone across the whole row, louder than the other four.
   const optionRow = (gap: string) => (sheet ? `flex flex-wrap ${gap}` : `flex ${gap}`);
-  const FIVE_ACROSS = "max-[389px]:basis-[30%]";
+  const FIVE_ACROSS = "max-[399px]:basis-[30%]";
   const optionClass = (isSelected: boolean, desktopPadding: string, sheetExtra = "") =>
     `${sheet ? `min-h-[44px] ${sheetExtra} ` : ""}flex-1 flex flex-col items-center ${desktopPadding} rounded-control transition-all border ${isSelected
       ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
       : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
       }`;
 
+  // Every question runs worst to best, and higher is better (22 Oct 2026,
+  // validators/sceneScale.mjs): 5 is Easily accessible. It was the other way
+  // round, so "1" was the best answer.
   const surfaceOptions: { value: number; label: string; icon: "easy" | "some" | "difficult" }[] = [
-    { value: 1, label: "Easy to traverse", icon: "easy" },
+    { value: 1, label: "Difficult or dangerous", icon: "difficult" },
     { value: 2, label: "Some difficulty", icon: "some" },
-    { value: 3, label: "Difficult or dangerous", icon: "difficult" },
+    { value: 3, label: "Easy to traverse", icon: "easy" },
   ];
   const comfortOptions: { value: number; label: string; icon: "comfortable" | "somewhat" | "uncomfortable" }[] = [
-    { value: 1, label: "Comfortable", icon: "comfortable" },
+    { value: 1, label: "Uncomfortable", icon: "uncomfortable" },
     { value: 2, label: "Somewhat uncomfortable", icon: "somewhat" },
-    { value: 3, label: "Uncomfortable", icon: "uncomfortable" },
+    { value: 3, label: "Comfortable", icon: "comfortable" },
   ];
   const accessOptions: { value: number; label: string; icon: "easy" | "mostly" | "somewhat" | "very" | "not" }[] = [
-    { value: 1, label: "Easily accessible", icon: "easy" },
-    { value: 2, label: "Mostly accessible", icon: "mostly" },
+    { value: 1, label: "Not accessible", icon: "not" },
+    { value: 2, label: "Very difficult", icon: "very" },
     { value: 3, label: "Somewhat difficult", icon: "somewhat" },
-    { value: 4, label: "Very difficult", icon: "very" },
-    { value: 5, label: "Not accessible", icon: "not" },
+    { value: 4, label: "Mostly accessible", icon: "mostly" },
+    { value: 5, label: "Easily accessible", icon: "easy" },
   ];
 
   return (
@@ -76,10 +82,10 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
           <p className={prompt}>How much usable walking space does this sidewalk have?</p>
           <div className="grid grid-cols-4 gap-1.5">
             {[
-              { value: "three_or_more", label: "Wide", icon: "threePlus" as const },
-              { value: "two_people", label: "Moderate", icon: "twoPeople" as const },
-              { value: "one_person", label: "Narrow", icon: "onePerson" as const },
               { value: "no_sidewalk", label: "None", icon: "noSidewalk" as const },
+              { value: "one_person", label: "Narrow", icon: "onePerson" as const },
+              { value: "two_people", label: "Moderate", icon: "twoPeople" as const },
+              { value: "three_or_more", label: "Wide", icon: "threePlus" as const },
             ].map((opt) => (
               <button
                 key={opt.value}
@@ -173,6 +179,7 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
         {/* Item 4 — Accessible to Me (disabled when no sidewalk) */}
         {/* Gateway/path metaphor with traffic-light colour gradient.
             Self-referential "to me" framing per Huang et al. (2025) and Li et al. (2025).
+            Worst to best, 1 Not accessible to 5 Easily accessible (22 Oct 2026).
             5-point scale: Preston & Colman (2000) show 2-4 point scales have worst
             psychometric properties; Project Sidewalk uses 1-5 severity; finer scale
             captures person-dependent variation that IS the signal (thesis core argument).

@@ -16,6 +16,7 @@ import {
   toClientImage,
   annotatorModelDevFirst,
 } from "@/util/validators/annotationGet";
+import { SCENE_SCALE, toCurrentScale } from "@/util/validators/sceneScale.mjs";
 
 /**
  * POST /api/annotationGet — gives the annotate page a batch of images to work
@@ -78,7 +79,10 @@ async function mergeUserAnnotations(db, userId, imgRecords) {
     ];
     img.userSliderValue = annotation.accessibilityRating;
     img.userPavementType = annotation.pavementType;
-    img.userSceneLevel = annotation.sceneLevel;
+    // On the scale where higher is better (22 Oct 2026), and marked so, so
+    // the tool does not turn it round again
+    img.userSceneLevel = toCurrentScale(annotation.sceneLevel, annotation.sceneScale);
+    img.userSceneScale = SCENE_SCALE;
     // The annotator's sidewalk outline (6 Oct 2026), so Previous and resumed
     // sessions restore it
     img.userSidewalkMask = annotation.sidewalkMask ?? null;

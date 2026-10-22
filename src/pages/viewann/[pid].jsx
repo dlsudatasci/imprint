@@ -6,6 +6,8 @@ import AnnotateView from "@/features/annotateView/form";
 import { connectToDatabase } from "@/util/mongodb";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { Container } from "@/ui";
+import { sceneAnswersOf } from "@/util/validators/sceneScale.mjs";
+import { accessWord } from "@/features/contribute/dashboard/dashboardCopy";
 
 export default function ViewAnnotation({ data }) {
   // Annotator records have no scene-level answers (decided 3 Oct 2026), so the
@@ -29,7 +31,7 @@ export default function ViewAnnotation({ data }) {
           {hasSceneAnswer && (
             <>
               <dt className="font-semibold text-muted">Accessibility</dt>
-              <dd className="text-ink">{data.sceneLevel?.overallAccessibility != null ? `${data.sceneLevel.overallAccessibility} / 5` : data.sceneRatings?.accessibility ?? data.accessibilityRating ?? "—"}</dd>
+              <dd className="text-ink">{data.sceneLevel?.overallAccessibility != null ? `${data.sceneLevel.overallAccessibility} / 5, ${accessWord(data.sceneLevel.overallAccessibility)}` : data.sceneRatings?.accessibility ?? data.accessibilityRating ?? "—"}</dd>
             </>
           )}
           <dt className="font-semibold text-muted">Surface</dt>
@@ -104,7 +106,8 @@ export const getServerSideProps = async (context) => {
           newObjects: annotation.newObjects ?? [],
           accessibilityRating: annotation.accessibilityRating ?? null,
           sceneRatings: annotation.sceneRatings ?? null,
-          sceneLevel: annotation.sceneLevel ?? null,
+          // 5 is Easily accessible, whichever scale it was answered on (22 Oct 2026)
+          sceneLevel: sceneAnswersOf(annotation),
           pavementType: annotation.pavementType ?? null,
           username: annotation.username ?? null,
           source: annotation.source ?? null,

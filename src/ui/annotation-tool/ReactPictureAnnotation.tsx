@@ -62,6 +62,7 @@ import { toDecideFirst, unfinishedObjectIds } from "@/features/annotate/objectSt
 import { messageVisibleMs } from "@/features/annotate/stepMessage";
 import { SIDEWALK_GUIDE } from "@/features/annotate/sidewalkGuide";
 import { normalizeSidewalkMask, summarizeSidewalkMask } from "@/util/validators/sidewalkMask";
+import { SCENE_SCALE, toCurrentScale } from "@/util/validators/sceneScale.mjs";
 
 import { IAnnotation } from "./Annotation";
 import { IAnnotationState } from "./annotation/AnnotationState";
@@ -816,9 +817,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           // annotationGet copies a stored sceneLevel into userSceneLevel, and
           // that is null for annotators. Only restore a real answer object, or
           // reads of this.state.sceneLevel.sidewalkWidth would throw.
+          // A cached answer from before 22 Oct 2026 has no userSceneScale
+          // and is on the old scale, 1 the best answer, so it is turned round
+          // (validators/sceneScale.mjs)
           const savedScene = currentRecord.userSceneLevel;
           if (savedScene && typeof savedScene === "object") {
-            this.setState({ sceneLevel: savedScene });
+            this.setState({ sceneLevel: toCurrentScale(savedScene, currentRecord.userSceneScale) });
           }
           savedAnnotatorStep = currentRecord.userAnnotatorStep;
           // The cached or stored sidewalk outline (annotationGet copies a
@@ -3960,6 +3964,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       newObjects: newObjects,
       currentAnnotationCount: this.props.currentAnnotationCount + 1,
       canvasVersion: CANVAS_VERSION,
+      // Step 2's answers run worst to best, higher is better (22 Oct 2026)
+      sceneScale: SCENE_SCALE,
       telemetry: telemetryPayload,
     };
     this.submitInFlight = true;
@@ -4032,6 +4038,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     record.userSliderValue = this.state.sliderValue;
     record.userPavementType = this.state.pavementType;
     record.userSceneLevel = this.askScene ? this.state.sceneLevel : null;
+    record.userSceneScale = SCENE_SCALE;
     if (this.annotatorObjectStep) {
       record.userAnnotatorStep = annotatorStep ?? this.state.annotatorStep;
       // A half-drawn shape is not cached

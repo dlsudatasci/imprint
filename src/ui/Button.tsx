@@ -10,7 +10,7 @@ import { cn } from './cn';
  * it at the call site. See cn.ts for why overrides don't reliably work.
  */
 
-export type ButtonVariant = 'primary' | 'secondary' | 'neutral' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'neutral' | 'danger' | 'plain';
 export type ButtonSize = 'sm' | 'md';
 
 export interface ButtonProps
@@ -66,6 +66,13 @@ const variants: Record<ButtonVariant, string> = {
   danger: [
     'bg-surface border-danger-border text-danger',
     'hover:bg-danger hover:text-white',
+  ].join(' '),
+  // Tinted text and nothing else (22 Oct 2026, apple-design), as a secondary
+  // action in a list on iOS: Show more under the dashboard's sessions. It dims
+  // the moment it is pressed, on top of the press scale.
+  plain: [
+    'bg-transparent border-transparent text-primary',
+    'hover:text-primary-hover enabled:active:opacity-40',
   ].join(' '),
 };
 

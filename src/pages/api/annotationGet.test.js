@@ -686,6 +686,29 @@ describe("POST /api/annotationGet", () => {
 
       expect(res._json.imgRecords[0].userSidewalkMask).toEqual(mask);
     });
+
+    // 22 Oct 2026: a contributor resuming sees their answer where it now is
+    it("gives back a saved Step 2 answer on the new scale, marked, whichever it was answered on", async () => {
+      const img = (i) => ({ _id: `img-${i}`, imageID: i, isReference: false, poolStatus: "deployment", annotationList: [] });
+      const mocks = setupMocks({
+        activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: ["img-1", "img-2"], completedImageIDs: [1, 2], totalCount: 10 },
+      });
+      mocks.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([img(1), img(2)]) });
+      mocks.annotationsCol.find.mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([
+          // Before the change: 1 was Easily accessible, Easy to traverse and Comfortable
+          { imageID: 1, selectedObjectsID: [], newObjects: [], sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 1, walkability: 1, overallAccessibility: 1 } },
+          { imageID: 2, selectedObjectsID: [], newObjects: [], sceneScale: 2, sceneLevel: { sidewalkWidth: "one_person", surfaceCondition: 2, walkability: 1, overallAccessibility: 4 } },
+        ]),
+      });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+
+      const [first, second] = res._json.imgRecords;
+      expect(first.userSceneLevel).toEqual({ sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 3, overallAccessibility: 5 });
+      expect(second.userSceneLevel).toEqual({ sidewalkWidth: "one_person", surfaceCondition: 2, walkability: 1, overallAccessibility: 4 });
+      expect(first.userSceneScale).toBe(2);
+    });
   });
 
   // Local testing only (6 Oct 2026): ANNOTATOR_MODEL_DEV_FIRST=true

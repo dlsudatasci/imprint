@@ -1,5 +1,6 @@
 import { excludeNotAnObject } from "@/util/suggestionJudgment";
 import { isBelowMinimumSize } from "@/util/boxGeometry";
+import { sceneAnswersOf } from "@/util/validators/sceneScale.mjs";
 
 /**
  * Quality-control metrics: IoU-based box matching, precision/recall/F1,
@@ -164,9 +165,10 @@ export function computeReferencePerformance(contributorAnnotation, groundTruthAn
   const prf1 = computePRF1(matched.length, predBoxes.length, gtBoxes.length);
   const obstructionAgreement = computeObstructionAgreement(matched);
   const severityMAE = computeSeverityMAE(matched);
+  // Both on the scale where higher is better, whichever each was answered on (22 Oct 2026)
   const sceneLevelAgreement = computeSceneLevelAgreement(
-    contributorAnnotation.sceneLevel,
-    groundTruthAnnotation.sceneLevel
+    sceneAnswersOf(contributorAnnotation),
+    sceneAnswersOf(groundTruthAnnotation)
   );
 
   return {
@@ -198,12 +200,14 @@ export function detectDegenerateFlags(annotations, telemetryEvents) {
       if (box.severity != null) severityValues.push(box.severity);
     }
 
-    if (ann.sceneLevel) {
+    // On one scale, so the same answers before and after 22 Oct 2026 are one pattern
+    const scene = sceneAnswersOf(ann);
+    if (scene) {
       scenePatterns.push(JSON.stringify({
-        sw: ann.sceneLevel.sidewalkWidth,
-        sc: ann.sceneLevel.surfaceCondition,
-        w: ann.sceneLevel.walkability,
-        oa: ann.sceneLevel.overallAccessibility,
+        sw: scene.sidewalkWidth,
+        sc: scene.surfaceCondition,
+        w: scene.walkability,
+        oa: scene.overallAccessibility,
       }));
     }
   }
@@ -456,9 +460,10 @@ export function computePairwiseAgreement(annotationsA, annotationsB) {
   const { matched } = matchBoxesByIoU(boxesA, boxesB);
   const prf1 = computePRF1(matched.length, boxesA.length, boxesB.length);
   const obstructionAgreement = computeObstructionAgreement(matched);
+  // Both on the scale where higher is better, whichever each was answered on (22 Oct 2026)
   const sceneLevelAgreement = computeSceneLevelAgreement(
-    annotationsA.sceneLevel,
-    annotationsB.sceneLevel
+    sceneAnswersOf(annotationsA),
+    sceneAnswersOf(annotationsB)
   );
 
   return { ...prf1, obstructionAgreement, sceneLevelAgreement };

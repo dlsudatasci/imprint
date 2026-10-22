@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
+import { SCENE_SCALE } from "@/util/validators/sceneScale.mjs";
 import {
   validateSceneLevel,
   validateBoxes,
@@ -53,6 +54,7 @@ const handler = async (req, res) => {
       currentAnnotationCount,
       telemetry,
       canvasVersion,
+      sceneScale,
     } = req.body;
     let { sceneLevel, selectedObjectsID, newObjects, sidewalkMask } = req.body;
 
@@ -173,6 +175,7 @@ const handler = async (req, res) => {
       //
       // selectedObjectsID holds the model's suggestions the user ruled on
       // (kept or rejected); newObjects holds boxes they drew themselves.
+      const newScale = Boolean(sceneLevel) && sceneScale === SCENE_SCALE;
       await db.collection("annotations").updateOne(
         { imageID: imageID, userId: userId },
         {
@@ -192,8 +195,15 @@ const handler = async (req, res) => {
             // exact value 2 is stored. Anything else stores nothing, so the
             // analysis treats the marks as made on the old, offset canvas.
             ...(canvasVersion === 2 ? { canvasVersion: 2 } : {}),
+            // Scene answers on the scale where higher is better (22 Oct 2026,
+            // validators/sceneScale.mjs). Only the exact value is stored, and
+            // only with answers: a page loaded before the change sends none,
+            // so its old-scale answers are stored unmarked and read as old.
+            ...(newScale ? { sceneScale: SCENE_SCALE } : {}),
             status: "pending",
           },
+          // An earlier answer to this photo on the new scale does not mark this one
+          ...(newScale ? {} : { $unset: { sceneScale: "" } }),
         },
         { upsert: true }
       );

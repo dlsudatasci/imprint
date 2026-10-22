@@ -83,7 +83,7 @@ describe("DemoStage", () => {
 
   it("marks the Step 2 answers and then moves to the second photo", () => {
     const answered = show(tickOf("overallAccessibility", "end"));
-    for (const option of ["sidewalkWidth:two_people", "surfaceCondition:1", "walkability:1", "overallAccessibility:1"]) {
+    for (const option of ["sidewalkWidth:two_people", "surfaceCondition:3", "walkability:3", "overallAccessibility:5"]) {
       expect(answered.querySelector(`[data-scene-option="${option}"]`).className).toContain("border-primary");
     }
     act(() => root.unmount());

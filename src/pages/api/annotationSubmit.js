@@ -4,6 +4,7 @@ import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
 import { SCENE_SCALE } from "@/util/validators/sceneScale.mjs";
+import { SESSION_CHANGED_CODES } from "@/util/validators/sessionSync";
 import {
   validateSceneLevel,
   validateBoxes,
@@ -113,8 +114,11 @@ const handler = async (req, res) => {
         status: "active",
       });
 
+      // Both refusals carry a code, so the tool can tell the session changed
+      // (in another tab or on another device) and load the current one
+      // (validators/sessionSync.js, 23 Oct 2026)
       if (!activeSession) {
-        return res.status(409).json({ message: "No active session to submit against." });
+        return res.status(409).json({ message: "No active session to submit against.", code: SESSION_CHANGED_CODES.noSession });
       }
 
       const imageRecord = await db.collection("Image").findOne(
@@ -123,7 +127,7 @@ const handler = async (req, res) => {
       );
 
       if (!imageRecord) {
-        return res.status(403).json({ message: "That image is not part of your current session." });
+        return res.status(403).json({ message: "That image is not part of your current session.", code: SESSION_CHANGED_CODES.otherSession });
       }
 
       // Both roles: a box drawn up or to the left, or resized past its

@@ -1,6 +1,7 @@
 
 import React from "react";
 import { useSession } from "next-auth/react"; // Add this import
+import Router from "next/router";
 
 import Page from "@/ui/page";
 import AnnotationSessionSelection from "@/features/annotate/selection";
@@ -11,8 +12,12 @@ import {
   readTotalCount,
   readCurrentCount,
   readSessionData,
+  readTutorialFlag,
   writeSession,
+  writeTutorialFlag,
+  clearSession,
 } from "@/util/sessionCache";
+import { cachedSessionCheck } from "@/util/validators/sessionSync";
 
 /**
  * The annotation flow — where contributors do the actual work.
@@ -27,7 +32,8 @@ import {
  * Session state is read from the local cache first and only fetched from the
  * server when nothing is cached. That is what lets the flow survive a page
  * reload, which matters because the annotation tool reloads the page between
- * every image.
+ * every image. On a cold visit the cached copy is then checked against the
+ * server's, in case the session changed elsewhere (23 Oct 2026).
  *
  * Everyone can annotate on any device: contributors from 9 Oct 2026, and
  * annotators from 12 Oct 2026, when their three steps got the phone and tablet
@@ -50,6 +56,9 @@ export default function AnnotatePage() {
   // renders the batch-size picker, so someone resuming a session on a new
   // device is briefly invited to start a second one.
   const [restoring, setRestoring] = React.useState(true);
+  // The saved copy is checked once per page load: the effect below runs again
+  // as the session settles, by when the moving-between-images flag is gone
+  const sessionCheckedRef = React.useRef(false);
 
   React.useEffect(() => {
     if (status === "loading") return;
@@ -58,7 +67,9 @@ export default function AnnotatePage() {
     const localCurrent = readCurrentCount();
     const localData = readSessionData();
 
-    const hasLocalSession = localTotal !== null && localCurrent !== null && localData;
+    // The tutorial's practice photos are kept in the same place, but they
+    // are not a session here: the server is asked instead (23 Oct 2026)
+    const hasLocalSession = localTotal !== null && localCurrent !== null && localData && !readTutorialFlag();
 
     if (hasLocalSession) {
       setRestoring(false);
@@ -68,6 +79,35 @@ export default function AnnotatePage() {
       const isNavigating = sessionStorage.getItem("isNavigatingImages") === "true";
       if (isNavigating) {
         sessionStorage.removeItem("isNavigatingImages");
+      }
+
+      // On a cold visit (back to a tab left open, a new tab, a reload) make
+      // sure the saved copy is still the account's current session: it may
+      // have been stopped, finished or replaced in another tab or on another
+      // device since, and Next would then be refused (sessionSync.js, 23 Oct
+      // 2026). Moving between images follows a save that just succeeded, and
+      // the finished screen is finalising the session itself, so neither asks.
+      const firstRun = !sessionCheckedRef.current;
+      sessionCheckedRef.current = true;
+      if (firstRun && !isNavigating && localCurrent <= localTotal) {
+        fetch("/api/annotationGet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((server) => {
+            const decision = cachedSessionCheck(localData, server);
+            if (decision === "keep") return;
+            if (decision === "replace") {
+              writeSession({ total: server.imgRecords.length, current: server.currentCount || 1, data: server });
+              writeTutorialFlag(false);
+            } else {
+              clearSession();
+            }
+            Router.reload();
+          })
+          .catch((err) => console.error("Failed to check the saved session:", err));
       }
 
       setState((prevState) => {
@@ -99,6 +139,8 @@ export default function AnnotatePage() {
 
             // Restore session locally, strictly trusting the server's accurate progress index
             writeSession({ total: totalCount, current: currentCount, data });
+            // Over the tutorial's practice photos, if they were there
+            writeTutorialFlag(false);
 
             const isNavigating = sessionStorage.getItem("isNavigatingImages") === "true";
             if (isNavigating) {

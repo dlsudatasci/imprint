@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import ReactPictureAnnotation from "./ReactPictureAnnotation";
+import ReactPictureAnnotation, { SESSION_CHANGED_MESSAGE, SESSION_CHANGED_RELOAD_MS } from "./ReactPictureAnnotation";
 import { readSessionData, writeSession, readCurrentCount, writeCurrentCount } from "@/util/sessionCache";
 import { LOUPE_SIZE_PX, LOUPE_BOX_GAP_PX, LOUPE_MARGIN_PX, LOUPE_FINGER_CLEAR_PX } from "./loupe";
 import { PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
@@ -544,6 +544,49 @@ describe("moving on from an image (8 Oct 2026)", () => {
       pending = tool.submit();
     });
     expect(submits(fetchMock)).toBe(2);
+  });
+
+  // 23 Oct 2026: a phone left overnight held a session that was no longer the account's current one
+  it("when Next is refused because the session changed, says so and loads the current session", async () => {
+    const tool = mount();
+    ready(tool);
+    const Router = (await import("next/router")).default as unknown as { reload: ReturnType<typeof vi.fn> };
+    Router.reload.mockClear();
+    sessionStorage.removeItem("isNavigatingImages");
+    globalThis.fetch = vi.fn(async (url: string) =>
+      url === "/api/annotationSubmit"
+        ? { status: 403, ok: false, json: async () => ({ message: "That image is not part of your current session.", code: "IMAGE_NOT_IN_SESSION" }) }
+        : { status: 200, ok: true, json: async () => ({}) }
+    ) as unknown as typeof fetch;
+    await act(async () => {
+      await tool.submit();
+    });
+    expect(tool.state.error).toBe(SESSION_CHANGED_MESSAGE);
+    // Still saving, so Next cannot be pressed again while it loads
+    expect(tool.state.submitting).toBe(true);
+    expect(Router.reload).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(SESSION_CHANGED_RELOAD_MS));
+    // The saved copy gone, and a cold reload, so the annotate page asks the server
+    expect(readSessionData()).toBeNull();
+    expect(Router.reload).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem("isNavigatingImages")).toBeNull();
+  });
+
+  it("keeps the session for any other refusal", async () => {
+    const tool = mount();
+    ready(tool);
+    globalThis.fetch = vi.fn(async (url: string) =>
+      url === "/api/annotationSubmit"
+        ? { status: 422, ok: false, json: async () => ({ message: "Invalid sidewalk width value." }) }
+        : { status: 200, ok: true, json: async () => ({}) }
+    ) as unknown as typeof fetch;
+    await act(async () => {
+      await tool.submit();
+    });
+    expect(tool.state.error).toBe("Invalid sidewalk width value.");
+    act(() => vi.advanceTimersByTime(SESSION_CHANGED_RELOAD_MS));
+    expect(readSessionData()).not.toBeNull();
+    expect(tool.state.submitting).toBe(false);
   });
 
   it("Previous goes back one from the image on screen, even if pressed twice", async () => {

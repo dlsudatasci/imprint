@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Joyride } from "react-joyride";
 import { useSession } from "next-auth/react";
+import Router from "next/router";
 
 import Page from "@/ui/page";
 import AnnotateForm from "@/features/annotate/form";
 import TUTORIAL_IMAGES from "@/data/tutorialImages";
-import { clearSession, writeSession, writeTutorialFlag, readSessionData, readCurrentCount } from "@/util/sessionCache";
+import { clearSession, writeSession, writeTutorialFlag, readSessionData, readCurrentCount, hasCachedSession, readTutorialFlag } from "@/util/sessionCache";
 import ContentSkeleton from "@/features/layout/contentSkeleton";
 import { useAnnotateLayout } from "@/hooks/useAnnotateLayout";
 import { useIsPhone } from "@/hooks/useIsPhone";
@@ -309,6 +310,16 @@ export default function TutorialPage({ isAnnotator = false }) {
     // the session and tutorial flag after clearSession() already removed them.
     if (completingRef.current) return;
 
+    // A real session is saved on this device (the tutorial is offered only
+    // without one, but Back or the address bar still reach it): its copy is
+    // not written over with the practice photos, which the annotate page
+    // would then have sent as real ones (23 Oct 2026). The dashboard offers
+    // Resume Session.
+    if (sessionStorage.getItem("isNavigatingImages") !== "true" && hasCachedSession() && !readTutorialFlag()) {
+      Router.replace("/contribute");
+      return;
+    }
+
     // The tutorial deliberately reuses the real annotate form rather than a
     // parallel copy, so the two can't drift apart. The catch is that the form
     // posts to the live endpoints, so we shim fetch for the duration of the
@@ -337,6 +348,8 @@ export default function TutorialPage({ isAnnotator = false }) {
     }
 
     const isNavigating = sessionStorage.getItem("isNavigatingImages") === "true";
+
+
     let currentCount = 1;
     let currentData = { imgRecords: TUTORIAL_IMAGES };
 

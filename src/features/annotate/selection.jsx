@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { writeSession } from "@/util/sessionCache";
+import { writeSession, writeTutorialFlag } from "@/util/sessionCache";
 import { CONTRIBUTOR_OPTIONS, sessionOptionsFor } from "./sessionOptions";
 import SessionSizeOptions, { SESSION_PICKER_COPY as COPY } from "./SessionSizeOptions";
 
@@ -80,6 +80,8 @@ export default function AnnotationSessionSelection() {
       // than chosen when the pool runs short, as a resume already counts it.
       // Recording the size chosen made the last position point past the end.
       writeSession({ total: annotationJson.imgRecords.length, current: 1, data: annotationJson });
+      // A real session, over the tutorial's practice photos if they were there (23 Oct 2026)
+      writeTutorialFlag(false);
 
       window.sessionStorage.setItem("isNavigatingImages", "true");
       router.reload();

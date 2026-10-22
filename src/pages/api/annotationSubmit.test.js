@@ -162,6 +162,8 @@ describe("POST /api/annotationSubmit", () => {
     await handler(req, res);
 
     expect(res._status).toBe(409);
+    // So the tool can tell the session changed (23 Oct 2026)
+    expect(res._json.code).toBe("NO_ACTIVE_SESSION");
   });
 
   it("returns 403 when image is not in session", async () => {
@@ -173,6 +175,7 @@ describe("POST /api/annotationSubmit", () => {
     await handler(req, res);
 
     expect(res._status).toBe(403);
+    expect(res._json.code).toBe("IMAGE_NOT_IN_SESSION");
   });
 
   it("returns 405 for non-POST methods", async () => {

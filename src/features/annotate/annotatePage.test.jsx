@@ -13,7 +13,7 @@ vi.mock("@/features/annotate/form", () => ({ default: ({ data, current }) => <p>
 vi.mock("@/features/annotate/done", () => ({ default: () => <p>done</p> }));
 
 import Router from "next/router";
-import AnnotatePage from "./annotate";
+import AnnotatePage from "@/pages/contribute/annotate";
 
 /**
  * The annotate page checks the phone's saved copy of a session against the

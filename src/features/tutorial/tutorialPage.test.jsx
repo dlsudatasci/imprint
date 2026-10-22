@@ -20,7 +20,7 @@ vi.mock("@/hooks/useIsPhone", () => ({ useIsPhone: () => false }));
 vi.mock("@/ui/annotation-tool/index", () => ({ SHEET_EVENT: "imprint:answer-sheet" }));
 
 import Router from "next/router";
-import TutorialPage from "./tutorial";
+import TutorialPage from "@/pages/contribute/tutorial";
 
 /** 23 Oct 2026: the tutorial wrote its practice photos over a real session's saved copy */
 let host;

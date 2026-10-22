@@ -33,6 +33,20 @@ describe("taskFacts against the tool", () => {
     }
   });
 
+  // 22 Oct 2026: worst to best, the answer's place its stored number less one
+  it("lists each question's answers in the tool's order, worst to best, the numbered ones by their value", () => {
+    const html = decode(renderToStaticMarkup(<SceneQuestions sceneLevel={empty} variant="desktop" onAnswer={() => {}} />));
+    const shown = [...html.matchAll(/data-scene-option="([a-zA-Z]+):([^"]+)"[\s\S]*?<span[^>]*>([^<]+)<\/span>/g)].map(([, field, value, label]) => ({ field, value, label }));
+    const fields = ["sidewalkWidth", "surfaceCondition", "walkability", "overallAccessibility"];
+    SCENE_QUESTIONS.forEach((q, i) => {
+      const options = shown.filter((o) => o.field === fields[i]);
+      expect(options.map((o) => o.label)).toEqual([...q.answers]);
+      if (i > 0) expect(options.map((o) => Number(o.value))).toEqual(q.answers.map((_, n) => n + 1));
+    });
+    expect(SCENE_QUESTIONS[0].answers[0]).toBe("None");
+    expect(SCENE_QUESTIONS[3].answers.at(-1)).toBe("Easily accessible");
+  });
+
   it("lists every category once, by the category list's own labels, 8 temporary and 10 permanent", () => {
     const [temporary, permanent] = CATEGORY_GROUPS;
     expect(temporary.labels).toHaveLength(8);

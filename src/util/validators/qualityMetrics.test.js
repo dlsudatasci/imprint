@@ -412,6 +412,30 @@ describe("computePairwiseAgreement", () => {
   });
 });
 
+// 22 Oct 2026: Step 2 runs worst to best. A row without sceneScale 2 was
+// answered the other way round, and is compared as the same answer turned round
+describe("scene answers on two scales", () => {
+  const oldScale = { sidewalkWidth: "two_people", surfaceCondition: 1, walkability: 1, overallAccessibility: 2 };
+  const newScale = { sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 3, overallAccessibility: 4 };
+
+  it("agrees when the same answers were given before and after the change", () => {
+    const a = { selectedObjectsID: [], newObjects: [], sceneLevel: oldScale };
+    const b = { selectedObjectsID: [], newObjects: [], sceneLevel: newScale, sceneScale: 2 };
+    expect(computePairwiseAgreement(a, b).sceneLevelAgreement.overallRate).toBe(1);
+    expect(computeReferencePerformance(a, b).sceneLevelAgreement.overallRate).toBe(1);
+    // Marked as new, the old numbers mean the opposite and do not agree
+    expect(computePairwiseAgreement({ ...a, sceneScale: 2 }, b).sceneLevelAgreement.overallRate).toBe(0.25);
+  });
+
+  it("counts the same answers before and after the change as one pattern", () => {
+    const rows = Array.from({ length: 12 }, (_, i) => ({
+      selectedObjectsID: [], newObjects: [],
+      ...(i % 2 ? { sceneLevel: oldScale } : { sceneLevel: newScale, sceneScale: 2 }),
+    }));
+    expect(detectDegenerateFlags(rows, []).some((f) => f.type === "identical_scene_ratings")).toBe(true);
+  });
+});
+
 /* Option B answer key (2 Oct 2026, pipeline_methodology.md 7l). */
 const ann = (boxes, sceneLevel = null) => ({ selectedObjectsID: [], newObjects: boxes, sceneLevel });
 const tree = (x, extra = {}) => box(x, 0, 100, 100, { comment: "tree", obstructs: false, ...extra });

@@ -16,7 +16,9 @@ import { normalizeMark } from "@/util/boxGeometry";
  * onSetSeverity), but which object gets which answer is only for show:
  * Tree #1 first, Yes with severity 1, then Car, Motorcycle and Lamp Post #1
  * No, the drawn Lamp Post #2 Yes with severity 4, and Step 2 Moderate, Easy
- * to traverse, Comfortable and Easily accessible (Rans, 15 Oct 2026).
+ * to traverse, Comfortable and Easily accessible (Rans, 15 Oct 2026). Those
+ * are 3, 3 and 5, the last answer of each, now the answers run worst to best
+ * (22 Oct 2026, validators/sceneScale.mjs).
  *
  * Time is in ticks, 0 to 1000, across the whole scroll, the first ENTRANCE_END
  * of them while the preview slides into view (HowItWorks). The script is one
@@ -239,9 +241,9 @@ const TIMELINE = [
   { chapter: "scene" },
   wait(2),
   ...sceneAnswer("sidewalkWidth", "two_people"),
-  ...sceneAnswer("surfaceCondition", 1),
-  ...sceneAnswer("walkability", 1),
-  ...sceneAnswer("overallAccessibility", 1),
+  ...sceneAnswer("surfaceCondition", 3),
+  ...sceneAnswer("walkability", 3),
+  ...sceneAnswer("overallAccessibility", 5),
   { chapter: "next" },
   wait(1),
   step("to-next", "move", 5, { to: ui("next") }),

@@ -159,7 +159,7 @@ describe("the preview script", () => {
 
   it("answers the four Step 2 questions in order", () => {
     expect(at(tickOf("sidewalkWidth", "end")).scene).toMatchObject({ sidewalkWidth: "two_people", surfaceCondition: null });
-    expect(at(tickOf("overallAccessibility", "end")).scene).toEqual({ sidewalkWidth: "two_people", surfaceCondition: 1, walkability: 1, overallAccessibility: 1 });
+    expect(at(tickOf("overallAccessibility", "end")).scene).toEqual({ sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 3, overallAccessibility: 5 });
   });
 
   it("saves, then shows the second photo, fresh", () => {

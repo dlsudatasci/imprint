@@ -112,9 +112,9 @@ describe("the figures under the map", () => {
     const items = byLabel(cityStatsItems(stats));
     expect(items.Annotations).toMatchObject({ value: "340", sub: "images annotated" });
     expect(JSON.stringify(items)).not.toContain("bounding boxes");
-    // 1 is Easily accessible and 5 Not accessible: no "/5", which read as a score out of 5
+    // 1 Not accessible to 5 Easily accessible from 22 Oct 2026, no "/5"
     expect(items.Accessibility.value).toBe("2.3");
-    expect(items.Accessibility.sub).toBe("average, 1 easily to 5 not accessible");
+    expect(items.Accessibility.sub).toBe("average, 1 not to 5 easily accessible");
     expect(items["Avg. Obstructions"]).toMatchObject({ value: "1.4", sub: "per image" });
     for (const item of cityStatsItems(stats)) expect(item.sub).not.toMatch(/[;—]/);
     expect(cityStatsItems(null)).toEqual([]);

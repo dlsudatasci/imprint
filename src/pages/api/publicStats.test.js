@@ -6,6 +6,7 @@ vi.mock("@/util/mongodb", () => ({
 }));
 
 import { connectToDatabase } from "@/util/mongodb";
+import { currentScaleExpr } from "@/util/validators/sceneScale.mjs";
 import handler from "./publicStats.js";
 import { commonObstructionsPipeline, obstructionsPerImagePipeline } from "@/util/validators/publicStats";
 
@@ -88,6 +89,14 @@ describe("GET /api/publicStats", () => {
     expect(aggregateCalls[1][0]).toEqual(commonObstructionsPipeline(filter));
     expect(aggregateCalls[2][0]).toEqual(obstructionsPerImagePipeline(filter));
     expect(JSON.stringify(aggregateCalls)).not.toContain("isObstruction");
+  });
+
+  // 22 Oct 2026: 5 is Easily accessible, rows from before turned round in the database
+  it("averages Accessible to Me on the scale where higher is better", async () => {
+    const mockDb = setupMockDb();
+    await handler(createMockReq({ method: "GET", query: {} }), createMockRes());
+    const [group] = mockDb.collection("annotations").aggregate.mock.calls[0][0].filter((stage) => stage.$group);
+    expect(group.$group.avgRating).toEqual({ $avg: currentScaleExpr("overallAccessibility") });
   });
 
   it("response has the expected shape", async () => {

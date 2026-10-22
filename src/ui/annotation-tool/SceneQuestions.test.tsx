@@ -85,3 +85,22 @@ describe("answer labels", () => {
     expect(sheet).not.toMatch(/text-\[(9|10|11)px\]/);
   });
 });
+
+// 22 Oct 2026: worst to best, higher is better (validators/sceneScale.mjs)
+describe("the order of the answers", () => {
+  it("runs worst to best, so 5 is Easily accessible and the width starts at None", () => {
+    const html = renderToStaticMarkup(<SceneQuestions sceneLevel={empty} variant="desktop" onAnswer={() => undefined} />);
+    const order = Array.from(html.matchAll(/data-scene-option="([^"]+)"/g), (m) => m[1]);
+    expect(order).toEqual([
+      "sidewalkWidth:no_sidewalk", "sidewalkWidth:one_person", "sidewalkWidth:two_people", "sidewalkWidth:three_or_more",
+      "surfaceCondition:1", "surfaceCondition:2", "surfaceCondition:3",
+      "walkability:1", "walkability:2", "walkability:3",
+      "overallAccessibility:1", "overallAccessibility:2", "overallAccessibility:3", "overallAccessibility:4", "overallAccessibility:5",
+    ]);
+    const labelOf = (key: string) => html.match(new RegExp(`data-scene-option="${key}"[\\s\\S]*?<span[^>]*>([^<]+)</span>`))![1];
+    expect(labelOf("overallAccessibility:5")).toBe("Easily accessible");
+    expect(labelOf("overallAccessibility:1")).toBe("Not accessible");
+    expect(labelOf("surfaceCondition:3")).toBe("Easy to traverse");
+    expect(labelOf("walkability:3")).toBe("Comfortable");
+  });
+});

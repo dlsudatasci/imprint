@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
+import { SCENE_SCALE } from "@/util/validators/sceneScale.mjs";
 
 /**
  * POST /api/annotationAbandon — called when a contributor stops partway through
@@ -87,6 +88,8 @@ const handler = async (req, res) => {
                                                 userId,
                                                 source: ann.source,
                                                 sceneLevel: ann.sceneLevel,
+                                                // The scale the answers are on (22 Oct 2026, validators/sceneScale.mjs)
+                                                ...(ann.sceneScale === SCENE_SCALE ? { sceneScale: SCENE_SCALE } : {}),
                                                 selectedObjectsID: ann.selectedObjectsID,
                                                 newObjects: ann.newObjects,
                                                 // Made on the fixed canvas (9 Oct 2026)

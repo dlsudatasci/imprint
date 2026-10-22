@@ -1,8 +1,11 @@
 import React from "react";
 import RecentSessionItem from "./recentSessionItem";
-import { Skeleton, Container } from "@/ui";
+import { Skeleton, Container, Button } from "@/ui";
 import { metersForPhotos, nextMilestone, previousMilestone, stepProgress } from "@/util/milestones";
 import { DASHBOARD_COPY as COPY, labelStart, secondsPerPhoto } from "./dashboardCopy";
+
+// Sessions per page, as /api/recentSessions sends them (RECENT_SESSIONS_PAGE)
+const SESSIONS_PAGE = 5;
 
 /**
  * The lower half of the contributor dashboard: session history, the
@@ -35,6 +38,12 @@ import { DASHBOARD_COPY as COPY, labelStart, secondsPerPhoto } from "./dashboard
 export default class DashboardInfo extends React.Component {
   state = {
     recentSessions: [],
+    // Show more and Show fewer (22 Oct 2026): whether older sessions are left,
+    // how many rows the first page had, and the request for more
+    hasMoreSessions: false,
+    firstPageCount: 0,
+    loadingMore: false,
+    moreFailed: false,
     totalAnnotation: 0,
     sessionsFailed: false,
     username: this.props.username,
@@ -81,8 +90,12 @@ export default class DashboardInfo extends React.Component {
         read(recentSessionsRes),
       ]);
 
+      const firstPage = Array.isArray(recentSessionsData?.sessions) ? recentSessionsData.sessions : [];
       this.setState({
-        recentSessions: Array.isArray(recentSessionsData?.sessions) ? recentSessionsData.sessions : [],
+        recentSessions: firstPage,
+        hasMoreSessions: recentSessionsData?.hasMore === true,
+        firstPageCount: firstPage.length,
+        moreFailed: false,
         sessionsFailed: !Array.isArray(recentSessionsData?.sessions),
         totalAnnotation: Number.isFinite(extractUser?.annotationCount) ? extractUser.annotationCount : null,
         telemetryStats: telemetryStats,
@@ -94,8 +107,46 @@ export default class DashboardInfo extends React.Component {
     }
   }
 
+  /**
+   * The next five finished sessions under those shown (22 Oct 2026). Show more
+   * stays where it is, under the rows it added, for the next five.
+   */
+  loadMoreSessions = async () => {
+    if (this.state.loadingMore) return;
+    const offset = this.state.recentSessions.filter((session) => !session.isActive).length;
+    this.setState({ loadingMore: true, moreFailed: false });
+    try {
+      const res = await fetch(`/api/recentSessions?offset=${offset}&limit=${SESSIONS_PAGE}`);
+      const data = res.ok ? await res.json().catch(() => null) : null;
+      if (!Array.isArray(data?.sessions)) throw new Error("no sessions");
+      const more = data.sessions.filter((session) => !session.isActive);
+      this.setState((state) => ({
+        recentSessions: [...state.recentSessions, ...more],
+        hasMoreSessions: data.hasMore === true,
+        loadingMore: false,
+      }));
+    } catch {
+      this.setState({ loadingMore: false, moreFailed: true });
+    }
+  };
+
+  /** Back to the first five; Show more is kept in view, where the finger was (22 Oct 2026). */
+  showFewerSessions = () => {
+    this.setState(
+      (state) => ({ recentSessions: state.recentSessions.slice(0, state.firstPageCount), hasMoreSessions: true, moreFailed: false }),
+      () => this.moreButton.current?.scrollIntoView?.({ block: "nearest" })
+    );
+  };
+
+  moreButton = React.createRef();
+
   render() {
-    const { totalAnnotation, recentSessions, sessionsFailed, telemetryStats, loading } = this.state;
+    const { totalAnnotation, recentSessions, sessionsFailed, telemetryStats, loading, hasMoreSessions, firstPageCount, loadingMore, moreFailed } = this.state;
+    // Accessible to me is a contributor's Step 2 answer. Annotators give none,
+    // so their list has no such column, and the chart takes its space
+    // (22 Oct 2026). One session with it brings the column to every row.
+    const showAccess = recentSessions.some((session) => !session.isActive && parseFloat(session.averageScore) > 0);
+    const canShowFewer = recentSessions.length > firstPageCount;
     // null when its request failed: shown as "–" with the reason, never as 0
     const totalKnown = totalAnnotation != null;
 
@@ -125,7 +176,7 @@ export default class DashboardInfo extends React.Component {
     return (
       <section className="pb-20" data-dashboard-info>
         <Container className="space-y-12">
-          {/* Recent sessions, in the page's own scroll (at most nine rows) */}
+          {/* Recent sessions, in the page's own scroll: five, and five more at a time */}
           <section aria-labelledby="recent-title">
             <h2 id="recent-title" className={heading}>{COPY.recentTitle}</h2>
             <div className="mt-5 rounded-card border border-line bg-surface px-6 sm:px-8">
@@ -138,11 +189,36 @@ export default class DashboardInfo extends React.Component {
               ) : sessionsFailed ? (
                 <p role="status" className="py-8 text-center text-sm text-muted">{COPY.loadFailed}</p>
               ) : recentSessions?.length > 0 ? (
-                <ul className="flex flex-col">
-                  {recentSessions.map((session, index) => (
-                    <RecentSessionItem sessionData={session} key={session.id || index} />
-                  ))}
-                </ul>
+                <>
+                  <ul className="flex flex-col">
+                    {recentSessions.map((session, index) => (
+                      <RecentSessionItem sessionData={session} showAccess={showAccess} key={session.id || index} />
+                    ))}
+                  </ul>
+                  {/* Five at a time: Show more adds the next five in place, Show
+                      fewer goes back to the first (22 Oct 2026). Not endless
+                      scrolling, which would keep pushing Your progress and the
+                      footer away, and not numbered pages, heavy for a summary. */}
+                  {(hasMoreSessions || canShowFewer || moreFailed) && (
+                    <div className="-mx-6 sm:-mx-8 border-t border-line-card px-6 sm:px-8 py-1">
+                      {moreFailed && <p role="status" className="pt-2 text-center text-sm text-muted">{COPY.moreFailed}</p>}
+                      <div className="flex justify-center gap-4">
+                        {hasMoreSessions && (
+                          <span ref={this.moreButton}>
+                            <Button variant="plain" size="sm" className="min-h-11" onClick={this.loadMoreSessions} disabled={loadingMore} aria-busy={loadingMore || undefined}>
+                              {loadingMore ? COPY.loadingMore : COPY.showMore}
+                            </Button>
+                          </span>
+                        )}
+                        {canShowFewer && (
+                          <Button variant="plain" size="sm" className="min-h-11" onClick={this.showFewerSessions}>
+                            {COPY.showFewer}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="py-8 text-center text-sm text-muted">{COPY.noSessions}</p>
               )}

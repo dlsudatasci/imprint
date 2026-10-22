@@ -214,6 +214,22 @@ describe("saving unsubmitted edits (8 Oct 2026)", () => {
     expect(mount().state.sceneLevel.sidewalkWidth).toBe("two_people");
   });
 
+  // 22 Oct 2026: answers run worst to best. A page cached before the change has
+  // no userSceneScale and its answers ran the other way
+  it("marks the answers it saves, and turns a cached answer from before the change round", () => {
+    const tool = mount();
+    act(() => tool.setState({ sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 2, overallAccessibility: 5 } }));
+    act(() => vi.advanceTimersByTime(500));
+    expect(saved().userSceneScale).toBe(2);
+    unmount();
+    expect(mount().state.sceneLevel).toEqual({ sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 2, overallAccessibility: 5 });
+    unmount();
+
+    const old = { ...record(), userSceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 1, walkability: 2, overallAccessibility: 1 } };
+    writeSession({ total: 1, current: 1, data: { imgRecords: [old], isAnnotator: false } });
+    expect(mount().state.sceneLevel).toEqual({ sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 2, overallAccessibility: 5 });
+  });
+
   it("saves a waiting edit at once when the page is left", () => {
     const tool = mount();
     act(() => {
@@ -492,7 +508,7 @@ describe("moving on from an image (8 Oct 2026)", () => {
     expect(typeof box(drawnId).drawnOrder).toBe("number");
   });
 
-  it("marks the image as drawn on the fixed canvas (photo frame fix, 9 Oct 2026)", async () => {
+  it("marks the image as drawn on the fixed canvas (photo frame fix, 9 Oct 2026) and its answers on the new scale", async () => {
     const tool = mount();
     ready(tool);
     const { fetchMock, respond } = slowServer();
@@ -506,6 +522,8 @@ describe("moving on from an image (8 Oct 2026)", () => {
     });
     const call = fetchMock.mock.calls.find(([url]) => url === "/api/annotationSubmit") as unknown as [string, { body: string }];
     expect(JSON.parse(call[1].body).canvasVersion).toBe(2);
+    // Step 2's answers on the scale where higher is better (22 Oct 2026)
+    expect(JSON.parse(call[1].body).sceneScale).toBe(2);
   });
 
   it("lets a failed send be tried again", async () => {
@@ -1439,7 +1457,7 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     mount({ layout: "sheet" });
     expect(rows().map((row) => row.children.length)).toEqual([3, 3, 5]);
     for (const row of rows()) expect(row.className).toContain("flex-wrap");
-    for (const option of Array.from(rows()[2].children)) expect(option.className).toContain("max-[389px]:basis-[30%]");
+    for (const option of Array.from(rows()[2].children)) expect(option.className).toContain("max-[399px]:basis-[30%]");
     expect(rows()[0].children[0].className).not.toContain("basis-");
     unmount();
     mount({ layout: "desktop" });

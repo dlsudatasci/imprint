@@ -664,4 +664,41 @@ describe("POST /api/annotationSubmit", () => {
       });
     }
   });
+
+  // 22 Oct 2026: Step 2 runs worst to best, higher is better. Pages loaded
+  // after the change send sceneScale 2 (validators/sceneScale.mjs)
+  describe("scene scale", () => {
+    async function submit({ role = "user", sceneScale } = {}) {
+      const mocks = setupMocks({ userRole: role });
+      mocks.imageCol.findOne.mockResolvedValue(role === "annotator" ? ANNOTATOR_IMAGE : { city: "makati", width: 1280, height: 960 });
+      const body = role === "annotator" ? annotatorBody() : { ...validBody };
+      if (sceneScale !== undefined) body.sceneScale = sceneScale;
+      const res = createMockRes();
+      await handler(createMockReq({ body }), res);
+      expect(res._status).toBe(200);
+      return mocks.annotationsCol.updateOne.mock.calls[0][1];
+    }
+
+    it("marks a contributor's answers sent on the new scale, and stores the answers as sent", async () => {
+      const update = await submit({ sceneScale: 2 });
+      expect(update.$set.sceneScale).toBe(2);
+      expect(update.$set.sceneLevel).toEqual(validBody.sceneLevel);
+      expect(update).not.toHaveProperty("$unset");
+    });
+
+    it("leaves answers from a page loaded before the change unmarked, clearing an earlier mark", async () => {
+      for (const sceneScale of [undefined, 1, "2", 3]) {
+        vi.clearAllMocks();
+        const update = await submit({ sceneScale });
+        expect(update.$set).not.toHaveProperty("sceneScale");
+        expect(update.$unset).toEqual({ sceneScale: "" });
+      }
+    });
+
+    it("never marks an annotator's row, which has no answers", async () => {
+      const update = await submit({ role: "annotator", sceneScale: 2 });
+      expect(update.$set.sceneLevel).toBeNull();
+      expect(update.$set).not.toHaveProperty("sceneScale");
+    });
+  });
 });

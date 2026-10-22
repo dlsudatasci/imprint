@@ -1,7 +1,8 @@
 /**
  * Every string the landing page's task preview shows (HowItWorks). Kept here
  * so tests can check them: no em dashes and no semicolons in user-facing copy.
- * One caption per chapter of demoScript.js, in the same order. Not an object
+ * One caption per chapter of demoScript.js, in the same order, and one per
+ * chapter of touchScript.js for phones and tablets (touchChapters). Not an object
  * is offered for the model's boxes only (a box you drew is deleted instead,
  * annotationSubmit refuses it otherwise), so it is in chapter 2, not 3.
  */
@@ -32,6 +33,34 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
     Object.freeze({
       title: "On to the next sidewalk",
       text: "Once every object is answered, move to the next photo. A session is 5, 10, 20 or 40 photos, and you can pause at any time.",
+    }),
+  ]),
+  /**
+   * The same chapters on phones and tablets (22 Oct 2026), where the preview
+   * plays the tool's phone layout (touchScript.js): the same titles, shorter
+   * text in the tool's words for a finger (tap, Next, Add box, the Step 2
+   * line), at most two lines on a phone.
+   */
+  touchChapters: Object.freeze([
+    Object.freeze({
+      title: "Say what blocks your way",
+      text: "Tap a box. If it gets in your way, tap Yes and rate it from 1 to 5.",
+    }),
+    Object.freeze({
+      title: "Answer every suggestion",
+      text: "Tap Next for the next box. Nothing real in it? Tap Not an object.",
+    }),
+    Object.freeze({
+      title: "Draw what the model missed",
+      text: "Tap Add box, drag its corners to fit, and pick its category.",
+    }),
+    Object.freeze({
+      title: "Rate the sidewalk",
+      text: "Tap the Step 2 line and answer four questions about the sidewalk.",
+    }),
+    Object.freeze({
+      title: "On to the next sidewalk",
+      text: "Tap Next Image for the next photo. You can pause at any time.",
     }),
   ]),
 });

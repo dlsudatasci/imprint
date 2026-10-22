@@ -3,12 +3,18 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
-// The drawing is covered by DemoStage.test.jsx. Here it is a stand-in, so
-// these tests are about the section: which preview shows, and its controls.
-vi.mock("next/dynamic", () => ({ default: () => (props) => <div data-stage data-tick={props.frame.tick} /> }));
+// The drawings are covered by DemoStage.test.jsx and TouchStage.test.jsx.
+// Here they are a stand-in, so these tests are about the section: which
+// preview shows, and its controls. Only the phone and tablet frames have a
+// sheet (`snap`), so the stand-in says which script it is playing.
+vi.mock("next/dynamic", () => ({
+  default: () => (props) => <div data-stage data-tick={props.frame.tick} data-touch={String(props.frame.snap !== undefined)} data-coarse={String(Boolean(props.coarse))} />,
+}));
 
-import HowItWorks, { LEAD_IN, TRACK_SCREENS } from "./HowItWorks";
+import HowItWorks, { LEAD_IN, TOUCH_STILL_TICKS, TRACK_SCREENS } from "./HowItWorks";
 import { ENTRANCE_END, TICKS } from "./howItWorks/demoScript";
+import { HOW_IT_WORKS_COPY as COPY } from "./howItWorks/howItWorksCopy";
+import { SHEET_LAYOUT_QUERY, TOUCH_DEVICE_QUERY } from "@/hooks/useAnnotateLayout";
 
 let root = null;
 let host = null;
@@ -19,9 +25,10 @@ afterEach(() => {
   window.matchMedia = realMatchMedia;
 });
 
-function render({ reduced }) {
+function render({ reduced, narrow = false, coarse = false }) {
+  const answers = { "(prefers-reduced-motion: reduce)": reduced, [SHEET_LAYOUT_QUERY]: narrow, [TOUCH_DEVICE_QUERY]: coarse };
   window.matchMedia = (query) => ({
-    matches: query === "(prefers-reduced-motion: reduce)" ? reduced : false,
+    matches: answers[query] ?? false,
     media: query,
     addEventListener: () => {},
     removeEventListener: () => {},
@@ -90,6 +97,70 @@ describe("HowItWorks", () => {
     const el = render({ reduced: false });
     expect(el.querySelector('a[href^="#"]')).toBeNull();
     expect(el.textContent).not.toContain("Skip the preview");
+    expect(el.querySelectorAll("a, button, input, select, [tabindex]")).toHaveLength(0);
+  });
+
+  it("plays the laptop preview with a mouse from 1024 px", () => {
+    const el = render({ reduced: false });
+    expect(el.querySelector("[data-stage]").dataset.touch).toBe("false");
+  });
+});
+
+describe("HowItWorks on phones and tablets (22 Oct 2026)", () => {
+  it("plays the tool's phone layout under 1024 px, on the same track, with the chapter as a band across the top", () => {
+    const el = render({ reduced: false, narrow: true });
+    const track = el.querySelector("[data-track]");
+    expect(track.className).toContain(`h-[${Math.round(TRACK_SCREENS * 100)}svh]`);
+    const stage = el.querySelector("[data-stage]");
+    expect(stage.dataset.touch).toBe("true");
+    expect(stage.closest("[inert]")).not.toBeNull();
+    expect(stage.closest('[aria-hidden="true"]')).not.toBeNull();
+    const frame = el.querySelector("[data-frame]");
+    expect(frame.className).toContain("border-line");
+    const band = el.querySelector("[data-caption]");
+    // First in the frame, above the screen, so it never covers the answers sheet
+    expect(frame.firstElementChild).toBe(band);
+    expect(band.className).not.toMatch(/(^|\s)(absolute|bottom-)/);
+    expect(band.textContent).toContain(COPY.touchChapters[0].title);
+    expect(band.textContent).toContain(COPY.touchChapters[0].text);
+    expect(frame.style.transform).toBe("scale(0.88)");
+  });
+
+  it("plays it on a touch device at any width, an iPad held sideways too, and says so to the stage", () => {
+    const el = render({ reduced: false, coarse: true });
+    expect(el.querySelector("[data-stage]").dataset.touch).toBe("true");
+    expect(el.querySelector("[data-stage]").dataset.coarse).toBe("true");
+  });
+
+  it("keeps the band one height for every chapter: two lines of text, clamped", () => {
+    const el = render({ reduced: true, narrow: true });
+    const text = Array.from(el.querySelectorAll("[data-caption] p")).at(-1);
+    expect(text.textContent).toBe(COPY.touchChapters[0].text);
+    expect(text.className).toContain("min-h-[2.5rem]");
+    expect(text.className).toContain("line-clamp-2");
+  });
+
+  it("with reduced motion, shows one still per chapter, stepped by hand, ending on the second photo", () => {
+    const el = render({ reduced: true, narrow: true });
+    expect(el.querySelector("[data-track]")).toBeNull();
+    const button = (name) => Array.from(el.querySelectorAll("button")).find((b) => b.textContent === name);
+    expect(el.querySelector("[data-stage]").dataset.touch).toBe("true");
+    expect(Number(el.querySelector("[data-stage]").dataset.tick)).toBeCloseTo(TOUCH_STILL_TICKS[0]);
+    expect(button("Previous step").disabled).toBe(true);
+    for (let i = 1; i < TOUCH_STILL_TICKS.length; i += 1) {
+      act(() => button("Next step").click());
+      expect(Number(el.querySelector("[data-stage]").dataset.tick)).toBeCloseTo(TOUCH_STILL_TICKS[i]);
+      expect(el.querySelector("[data-caption]").textContent).toContain(COPY.touchChapters[i].title);
+    }
+    expect(button("Next step").disabled).toBe(true);
+    expect(el.querySelector("[data-stage]").dataset.tick).toBe("1000");
+  });
+
+  it("gives screen readers the phone's words for the chapters, and nothing in the section takes focus", () => {
+    const el = render({ reduced: false, narrow: true });
+    const list = el.querySelector("ol.sr-only");
+    expect(list.textContent).toContain(COPY.touchChapters[2].text);
+    expect(list.textContent).not.toContain(COPY.chapters[2].text);
     expect(el.querySelectorAll("a, button, input, select, [tabindex]")).toHaveLength(0);
   });
 });

@@ -33,43 +33,48 @@ export const DEMO_IMAGES = Object.freeze([TUTORIAL_IMAGES[0], TUTORIAL_IMAGES[1]
 /** Image pixel size of the tutorial photos */
 export const DEMO_IMAGE_SIZE = Object.freeze({ width: 640, height: 360 });
 
-const DRAWN_ID = "demo-drawn-1";
+export const DRAWN_ID = "demo-drawn-1";
 /** Where the drawn box starts and ends, in image px: the white post on the sidewalk */
 const DRAW_FROM = Object.freeze([428, 96]);
 const DRAW_TO = Object.freeze([450, 216]);
 
-/** Cursor targets. The stage turns each into a point (see DemoStage). */
-const OFF = { kind: "off" };
-const box = (id) => ({ kind: "box", id });
-const img = ([x, y]) => ({ kind: "image", x, y });
-const ui = (name, extra = {}) => ({ kind: "ui", name, ...extra });
+/**
+ * Cursor targets. The stage turns each into a point (see DemoStage).
+ * Exported with the mutations below for the phone and tablet script
+ * (touchScript.js, 22 Oct 2026), so both previews give the same answers.
+ */
+export const OFF = Object.freeze({ kind: "off" });
+export const box = (id) => ({ kind: "box", id });
+export const img = ([x, y]) => ({ kind: "image", x, y });
+export const ui = (name, extra = {}) => ({ kind: "ui", name, ...extra });
 
-const ids = {
+/** The suggestions on the first photo, by what they are */
+export const ids = Object.freeze({
   lamp: "tut1-box1",
   tree: "tut1-box2",
   car: "tut1-box3",
   moto: "tut1-box4",
-};
+});
 
 // ---- Mutations: each mirrors the tool's handler for the same click ----
 
-const find = (s, id) => s.boxes.find((b) => b.id === id);
+export const find = (s, id) => s.boxes.find((b) => b.id === id);
 
-function select(id) {
+export function select(id) {
   return (s) => {
     s.selectedId = id;
     s.picker = null;
   };
 }
 
-function close(s) {
+export function close(s) {
   s.selectedId = null;
   s.picker = null;
   s.dropdown = null;
 }
 
 /** No on a suggestion (onUnselectObstruction) */
-function suggestionNo(id) {
+export function suggestionNo(id) {
   return (s) => {
     Object.assign(find(s, id), { selected: false, isRejected: true, obstructs: false, severity: null });
     close(s);
@@ -77,7 +82,7 @@ function suggestionNo(id) {
 }
 
 /** A first Yes on a suggestion (onSelectObstruction): the panel stays open on the severity picker */
-function suggestionYes(id) {
+export function suggestionYes(id) {
   return (s) => {
     Object.assign(find(s, id), { selected: true, isRejected: false, obstructs: true });
     s.picker = 3; // SeverityPicker starts at 3 when there is no severity yet
@@ -85,7 +90,7 @@ function suggestionYes(id) {
 }
 
 /** Yes on a drawn box (onSetObstructs(true)) */
-function drawnYes(id) {
+export function drawnYes(id) {
   return (s) => {
     Object.assign(find(s, id), { obstructs: true, severity: null });
     s.picker = 3;
@@ -93,7 +98,7 @@ function drawnYes(id) {
 }
 
 /** Confirm on the severity picker (onSetSeverity), which closes the panel */
-function confirmSeverity(id) {
+export function confirmSeverity(id) {
   return (s) => {
     Object.assign(find(s, id), { severity: s.picker, obstructs: true });
     close(s);
@@ -114,14 +119,14 @@ function finishDraft(s) {
   s.picker = null;
 }
 
-function chooseCategory(value) {
+export function chooseCategory(value) {
   return (s) => {
     find(s, s.selectedId).comment = value;
     s.dropdown = null;
   };
 }
 
-function answerScene(updates) {
+export function answerScene(updates) {
   return (s) => {
     s.scene = { ...s.scene, ...updates };
   };
@@ -150,14 +155,14 @@ export const ENTRANCE_END = 122;
  */
 export const HOLD_END = 142;
 /** The tick Next Image's save finishes. The second photo shows until the end. */
-const LAST_TICK = 940;
+export const LAST_TICK = 940;
 
 /** A wait between steps, in beats */
-const wait = (beats) => ({ beats });
+export const wait = (beats) => ({ beats });
 /** Everything before this ends at `tick`, and what follows is laid out from there */
-const until = (tick) => ({ until: tick });
+export const until = (tick) => ({ until: tick });
 /** A move, press, drag or hold, named so tests and the stills can find it */
-const step = (name, type, beats, more = {}) => ({ name, type, beats, ...more });
+export const step = (name, type, beats, more = {}) => ({ name, type, beats, ...more });
 /** No on a suggestion: open it, then No */
 const answerNo = (key) => [
   step(`to-${key}`, "move", 4, { to: box(ids[key]) }),
@@ -256,7 +261,7 @@ const TIMELINE = [
  * where each shot starts. Each stretch between `until` marks is laid out over
  * its own ticks, in proportion to its beats.
  */
-function layOut(timeline, last) {
+export function layOut(timeline, last) {
   const stretches = [];
   let entries = [];
   let from = 0;
@@ -330,14 +335,19 @@ export function cardFadedAt(tick) {
   return faded;
 }
 
-/** When a named step starts, or ends (`"end"`), in ticks */
-export function tickOf(name, edge = "start") {
-  const found = STEPS.find((s) => s.name === name);
+/** When a named step of `steps` starts, or ends (`"end"`), in ticks */
+export function stepTick(steps, name, edge = "start") {
+  const found = steps.find((s) => s.name === name);
   if (!found) throw new Error(`No step named ${name}`);
   return edge === "end" ? found.end : found.at;
 }
 
-function freshBoxes(imageIndex) {
+/** When a named step starts, or ends (`"end"`), in ticks */
+export function tickOf(name, edge = "start") {
+  return stepTick(STEPS, name, edge);
+}
+
+export function freshBoxes(imageIndex) {
   return DEMO_IMAGES[imageIndex].annotationList.map((b) => ({
     id: b.id,
     comment: b.comment,
@@ -349,11 +359,11 @@ function freshBoxes(imageIndex) {
   }));
 }
 
-function emptyScene() {
+export function emptyScene() {
   return { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null };
 }
 
-function initialState() {
+export function initialState() {
   return {
     imageIndex: 0,
     boxes: freshBoxes(0),
@@ -371,15 +381,20 @@ export function easeInOut(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
 }
 
-const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+export const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-/** Which chapter a tick falls in */
-export function chapterAt(tick) {
+/** Which of `chapters` a tick falls in */
+export function chapterIn(chapters, tick) {
   let index = 0;
-  CHAPTERS.forEach((c, i) => {
+  chapters.forEach((c, i) => {
     if (tick >= c.start) index = i;
   });
   return index;
+}
+
+/** Which chapter a tick falls in */
+export function chapterAt(tick) {
+  return chapterIn(CHAPTERS, tick);
 }
 
 /** The camera's region at a tick */
@@ -404,10 +419,28 @@ export function demoFrame(progress) {
   const p = Number.isFinite(progress) ? clamp01(progress) : 0;
   const tick = p * TICKS;
   const state = initialState();
+  const cursor = replay(STEPS, tick, state);
+
+  return {
+    tick,
+    chapter: chapterAt(tick),
+    ...state,
+    cursor,
+    camera: cameraAt(tick),
+    cardFaded: cardFadedAt(tick),
+  };
+}
+
+/**
+ * Plays `steps` up to `tick` on `state` (changed in place) and returns the
+ * cursor: { from, to, t, pressed, visible }. Shared by demoFrame and the phone
+ * and tablet script (touchScript.js), so both play a script the same way.
+ */
+export function replay(steps, tick, state) {
   let at = OFF;
   let cursor = { from: OFF, to: OFF, t: 1, pressed: false };
 
-  for (const step of STEPS) {
+  for (const step of steps) {
     if (tick < step.at) break;
     const done = tick >= step.end;
     const raw = done ? 1 : clamp01((tick - step.at) / (step.end - step.at));
@@ -426,12 +459,5 @@ export function demoFrame(progress) {
     }
   }
 
-  return {
-    tick,
-    chapter: chapterAt(tick),
-    ...state,
-    cursor: { ...cursor, visible: tick >= STEPS[0].at },
-    camera: cameraAt(tick),
-    cardFaded: cardFadedAt(tick),
-  };
+  return { ...cursor, visible: tick >= steps[0].at };
 }

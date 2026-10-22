@@ -117,6 +117,8 @@ import {
   clampView,
   clampZoom,
   ensureVisible,
+  keepPhotoInPlace,
+  photoAreaSettled,
   IDENTITY_VIEW,
   type Fit,
   type View,
@@ -128,7 +130,9 @@ import {
   readSessionData,
   writeSession,
   writeCurrentCount,
+  clearSession,
 } from "@/util/sessionCache";
+import { isSessionChanged } from "@/util/validators/sessionSync";
 import { P } from "../Typography";
 import { H2 } from "../Typography";
 import { H3 } from "../Typography";
@@ -156,6 +160,14 @@ import { buildDisplayLabelsInOrder, orderOfAppearance, formatLabel } from "@/uti
 // up to 5 stage px away from the boxes (IMPRINT_photo_frame_fix.md, 9 Oct 2026).
 // A page loaded before that deploy sends no canvasVersion.
 export const CANVAS_VERSION = 2;
+
+/** How long the screen must stop changing before an opened box is moved clear of the sheet, ms (22 Oct 2026) */
+const KEEP_IN_VIEW_WAIT_MS = 60;
+
+/** Next was refused because this photo's session is no longer the account's current one (23 Oct 2026) */
+export const SESSION_CHANGED_MESSAGE = "This session was changed in another tab or on another device, so this photo can't be saved here. Loading your current session.";
+/** Long enough to read the message before the current session loads */
+export const SESSION_CHANGED_RELOAD_MS = 3000;
 
 /** The tutorial moves the answers sheet with this window event, detail "collapsed", "half" or "full" (9 Oct 2026). */
 export const SHEET_EVENT = "imprint:answer-sheet";
@@ -888,7 +900,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     const stage = this.stageSize();
     if (layoutChanged || stage.width !== this.lastStage.width || stage.height !== this.lastStage.height) {
-      this.onStageResize(this.lastStage);
+      this.onStageResize(this.lastStage, { keepPhoto: !layoutChanged });
       this.lastStage = stage;
     }
     if (preProps.image !== image) {
@@ -964,8 +976,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (!this.isSheet) return;
     const openId = this.state.showInput ? this.selectedId : null;
     this.lastPanelId = openId;
+    if (openId) this.anchorPhoto(openId);
     this.setState({ sheetSnap: openId ? "panel" : "collapsed" }, () => {
-      if (openId) this.keepSelectedInView();
+      if (openId) this.scheduleKeepSelectedInView();
       else this.relaxView();
     });
   }
@@ -975,6 +988,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.resizeObserver?.disconnect();
     this.sheetAreaObserver?.disconnect();
     this.cancelViewAnimation();
+    if (this.keepInViewTimer !== null) clearTimeout(this.keepInViewTimer);
     if (this.loupeFrame !== null && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(this.loupeFrame);
     this.editSaver.flush();
     if (typeof window !== "undefined") {
@@ -1857,8 +1871,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (!this.inFocus) return;
     const openId = this.state.showInput ? this.selectedId : null;
     this.lastPanelId = openId;
+    if (openId) this.anchorPhoto(openId);
     this.setState({ sheetSnap: openId ? "panel" : "half" }, () => {
-      if (openId) this.keepSelectedInView();
+      if (openId) this.scheduleKeepSelectedInView();
     });
   };
 
@@ -1889,18 +1904,38 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * the new one, then repaints the photo and the boxes. Before 9 Oct 2026 a
    * size change repainted with the old fit, which would put boxes in the wrong
    * place.
+   *
+   * With a box open in the answers sheet (22 Oct 2026, IMPRINT_landing_touch_preview.md
+   * section 7) the photo stays where it is on the screen instead, as far as
+   * the limits allow, and then moves only as far as keeps the box clear of
+   * the sheet. Opening a box makes the photo area taller, since the top of
+   * the sheet gets shorter. Before, the photo was re-centred lower in it and
+   * the move worked out a moment earlier, for the shorter area, was either
+   * added on top (the photo jumped when it did not need to) or, with reduced
+   * motion, thrown away (the box ended up partly under the sheet).
+   * `keepPhoto` is false when the layout itself changed.
    */
-  private onStageResize(previous: { width: number; height: number }) {
+  private onStageResize(previous: { width: number; height: number }, { keepPhoto = false }: { keepPhoto?: boolean } = {}) {
     this.setCanvasDPI();
     const { width: iw, height: ih } = this.imageSize();
     const stage = this.stageSize();
+    const panelOpen = keepPhoto && this.isSheet && !this.inFocus && this.state.showInput && previous.width > 0 && previous.height > 0;
+    let keptInPlace = false;
     if (this.currentImageElement && iw && ih) {
+      const anchor = this.panelAnchor && this.panelAnchor.id === this.selectedId ? this.panelAnchor : null;
+      const shown = anchor ?? { x: this.scaleState.originX, y: this.scaleState.originY };
       const centre = this.calculateMousePosition(previous.width / 2, previous.height / 2);
       const fit = fitImage(iw, ih, stage.width, stage.height);
       if (fit) {
         this.fit = fit;
         let view: View = IDENTITY_VIEW;
-        if (this.view.zoom > 1 && previous.width > 0 && previous.height > 0) {
+        if (panelOpen) {
+          // Where the sheet rests with the panel up, whether or not it has got there
+          const cover = this.sheetPoints ? Math.max(0, this.sheetPoints.panel - this.sheetPoints.collapsed) : this.sheetCover();
+          this.cancelViewAnimation();
+          view = keepPhotoInPlace(shown, fit, this.view.zoom, panLimits(fit, this.view.zoom, stage, { width: iw, height: ih }, cover));
+          keptInPlace = true;
+        } else if (this.view.zoom > 1 && previous.width > 0 && previous.height > 0) {
           const scale = fit.scale * this.view.zoom;
           view = clampView(
             {
@@ -1919,6 +1954,52 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (this.inputMode === "touch") this.currentTransformer = null;
     this.onShapeChange();
     this.onImageChange();
+    // Then the smallest move that keeps the open box clear of the sheet, once
+    // the sheet has measured what it now holds
+    if (keptInPlace) this.scheduleKeepSelectedInView();
+  }
+
+  /**
+   * Where the photo was on the screen when the open box opened, stage px, or
+   * null once the person moves the photo themselves (22 Oct 2026).
+   * keepSelectedInView works from it, so the move comes out the same
+   * whatever order the sheet and the photo area report their new sizes in.
+   */
+  private panelAnchor: { id: string; x: number; y: number } | null = null;
+
+  private anchorPhoto(id: string) {
+    this.panelAnchor = { id, x: this.scaleState.originX, y: this.scaleState.originY };
+  }
+
+  private keepInViewTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * keepSelectedInView once the screen stops changing: the sheet reports its
+   * panel's height a frame or two after its new top, and the photo area grows
+   * after that (22 Oct 2026). Without the wait, on a tablet the move was
+   * first worked out for the lists' height. Every call restarts the wait.
+   */
+  private scheduleKeepSelectedInView() {
+    if (this.keepInViewTimer !== null) clearTimeout(this.keepInViewTimer);
+    this.keepInViewTimer = setTimeout(() => {
+      this.keepInViewTimer = null;
+      this.keepSelectedInView();
+    }, KEEP_IN_VIEW_WAIT_MS);
+  }
+
+  /**
+   * Whether the photo area and the stage measured from it have caught up with
+   * where the sheet rests (photoAreaSettled). Not yet, and a view worked out
+   * now is redone by onStageResize once they have.
+   */
+  private sheetAreaSettled() {
+    if (!this.isSheet) return true;
+    return photoAreaSettled({
+      measured: this.sheetAreaRef.current ? this.sheetAreaRef.current.clientHeight : null,
+      stage: this.state.sheetStage ? this.state.sheetStage.height : null,
+      edge: this.state.sheetCollapsed,
+      restingEdge: this.sheetPoints ? this.sheetPoints.collapsed : this.state.sheetCollapsed,
+    });
   }
 
   /** Measures the photo area in the sheet layout, which is the stage there. */
@@ -1949,7 +2030,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private onSheetPoints = (points: SheetPoints) => {
     this.sheetPoints = points;
     if (points.collapsed !== this.state.sheetCollapsed) this.setState({ sheetCollapsed: points.collapsed });
-    if (this.state.showInput) this.keepSelectedInView();
+    if (this.state.showInput) this.scheduleKeepSelectedInView();
   };
 
   private onSheetSnapChange = (requested: SheetSnap) => {
@@ -2005,24 +2086,44 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // already up, shows its panel as usual.
     if (openId && this.inFocus && this.state.sheetSnap === "collapsed") return;
     if (openId) {
-      this.setState({ sheetSnap: "panel" }, () => this.keepSelectedInView());
+      this.anchorPhoto(openId);
+      this.setState({ sheetSnap: "panel" }, () => this.scheduleKeepSelectedInView());
     } else {
+      this.panelAnchor = null;
       this.setState({ sheetSnap: "collapsed" }, () => this.relaxView());
     }
   }
 
-  /** Pans the photo, by the smallest shift, so the selected box is clear of the sheet. */
+  /**
+   * Pans the photo, by the smallest shift, so the selected box is clear of the
+   * sheet. Waits while the photo area is still changing size (22 Oct 2026):
+   * onStageResize calls it again once it has.
+   */
   private keepSelectedInView() {
     if (!this.isSheet || !this.fit) return;
+    if (!this.sheetAreaSettled()) return;
     const shape = this.selectedShape();
     const { width: iw, height: ih } = this.imageSize();
     if (!shape || !iw || !ih) return;
     const stage = this.stageSize();
     const cover = this.sheetCover();
-    const box = this.calculateShapePosition(normalizeMark(shape.getAnnotationData().mark));
     const visible = { x: 0, y: 0, width: stage.width, height: Math.max(0, stage.height - cover) };
-    const limits = panLimits(this.fit, this.view.zoom, stage, { width: iw, height: ih }, cover);
-    const pan = ensureVisible(box, visible, this.view, limits);
+    const { zoom } = this.view;
+    const limits = panLimits(this.fit, zoom, stage, { width: iw, height: ih }, cover);
+    // From where the photo was when the box opened, unless the person has
+    // moved it since: a call made while the sheet was still being measured
+    // is then corrected by the next one, instead of built on
+    const anchor = this.panelAnchor && this.panelAnchor.id === this.selectedId ? this.panelAnchor : null;
+    const from = anchor ? keepPhotoInPlace(anchor, this.fit, zoom, limits) : this.view;
+    const scale = this.fit.scale * zoom;
+    const mark = normalizeMark(shape.getAnnotationData().mark);
+    const box = {
+      x: this.fit.originX + from.panX + mark.x * scale,
+      y: this.fit.originY + from.panY + mark.y * scale,
+      width: mark.width * scale,
+      height: mark.height * scale,
+    };
+    const pan = ensureVisible(box, visible, from, limits);
     if (Math.abs(pan.panX - this.view.panX) > 0.5 || Math.abs(pan.panY - this.view.panY) > 0.5) {
       this.animateView({ zoom: this.view.zoom, ...pan });
     }
@@ -2079,6 +2180,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   /** Fit: back to the whole photo. */
   private resetView = () => {
+    this.panelAnchor = null;
     this.animateView(IDENTITY_VIEW);
   };
 
@@ -2319,6 +2421,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       // Not an active pointer (synthetic events in tests)
     }
     this.cancelViewAnimation();
+    // The person is moving the photo now: an open box is no longer placed from where it opened
+    this.panelAnchor = null;
     this.inputTypesUsed.add(event.pointerType);
     this.setInputMode("touch");
     const point = this.pointerPoint(event);
@@ -4003,13 +4107,27 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       // The server explains a refusal (422 and the like). Anything else is
       // most likely the connection.
       let message: string | null = null;
+      let body: { message?: unknown; code?: unknown } | null = null;
       if (res.status >= 400 && res.status < 500) {
         try {
-          const json = await res.json();
-          if (typeof json?.message === "string" && json.message) message = json.message;
+          body = await res.json();
+          if (typeof body?.message === "string" && body.message) message = body.message;
         } catch {
           message = null;
         }
+      }
+      // The session this photo belongs to was stopped, finished or replaced
+      // in another tab or on another device (a phone left overnight, 23 Oct
+      // 2026). Nothing here can be saved to it, so say so, and load the
+      // account's current session: with the saved copy gone the annotate page
+      // asks the server (validators/sessionSync.js).
+      if (isSessionChanged(body)) {
+        this.showMessage(SESSION_CHANGED_MESSAGE);
+        window.setTimeout(() => {
+          clearSession();
+          Router.reload();
+        }, SESSION_CHANGED_RELOAD_MS);
+        return;
       }
       this.submitInFlight = false;
       this.setState({ submitting: false });

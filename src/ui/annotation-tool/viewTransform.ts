@@ -143,3 +143,33 @@ export function ensureVisible(
     panY: clamp(pan.panY + dy, limits.minY, limits.maxY),
   };
 }
+
+/**
+ * The view that keeps the photo where it is on the screen after the stage
+ * changes size, as far as the limits allow (22 Oct 2026). `shown` is the
+ * photo's top-left corner on the stage before the change (scaleState's
+ * origin), `fit` the new fit. On a phone or tablet an opened box makes the
+ * photo area taller (the top of the sheet gets shorter), and re-centring the
+ * photo in it moved the photo down just as the sheet came up over it.
+ */
+export function keepPhotoInPlace(shown: { x: number; y: number }, fit: Fit, zoom: number, limits: PanLimits): View {
+  return clampView({ zoom, panX: shown.x - fit.originX, panY: shown.y - fit.originY }, limits);
+}
+
+/**
+ * Whether the photo area is the size the stage was measured at, so a view
+ * worked out now will still be right once the screen settles (22 Oct 2026).
+ * Opening a box changes three things one after another: where the sheet rests,
+ * then the photo area's bottom (the sheet's resting edge, held in state), then
+ * the stage measured from it. A move worked out in between used the old stage
+ * with the new sheet. `measured` is the area's height on the page now and
+ * `stage` the height the stage was measured at, null when either is not
+ * known (no layout, as in tests), which counts as settled.
+ */
+export function photoAreaSettled(
+  { measured, stage, edge, restingEdge }: { measured: number | null; stage: number | null; edge: number; restingEdge: number },
+): boolean {
+  if (edge !== restingEdge) return false;
+  if (measured == null || stage == null || measured <= 0) return true;
+  return Math.abs(measured - stage) <= 1;
+}

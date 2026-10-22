@@ -3,7 +3,9 @@ import dynamic from "next/dynamic";
 import { Button, Container, H2, P } from "@/ui";
 import { cn } from "@/ui/cn";
 import { useMediaQuery, REDUCED_MOTION_QUERY } from "@/hooks/useMediaQuery";
+import { useAnnotateLayout, TOUCH_DEVICE_QUERY } from "@/hooks/useAnnotateLayout";
 import { ENTRANCE_END, TICKS, demoFrame, tickOf } from "./howItWorks/demoScript";
+import { touchFrame, touchTickOf } from "./howItWorks/touchScript";
 import { HOW_IT_WORKS_COPY as COPY } from "./howItWorks/howItWorksCopy";
 import { useScrollProgress } from "./howItWorks/useScrollProgress";
 
@@ -34,9 +36,22 @@ import { useScrollProgress } from "./howItWorks/useScrollProgress";
  * landing page's first load stays small. The headings and the chapters' text
  * are in the server's HTML, and screen readers get the chapters as a list,
  * since the drawing is hidden from them.
+ *
+ * Phones and tablets (22 Oct 2026) get the task as the tool shows it there,
+ * wherever the tool itself uses its sheet layout (useAnnotateLayout: under
+ * 1024 px, and on every touch device): the photo above, the answers in a
+ * bottom sheet, a finger instead of a cursor (TouchStage, touchScript.js).
+ * The same scroll, the same five chapters and the same answers. The chapter
+ * is a band across the top of the frame, where the tool's top bar would be,
+ * since a card over the bottom would cover the sheet.
  */
 
 const DemoStage = dynamic(() => import("./howItWorks/DemoStage"), {
+  ssr: false,
+  loading: () => <div className="w-full h-full bg-surface-subtle animate-pulse" />,
+});
+
+const TouchStage = dynamic(() => import("./howItWorks/TouchStage"), {
   ssr: false,
   loading: () => <div className="w-full h-full bg-surface-subtle animate-pulse" />,
 });
@@ -51,6 +66,19 @@ export const STILL_TICKS = Object.freeze([
   tickOf("lamp-no", "end"),
   tickOf("category-pick", "end"),
   tickOf("overallAccessibility", "end"),
+  TICKS,
+]);
+
+/**
+ * The same on phones and tablets: Tree #1's severity at 1, every suggestion
+ * answered, the fitted box with Lamp Post chosen, Step 2 answered, and the
+ * second photo.
+ */
+export const TOUCH_STILL_TICKS = Object.freeze([
+  touchTickOf("tree-severity", "end"),
+  touchTickOf("moto-no", "end"),
+  touchTickOf("category-pick", "end"),
+  touchTickOf("overallAccessibility", "end"),
   TICKS,
 ]);
 
@@ -180,8 +208,105 @@ function StepPreview() {
   );
 }
 
+/**
+ * The current chapter on phones and tablets (22 Oct 2026): a band across the
+ * top of the frame, where the tool's top bar would be, so it never covers
+ * the answers sheet. The same height for every chapter (room for two lines
+ * of text), so the screen under it never changes size. The line along its
+ * bottom shows how far through the preview is.
+ *
+ * The chapter is aria-hidden: screen readers get every chapter from the list
+ * in the heading.
+ */
+function TouchCaption({ active, progress = null, children }) {
+  const chapter = COPY.touchChapters[active];
+  const total = COPY.touchChapters.length;
+  return (
+    <div data-caption className="relative z-30 shrink-0 border-b border-line bg-surface px-4 py-3">
+      <div aria-hidden="true">
+        <div className="flex items-center gap-3">
+          <p className="text-xs font-semibold text-primary whitespace-nowrap">{COPY.stepOf(active + 1, total)}</p>
+          <div className="flex flex-1 gap-1">
+            {COPY.touchChapters.map((c, i) => (
+              <span key={c.title} className={cn("h-1 flex-1 rounded-full", i <= active ? "bg-primary" : "bg-line")} />
+            ))}
+          </div>
+        </div>
+        <p className="mt-1.5 font-display text-lg leading-6 font-bold tracking-tight text-ink truncate">{chapter.title}</p>
+        <p className="mt-0.5 min-h-[2.5rem] text-sm leading-5 font-medium text-body line-clamp-2">{chapter.text}</p>
+      </div>
+      {children}
+      {progress !== null && (
+        // How far through the preview
+        <div aria-hidden="true" className="absolute left-0 -bottom-px h-1 bg-primary" style={{ width: `${progress * 100}%` }} />
+      )}
+    </div>
+  );
+}
+
+/** The scroll-played preview on phones and tablets: the band, then the tool's phone screen */
+function TouchScrollPreview({ coarse }) {
+  const trackRef = useRef(null);
+  const frameRef = useRef(null);
+  const progress = useScrollProgress(trackRef, frameRef, { lead: LEAD_IN });
+  const frame = touchFrame(progress);
+  const entrance = Math.min(1, (progress * TICKS) / ENTRANCE_END);
+
+  return (
+    // The same track as on a laptop (ScrollPreview)
+    <div ref={trackRef} data-track className="relative h-[460vh] supports-[height:100svh]:h-[460svh]">
+      <div ref={frameRef} className={STICKY_FRAME}>
+        <Container className="h-full py-4 lg:py-6">
+          <div
+            data-frame
+            className={cn(FRAME_BOX, "flex flex-col")}
+            style={entrance < 1 ? { transform: `scale(${ENTRANCE_SCALE + (1 - ENTRANCE_SCALE) * entrance})`, transformOrigin: "50% 0" } : undefined}
+          >
+            <TouchCaption active={frame.chapter} progress={progress} />
+            <div className="relative min-h-0 flex-1" inert aria-hidden="true">
+              <TouchStage frame={frame} coarse={coarse} />
+            </div>
+          </div>
+        </Container>
+      </div>
+    </div>
+  );
+}
+
+/** Reduced motion on phones and tablets: one still per chapter, stepped by hand */
+function TouchStepPreview({ coarse }) {
+  const [index, setIndex] = useState(0);
+  const frame = touchFrame(TOUCH_STILL_TICKS[index] / TICKS);
+  const total = COPY.touchChapters.length;
+  return (
+    <Container className={cn(SCREEN_BELOW_NAV, "py-4 lg:py-6")}>
+      <div className={cn(FRAME_BOX, "flex flex-col")}>
+        <TouchCaption active={index}>
+          <div className="mt-3 flex gap-2">
+            <Button variant="neutral" size="sm" disabled={index === 0} onClick={() => setIndex(index - 1)}>
+              {COPY.previous}
+            </Button>
+            <Button size="sm" disabled={index === total - 1} onClick={() => setIndex(index + 1)}>
+              {COPY.next}
+            </Button>
+          </div>
+        </TouchCaption>
+        <div className="relative min-h-0 flex-1" inert aria-hidden="true">
+          <TouchStage frame={frame} coarse={coarse} instant />
+        </div>
+      </div>
+    </Container>
+  );
+}
+
 export default function HowItWorks() {
   const reduced = useMediaQuery(REDUCED_MOTION_QUERY);
+  // "sheet" wherever the tool itself uses its phone and tablet layout, null until the browser has answered
+  const layout = useAnnotateLayout();
+  const coarse = useMediaQuery(TOUCH_DEVICE_QUERY) === true;
+  const touch = layout === "sheet";
+  // The server and the first render have no layout, so the laptop text, with the same titles
+  const chapters = touch ? COPY.touchChapters : COPY.chapters;
   return (
     <section id="how-it-works" aria-labelledby="how-it-works-title" className="scroll-mt-16 pt-16 lg:pt-24">
       <Container className="text-center pb-8 lg:pb-12">
@@ -191,19 +316,22 @@ export default function HowItWorks() {
         </H2>
         <P className="mt-4 mx-auto max-w-2xl text-lg">{COPY.intro}</P>
         <ol className="sr-only">
-          {COPY.chapters.map((c) => (
+          {chapters.map((c) => (
             <li key={c.title}>
               {c.title}. {c.text}
             </li>
           ))}
         </ol>
       </Container>
-      {/* Until the browser says whether reduced motion is on: one screen of
-          placeholder, so the page without JavaScript is not 7 screens of nothing */}
-      {reduced === null ? (
+      {/* Until the browser says whether reduced motion is on, and which layout
+          the tool would use: one screen of placeholder, so the page without
+          JavaScript is not 7 screens of nothing */}
+      {reduced === null || layout === null ? (
         <Container>
           <div className="h-[60vh] rounded-card border border-line bg-surface-subtle" />
         </Container>
+      ) : touch ? (
+        reduced ? <TouchStepPreview coarse={coarse} /> : <TouchScrollPreview coarse={coarse} />
       ) : reduced ? (
         <StepPreview />
       ) : (

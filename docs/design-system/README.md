@@ -187,7 +187,11 @@ list (scale 0.92 to 1 over 180 ms, §9a). It is always used as `motion-safe:anim
 
 On phones and tablets (§9b, 9 Oct 2026) two more things move: the answers sheet moves to its
 resting point, and the photo pans over 180 ms to keep an opened box clear of the sheet (in
-code). From 21 Oct 2026 the sheet moves on a critically damped spring (`springStep` in
+code). From 22 Oct 2026 the photo stays where it is on the screen as the box opens (the photo
+area grows as the top of the sheet gets shorter, and it used to be re-centred lower) and pans
+only as far as the box needs, worked out from where it was when the box opened and once the
+sheet has reported its new size (`keepPhotoInPlace`, `photoAreaSettled`), so it is the same
+with reduced motion and on a slow phone. From 21 Oct 2026 the sheet moves on a critically damped spring (`springStep` in
 `sheetSnap.js`, 0.3 s response, no bounce) that starts at the finger's speed, instead of a
 200 ms ease-out transition, and can be grabbed again mid-way. With
 `prefers-reduced-motion: reduce` both happen at once.

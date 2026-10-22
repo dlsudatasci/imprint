@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fitImage, applyView, zoomAt, panLimits, clampView, ensureVisible, IDENTITY_VIEW } from "./viewTransform";
+import { fitImage, applyView, zoomAt, panLimits, clampView, ensureVisible, keepPhotoInPlace, photoAreaSettled, IDENTITY_VIEW } from "./viewTransform";
 
 /** How the photo sits on the stage, and touch zoom and pan (9 Oct 2026). */
 describe("fitImage", () => {
@@ -99,5 +99,44 @@ describe("ensureVisible", () => {
 
   it("never shifts more than the sheet covers", () => {
     expect(ensureVisible({ x: 50, y: 480, width: 60, height: 30 }, visible, { panX: 0, panY: 0 }, limits)).toEqual({ panX: 0, panY: -120 });
+  });
+});
+
+describe("keepPhotoInPlace (22 Oct 2026)", () => {
+  // A 640 by 360 photo on a 348 px wide phone: the area 350 px tall at rest, 470 px with a box open
+  const image = { width: 640, height: 360 };
+  const rest = fitImage(640, 360, 348, 350)!;
+  const open = fitImage(640, 360, 348, 470)!;
+
+  it("keeps the photo where it was when the area grows under it", () => {
+    expect(open.originY - rest.originY).toBeCloseTo(60);
+    const view = keepPhotoInPlace({ x: rest.originX, y: rest.originY }, open, 1, panLimits(open, 1, { width: 348, height: 470 }, image, 217));
+    expect(view.zoom).toBe(1);
+    expect(view.panX).toBe(0);
+    expect(view.panY).toBeCloseTo(-60);
+    expect(applyView(open, view).originY).toBeCloseTo(rest.originY);
+  });
+
+  it("goes only as far as the limits allow", () => {
+    // No sheet over the photo: a photo smaller than the area stays centred
+    expect(keepPhotoInPlace({ x: 0, y: rest.originY }, open, 1, panLimits(open, 1, { width: 348, height: 470 }, image, 0)).panY).toBe(0);
+    expect(keepPhotoInPlace({ x: 0, y: -500 }, open, 1, panLimits(open, 1, { width: 348, height: 470 }, image, 217)).panY).toBe(-217);
+  });
+});
+
+describe("photoAreaSettled (22 Oct 2026)", () => {
+  it("is settled once the area's bottom, its height on the page and the measured stage all agree", () => {
+    expect(photoAreaSettled({ measured: 470, stage: 470, edge: 163, restingEdge: 163 })).toBe(true);
+    expect(photoAreaSettled({ measured: 470.6, stage: 470, edge: 163, restingEdge: 163 })).toBe(true);
+  });
+
+  it("is not while the area's bottom has yet to follow the sheet, or the stage has yet to be measured again", () => {
+    expect(photoAreaSettled({ measured: 350, stage: 350, edge: 283, restingEdge: 163 })).toBe(false);
+    expect(photoAreaSettled({ measured: 470, stage: 350, edge: 163, restingEdge: 163 })).toBe(false);
+  });
+
+  it("counts as settled with nothing laid out (no measurement to wait for)", () => {
+    expect(photoAreaSettled({ measured: null, stage: null, edge: 0, restingEdge: 0 })).toBe(true);
+    expect(photoAreaSettled({ measured: 0, stage: 470, edge: 0, restingEdge: 0 })).toBe(true);
   });
 });

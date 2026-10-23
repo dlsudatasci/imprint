@@ -647,7 +647,11 @@ About page, the guide and the Privacy Policy, against the manuscript and the too
 - **Guide pictures**: each step of the annotation guide has one, 16:10 in a bordered frame.
   Steps inside the tool use a still of the landing preview (`GuideStill`). "Start a session"
   draws the session picker from its own words and size cards (`SessionPickerStill`, from
-  `SessionSizeOptions`), laid out at 800 x 500 and scaled to the frame.
+  `SessionSizeOptions`), laid out at 800 x 500 and scaled to the frame. On phones and tablets
+  (23 Oct 2026, wherever the tool uses its phone layout) the stills are the phone preview's
+  (`TouchStage`, `TOUCH_STILL_TICKS`) in a screen-shaped frame, 9:16 up to 400 px wide on a
+  phone and 3:4 up to 560 px from 640 px. Under 640 px the picker is drawn as a phone shows it
+  (Cancel above Start, both full width), laid out at 360 x 800 in a 9:20 frame.
 - **Long-form pages** (About): a centred `Display`, then one idea per section, sections
   `py-16 lg:py-24`, all on the one page ground with no alternating bands (17 Oct 2026, Rans:
   the white and off-white bands looked bad). Space separates the sections. Cards are white

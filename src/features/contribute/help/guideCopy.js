@@ -17,6 +17,11 @@ import { SESSION_SIZES_TEXT } from "./taskFacts";
  * the tool does. The first step's picture is the session picker, drawn from
  * its own words and size cards (SessionPickerStill).
  *
+ * On phones and tablets (23 Oct 2026, IMPRINT_guide_touch_stills.md) the
+ * pictures are the phone layout's, so the text names where things are on
+ * both: the lists in the answers sheet, and the Step 2 line that brings
+ * Step 2 up.
+ *
  * Nothing here names the study's hypotheses or the reference images.
  */
 export const GUIDE_COPY = Object.freeze({
@@ -49,8 +54,9 @@ export const GUIDE_COPY = Object.freeze({
       title: "Mark boxes with nothing in them",
       still: 1,
       paragraphs: Object.freeze([
+        "If a box does not obstruct the sidewalk, choose No.",
         "If a box has nothing real in it, choose Not an object at the foot of its panel.",
-        "Every answer sorts the object into a list under the photo, Not obstructions or Obstructions. Click a name in a list to open its panel and change the answer.",
+        "Every answer sorts the object into a list, Not obstructions or Obstructions, under the photo on a laptop and in the answers sheet on a phone or tablet. Click or tap a name in a list to open its panel and change the answer.",
       ]),
     }),
     Object.freeze({
@@ -67,7 +73,7 @@ export const GUIDE_COPY = Object.freeze({
       title: "Rate the sidewalk",
       still: 3,
       paragraphs: Object.freeze([
-        "Step 2 asks four questions about the sidewalk as a whole. If there is no sidewalk, choose None for its width, and the other three are skipped.",
+        "Step 2 asks four questions about the sidewalk as a whole. On a phone or tablet, tap the Step 2 line in the answers sheet to bring them up. If there is no sidewalk, choose None for its width, and the other three are skipped.",
       ]),
       listsQuestions: true,
     }),

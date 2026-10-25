@@ -36,7 +36,7 @@ export const ABOUT_COPY = Object.freeze({
     title: "Obstructions decide whether a sidewalk works.",
     paragraphs: Object.freeze([
       "Utility posts, trees and signs, parked cars and motorcycles, vendor carts and garbage all narrow the space a pedestrian can actually use.",
-      "Yet they are what sidewalk audits most often leave out, and walking every street by hand to record them does not scale to a whole city.",
+      "Sidewalk audits usually miss them, and there are too many streets in a city to check each one on foot.",
     ]),
     imageAlt: "A wide sidewalk lined with trees, hedges and lamp posts",
   }),
@@ -86,16 +86,12 @@ export const ABOUT_COPY = Object.freeze({
 
   photos: Object.freeze({
     title: "The photos",
-    text: "Street photos taken on foot around Metro Manila, from Mapillary and from an earlier research group, with faces and license plates blurred. You see streets from the cities you say you walk in first.",
+    text: "Street photos taken on foot around Metro Manila, from Mapillary and from an earlier research group, with faces and license plates blurred.",
   }),
 
   join: Object.freeze({
     title: "Taking part",
     text: "Anyone 18 or older can volunteer. Taking part is voluntary and unpaid. You choose how many photos to do in a session, and you can stop at any time.",
-    before: "Before you sign up, read the",
-    consent: "Informed Consent Form",
-    and: "and the",
-    privacy: "Privacy Policy",
   }),
 
   team: Object.freeze({

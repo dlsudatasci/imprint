@@ -211,8 +211,8 @@ function StepPreview() {
 /**
  * The current chapter on phones and tablets (22 Oct 2026): a band across the
  * top of the frame, where the tool's top bar would be, so it never covers
- * the answers sheet. The same height for every chapter (room for two lines
- * of text), so the screen under it never changes size. The line along its
+ * the answers sheet. The same height for every chapter (room for three lines
+ * of text, two until 23 Oct 2026), so the screen under it never changes size. The line along its
  * bottom shows how far through the preview is.
  *
  * The chapter is aria-hidden: screen readers get every chapter from the list
@@ -233,7 +233,7 @@ function TouchCaption({ active, progress = null, children }) {
           </div>
         </div>
         <p className="mt-1.5 font-display text-lg leading-6 font-bold tracking-tight text-ink truncate">{chapter.title}</p>
-        <p className="mt-0.5 min-h-[2.5rem] text-sm leading-5 font-medium text-body line-clamp-2">{chapter.text}</p>
+        <p className="mt-0.5 min-h-[3.75rem] text-sm leading-5 font-medium text-body line-clamp-3">{chapter.text}</p>
       </div>
       {children}
       {progress !== null && (

@@ -139,12 +139,6 @@ export default function AboutSection() {
           <div>
             <H2>{COPY.join.title}</H2>
             <P className="mt-4 text-base leading-relaxed md:text-lg">{COPY.join.text}</P>
-            <P className="mt-4 text-base leading-relaxed md:text-lg">
-              {COPY.join.before}{" "}
-              <Link href="/terms-of-use" className={link}>{COPY.join.consent}</Link>{" "}
-              {COPY.join.and}{" "}
-              <Link href="/privacy" className={link}>{COPY.join.privacy}</Link>.
-            </P>
           </div>
         </div>
       </Container>

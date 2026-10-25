@@ -52,8 +52,9 @@ describe("About", () => {
     expect(html).not.toContain("theHow.jpg");
   });
 
-  it("links the consent form, the privacy policy, the guide and the preview", () => {
-    for (const href of ["/terms-of-use", "/privacy", "/demo", "/#how-it-works"]) expect(html).toContain(`href="${href}"`);
+  // The consent form and privacy policy line under Taking part was removed (23 Oct 2026)
+  it("links the guide and the preview", () => {
+    for (const href of ["/demo", "/#how-it-works"]) expect(html).toContain(`href="${href}"`);
   });
 
   it("keeps every section on the one page ground, with no alternating bands (Rans, 17 Oct 2026)", () => {

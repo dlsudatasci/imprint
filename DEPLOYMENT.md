@@ -167,6 +167,36 @@ too (decided 6 Oct 2026: on while the site is not public).
 
 ---
 
+## Pilot accounts
+
+`SIGNUP_PILOT=true` in `/srv/imprint/.env` marks every new contributor account
+as a pilot account (`isPilot: true` on the users document), so the five-person
+pilot's accounts can be told apart from the annotators' data and test accounts
+on staging (S11, decided 23 Oct 2026). Only exactly `true` turns it on. Anything
+else (missing, empty, `TRUE`, `1`, a typo) is off, and then no `isPilot` field is
+written. It never marks an annotator or an admin, so with `SIGNUP_ROLE=annotator`
+also set, new accounts are annotators without `isPilot`. Existing accounts are
+never changed. Nothing else changes for the participant: same sign-up form,
+consent, 18+ confirmation, profile, tutorial and sessions.
+
+**Staging only, and only after the freeze dump** (option A), so pilot accounts
+never reach production:
+
+```bash
+sudo -u imprint nano /srv/imprint/.env      # add SIGNUP_PILOT=true
+sudo systemctl restart imprint
+```
+
+While it is on, the admin Accounts tab says "New contributor sign-ups are marked
+as pilot accounts", and every pilot account carries a **Pilot** badge. When the
+pilot ends, remove the line and restart the same way. The badge stays on the
+accounts it marked.
+
+**Production never gets `SIGNUP_PILOT`.** Check it is absent before opening,
+together with the `SIGNUP_ROLE` check.
+
+---
+
 ## Known gaps
 
 Worth knowing before this carries real users.

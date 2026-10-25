@@ -108,7 +108,8 @@ const handler = async (req, res) => {
       totalAnnotations: 0,
       hasCompletedTutorial: false,
       // role "user" (contributor), or with SIGNUP_ROLE=annotator on the
-      // server, role "annotator" and the annotator fields (see newAccountRole)
+      // server, role "annotator" and the annotator fields. A contributor also
+      // gets isPilot true while SIGNUP_PILOT=true (see newAccountRole)
       ...newAccountFields(),
       consentAgreedAt: dateRegistered,
       ageConfirmedAt: dateRegistered,

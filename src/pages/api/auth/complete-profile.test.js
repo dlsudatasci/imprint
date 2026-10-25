@@ -175,3 +175,40 @@ describe("POST /api/auth/complete-profile with SIGNUP_ROLE", () => {
     expect(update.$setOnInsert).not.toHaveProperty("annotatorActive");
   });
 });
+
+// SIGNUP_PILOT server switch (S11, 23 Oct 2026): a Google user who completes
+// the profile before choosing a username creates the account here
+describe("POST /api/auth/complete-profile with SIGNUP_PILOT", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("creates a new account as a contributor with isPilot true, on insert only", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert).toMatchObject({ role: "user", isPilot: true });
+    // An existing account is never marked
+    expect(update.$set).not.toHaveProperty("isPilot");
+  });
+
+  it("writes no isPilot field without it", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    vi.stubEnv("SIGNUP_PILOT", "");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert).not.toHaveProperty("isPilot");
+    expect(update.$set).not.toHaveProperty("isPilot");
+  });
+
+  it("creates an annotator without isPilot when SIGNUP_ROLE=annotator is also on", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "annotator");
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert.role).toBe("annotator");
+    expect(update.$setOnInsert).not.toHaveProperty("isPilot");
+  });
+});

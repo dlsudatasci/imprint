@@ -172,3 +172,71 @@ describe("POST /api/auth/register with SIGNUP_ROLE", () => {
     expect(mocks.usersCol.insertOne.mock.calls[0][0].role).toBe("annotator");
   });
 });
+
+// SIGNUP_PILOT server switch (S11, 23 Oct 2026)
+describe("POST /api/auth/register with SIGNUP_PILOT", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("creates a contributor with isPilot true when SIGNUP_PILOT=true", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: validBody }), res);
+    expect(res._status).toBe(201);
+    const doc = mocks.usersCol.insertOne.mock.calls[0][0];
+    expect(doc).toMatchObject({ role: "user", isPilot: true });
+    expect(doc).not.toHaveProperty("annotatorPass");
+    expect(doc).not.toHaveProperty("annotatorActive");
+  });
+
+  it("writes no isPilot field when SIGNUP_PILOT is missing, empty or anything other than true", async () => {
+    for (const value of [undefined, "", "TRUE", "1", "false"]) {
+      vi.stubEnv("SIGNUP_ROLE", "");
+      vi.stubEnv("SIGNUP_PILOT", value);
+      const mocks = setupMocks();
+      await handler(createMockReq({ body: validBody }), createMockRes());
+      const doc = mocks.usersCol.insertOne.mock.calls.at(-1)[0];
+      expect(doc.role).toBe("user");
+      expect(doc).not.toHaveProperty("isPilot");
+    }
+  });
+
+  it("creates an annotator without isPilot when SIGNUP_ROLE=annotator is also on", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "annotator");
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const doc = mocks.usersCol.insertOne.mock.calls[0][0];
+    expect(doc).toMatchObject({ role: "annotator", annotatorPass: 1, annotatorActive: true });
+    expect(doc).not.toHaveProperty("isPilot");
+  });
+
+  it("changes nothing else about the new account, consent and the 18+ confirmation included", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    vi.stubEnv("SIGNUP_PILOT", "");
+    const off = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const offDoc = off.usersCol.insertOne.mock.calls[0][0];
+
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    const on = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const onDoc = on.usersCol.insertOne.mock.calls[0][0];
+
+    expect(Object.keys(onDoc).sort()).toEqual([...Object.keys(offDoc), "isPilot"].sort());
+    expect(onDoc.consentAgreedAt).toBeInstanceOf(Date);
+    expect(onDoc.ageConfirmedAt).toBeInstanceOf(Date);
+    expect(onDoc.hasCompletedTutorial).toBe(false);
+    expect(onDoc.totalAnnotations).toBe(0);
+  });
+
+  it("still refuses a sign-up without consent while it is on", async () => {
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: { ...validBody, consentAgreed: false } }), res);
+    expect(res._status).toBe(422);
+    expect(mocks.usersCol.insertOne).not.toHaveBeenCalled();
+  });
+});

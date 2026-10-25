@@ -145,3 +145,58 @@ describe("POST /api/auth/choose-username with SIGNUP_ROLE", () => {
     expect(update.$setOnInsert).not.toHaveProperty("annotatorActive");
   });
 });
+
+// SIGNUP_PILOT server switch (S11, 23 Oct 2026)
+describe("POST /api/auth/choose-username with SIGNUP_PILOT", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const body = { username: "newuser", consentAgreed: true, ageConfirmed: true };
+
+  it("creates a new Google account as a contributor with isPilot true, on insert only", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body }), res);
+    expect(res._status).toBe(200);
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert).toMatchObject({ role: "user", isPilot: true });
+    expect(update.$setOnInsert).not.toHaveProperty("annotatorPass");
+    // An existing account is never marked
+    expect(update.$set).not.toHaveProperty("isPilot");
+  });
+
+  it("writes no isPilot field when SIGNUP_PILOT is missing, empty or anything other than true", async () => {
+    for (const value of [undefined, "", "TRUE", "1", "false"]) {
+      vi.stubEnv("SIGNUP_ROLE", "");
+      vi.stubEnv("SIGNUP_PILOT", value);
+      const mocks = setupMocks();
+      await handler(createMockReq({ body }), createMockRes());
+      const [, update] = mocks.usersCol.updateOne.mock.calls.at(-1);
+      expect(update.$setOnInsert.role).toBe("user");
+      expect(update.$setOnInsert).not.toHaveProperty("isPilot");
+      expect(update.$set).not.toHaveProperty("isPilot");
+    }
+  });
+
+  it("creates an annotator without isPilot when SIGNUP_ROLE=annotator is also on", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "annotator");
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert).toMatchObject({ role: "annotator", annotatorPass: 1, annotatorActive: true });
+    expect(update.$setOnInsert).not.toHaveProperty("isPilot");
+    expect(update.$set).not.toHaveProperty("isPilot");
+  });
+
+  it("still asks for consent and the 18+ confirmation while it is on", async () => {
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    for (const missing of ["consentAgreed", "ageConfirmed"]) {
+      const mocks = setupMocks();
+      const res = createMockRes();
+      await handler(createMockReq({ body: { ...body, [missing]: false } }), res);
+      expect(res._status).toBe(422);
+      expect(mocks.usersCol.updateOne).not.toHaveBeenCalled();
+    }
+  });
+});

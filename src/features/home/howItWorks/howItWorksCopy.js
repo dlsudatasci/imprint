@@ -16,11 +16,11 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
   chapters: Object.freeze([
     Object.freeze({
       title: "Say what blocks your way",
-      text: "Our model has already boxed the objects it found. Open a box and say whether it gets in your way as you normally travel. If it does, rate it from 1, a minor inconvenience, to 5, impassable.",
+      text: "Our model has already boxed the objects it found. Open a box and say whether it is an obstruction in your path on the sidewalk. If it is, rate its severity from 1 to 5.",
     }),
     Object.freeze({
       title: "Answer every suggestion",
-      text: "Go through the rest the same way. If a box has nothing real in it, mark it Not an object. Every answer sorts the object into a list under the photo.",
+      text: "Go through the rest the same way. If an object doesn't obstruct your way, click No. If a box has nothing real in it, mark it Not an object.",
     }),
     Object.freeze({
       title: "Draw what the model missed",
@@ -32,7 +32,7 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
     }),
     Object.freeze({
       title: "On to the next sidewalk",
-      text: "Once every object is answered, move to the next photo. A session is 5, 10, 20 or 40 photos, and you can pause at any time.",
+      text: "Once every object is answered, move to the next photo. You can pause and stop your session any time.",
     }),
   ]),
   /**
@@ -44,15 +44,15 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
   touchChapters: Object.freeze([
     Object.freeze({
       title: "Say what blocks your way",
-      text: "Tap a box. If it gets in your way, tap Yes and rate it from 1 to 5.",
+      text: "Tap a box. If it gets in your way, tap Yes and rate its severity from 1 to 5.",
     }),
     Object.freeze({
       title: "Answer every suggestion",
-      text: "Tap Next for the next box. Nothing real in it? Tap Not an object.",
+      text: "Tap Next for the next box. If the object doesn't obstruct the sidewalk, tap No. If there's nothing real in it, tap Not an object.",
     }),
     Object.freeze({
       title: "Draw what the model missed",
-      text: "Tap Add box, drag its corners to fit, and pick its category.",
+      text: "Tap Add box, drag its corners to fit the object, pick its category, and answer the same question.",
     }),
     Object.freeze({
       title: "Rate the sidewalk",
@@ -60,7 +60,7 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
     }),
     Object.freeze({
       title: "On to the next sidewalk",
-      text: "Tap Next Image for the next photo. You can pause at any time.",
+      text: "Tap Next Image for the next photo. You can pause and stop your session any time.",
     }),
   ]),
 });

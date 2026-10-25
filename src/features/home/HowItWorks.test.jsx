@@ -132,12 +132,12 @@ describe("HowItWorks on phones and tablets (22 Oct 2026)", () => {
     expect(el.querySelector("[data-stage]").dataset.coarse).toBe("true");
   });
 
-  it("keeps the band one height for every chapter: two lines of text, clamped", () => {
+  it("keeps the band one height for every chapter: three lines of text, clamped (23 Oct 2026)", () => {
     const el = render({ reduced: true, narrow: true });
     const text = Array.from(el.querySelectorAll("[data-caption] p")).at(-1);
     expect(text.textContent).toBe(COPY.touchChapters[0].text);
-    expect(text.className).toContain("min-h-[2.5rem]");
-    expect(text.className).toContain("line-clamp-2");
+    expect(text.className).toContain("min-h-[3.75rem]");
+    expect(text.className).toContain("line-clamp-3");
   });
 
   it("with reduced motion, shows one still per chapter, stepped by hand, ending on the second photo", () => {

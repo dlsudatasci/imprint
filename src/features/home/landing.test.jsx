@@ -51,8 +51,8 @@ describe("landing page copy", () => {
     const [, answer, draw] = HOW_IT_WORKS_COPY.touchChapters;
     expect(answer.text).toContain("Not an object");
     expect(draw.text).not.toContain("Not an object");
-    // Short enough for two lines on a 320 px phone (the band keeps room for two)
-    for (const c of HOW_IT_WORKS_COPY.touchChapters) expect(c.text.length).toBeLessThanOrEqual(70);
+    // Short enough for three lines on a 320 px phone (the band keeps room for three, 23 Oct 2026)
+    for (const c of HOW_IT_WORKS_COPY.touchChapters) expect(c.text.length).toBeLessThanOrEqual(130);
     expect(TOUCH_STILL_TICKS).toHaveLength(TOUCH_CHAPTERS.length);
     TOUCH_STILL_TICKS.forEach((tick) => {
       expect(tick).toBeGreaterThanOrEqual(0);
@@ -128,9 +128,9 @@ describe("the figures under the map", () => {
     const items = byLabel(cityStatsItems(stats));
     expect(items.Annotations).toMatchObject({ value: "340", sub: "images annotated" });
     expect(JSON.stringify(items)).not.toContain("bounding boxes");
-    // 1 Not accessible to 5 Easily accessible from 22 Oct 2026, no "/5"
+    // 1 Not accessible to 5 Easily accessible from 22 Oct 2026, said plainly (23 Oct 2026)
     expect(items.Accessibility.value).toBe("2.3");
-    expect(items.Accessibility.sub).toBe("average, 1 not to 5 easily accessible");
+    expect(items.Accessibility.sub).toBe("out of 5, higher is better");
     expect(items["Avg. Obstructions"]).toMatchObject({ value: "1.4", sub: "per image" });
     for (const item of cityStatsItems(stats)) expect(item.sub).not.toMatch(/[;—]/);
     expect(cityStatsItems(null)).toEqual([]);

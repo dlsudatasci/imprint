@@ -7,6 +7,7 @@ import Page from "@/ui/page";
 import { AuthCard, AuthScreen, Button, Input, Checkbox } from "@/ui";
 import GoogleMark from "@/features/auth/GoogleMark";
 import { AUTH_COPY } from "@/features/auth/authCopy";
+import { isRateLimited, readJson, rateLimitMessage } from "@/features/auth/authResponse";
 
 const COPY = AUTH_COPY.register;
 
@@ -96,9 +97,13 @@ export default function Register() {
           body: JSON.stringify(body),
         });
 
-        const data = await res.json();
+        // The request limit (S8) answers before the app, so the status comes
+        // first and the body may not be the app's JSON
+        const data = await readJson(res);
 
-        if (res.status === 201) {
+        if (isRateLimited(res)) {
+          setServerError(rateLimitMessage(data));
+        } else if (res.status === 201) {
           // A new account confirms its address first (S9). "Check your inbox"
           // says so, and offers a new link when the first could not be sent.
           signIn("credentials", {

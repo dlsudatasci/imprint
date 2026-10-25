@@ -4,6 +4,7 @@ import Link from "next/link";
 import Page from "@/ui/page";
 import { AuthCard, AuthScreen, Button, Input } from "@/ui";
 import { AUTH_COPY } from "@/features/auth/authCopy";
+import { isRateLimited, readJson, rateLimitMessage } from "@/features/auth/authResponse";
 
 const COPY = AUTH_COPY.forgot;
 
@@ -44,7 +45,13 @@ export default function ForgotPassword() {
                 body: JSON.stringify({ email }),
             });
 
-            const data = await res.json();
+            // The request limit (S8) answers before the app, so the status
+            // comes first and the body may not be the app's JSON
+            const data = await readJson(res);
+
+            if (isRateLimited(res)) {
+                throw new Error(rateLimitMessage(data));
+            }
 
             if (!res.ok) {
                 throw new Error(data.message || "Failed to send reset link.");

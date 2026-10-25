@@ -16,6 +16,9 @@ export { RESEARCHER_EMAIL };
  * word and stay in the pages that ask them.
  */
 export const AUTH_COPY = Object.freeze({
+  // Shown on a 429 from the request limit on sign-in, sign-up and password
+  // reset (S8, deploy/nginx.conf, which sends the same words)
+  tooManyAttempts: "Too many attempts. Please wait a minute and try again.",
   google: "Continue with Google",
   or: "or",
   login: Object.freeze({
@@ -31,6 +34,7 @@ export const AUTH_COPY = Object.freeze({
     invalid: "That username and password do not match. Try again.",
     trouble: "Trouble signing in? Email",
     usePassword: "That email already has a password account. Log in with your username and password.",
+    failed: "Something went wrong. Try again in a moment.",
   }),
   register: Object.freeze({
     title: "Create your account",
@@ -73,6 +77,8 @@ export const AUTH_COPY = Object.freeze({
     submit: "Save new password",
     submitting: "Saving...",
     toLogin: "Go to log in",
+    // The link check refused by the request limit (S8)
+    tryAgain: "Try again",
   }),
   // Email verification (S9): /check-email, where a new account lands, and
   // /verify-email, which the emailed link opens

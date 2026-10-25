@@ -6,6 +6,7 @@ import Page from "@/ui/page";
 import { AuthCard, AuthScreen, Button, Input } from "@/ui";
 import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from "@/util/validation";
 import { AUTH_COPY } from "@/features/auth/authCopy";
+import { isRateLimited, readJson, rateLimitMessage } from "@/features/auth/authResponse";
 
 const COPY = AUTH_COPY.reset;
 import { EyeIcon, EyeOffIcon } from "@/ui";
@@ -39,8 +40,11 @@ export default function ResetPassword() {
     const [error, setError] = useState("");
     const [success, setSuccess] = useState(false);
 
-    // Manage preemptive token validity checking
+    // Manage preemptive token validity checking: "loading", "valid",
+    // "invalid", or "limited" when the request limit refused the check (S8)
     const [pageStatus, setPageStatus] = useState("loading");
+    // Bumped by Try again to run the check once more
+    const [checkRun, setCheckRun] = useState(0);
 
     // Clear errors when typing
     useEffect(() => {
@@ -54,15 +58,20 @@ export default function ResetPassword() {
             return;
         }
 
+        setPageStatus("loading");
         fetch("/api/auth/verify-reset-token", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, token })
         })
-            .then(res => res.json())
-            .then(data => setPageStatus(data.valid ? "valid" : "invalid"))
+            .then(async (res) => {
+                // Not a bad link: the request limit (S8) answered first
+                if (isRateLimited(res)) return setPageStatus("limited");
+                const data = await readJson(res);
+                setPageStatus(data.valid ? "valid" : "invalid");
+            })
             .catch(() => setPageStatus("invalid"));
-    }, [router.isReady, token, email]);
+    }, [router.isReady, token, email, checkRun]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -97,7 +106,13 @@ export default function ResetPassword() {
                 body: JSON.stringify({ email, token, newPassword }),
             });
 
-            const data = await res.json();
+            // The request limit (S8) answers before the app, so the status
+            // comes first and the body may not be the app's JSON
+            const data = await readJson(res);
+
+            if (isRateLimited(res)) {
+                throw new Error(rateLimitMessage(data));
+            }
 
             if (!res.ok) {
                 throw new Error(data.message || "Failed to reset password.");
@@ -138,6 +153,15 @@ export default function ResetPassword() {
                         <div className="w-full text-center space-y-4 py-8">
                             <div className="mx-auto w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin motion-reduce:animate-none"></div>
                             <p role="status" className="text-sm text-muted font-medium">{COPY.checking}</p>
+                        </div>
+                    )}
+
+                    {pageStatus === "limited" && (
+                        <div className="w-full text-center space-y-4 py-4">
+                            <p role="alert" className="text-sm font-medium p-4 bg-warning-soft rounded-control text-warning border border-warning-border">
+                                {AUTH_COPY.tooManyAttempts}
+                            </p>
+                            <Button fullWidth onClick={() => setCheckRun((n) => n + 1)}>{COPY.tryAgain}</Button>
                         </div>
                     )}
 

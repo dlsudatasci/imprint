@@ -235,8 +235,58 @@ changed. Each only counts unless given `--apply`, and prints counts only:
    ```
 4. Run `normalize-emails.mjs` once more without `--apply`. It should find 0.
 
-The nginx limit on `/api/auth/resend-verification` is part of S8 (rate
-limiting).
+The nginx request limit also covers `/api/auth/resend-verification` (see
+"Rate limiting").
+
+---
+
+## Rate limiting
+
+`deploy/nginx.conf` limits password sign-in, sign-up and the password reset
+(S8, 26 Oct 2026), so nobody can keep guessing passwords, creating accounts or
+sending reset emails. Per client address: 10 requests a minute, with a burst of
+5 allowed at once, so a run of rapid attempts is refused from the 7th, and one
+more is allowed every 6 seconds after that. A refused request gets **429** and
+the forms say "Too many attempts. Please wait a minute and try again."
+
+Limited (exact paths only): `/api/auth/callback/credentials` (password sign-in),
+`/api/auth/register`, `/api/auth/forgot-password`, `/api/auth/reset-password`,
+`/api/auth/verify-reset-token`, `/api/auth/resend-verification`. Never limited:
+`/api/auth/session` and `/api/auth/csrf` (NextAuth calls them on every page),
+`/api/auth/providers`, the Google callback, and every page.
+
+**Check the client address first.** The VMs sit behind the campus gateway, and
+the limit counts by client address. On staging, watch the access log while
+signing in from a phone on mobile data:
+
+```bash
+sudo tail -f /var/log/nginx/access.log      # the first field is the client address
+```
+
+If every request shows the gateway's address, every user shares one address and
+the limit would lock everyone out together. Then uncomment the `set_real_ip_from`
+block at the top of the server in `deploy/nginx.conf` with the gateway's address
+(or ask IT how the client address reaches the VM), and check the log again. **Do
+not deploy the limit until the log shows real client addresses.**
+
+`deploy.sh` does not install nginx config. On each VM, staging first, from the
+repository:
+
+```bash
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/imprint
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Then check it on staging. Each line is one invalid sign-up, refused by the app
+(422) until the limit answers 429, and ordinary pages keep answering 200:
+
+```bash
+for i in $(seq 1 8); do curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Content-Type: application/json" -d '{}' http://your-vm-hostname/api/auth/register; done
+curl -s -o /dev/null -w "%{http_code}\n" http://your-vm-hostname/api/auth/session
+```
+
+Wait a minute before trying the forms after this, since the loop used the
+address's attempts.
 
 ---
 
@@ -252,8 +302,9 @@ Worth knowing before this carries real users.
   headers but deliberately omits CSP — this app pulls Google Fonts, Google OAuth,
   Leaflet tiles and remote annotation images, and a CSP written without testing
   each origin breaks the site subtly. Add one once those origins are pinned.
-- **No rate limiting.** `/api/auth/*` will accept unlimited login and
-  password-reset attempts. nginx `limit_req` on `/api/auth/` is the cheap fix.
+- **The request limit depends on the client address.** Behind the campus
+  gateway it is only safe once the access log shows real client addresses (see
+  "Rate limiting").
 - **Sessions survive a password reset.** Sessions are stateless JWTs with no
   server-side store, so resetting a password does not end an attacker's existing
   session; it expires on its own schedule.

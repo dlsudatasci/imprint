@@ -10,6 +10,7 @@ import InteractiveObstructions from "@/ui/InteractiveObstructions";
 import { AuthCard, Button, Input, Badge, Checkbox, Container } from "@/ui";
 import GoogleMark from "@/features/auth/GoogleMark";
 import { AUTH_COPY, RESEARCHER_EMAIL } from "@/features/auth/authCopy";
+import { signInRateLimited, TOO_MANY_ATTEMPTS_ERROR } from "@/features/auth/authResponse";
 
 const COPY = AUTH_COPY.login;
 
@@ -35,6 +36,9 @@ export default function Login() {
   const [loadingForm, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState(false);
+  // A refusal that is not about the password: the request limit (S8) or a
+  // sign-in that could not finish
+  const [formNotice, setFormNotice] = useState(null);
 
   /*
    * Drives the scene's reactions. The id increments on every fire so the same
@@ -58,6 +62,13 @@ export default function Login() {
       ? COPY.usePassword
       : null;
 
+  // The request limit (S8) or a sign-in that could not finish, shown as a
+  // wrapping alert (a Badge stays on one line). TooManyAttempts in the address
+  // is where NextAuth sends a sign-in the limit refused while redirecting (the
+  // url in deploy/nginx.conf's 429), as after creating an account.
+  const notice =
+    formNotice || (router.query.error === TOO_MANY_ATTEMPTS_ERROR ? AUTH_COPY.tooManyAttempts : null);
+
   useEffect(() => {
     if (!loading && session) {
       router.push("/contribute");
@@ -68,15 +79,33 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setLoginError(false);
+    setFormNotice(null);
     const username = e.currentTarget.username.value;
     const password = e.currentTarget.password.value;
     const rememberMe = e.currentTarget.rememberMe.checked;
-    const result = await signIn("credentials", {
-      username,
-      password,
-      rememberMe,
-      redirect: false,
-    });
+    let result;
+    try {
+      result = await signIn("credentials", {
+        username,
+        password,
+        rememberMe,
+        redirect: false,
+      });
+    } catch (err) {
+      // signIn reads every answer as JSON and throws on anything else, which
+      // used to leave the button on "Logging in..." with nothing said
+      console.error("Sign-in request failed:", err);
+      setFormNotice(COPY.failed);
+      setLoading(false);
+      return;
+    }
+
+    // The request limit (S8): not a wrong password, so no shake
+    if (signInRateLimited(result)) {
+      setFormNotice(AUTH_COPY.tooManyAttempts);
+      setLoading(false);
+      return;
+    }
 
     if (result?.error) {
       setLoginError(true);
@@ -153,7 +182,14 @@ export default function Login() {
               </>
             }
           >
-            {providerNotice && (
+            {notice ? (
+              <p
+                role="alert"
+                className="mb-6 text-sm font-medium p-3 rounded-control border text-center bg-warning-soft text-warning border-warning-border"
+              >
+                {notice}
+              </p>
+            ) : providerNotice && (
               <div className="mb-6">
                 <Badge tone="warning">{providerNotice}</Badge>
               </div>

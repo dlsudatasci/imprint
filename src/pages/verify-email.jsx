@@ -6,6 +6,7 @@ import Link from "next/link";
 import Page from "@/ui/page";
 import { AuthCard, AuthScreen, Button } from "@/ui";
 import { AUTH_COPY } from "@/features/auth/authCopy";
+import { isRateLimited, readJson, rateLimitMessage } from "@/features/auth/authResponse";
 import { LINK_EXPIRED, LINK_USED } from "@/util/validators/emailVerification.mjs";
 
 const COPY = AUTH_COPY.verify;
@@ -68,8 +69,10 @@ export default function VerifyEmail() {
     setResend({ busy: true, message: "", ok: false });
     try {
       const r = await fetch("/api/auth/resend-verification", { method: "POST" });
-      const data = await r.json().catch(() => ({}));
-      setResend({ busy: false, message: data.message || COPY.offline, ok: r.ok });
+      const data = await readJson(r);
+      // A 429 is the five-minute wait (the app's message) or the request limit (S8)
+      const message = isRateLimited(r) ? rateLimitMessage(data) : data.message || COPY.offline;
+      setResend({ busy: false, message, ok: r.ok });
     } catch {
       setResend({ busy: false, message: COPY.offline, ok: false });
     }

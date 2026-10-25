@@ -222,3 +222,72 @@ describe("/api/admin/accounts signupRole", () => {
     expect(res._json.signupRole).toBe("user");
   });
 });
+
+// SIGNUP_PILOT server switch (S11, 23 Oct 2026): the tab warns while it is on
+// and marks the pilot's accounts
+describe("/api/admin/accounts signupPilot and isPilot", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("reports signupPilot true while SIGNUP_PILOT=true", async () => {
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    setup();
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(res._status).toBe(200);
+    expect(res._json.signupPilot).toBe(true);
+  });
+
+  it("reports signupPilot false without it or with anything other than true", async () => {
+    for (const value of [undefined, "", "TRUE", "1"]) {
+      vi.stubEnv("SIGNUP_PILOT", value);
+      setup();
+      const res = createMockRes();
+      await handler(createMockReq({ method: "GET" }), res);
+      expect(res._json.signupPilot).toBe(false);
+    }
+  });
+
+  it("reports both switches on their own", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "annotator");
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    setup();
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(res._json).toMatchObject({ signupRole: "annotator", signupPilot: true });
+  });
+
+  it("reads isPilot and marks only the pilot's accounts", async () => {
+    const m = setup();
+    const pilot = { _id: new ObjectId("cccccccccccccccccccccccc"), username: "pilot_one", email: "p@example.com", role: "user", isPilot: true };
+    m.users.find.mockReturnValue({
+      sort: vi.fn().mockReturnThis(),
+      toArray: vi.fn().mockResolvedValue([pilot, target]),
+    });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(m.users.find.mock.calls[0][1].projection).toMatchObject({ isPilot: 1 });
+    const [pilotRow, otherRow] = res._json.accounts;
+    expect(pilotRow).toMatchObject({ username: "pilot_one", isPilot: true, roleLabel: "Contributor" });
+    expect(otherRow).toMatchObject({ username: "test_annotator", isPilot: false });
+  });
+});
+
+// Email verification (S9, decided 21 Oct 2026): the tab shows confirmed or not
+describe("/api/admin/accounts emailVerified", () => {
+  it("reads emailVerifiedAt and reports each account confirmed or not", async () => {
+    const m = setup();
+    m.users.find.mockReturnValue({
+      sort: vi.fn().mockReturnThis(),
+      toArray: vi.fn().mockResolvedValue([
+        { _id: new ObjectId("cccccccccccccccccccccccc"), username: "confirmed_one", role: "user", emailVerifiedAt: new Date("2026-10-25") },
+        target,
+      ]),
+    });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(m.users.find.mock.calls[0][1].projection).toMatchObject({ emailVerifiedAt: 1 });
+    const [confirmed, other] = res._json.accounts;
+    expect(confirmed.emailVerified).toBe(true);
+    expect(other.emailVerified).toBe(false);
+  });
+});

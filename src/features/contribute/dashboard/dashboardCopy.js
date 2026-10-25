@@ -26,6 +26,11 @@ export const DASHBOARD_COPY = Object.freeze({
   stopTutorial: "Stop Tutorial",
   replayTutorial: "Replay Tutorial",
   completeProfile: "Complete Profile to Start",
+  // Email verification (S9): the main button, and the notice while the
+  // address is not confirmed
+  confirmEmail: "Confirm Your Email to Start",
+  emailNotice: "Confirm your email address to start annotating. Open the link we sent you.",
+  emailNoticeLink: "Check your inbox",
   annotate: "Let's Annotate!",
   resumeSession: "Resume Session",
   stopSession: "Stop Session",

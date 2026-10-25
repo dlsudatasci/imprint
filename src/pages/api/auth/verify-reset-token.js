@@ -1,5 +1,6 @@
 import { connectToDatabase } from "@/util/mongodb";
 import crypto from "crypto";
+import { normalizeEmail } from "@/util/validators/emailVerification.mjs";
 
 /**
  * POST /api/auth/verify-reset-token — checks a reset link without using it up.
@@ -19,7 +20,9 @@ const handler = async (req, res) => {
         return res.status(405).json({ message: `Method ${req.method} Not Allowed` });
     }
 
-    const { email, token } = req.body;
+    const { token } = req.body;
+    // Trimmed and lowercased, as register stores it (S9)
+    const email = normalizeEmail(req.body.email);
 
     if (typeof email !== "string" || typeof token !== "string") {
         return res.status(400).json({ valid: false });

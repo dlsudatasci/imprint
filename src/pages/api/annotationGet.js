@@ -17,6 +17,7 @@ import {
   annotatorModelDevFirst,
 } from "@/util/validators/annotationGet";
 import { SCENE_SCALE, toCurrentScale } from "@/util/validators/sceneScale.mjs";
+import { needsEmailVerification, EMAIL_NOT_VERIFIED_RESPONSE } from "@/util/validators/emailVerification.mjs";
 
 /**
  * POST /api/annotationGet — gives the annotate page a batch of images to work
@@ -48,6 +49,10 @@ import { SCENE_SCALE, toCurrentScale } from "@/util/validators/sceneScale.mjs";
  * Contributors must never be served a model-development image (Chapter 4,
  * Datasets and Splits), so every new session is also checked image by image
  * with canServeImage after the draw.
+ *
+ * A contributor whose email address is not confirmed gets 403 { code:
+ * "EMAIL_NOT_VERIFIED" } for both kinds of call (S9), read from the database on
+ * every request. Annotators and admins are never refused.
  */
 
 function ensureModelVersion(imgRecords) {
@@ -117,6 +122,10 @@ const handler = async (req, res) => {
     const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
     if (!user) {
       return res.status(404).json({ error: "User not found" });
+    }
+    // Email verification before annotation (S9)
+    if (needsEmailVerification(user)) {
+      return res.status(403).json(EMAIL_NOT_VERIFIED_RESPONSE);
     }
     // Returned with every successful response so the annotation tool can hide
     // the scene step and severity for annotators (decided 3 Oct 2026).

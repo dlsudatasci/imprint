@@ -309,14 +309,14 @@ describe("POST /api/annotationComplete", () => {
     it("still prompts a contributor after session 1 and not after session 2", async () => {
       const first = setupMocks();
       first.sessionsCol.countDocuments.mockResolvedValue(1);
-      first.usersCol.findOne.mockResolvedValue({ role: "user" });
+      first.usersCol.findOne.mockResolvedValue({ role: "user", emailVerifiedAt: new Date("2026-10-01T00:00:00Z") });
       const res1 = createMockRes();
       await handler(createMockReq({ body: { total: 10 } }), res1);
       expect(res1._json.shouldShowNasaTlx).toBe(true);
 
       const second = setupMocks();
       second.sessionsCol.countDocuments.mockResolvedValue(2);
-      second.usersCol.findOne.mockResolvedValue({ role: "user" });
+      second.usersCol.findOne.mockResolvedValue({ role: "user", emailVerifiedAt: new Date("2026-10-01T00:00:00Z") });
       const res2 = createMockRes();
       await handler(createMockReq({ body: { total: 10 } }), res2);
       expect(res2._json.shouldShowNasaTlx).toBe(false);
@@ -325,7 +325,11 @@ describe("POST /api/annotationComplete", () => {
     it("keeps the committed session and skips the prompt when the role lookup throws", async () => {
       const mocks = setupMocks();
       mocks.sessionsCol.countDocuments.mockResolvedValue(1);
-      mocks.usersCol.findOne.mockRejectedValue(new Error("db down"));
+      // The email check before the commit reads a confirmed contributor (S9),
+      // then the role lookup after the commit throws
+      mocks.usersCol.findOne
+        .mockResolvedValueOnce({ role: "user", emailVerifiedAt: new Date("2026-10-01T00:00:00Z") })
+        .mockRejectedValueOnce(new Error("db down"));
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const res = createMockRes();
 
@@ -344,5 +348,40 @@ describe("POST /api/annotationComplete", () => {
         { $set: { status: "completed" } }
       );
     });
+  });
+});
+
+// Email verification before annotation (S9, decided 21 Oct 2026)
+describe("POST /api/annotationComplete email verification", () => {
+  it("refuses a contributor whose address is not confirmed, before anything is changed", async () => {
+    const mocks = setupMocks();
+    mocks.usersCol.findOne.mockResolvedValue({ role: "user", emailVerifiedAt: null });
+    const res = createMockRes();
+    await handler(createMockReq({ body: { total: 10 } }), res);
+    expect(res._status).toBe(403);
+    expect(res._json.code).toBe("EMAIL_NOT_VERIFIED");
+    expect(mocks.sessionsCol.updateOne).not.toHaveBeenCalled();
+    expect(mocks.annotationsCol.updateMany).not.toHaveBeenCalled();
+    expect(mocks.usersCol.updateOne).not.toHaveBeenCalled();
+  });
+
+  it("never refuses an annotator, confirmed or not", async () => {
+    const mocks = setupMocks();
+    mocks.usersCol.findOne.mockResolvedValue({ role: "annotator", emailVerifiedAt: null });
+    const res = createMockRes();
+    await handler(createMockReq({ body: { total: 10 } }), res);
+    expect(res._status).toBe(200);
+  });
+
+  it("checks before the commit, and a failed check changes nothing", async () => {
+    const mocks = setupMocks();
+    mocks.usersCol.findOne.mockRejectedValue(new Error("db down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = createMockRes();
+    await handler(createMockReq({ body: { total: 10 } }), res);
+    errorSpy.mockRestore();
+    expect(res._status).toBe(500);
+    expect(mocks.sessionsCol.updateOne).not.toHaveBeenCalled();
+    expect(mocks.annotationsCol.updateMany).not.toHaveBeenCalled();
   });
 });

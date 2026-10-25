@@ -7,6 +7,7 @@ import { sanitizeReportedTotal } from "@/util/validators/annotationComplete";
 import { shouldShowNasaTlx } from "@/util/validators/nasaTlx";
 import { takesContributorInstruments } from "@/util/validators/contributorInstruments";
 import { SCENE_SCALE } from "@/util/validators/sceneScale.mjs";
+import { needsEmailVerification, EMAIL_NOT_VERIFIED_RESPONSE } from "@/util/validators/emailVerification.mjs";
 
 /**
  * POST /api/annotationComplete — called when a contributor finishes a full
@@ -20,6 +21,9 @@ import { SCENE_SCALE } from "@/util/validators/sceneScale.mjs";
  * The new total is recounted from the database rather than taken from the
  * request. The count stored on the user record is a cached copy of that number,
  * kept because the dashboard reads it on every page load.
+ *
+ * A contributor whose email address is not confirmed gets 403 { code:
+ * "EMAIL_NOT_VERIFIED" } before anything is changed (S9).
  */
 const handler = async (req, res) => {
     if (req.method === "POST") {
@@ -36,6 +40,16 @@ const handler = async (req, res) => {
         const date = new Date();
 
         try {
+            // Email verification before annotation (S9), checked before
+            // anything is written. A failed lookup is a 500 with nothing changed.
+            const gateRecord = await db.collection("users").findOne(
+                { _id: new ObjectId(userId) },
+                { projection: { role: 1, emailVerifiedAt: 1 } }
+            );
+            if (needsEmailVerification(gateRecord)) {
+                return res.status(403).json(EMAIL_NOT_VERIFIED_RESPONSE);
+            }
+
             // Snapshot before and after the promotion. Counting the difference
             // rather than the pending rows keeps this correct when someone
             // re-annotates an image they'd already finished in an earlier

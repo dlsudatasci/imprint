@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { signupRole, newAccountFields } from "./newAccountRole";
+import { signupRole, signupPilot, newAccountFields } from "./newAccountRole";
 import { roleUpdate } from "./accountAdmin";
 
 // SIGNUP_ROLE server switch (6 Oct 2026)
@@ -33,5 +33,42 @@ describe("newAccountFields", () => {
   it("gives contributors only role user", () => {
     expect(newAccountFields({})).toEqual({ role: "user" });
     expect(newAccountFields({ SIGNUP_ROLE: "admin" })).toEqual({ role: "user" });
+  });
+});
+
+// SIGNUP_PILOT server switch (S11, 23 Oct 2026)
+describe("signupPilot", () => {
+  it("is on only for exactly SIGNUP_PILOT=true", () => {
+    expect(signupPilot({ SIGNUP_PILOT: "true" })).toBe(true);
+    expect(signupPilot({ SIGNUP_PILOT: "true", SIGNUP_ROLE: "annotator" })).toBe(true);
+  });
+
+  it("is off for a missing setting, an empty one or anything else", () => {
+    for (const value of [undefined, "", "TRUE", "True", "1", "yes", "on", " true", "true ", "false"]) {
+      expect(signupPilot({ SIGNUP_PILOT: value })).toBe(false);
+    }
+    expect(signupPilot({})).toBe(false);
+  });
+});
+
+describe("newAccountFields with SIGNUP_PILOT", () => {
+  it("marks a new contributor as a pilot account while it is on", () => {
+    expect(newAccountFields({ SIGNUP_PILOT: "true" })).toEqual({ role: "user", isPilot: true });
+    // admin is never given, so this is still a contributor and still a pilot account
+    expect(newAccountFields({ SIGNUP_PILOT: "true", SIGNUP_ROLE: "admin" })).toEqual({ role: "user", isPilot: true });
+  });
+
+  it("writes no isPilot field while it is off or set to anything else", () => {
+    for (const value of [undefined, "", "TRUE", "1", "false"]) {
+      const fields = newAccountFields({ SIGNUP_PILOT: value });
+      expect(fields).toEqual({ role: "user" });
+      expect(fields).not.toHaveProperty("isPilot");
+    }
+  });
+
+  it("never marks an annotator, even with SIGNUP_ROLE=annotator and SIGNUP_PILOT=true", () => {
+    const fields = newAccountFields({ SIGNUP_ROLE: "annotator", SIGNUP_PILOT: "true" });
+    expect(fields).toEqual({ role: "annotator", annotatorPass: 1, annotatorActive: true });
+    expect(fields).not.toHaveProperty("isPilot");
   });
 });

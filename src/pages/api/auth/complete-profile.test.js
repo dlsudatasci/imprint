@@ -175,3 +175,63 @@ describe("POST /api/auth/complete-profile with SIGNUP_ROLE", () => {
     expect(update.$setOnInsert).not.toHaveProperty("annotatorActive");
   });
 });
+
+// SIGNUP_PILOT server switch (S11, 23 Oct 2026): a Google user who completes
+// the profile before choosing a username creates the account here
+describe("POST /api/auth/complete-profile with SIGNUP_PILOT", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("creates a new account as a contributor with isPilot true, on insert only", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert).toMatchObject({ role: "user", isPilot: true });
+    // An existing account is never marked
+    expect(update.$set).not.toHaveProperty("isPilot");
+  });
+
+  it("writes no isPilot field without it", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "");
+    vi.stubEnv("SIGNUP_PILOT", "");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert).not.toHaveProperty("isPilot");
+    expect(update.$set).not.toHaveProperty("isPilot");
+  });
+
+  it("creates an annotator without isPilot when SIGNUP_ROLE=annotator is also on", async () => {
+    vi.stubEnv("SIGNUP_ROLE", "annotator");
+    vi.stubEnv("SIGNUP_PILOT", "true");
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert.role).toBe("annotator");
+    expect(update.$setOnInsert).not.toHaveProperty("isPilot");
+  });
+});
+
+// Email verification (S9): only a Google account is created here, and Google
+// has verified the address
+describe("POST /api/auth/complete-profile email verification", () => {
+  it("creates the account confirmed, on insert only, so an existing account is never confirmed here", async () => {
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert.emailVerifiedAt).toBeInstanceOf(Date);
+    expect(update.$set).not.toHaveProperty("emailVerifiedAt");
+  });
+
+  it("matches and stores the address trimmed and lowercased, in both writes", async () => {
+    getServerSession.mockResolvedValue(mockAuthSession({ email: "Test@Example.COM " }));
+    const usersCol = createMockCollection();
+    connectToDatabase.mockResolvedValue({ db: createMockDb({ users: usersCol }) });
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [first, second] = usersCol.updateOne.mock.calls;
+    expect(first[0]).toEqual({ email: "test@example.com" });
+    expect(first[1].$set.email).toBe("test@example.com");
+    expect(second[0]).toEqual({ email: "test@example.com" });
+  });
+});

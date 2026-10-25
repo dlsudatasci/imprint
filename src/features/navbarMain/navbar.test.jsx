@@ -170,6 +170,14 @@ describe("notificationHistory", () => {
     expect(notificationHistory(undefined)).toEqual([]);
   });
 
+  // Email verification (S9): written by /api/auth/verify-email
+  it("words the email confirmation", () => {
+    const out = notificationHistory([{ activity: "Confirmed your email", tag: "email", date: "2026-10-25T00:00:00Z" }]);
+    expect(out.map(({ title, text }) => ({ title, text }))).toEqual([
+      { title: "Email confirmed", text: "Your email address is confirmed." },
+    ]);
+  });
+
   it("dates an entry in Philippine time", () => {
     // 16:30 UTC on 16 Oct is already 17 Oct in Manila
     expect(historyDate(Date.parse("2026-10-16T16:30:00Z"))).toMatch(/17/);
@@ -191,5 +199,15 @@ describe("annotateShortcut", () => {
     expect(annotateShortcut({ ...base, isTutorialSession: true })).toEqual({ href: "/contribute/tutorial", label: "Resume Tutorial" });
     expect(annotateShortcut({ ...base, hasActiveSession: true })).toEqual({ href: "/contribute/annotate", label: "Resume Session" });
     expect(annotateShortcut(base)).toEqual({ href: "/contribute/annotate", label: "Let's Annotate!" });
+  });
+
+  // Email verification (S9): a session cannot start yet, the tutorial can
+  it("offers only Resume Tutorial while the email address is not confirmed", () => {
+    expect(annotateShortcut({ ...base, needsEmailVerification: true })).toBeNull();
+    expect(annotateShortcut({ ...base, needsEmailVerification: true, hasActiveSession: true })).toBeNull();
+    expect(annotateShortcut({ ...base, needsEmailVerification: true, isTutorialSession: true })).toEqual({
+      href: "/contribute/tutorial", label: "Resume Tutorial",
+    });
+    expect(annotateShortcut({ ...base, needsEmailVerification: false })).toEqual({ href: "/contribute/annotate", label: "Let's Annotate!" });
   });
 });

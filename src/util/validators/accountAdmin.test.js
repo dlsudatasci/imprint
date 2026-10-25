@@ -103,6 +103,14 @@ describe("roleUpdate", () => {
       $unset: { annotatorPass: "", annotatorActive: "" },
     });
   });
+
+  it("leaves a pilot account's isPilot alone in both directions (S11)", () => {
+    for (const role of ["annotator", "user"]) {
+      const update = roleUpdate(role, now);
+      expect(update.$set).not.toHaveProperty("isPilot");
+      expect(update.$unset || {}).not.toHaveProperty("isPilot");
+    }
+  });
 });
 
 describe("summarizeAccount", () => {
@@ -110,7 +118,8 @@ describe("summarizeAccount", () => {
     const row = summarizeAccount({ ...contributor, createdAt: "2026-09-30", age: "20-24" }, 7, ADMIN_ID);
     expect(row).toEqual({
       id: contributor._id, username: "rans_test", email: "t@example.com", role: "user", roleLabel: "Contributor",
-      createdAt: "2026-09-30", profileComplete: true, annotations: 7, activeSession: false, isSelf: false, editable: true,
+      createdAt: "2026-09-30", profileComplete: true, isPilot: false, emailVerified: false, annotations: 7,
+      activeSession: false, isSelf: false, editable: true,
     });
     expect(summarizeAccount(contributor, 0, ADMIN_ID, true).activeSession).toBe(true);
   });
@@ -124,5 +133,23 @@ describe("summarizeAccount", () => {
     expect(summarizeAccount({ _id: "c".repeat(24) })).toMatchObject({
       username: null, email: null, role: "user", profileComplete: false, annotations: 0, isSelf: false, editable: true,
     });
+  });
+
+  // Email verification (S9): Confirmed or Not confirmed on the tab
+  it("reports the email address confirmed only when emailVerifiedAt is set", () => {
+    expect(summarizeAccount({ ...contributor, emailVerifiedAt: new Date("2026-10-25") }).emailVerified).toBe(true);
+    for (const value of [undefined, null]) {
+      expect(summarizeAccount({ ...contributor, emailVerifiedAt: value }).emailVerified).toBe(false);
+    }
+  });
+
+  // SIGNUP_PILOT (S11, 23 Oct 2026): the Pilot badge
+  it("marks a pilot account only when isPilot is exactly true", () => {
+    expect(summarizeAccount({ ...contributor, isPilot: true }).isPilot).toBe(true);
+    // A pilot account an admin later made an annotator keeps its badge
+    expect(summarizeAccount({ ...contributor, role: "annotator", isPilot: true }).isPilot).toBe(true);
+    for (const value of [undefined, false, "true", 1, null]) {
+      expect(summarizeAccount({ ...contributor, isPilot: value }).isPilot).toBe(false);
+    }
   });
 });

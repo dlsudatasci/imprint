@@ -2,10 +2,12 @@
  * Admin dashboard: Accounts tab (added 1 Oct 2026).
  *
  * Lists every account with its email, role, sign-up date, profile state and
- * annotation count. An admin can switch a person between contributor and
- * annotator, or delete an account with everything it recorded after seeing what
- * would be removed and typing the username. All checks are repeated on the
- * server in /api/admin/accounts.
+ * annotation count, whether its email address is confirmed (S9), and a Pilot
+ * badge on accounts created while the server's SIGNUP_PILOT setting was on
+ * (S11). An admin can switch a person between
+ * contributor and annotator, or delete an account with everything it recorded
+ * after seeing what would be removed and typing the username. All checks are
+ * repeated on the server in /api/admin/accounts.
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Badge, Skeleton, Button, Input, ConfirmDialog, cn } from "@/ui";
@@ -28,6 +30,9 @@ export default function AccountsTab() {
   const [accounts, setAccounts] = useState(null);
   // The role new sign-ups get from the server's SIGNUP_ROLE setting (6 Oct 2026)
   const [signupRole, setSignupRole] = useState("user");
+  // Whether new contributors are marked as pilot accounts, from the server's
+  // SIGNUP_PILOT setting (S11, 23 Oct 2026)
+  const [signupPilot, setSignupPilot] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [notice, setNotice] = useState(null); // { tone: "success" | "danger", text }
 
@@ -49,6 +54,7 @@ export default function AccountsTab() {
         if (!r.ok) throw new Error(json.message || `Request failed (${r.status}).`);
         setAccounts(json.accounts);
         setSignupRole(json.signupRole === "annotator" ? "annotator" : "user");
+        setSignupPilot(json.signupPilot === true);
       })
       .catch((e) => setLoadError(e.message));
   }, []);
@@ -152,6 +158,16 @@ export default function AccountsTab() {
         </p>
       )}
 
+      {/* So the pilot switch is removed when the pilot ends */}
+      {signupPilot && (
+        <p
+          role="status"
+          className="text-sm font-medium rounded-control border px-4 py-3 bg-warning-soft text-warning border-warning-border"
+        >
+          New contributor sign-ups are marked as pilot accounts. Remove SIGNUP_PILOT when the pilot ends.
+        </p>
+      )}
+
       {notice && (
         <p
           role="status"
@@ -192,10 +208,24 @@ export default function AccountsTab() {
                     {a.username || <span className="text-subtle italic">not chosen yet</span>}
                     {a.isSelf && <span className="text-subtle font-normal"> (you)</span>}
                   </td>
-                  <td className="px-4 py-3 text-body break-all">{a.email || "-"}</td>
+                  <td className="px-4 py-3 text-body break-all">
+                    {a.email || "-"}
+                    {a.email && (
+                      <div className="mt-1">
+                        <Badge tone={a.emailVerified ? "success" : "neutral"}>
+                          {a.emailVerified ? "Confirmed" : "Not confirmed"}
+                        </Badge>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
                       <Badge tone={ROLE_TONE[a.role] || "neutral"}>{a.roleLabel}</Badge>
+                      {a.isPilot && (
+                        <Badge tone="warning" title="Created during the pilot. Not part of the study.">
+                          Pilot
+                        </Badge>
+                      )}
                       {a.activeSession && <Badge tone="neutral">Session in progress</Badge>}
                     </div>
                   </td>

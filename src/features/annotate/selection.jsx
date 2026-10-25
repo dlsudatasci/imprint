@@ -4,6 +4,7 @@ import Link from "next/link";
 import { writeSession, writeTutorialFlag } from "@/util/sessionCache";
 import { CONTRIBUTOR_OPTIONS, sessionOptionsFor } from "./sessionOptions";
 import SessionSizeOptions, { SESSION_PICKER_COPY as COPY } from "./SessionSizeOptions";
+import { EMAIL_NOT_VERIFIED_CODE } from "@/util/validators/emailVerification.mjs";
 
 import { Button, Card, Container } from "@/ui";
 
@@ -21,6 +22,10 @@ import { Button, Card, Container } from "@/ui";
  * Starting a session reloads the page rather than changing state in place, so
  * the annotate page picks the batch up from the session cache using the same
  * path as an ordinary visit.
+ *
+ * A contributor whose email address is not confirmed is refused by
+ * /api/annotationGet (403, EMAIL_NOT_VERIFIED, S9) and sent to /check-email,
+ * whether that comes from the first check or from Start.
  */
 export default function AnnotationSessionSelection() {
   const router = useRouter();
@@ -36,7 +41,12 @@ export default function AnnotationSessionSelection() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
     })
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        const refusal = await r.json().catch(() => null);
+        if (!cancelled && r.status === 403 && refusal?.code === EMAIL_NOT_VERIFIED_CODE) router.replace("/check-email");
+        return null;
+      })
       .then((json) => {
         if (cancelled || !json || !Array.isArray(json.sessionSizes)) return;
         const annotator = json.sessionSizes.join() !== CONTRIBUTOR_OPTIONS.map((o) => o.count).join();
@@ -62,6 +72,11 @@ export default function AnnotationSessionSelection() {
         body: JSON.stringify(requestBody),
       });
       const annotationJson = await annotationResponse.json();
+
+      if (annotationResponse.status === 403 && annotationJson?.code === EMAIL_NOT_VERIFIED_CODE) {
+        router.replace("/check-email");
+        return;
+      }
 
       if (!annotationResponse.ok) {
         console.error("Failed to start session:", annotationJson);

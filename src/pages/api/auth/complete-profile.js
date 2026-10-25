@@ -3,6 +3,7 @@ import { authOptions } from "./[...nextauth]";
 import { connectToDatabase } from "@/util/mongodb";
 import { validateDemographics, validateOccupation, validateCities } from "@/util/validators/completeProfile";
 import { newAccountFields } from "@/util/validators/newAccountRole";
+import { normalizeEmail } from "@/util/validators/emailVerification.mjs";
 
 /** The activity-feed line written when a profile is completed (16 Oct 2026). */
 const PROFILE_ACTIVITY = "Completed your profile";
@@ -71,13 +72,16 @@ export default function handler(req, res) {
             const cities = Array.isArray(frequentlyWalkedCities) ? frequentlyWalkedCities : [];
 
             const { db } = await connectToDatabase();
+            // Trimmed and lowercased, as register stores it (S9)
+            const email = normalizeEmail(session.user.email);
 
             // Upsert rather than update: a Google user can reach this page
             // before any row exists for them, if they complete the profile
-            // before picking a username.
+            // before picking a username. A password account always has its
+            // row already, so an insert here is always a Google account.
             const updateDoc = {
                 $set: {
-                    email: session.user.email,
+                    email,
                     name: session.user.name || "",
                     image: session.user.image || "",
                     frequentlyWalkedCities: cities,
@@ -95,10 +99,14 @@ export default function handler(req, res) {
                 },
                 $setOnInsert: {
                     createdAt: new Date(),
+                    // Only a Google account is created here, and Google has
+                    // verified the address (S9)
+                    emailVerifiedAt: new Date(),
                     // role "user" (contributor), or with SIGNUP_ROLE=annotator
-                    // on the server, role "annotator" and the annotator fields
-                    // (see newAccountRole). On insert only, so an existing
-                    // account keeps its role and fields.
+                    // on the server, role "annotator" and the annotator fields.
+                    // A contributor also gets isPilot true while
+                    // SIGNUP_PILOT=true (see newAccountRole). On insert only, so
+                    // an existing account keeps its role and fields.
                     ...newAccountFields(),
                     totalAnnotations: 0,
                     hasCompletedTutorial: false,
@@ -113,7 +121,7 @@ export default function handler(req, res) {
             };
 
             await db.collection("users").updateOne(
-                { email: session.user.email },
+                { email },
                 updateDoc,
                 { upsert: true }
             );
@@ -124,7 +132,7 @@ export default function handler(req, res) {
             // update cannot also $push to the same field. Capped at the
             // newest 100 like every other entry (userActivity.js).
             await db.collection("users").updateOne(
-                { email: session.user.email },
+                { email },
                 {
                     $push: {
                         activities: {

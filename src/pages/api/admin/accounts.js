@@ -2,9 +2,13 @@
  * /api/admin/accounts — the admin Accounts tab (added 1 Oct 2026).
  *
  * GET   every account with username, email, role, sign-up date, whether the
- *       profile is complete, and number of annotations, plus signupRole: the
- *       role new sign-ups get from the server's SIGNUP_ROLE setting (6 Oct
- *       2026), so the tab can warn while every new account is an annotator.
+ *       profile is complete, whether it is a pilot account (isPilot, S11),
+ *       whether the email address is confirmed (emailVerified, S9), and
+ *       number of annotations, plus signupRole: the role new sign-ups get from
+ *       the server's SIGNUP_ROLE setting (6 Oct 2026), so the tab can warn while
+ *       every new account is an annotator, and signupPilot: whether the
+ *       server's SIGNUP_PILOT setting marks new contributors as pilot accounts
+ *       (S11, 23 Oct 2026), so the tab can warn while the pilot runs.
  * POST  { action: "preview", userId }                    counts of what a deletion would remove
  *       { action: "delete",  userId, confirmName }        deletes the account and everything it
  *                                                         recorded; confirmName must be its username
@@ -29,7 +33,7 @@ import {
   roleOf,
   summarizeAccount,
 } from "@/util/validators/accountAdmin";
-import { signupRole } from "@/util/validators/newAccountRole";
+import { signupRole, signupPilot } from "@/util/validators/newAccountRole";
 
 function ownedBy(target) {
   const id = String(target._id);
@@ -64,7 +68,7 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const users = await db
         .collection("users")
-        .find({}, { projection: { username: 1, email: 1, role: 1, createdAt: 1, age: 1 } })
+        .find({}, { projection: { username: 1, email: 1, role: 1, createdAt: 1, age: 1, isPilot: 1, emailVerifiedAt: 1 } })
         .sort({ createdAt: -1 })
         .toArray();
       const perUser = await db
@@ -82,6 +86,7 @@ export default async function handler(req, res) {
           summarizeAccount(u, counts.get(String(u._id)) || 0, actorId, busy.has(String(u._id)))
         ),
         signupRole: signupRole(),
+        signupPilot: signupPilot(),
       });
     }
 

@@ -167,6 +167,79 @@ too (decided 6 Oct 2026: on while the site is not public).
 
 ---
 
+## Pilot accounts
+
+`SIGNUP_PILOT=true` in `/srv/imprint/.env` marks every new contributor account
+as a pilot account (`isPilot: true` on the users document), so the five-person
+pilot's accounts can be told apart from the annotators' data and test accounts
+on staging (S11, decided 23 Oct 2026). Only exactly `true` turns it on. Anything
+else (missing, empty, `TRUE`, `1`, a typo) is off, and then no `isPilot` field is
+written. It never marks an annotator or an admin, so with `SIGNUP_ROLE=annotator`
+also set, new accounts are annotators without `isPilot`. Existing accounts are
+never changed. Nothing else changes for the participant: same sign-up form,
+consent, 18+ confirmation, profile, tutorial and sessions.
+
+**Staging only, and only after the freeze dump** (option A), so pilot accounts
+never reach production:
+
+```bash
+sudo -u imprint nano /srv/imprint/.env      # add SIGNUP_PILOT=true
+sudo systemctl restart imprint
+```
+
+While it is on, the admin Accounts tab says "New contributor sign-ups are marked
+as pilot accounts", and every pilot account carries a **Pilot** badge. When the
+pilot ends, remove the line and restart the same way. The badge stays on the
+accounts it marked.
+
+**Production never gets `SIGNUP_PILOT`.** Check it is absent before opening,
+together with the `SIGNUP_ROLE` check.
+
+---
+
+## Email verification
+
+A new password account confirms its email address before it can annotate (S9,
+decided 21 Oct 2026). Registering sends "Confirm your email for IMPRINT" with a
+link that works for 24 hours, and the person lands on "Check your inbox", which
+can send a new link (at most one per five minutes). Until the link is opened, a
+contributor can do the tutorial, finish the profile and read the guide, but
+`/api/annotationGet`, `/api/annotationSubmit` and `/api/annotationComplete`
+answer 403. Annotators and admins are never held back. Google sign-ins count as
+confirmed. Addresses are stored and compared trimmed and lowercased, so the
+unique index on `users.email` allows one account per address. The admin
+Accounts tab shows each address as Confirmed or Not confirmed.
+
+The mail uses the same settings as the password reset (`EMAIL_SERVICE`,
+`EMAIL_USER`, `EMAIL_PASS`), and the link is built from `NEXTAUTH_URL`, so
+both must be right on the server.
+
+Deploying it takes two one-off scripts, run like the other scripts in
+`scripts/` with `MONGODB_URI` and `MONGODB_DB` set for the database being
+changed. Each only counts unless given `--apply`, and prints counts only:
+
+1. **Before deploying**, lowercase the stored addresses:
+   ```bash
+   node --env-file=.env scripts/normalize-emails.mjs           # counts
+   node --env-file=.env scripts/normalize-emails.mjs --apply
+   ```
+   It refuses if two accounts would end up with the same address and says how
+   many. Resolve those accounts first, then run it again.
+2. Deploy as usual (`./deploy/deploy.sh`).
+3. **Straight after deploying**, mark the existing accounts confirmed from their
+   sign-up date (until then existing contributors cannot annotate). Pilot
+   accounts (S11) are left to confirm by email:
+   ```bash
+   node --env-file=.env scripts/verify-existing-emails.mjs           # counts
+   node --env-file=.env scripts/verify-existing-emails.mjs --apply
+   ```
+4. Run `normalize-emails.mjs` once more without `--apply`. It should find 0.
+
+The nginx limit on `/api/auth/resend-verification` is part of S8 (rate
+limiting).
+
+---
+
 ## Known gaps
 
 Worth knowing before this carries real users.

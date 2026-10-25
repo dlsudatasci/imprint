@@ -104,3 +104,15 @@ describe("POST /api/auth/reset-password", () => {
     expect(res._status).toBe(405);
   });
 });
+
+// Email verification (S9): addresses are compared trimmed and lowercased
+describe("POST /api/auth/reset-password address normalization", () => {
+  it("matches a link whose address differs only in case", async () => {
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: { ...validBody, email: " USER@example.com" } }), res);
+    expect(res._status).toBe(200);
+    expect(mocks.usersCol.findOne).toHaveBeenCalledWith({ email: "user@example.com" });
+    expect(mocks.usersCol.updateOne.mock.calls[0][0]).toEqual({ email: "user@example.com" });
+  });
+});

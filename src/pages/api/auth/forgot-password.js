@@ -1,6 +1,7 @@
 import { connectToDatabase } from "@/util/mongodb";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import { normalizeEmail } from "@/util/validators/emailVerification.mjs";
 
 /**
  * POST /api/auth/forgot-password — the first step of resetting a password.
@@ -22,7 +23,8 @@ const handler = async (req, res) => {
         return res.status(405).json({ message: `Method ${req.method} Not Allowed` });
     }
 
-    const { email } = req.body;
+    // Trimmed and lowercased, as register stores it (S9)
+    const email = normalizeEmail(req.body.email);
 
     // Guard the type before touching string methods — a JSON body can send an
     // object here, which would both crash .includes() and smuggle a Mongo

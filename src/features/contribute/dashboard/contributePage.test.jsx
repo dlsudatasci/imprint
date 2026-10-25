@@ -41,6 +41,7 @@ describe("contributor dashboard (/contribute)", () => {
     const { props } = await getServerSideProps({ req: {}, res: {} });
     expect(props.liveUser).toEqual({
       role: "annotator", hasCompletedTutorial: true, totalAnnotations: 4, isProfileIncomplete: false,
+      needsEmailVerification: false,
     });
   });
 
@@ -73,5 +74,52 @@ describe("contributor dashboard (/contribute)", () => {
     expect(props.liveUser).toBeNull();
     useSession.mockReturnValue({ data: staleToken(), status: "authenticated" });
     expect(renderToStaticMarkup(<ContributePage liveUser={props.liveUser} />)).toContain("dashboard-info");
+  });
+});
+
+// Email verification before annotation (S9, decided 21 Oct 2026)
+describe("contributor dashboard and email verification", () => {
+  const ready = { _id: new ObjectId(USER_ID), role: "user", hasCompletedTutorial: true, age: 30 };
+  const render = async (dbUser) => {
+    setupDb(dbUser);
+    const { props } = await getServerSideProps({ req: {}, res: {} });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose, as _app does
+    const { session, ...pageProps } = props;
+    useSession.mockReturnValue({ data: staleToken(), status: "authenticated" });
+    return { props, html: renderToStaticMarkup(<ContributePage {...pageProps} />) };
+  };
+
+  it("reads whether the address needs confirming from the database", async () => {
+    const { props } = await render({ ...ready, emailVerifiedAt: null });
+    expect(props.liveUser.needsEmailVerification).toBe(true);
+    const confirmed = await render({ ...ready, emailVerifiedAt: new Date("2026-10-25") });
+    expect(confirmed.props.liveUser.needsEmailVerification).toBe(false);
+  });
+
+  it("asks an unconfirmed contributor to confirm, in the main button and a notice, instead of Let's Annotate", async () => {
+    const { html } = await render({ ...ready, emailVerifiedAt: null });
+    expect(html).toContain("Confirm Your Email to Start");
+    expect(html).toContain("Confirm your email address to start annotating.");
+    expect(html).toContain('href="/check-email"');
+    expect(html).not.toContain("Let&#x27;s Annotate!");
+  });
+
+  // On the server the tutorial and annotate buttons say Loading... until the
+  // session check runs in the browser
+  it("keeps the tutorial first, and still shows the notice", async () => {
+    const { html } = await render({ ...ready, hasCompletedTutorial: false, emailVerifiedAt: null });
+    expect(html).toContain("Loading...");
+    expect(html).not.toContain("Confirm Your Email to Start");
+    expect(html).toContain("Confirm your email address to start annotating.");
+  });
+
+  it("keeps the annotate button once confirmed, and never holds back an annotator", async () => {
+    for (const dbUser of [{ ...ready, emailVerifiedAt: new Date() }, { ...ready, role: "annotator", emailVerifiedAt: null }]) {
+      const { html } = await render(dbUser);
+      expect(html).toContain("Loading...");
+      expect(html).not.toContain("Confirm Your Email to Start");
+      expect(html).not.toContain("Confirm your email address to start annotating.");
+      expect(html).not.toContain('href="/check-email"');
+    }
   });
 });

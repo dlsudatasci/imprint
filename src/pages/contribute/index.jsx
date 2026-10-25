@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getServerSession } from "next-auth/next";
 import { useSession } from "next-auth/react";
@@ -6,6 +6,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import { ObjectId } from "mongodb";
 import { readTotalCount, readCurrentCount, readTutorialFlag, clearSession } from "@/util/sessionCache";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
+import { needsEmailVerification } from "@/util/validators/emailVerification.mjs";
 
 import Page from "@/ui/page";
 
@@ -24,9 +25,11 @@ import ContentSkeleton from "@/features/layout/contentSkeleton";
  * were removed (Rans, 17 Oct 2026).
  *
  * It also enforces the order of onboarding: choose a username (Google sign-ins
- * only), finish the tutorial, complete the profile, then annotate. The main
- * button always shows whichever step is still outstanding, so there is one
- * obvious next action at any point.
+ * only), finish the tutorial, complete the profile, confirm the email address
+ * (S9, contributors with a password account), then annotate. The main button
+ * always shows whichever step is still outstanding, so there is one obvious
+ * next action at any point. While the address is not confirmed a notice says
+ * so from the start and links to /check-email.
  *
  * The values read from the database on the server (liveUser) take precedence
  * over the session held in the browser. The browser's copy comes from the login
@@ -34,7 +37,7 @@ import ContentSkeleton from "@/features/layout/contentSkeleton";
  * such as the role an admin sets.
  */
 export default function ContributePage({ session, liveUser = null }) {
-  const { data: clientSession, status } = useSession();
+  const { data: clientSession, status, update } = useSession();
   const loading = status === "loading";
 
   const [sessionState, setSessionState] = useState({
@@ -61,6 +64,20 @@ export default function ContributePage({ session, liveUser = null }) {
   // getServerSideProps reads this straight from the database on every request,
   // so it stays correct even if the JWT is stale from another device
   const hasCompletedDemo = user.hasCompletedTutorial === true;
+  // Email verification (S9), from the database when it could be read
+  const needsEmail = user.needsEmailVerification === true;
+
+  // Confirmed on another device: the sign-in still says otherwise, so ask for
+  // a fresh one (the jwt callback reads the database), for the navbar. Once
+  // per visit, so a refresh that fails cannot repeat.
+  const emailRefreshed = useRef(false);
+  useEffect(() => {
+    if (emailRefreshed.current || typeof update !== "function") return;
+    if (liveUser?.needsEmailVerification === false && clientSession?.user?.needsEmailVerification === true) {
+      emailRefreshed.current = true;
+      update({ emailVerified: true });
+    }
+  }, [liveUser, clientSession, update]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -202,6 +219,10 @@ export default function ContributePage({ session, liveUser = null }) {
                     <Link href="/complete-profile" tabIndex={-1} className="flex">
                       <Button fullWidth>{COPY.completeProfile}</Button>
                     </Link>
+                  ) : needsEmail ? (
+                    <Link href="/check-email" tabIndex={-1} className="flex">
+                      <Button fullWidth>{COPY.confirmEmail}</Button>
+                    </Link>
                   ) : (
                     <Link
                       href={isLoadingSession ? "" : "/contribute/annotate"}
@@ -233,6 +254,17 @@ export default function ContributePage({ session, liveUser = null }) {
               )}
             </div>
           </div>
+          {needsEmail && (
+            <p
+              role="status"
+              className="mt-8 text-sm font-medium rounded-control border px-4 py-3 bg-warning-soft text-warning border-warning-border"
+            >
+              {COPY.emailNotice}{" "}
+              <Link href="/check-email" className="underline font-semibold">
+                {COPY.emailNoticeLink}
+              </Link>
+            </p>
+          )}
         </Container>
       </section>
       {/* The lower dashboard (Recent sessions, Your progress), for both roles.
@@ -286,6 +318,8 @@ export async function getServerSideProps(context) {
         totalAnnotations: dbUser.totalAnnotations || 0,
         hasCompletedTutorial: dbUser.hasCompletedTutorial || false,
         role: dbUser.role || "contributor",
+        // S9: the main button and the notice
+        needsEmailVerification: needsEmailVerification(dbUser),
       };
       if (dbUser.age) liveUser.isProfileIncomplete = false;
 

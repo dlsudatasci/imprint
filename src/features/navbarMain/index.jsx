@@ -58,6 +58,8 @@ export default function Nav({ sticky = false }) {
 
   const hasCompletedDemo = session?.user?.hasCompletedTutorial === true;
   const profileIncomplete = session?.user?.isProfileIncomplete === true;
+  // Email verification (S9), from the sign-in token
+  const needsEmailVerification = session?.user?.needsEmailVerification === true;
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -152,6 +154,7 @@ export default function Nav({ sticky = false }) {
       hasCompletedDemo,
       isTutorialSession,
       hasActiveSession,
+      needsEmailVerification,
     })
     : null;
 

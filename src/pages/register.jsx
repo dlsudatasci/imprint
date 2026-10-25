@@ -30,6 +30,9 @@ const COPY = AUTH_COPY.register;
  * MIN_PASSWORD_LENGTH), autocomplete so password managers offer a new
  * password, and the inline Google mark in place of an image from svgrepo.com.
  *
+ * Once the account is created it signs in and goes to /check-email (S9), which
+ * asks the person to open the link sent to their address before annotating.
+ *
  * Field errors use the browser's own validation bubbles rather than messages
  * rendered on the page. That is why each input clears its custom message as
  * soon as it is typed in — a leftover bubble would otherwise block the form
@@ -96,10 +99,12 @@ export default function Register() {
         const data = await res.json();
 
         if (res.status === 201) {
+          // A new account confirms its address first (S9). "Check your inbox"
+          // says so, and offers a new link when the first could not be sent.
           signIn("credentials", {
             username,
             password,
-            callbackUrl: `${window.location.origin}/contribute`,
+            callbackUrl: `${window.location.origin}/check-email${data.emailSent === false ? "?unsent=1" : ""}`,
           });
 
         // Route the server's message to whichever field it's about, by keyword.

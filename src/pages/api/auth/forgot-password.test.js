@@ -75,3 +75,16 @@ describe("POST /api/auth/forgot-password", () => {
     expect(res._status).toBe(422);
   });
 });
+
+// Email verification (S9): addresses are compared trimmed and lowercased
+describe("POST /api/auth/forgot-password address normalization", () => {
+  it("finds the account and sends to the address trimmed and lowercased", async () => {
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: { email: "  User@Example.COM " } }), res);
+    expect(res._status).toBe(200);
+    expect(mocks.usersCol.findOne).toHaveBeenCalledWith({ email: "user@example.com" });
+    expect(mocks.usersCol.updateOne.mock.calls[0][0]).toEqual({ email: "user@example.com" });
+    expect(mockSendMail.mock.calls[0][0].to).toBe("user@example.com");
+  });
+});

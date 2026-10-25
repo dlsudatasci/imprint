@@ -2,6 +2,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from "@/util/validation";
+import { normalizeEmail } from "@/util/validators/emailVerification.mjs";
 
 /**
  * POST /api/auth/reset-password — the second step, redeeming the emailed token.
@@ -26,7 +27,9 @@ const handler = async (req, res) => {
         return res.status(405).json({ message: `Method ${req.method} Not Allowed` });
     }
 
-    const { email, token, newPassword } = req.body;
+    const { token, newPassword } = req.body;
+    // Trimmed and lowercased, as register stores it (S9)
+    const email = normalizeEmail(req.body.email);
 
     // email goes into a Mongo query and token into a hash, so both have to be
     // strings before we touch them

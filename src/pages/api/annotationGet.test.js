@@ -20,6 +20,8 @@ function setupMocks({ hasSession = true, userRole = "user", activeSession = null
     findOne: vi.fn().mockResolvedValue({
       _id: MOCK_USER_ID,
       role: userRole,
+      // Confirmed address (S9), so the email gate stays open
+      emailVerifiedAt: new Date("2026-10-01T00:00:00Z"),
       frequentlyWalkedCities: ["Makati"],
     }),
   });
@@ -764,5 +766,56 @@ describe("POST /api/annotationGet", () => {
       expect(matches.some((m) => m.isReference === true)).toBe(true);
       expect(matches.every((m) => m.poolStatus === "served")).toBe(true);
     });
+  });
+});
+
+// Email verification before annotation (S9, decided 21 Oct 2026)
+describe("POST /api/annotationGet email verification", () => {
+  it("refuses a contributor whose address is not confirmed, for the check and for a new session", async () => {
+    for (const body of [{}, { annotationTotalCount: 10 }]) {
+      const mocks = setupMocks();
+      mocks.usersCol.findOne.mockResolvedValue({ _id: MOCK_USER_ID, role: "user", emailVerifiedAt: null });
+      const res = createMockRes();
+      await handler(createMockReq({ body }), res);
+      expect(res._status).toBe(403);
+      expect(res._json.code).toBe("EMAIL_NOT_VERIFIED");
+      expect(mocks.sessionsCol.findOne).not.toHaveBeenCalled();
+      expect(mocks.sessionsCol.insertOne).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuses an account from before S9 that the script has not marked yet", async () => {
+    const mocks = setupMocks();
+    mocks.usersCol.findOne.mockResolvedValue({ _id: MOCK_USER_ID, role: "user" });
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._status).toBe(403);
+  });
+
+  it("reads the database, not the sign-in, so a token claiming confirmation does not help", async () => {
+    const mocks = setupMocks();
+    getServerSession.mockResolvedValue(mockAuthSession({ _id: MOCK_USER_ID, needsEmailVerification: false, emailVerifiedAt: "2026-10-01" }));
+    mocks.usersCol.findOne.mockResolvedValue({ _id: MOCK_USER_ID, role: "user", emailVerifiedAt: null });
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._status).toBe(403);
+  });
+
+  it("never refuses annotators or admins, confirmed or not", async () => {
+    for (const role of ["annotator", "admin"]) {
+      const mocks = setupMocks({ userRole: role });
+      mocks.usersCol.findOne.mockResolvedValue({ _id: MOCK_USER_ID, role, emailVerifiedAt: null });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+      expect(res._status).not.toBe(403);
+      expect(res._json.sessionSizes).toBeDefined();
+    }
+  });
+
+  it("lets a confirmed contributor through", async () => {
+    setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._json.sessionSizes).toEqual([5, 10, 20, 40]);
   });
 });

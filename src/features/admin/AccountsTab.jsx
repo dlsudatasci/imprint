@@ -2,8 +2,9 @@
  * Admin dashboard: Accounts tab (added 1 Oct 2026).
  *
  * Lists every account with its email, role, sign-up date, profile state and
- * annotation count, and a Pilot badge on accounts created while the server's
- * SIGNUP_PILOT setting was on (S11). An admin can switch a person between
+ * annotation count, whether its email address is confirmed (S9), and a Pilot
+ * badge on accounts created while the server's SIGNUP_PILOT setting was on
+ * (S11). An admin can switch a person between
  * contributor and annotator, or delete an account with everything it recorded
  * after seeing what would be removed and typing the username. All checks are
  * repeated on the server in /api/admin/accounts.
@@ -207,7 +208,16 @@ export default function AccountsTab() {
                     {a.username || <span className="text-subtle italic">not chosen yet</span>}
                     {a.isSelf && <span className="text-subtle font-normal"> (you)</span>}
                   </td>
-                  <td className="px-4 py-3 text-body break-all">{a.email || "-"}</td>
+                  <td className="px-4 py-3 text-body break-all">
+                    {a.email || "-"}
+                    {a.email && (
+                      <div className="mt-1">
+                        <Badge tone={a.emailVerified ? "success" : "neutral"}>
+                          {a.emailVerified ? "Confirmed" : "Not confirmed"}
+                        </Badge>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
                       <Badge tone={ROLE_TONE[a.role] || "neutral"}>{a.roleLabel}</Badge>

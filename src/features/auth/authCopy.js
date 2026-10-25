@@ -74,6 +74,38 @@ export const AUTH_COPY = Object.freeze({
     submitting: "Saving...",
     toLogin: "Go to log in",
   }),
+  // Email verification (S9): /check-email, where a new account lands, and
+  // /verify-email, which the emailed link opens
+  checkEmail: Object.freeze({
+    title: "Check your inbox",
+    sentTo: (email) => `We sent a link to ${email}. Open it to confirm your email address and start annotating.`,
+    sentToYou: "We sent you a link. Open it to confirm your email address and start annotating.",
+    notSent: "We could not send the link when you signed up. Send a new one below.",
+    linkLife: "The link works for 24 hours. Not in your inbox? Look in your spam folder, or send a new link.",
+    meanwhile: "While you wait, you can do the tutorial, finish your profile and read the guide.",
+    resend: "Send a new link",
+    resending: "Sending...",
+    toDashboard: "Go to dashboard",
+    guide: "Read the guide",
+    offline: "Couldn't reach the server. Check your connection and try again.",
+    confirmedTitle: "Email confirmed",
+    confirmed: "Your email address is confirmed. You can annotate once the tutorial and your profile are done.",
+  }),
+  verify: Object.freeze({
+    title: "Confirm your email",
+    checking: "Confirming your email address...",
+    confirmedTitle: "Email confirmed",
+    confirmed: "Your email address is confirmed. You can annotate once the tutorial and your profile are done.",
+    failedTitle: "This link did not work",
+    usedTitle: "Already confirmed",
+    missing: "This link is incomplete. Send a new link to try again.",
+    offline: "Couldn't reach the server. Check your connection and try again.",
+    resend: "Send a new link",
+    resending: "Sending...",
+    loginToResend: "Log in to send a new link",
+    toDashboard: "Go to dashboard",
+    toLogin: "Go to log in",
+  }),
   // The old wording, kept (Rans, 16 Oct 2026)
   username: Object.freeze({
     title: "Welcome to Imprint!",

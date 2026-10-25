@@ -271,3 +271,23 @@ describe("/api/admin/accounts signupPilot and isPilot", () => {
     expect(otherRow).toMatchObject({ username: "test_annotator", isPilot: false });
   });
 });
+
+// Email verification (S9, decided 21 Oct 2026): the tab shows confirmed or not
+describe("/api/admin/accounts emailVerified", () => {
+  it("reads emailVerifiedAt and reports each account confirmed or not", async () => {
+    const m = setup();
+    m.users.find.mockReturnValue({
+      sort: vi.fn().mockReturnThis(),
+      toArray: vi.fn().mockResolvedValue([
+        { _id: new ObjectId("cccccccccccccccccccccccc"), username: "confirmed_one", role: "user", emailVerifiedAt: new Date("2026-10-25") },
+        target,
+      ]),
+    });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(m.users.find.mock.calls[0][1].projection).toMatchObject({ emailVerifiedAt: 1 });
+    const [confirmed, other] = res._json.accounts;
+    expect(confirmed.emailVerified).toBe(true);
+    expect(other.emailVerified).toBe(false);
+  });
+});

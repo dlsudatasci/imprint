@@ -1,5 +1,6 @@
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
+import { needsEmailVerification, EMAIL_NOT_VERIFIED_RESPONSE } from "@/util/validators/emailVerification.mjs";
 import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
@@ -65,13 +66,17 @@ const handler = async (req, res) => {
 
     // The role decides what is validated and stored, so it is read before
     // validation. It comes from the database, not the session, because an
-    // admin can change it after sign-in.
+    // admin can change it after sign-in. So does the email check (S9): a
+    // contributor whose address is not confirmed cannot submit.
     let isAnnotator;
     try {
       const userRecord = await db.collection("users").findOne(
         { _id: new ObjectId(userId) },
-        { projection: { role: 1 } }
+        { projection: { role: 1, emailVerifiedAt: 1 } }
       );
+      if (needsEmailVerification(userRecord)) {
+        return res.status(403).json(EMAIL_NOT_VERIFIED_RESPONSE);
+      }
       isAnnotator = userRecord?.role === "annotator";
     } catch (error) {
       console.error("Database Error:", error);

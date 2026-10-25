@@ -3,6 +3,7 @@ import { authOptions } from "./[...nextauth]";
 import { connectToDatabase } from "@/util/mongodb";
 import { USERNAME_PATTERN } from "@/util/validation";
 import { newAccountFields } from "@/util/validators/newAccountRole";
+import { normalizeEmail } from "@/util/validators/emailVerification.mjs";
 
 /**
  * POST /api/auth/choose-username — saves the username a Google sign-in picks.
@@ -13,7 +14,9 @@ import { newAccountFields } from "@/util/validators/newAccountRole";
  * /choose-username, and this is where that form submits.
  *
  * Creates the account record if it doesn't exist yet — for a first-time Google
- * sign-in, this is the point at which the account is created.
+ * sign-in, this is the point at which the account is created. Such an account
+ * starts with its address confirmed (emailVerifiedAt, S9): Google has already
+ * verified it. The address is stored and matched trimmed and lowercased.
  */
 export default function handler(req, res) {
     if (req.method !== "POST") {
@@ -53,13 +56,15 @@ export default function handler(req, res) {
             }
 
             const { db } = await connectToDatabase();
+            // Trimmed and lowercased, as register stores it (S9)
+            const email = normalizeEmail(session.user.email);
 
             // Excluding our own email matters on a re-submit: without it,
             // someone confirming the name they already picked would collide
             // with their own record and be told it's taken.
             const existingUserWithUsername = await db.collection("users").findOne({
                 username: username,
-                email: { $ne: session.user.email }
+                email: { $ne: email }
             });
 
             if (existingUserWithUsername) {
@@ -71,7 +76,7 @@ export default function handler(req, res) {
             // never be reset by someone revisiting this page
             const updateDoc = {
                 $set: {
-                    email: session.user.email,
+                    email,
                     name: session.user.name || "",
                     image: session.user.image || "",
                     username,
@@ -81,6 +86,8 @@ export default function handler(req, res) {
                 },
                 $setOnInsert: {
                     createdAt: new Date(),
+                    // Google has verified the address (S9)
+                    emailVerifiedAt: new Date(),
                     // role "user" (contributor), or with SIGNUP_ROLE=annotator
                     // on the server, role "annotator" and the annotator fields.
                     // A contributor also gets isPilot true while
@@ -100,7 +107,7 @@ export default function handler(req, res) {
             };
 
             await db.collection("users").updateOne(
-                { email: session.user.email },
+                { email },
                 updateDoc,
                 { upsert: true }
             );

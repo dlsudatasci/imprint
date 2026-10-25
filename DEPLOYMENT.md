@@ -197,6 +197,49 @@ together with the `SIGNUP_ROLE` check.
 
 ---
 
+## Email verification
+
+A new password account confirms its email address before it can annotate (S9,
+decided 21 Oct 2026). Registering sends "Confirm your email for IMPRINT" with a
+link that works for 24 hours, and the person lands on "Check your inbox", which
+can send a new link (at most one per five minutes). Until the link is opened, a
+contributor can do the tutorial, finish the profile and read the guide, but
+`/api/annotationGet`, `/api/annotationSubmit` and `/api/annotationComplete`
+answer 403. Annotators and admins are never held back. Google sign-ins count as
+confirmed. Addresses are stored and compared trimmed and lowercased, so the
+unique index on `users.email` allows one account per address. The admin
+Accounts tab shows each address as Confirmed or Not confirmed.
+
+The mail uses the same settings as the password reset (`EMAIL_SERVICE`,
+`EMAIL_USER`, `EMAIL_PASS`), and the link is built from `NEXTAUTH_URL`, so
+both must be right on the server.
+
+Deploying it takes two one-off scripts, run like the other scripts in
+`scripts/` with `MONGODB_URI` and `MONGODB_DB` set for the database being
+changed. Each only counts unless given `--apply`, and prints counts only:
+
+1. **Before deploying**, lowercase the stored addresses:
+   ```bash
+   node --env-file=.env scripts/normalize-emails.mjs           # counts
+   node --env-file=.env scripts/normalize-emails.mjs --apply
+   ```
+   It refuses if two accounts would end up with the same address and says how
+   many. Resolve those accounts first, then run it again.
+2. Deploy as usual (`./deploy/deploy.sh`).
+3. **Straight after deploying**, mark the existing accounts confirmed from their
+   sign-up date (until then existing contributors cannot annotate). Pilot
+   accounts (S11) are left to confirm by email:
+   ```bash
+   node --env-file=.env scripts/verify-existing-emails.mjs           # counts
+   node --env-file=.env scripts/verify-existing-emails.mjs --apply
+   ```
+4. Run `normalize-emails.mjs` once more without `--apply`. It should find 0.
+
+The nginx limit on `/api/auth/resend-verification` is part of S8 (rate
+limiting).
+
+---
+
 ## Known gaps
 
 Worth knowing before this carries real users.

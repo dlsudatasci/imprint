@@ -2,7 +2,9 @@ import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
+import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/util/mongodb";
+import { normalizeEmail, needsEmailVerification } from "@/util/validators/emailVerification.mjs";
 
 export const authOptions = {
   providers: [
@@ -68,7 +70,7 @@ export const authOptions = {
         const { db } = await connectToDatabase();
         const existing = await db
           .collection("users")
-          .findOne({ email: user.email }, { projection: { hashedPassword: 1 } });
+          .findOne({ email: normalizeEmail(user.email) }, { projection: { hashedPassword: 1 } });
 
         if (existing && typeof existing.hashedPassword === "string") {
           return "/login?error=UsePassword";
@@ -114,6 +116,25 @@ export const authOptions = {
         if (session.tutorialCompleted) {
           token.user.hasCompletedTutorial = true;
         }
+        // Email confirmed (S9), sent by /verify-email and /check-email. Unlike
+        // the flags above this one is read back from the database rather than
+        // taken from the browser. The annotation routes check the database
+        // themselves, so a forged flag would only change which page is shown,
+        // but there is no reason to let it.
+        if (session.emailVerified && token.user?._id) {
+          try {
+            const { db } = await connectToDatabase();
+            const dbUser = await db
+              .collection("users")
+              .findOne({ _id: new ObjectId(token.user._id) }, { projection: { role: 1, emailVerifiedAt: 1 } });
+            if (dbUser) {
+              token.user.emailVerifiedAt = dbUser.emailVerifiedAt ?? null;
+              token.user.needsEmailVerification = needsEmailVerification(dbUser);
+            }
+          } catch (error) {
+            console.error("Failed to refresh email verification", error);
+          }
+        }
       }
 
       if (user) {
@@ -132,7 +153,7 @@ export const authOptions = {
             // instead of a blank-looking account. The signIn callback above has
             // already ruled out the case where this email belongs to a password
             // account, so adopting the record here is safe.
-            const dbUser = await db.collection("users").findOne({ email: user.email });
+            const dbUser = await db.collection("users").findOne({ email: normalizeEmail(user.email) });
 
             if (dbUser && dbUser.username) {
               token.user = {
@@ -158,6 +179,11 @@ export const authOptions = {
         // record rather than being stored, so they can't get out of sync.
         token.user.isNewGoogleUser = !token.user.username;
         token.user.isProfileIncomplete = !token.user.age;
+        // Email verification (S9). Only page routing reads this: the
+        // annotation routes check the database on every request. Google has
+        // verified the address, and its accounts are created confirmed.
+        token.user.needsEmailVerification =
+          account?.provider === "google" ? false : needsEmailVerification(token.user);
       }
 
       // Backfill for tokens minted before _id was part of the session. Those
@@ -197,6 +223,9 @@ export const authOptions = {
      *                               dashboard fetches them separately rather
      *                               than paying for them on every request,
      *                               since the session rides along in a cookie
+     *   emailVerifyToken,           the hash behind the confirmation link and
+     *   emailVerifyExpire,          its timing (S9). Only the server needs them
+     *   emailVerifySentAt
      *
      * Denylist rather than allowlist, which means a new field added to the user
      * document is exposed by default — worth checking when you add one.
@@ -215,6 +244,9 @@ export const authOptions = {
         delete sessionUser.walkingFrequency;
         delete sessionUser.accessibilityFamiliarity;
         delete sessionUser.priorAnnotationExperience;
+        delete sessionUser.emailVerifyToken;
+        delete sessionUser.emailVerifyExpire;
+        delete sessionUser.emailVerifySentAt;
 
         session.user = sessionUser;
       }

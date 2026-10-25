@@ -23,6 +23,7 @@ function row(overrides) {
     createdAt: "2026-10-23T00:00:00Z",
     profileComplete: true,
     isPilot: false,
+    emailVerified: true,
     annotations: 0,
     activeSession: false,
     isSelf: false,
@@ -36,7 +37,7 @@ const ACCOUNTS = [
   row({ id: "c".repeat(24), username: "pilot_one", isPilot: true }),
   row({ id: "d".repeat(24), username: "pilot_two", isPilot: true, role: "annotator", roleLabel: "Annotator" }),
   row({ id: "e".repeat(24), username: "annotator_one", role: "annotator", roleLabel: "Annotator" }),
-  row({ id: "f".repeat(24), username: "contributor_one" }),
+  row({ id: "f".repeat(24), username: "contributor_one", emailVerified: false }),
 ];
 
 let root;
@@ -121,5 +122,24 @@ describe("the Accounts tab's sign-up notices", () => {
     for (const s of [...notices(el), badge.textContent, badge.getAttribute("title")]) {
       expect(s).not.toMatch(/[—;]/);
     }
+  });
+});
+
+// Email verification (S9, decided 21 Oct 2026)
+describe("the Accounts tab's email state", () => {
+  const badgeIn = (el, username) =>
+    [...rowOf(el, username).querySelectorAll("td")[1].querySelectorAll("span")].map((b) => b.textContent.trim());
+
+  it("says whether each account's address is confirmed, under the address", async () => {
+    const el = await mount({ accounts: ACCOUNTS, signupRole: "user", signupPilot: false });
+    expect(badgeIn(el, "contributor_one")).toEqual(["Not confirmed"]);
+    for (const username of ["francis", "pilot_one", "annotator_one"]) {
+      expect(badgeIn(el, username)).toEqual(["Confirmed"]);
+    }
+  });
+
+  it("shows nothing for an account with no address", async () => {
+    const el = await mount({ accounts: [row({ username: "no_email", email: null, emailVerified: false })], signupRole: "user" });
+    expect(badgeIn(el, "no_email")).toEqual([]);
   });
 });

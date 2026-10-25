@@ -82,7 +82,8 @@ export function roleUpdate(role, now = new Date()) {
 /**
  * One row of the Accounts table. isPilot is true only for an account created
  * while SIGNUP_PILOT=true (S11, see newAccountRole.js), which the tab marks with
- * a Pilot badge.
+ * a Pilot badge. emailVerified is whether the address is confirmed (S9,
+ * emailVerifiedAt set).
  */
 export function summarizeAccount(user, annotationCount = 0, actorId = null, hasActiveSession = false) {
   const role = roleOf(user);
@@ -95,6 +96,7 @@ export function summarizeAccount(user, annotationCount = 0, actorId = null, hasA
     createdAt: user.createdAt || null,
     profileComplete: Boolean(user.age),
     isPilot: user.isPilot === true,
+    emailVerified: Boolean(user.emailVerifiedAt),
     annotations: annotationCount,
     activeSession: Boolean(hasActiveSession),
     isSelf: actorId != null && String(user._id) === String(actorId),

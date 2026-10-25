@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import crypto from "crypto";
 import { createMockReq, createMockRes, createMockCollection, createMockDb } from "@/test-utils/api-helpers";
 
+// The verification mail (S9), sent through a stand-in transporter
+const mockSendMail = vi.fn().mockResolvedValue({ messageId: "test-id" });
 vi.mock("@/util/mongodb", () => ({ connectToDatabase: vi.fn() }));
 vi.mock("bcryptjs", () => ({ default: { hash: vi.fn().mockResolvedValue("hashed-pw") } }));
+vi.mock("nodemailer", () => ({
+  default: { createTransport: vi.fn(() => ({ sendMail: mockSendMail })) },
+}));
 
 import { connectToDatabase } from "@/util/mongodb";
 import handler from "./register.js";
@@ -238,5 +244,79 @@ describe("POST /api/auth/register with SIGNUP_PILOT", () => {
     await handler(createMockReq({ body: { ...validBody, consentAgreed: false } }), res);
     expect(res._status).toBe(422);
     expect(mocks.usersCol.insertOne).not.toHaveBeenCalled();
+  });
+});
+
+// Email verification (S9, decided 21 Oct 2026)
+describe("POST /api/auth/register email verification", () => {
+  const sha256 = (t) => crypto.createHash("sha256").update(t).digest("hex");
+  const linkIn = (mail) => /href="([^"]+\/verify-email\?[^"]+)"/.exec(mail.html)[1].replace(/&amp;/g, "&");
+
+  it("stores the address trimmed and lowercased, and checks it that way", async () => {
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: { ...validBody, email: "  New.Person@Example.COM " } }), res);
+    expect(res._status).toBe(201);
+    expect(mocks.usersCol.findOne).toHaveBeenCalledWith({ email: "new.person@example.com" });
+    expect(mocks.usersCol.insertOne.mock.calls[0][0].email).toBe("new.person@example.com");
+  });
+
+  it("refuses a second account for the same address in different case", async () => {
+    const usersCol = createMockCollection({
+      findOne: vi.fn().mockImplementation(async (query) => (query.email === "new@example.com" ? { email: "new@example.com" } : null)),
+    });
+    connectToDatabase.mockResolvedValue({ db: createMockDb({ users: usersCol }) });
+    const res = createMockRes();
+    await handler(createMockReq({ body: { ...validBody, email: "NEW@Example.com" } }), res);
+    expect(res._status).toBe(409);
+    expect(res._json.message).toContain("email");
+    expect(usersCol.insertOne).not.toHaveBeenCalled();
+    expect(mockSendMail).not.toHaveBeenCalled();
+  });
+
+  it("starts unconfirmed with a hashed token that works for 24 hours", async () => {
+    const mocks = setupMocks();
+    const before = Date.now();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const doc = mocks.usersCol.insertOne.mock.calls[0][0];
+    expect(doc.emailVerifiedAt).toBeNull();
+    expect(doc.emailVerifyToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(doc.emailVerifySentAt).toBeInstanceOf(Date);
+    const ttl = doc.emailVerifyExpire.getTime() - doc.createdAt.getTime();
+    expect(ttl).toBe(24 * 60 * 60 * 1000);
+    expect(doc.createdAt.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("sends Confirm your email for IMPRINT with a link whose token only the hash of is stored", async () => {
+    vi.stubEnv("NEXTAUTH_URL", "https://imprint.example.org/");
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: validBody }), res);
+    vi.unstubAllEnvs();
+    expect(res._json.emailSent).toBe(true);
+    expect(mockSendMail).toHaveBeenCalledTimes(1);
+    const mail = mockSendMail.mock.calls[0][0];
+    expect(mail.to).toBe("new@example.com");
+    expect(mail.subject).toBe("Confirm your email for IMPRINT");
+    const link = new URL(linkIn(mail));
+    expect(link.origin + link.pathname).toBe("https://imprint.example.org/verify-email");
+    expect(link.searchParams.get("email")).toBe("new@example.com");
+    const token = link.searchParams.get("token");
+    const doc = mocks.usersCol.insertOne.mock.calls[0][0];
+    expect(token).not.toBe(doc.emailVerifyToken);
+    expect(sha256(token)).toBe(doc.emailVerifyToken);
+  });
+
+  it("keeps the account when the mail cannot be sent, and lets the person resend at once", async () => {
+    mockSendMail.mockRejectedValueOnce(new Error("smtp down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: validBody }), res);
+    errorSpy.mockRestore();
+    expect(res._status).toBe(201);
+    expect(res._json.emailSent).toBe(false);
+    expect(mocks.usersCol.insertOne).toHaveBeenCalledTimes(1);
+    expect(mocks.usersCol.updateOne).toHaveBeenCalledWith({ email: "new@example.com" }, { $set: { emailVerifySentAt: null } });
   });
 });

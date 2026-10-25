@@ -87,3 +87,14 @@ describe("POST /api/auth/verify-reset-token", () => {
     expect(res._status).toBe(405);
   });
 });
+
+// Email verification (S9): addresses are compared trimmed and lowercased
+describe("POST /api/auth/verify-reset-token address normalization", () => {
+  it("looks the account up by the address trimmed and lowercased", async () => {
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: { email: "User@Example.com ", token: PLAIN_TOKEN } }), res);
+    expect(res._json.valid).toBe(true);
+    expect(mocks.usersCol.findOne).toHaveBeenCalledWith({ email: "user@example.com" });
+  });
+});

@@ -8,17 +8,26 @@ import {
   MAX_PASSWORD_LENGTH,
 } from "@/util/validation";
 import { newAccountFields } from "@/util/validators/newAccountRole";
+import { normalizeEmail, verificationExpiry } from "@/util/validators/emailVerification.mjs";
+import { createVerificationToken, sendVerificationEmail } from "@/util/verificationEmail";
 
 /**
  * POST /api/auth/register — creates a password account.
  *
- * The email address is never verified, so it counts as a way to contact someone
- * rather than proof of who they are. That is why signing in with Google will
- * not attach itself to an account created here: without verification, typing an
- * address can't be treated as owning it.
+ * The address is stored trimmed and lowercased (S9), so the unique index on
+ * users.email allows one account per address whatever its case. The account
+ * starts unconfirmed (emailVerifiedAt null) and this sends "Confirm your email
+ * for IMPRINT" with a link to /verify-email that works for 24 hours. Until the
+ * link is opened a contributor cannot annotate (needsEmailVerification). If the
+ * mail cannot be sent the account is still created, emailSent is false, and the
+ * person can send a new link from /check-email at once.
  *
- * Only creates the account. The browser signs in straight afterwards, and the
- * demographic questions come later at /complete-profile.
+ * Signing in with Google still will not attach itself to an account created
+ * here, confirmed or not: the password account was made by whoever typed the
+ * address first.
+ *
+ * Only creates the account. The browser signs in straight afterwards and goes to
+ * /check-email, and the demographic questions come later at /complete-profile.
  */
 const handler = async (req, res) => {
   if (req.method !== "POST") {
@@ -31,10 +40,11 @@ const handler = async (req, res) => {
     const {
       username,
       password,
-      email,
       consentAgreed,
       ageConfirmed,
     } = req.body;
+    // Trimmed and lowercased before it is checked, compared or stored (S9)
+    const email = normalizeEmail(req.body.email);
 
     // --- SECURITY VALIDATION ---
     // Everything here is untrusted and two of the three end up in a Mongo
@@ -89,6 +99,7 @@ const handler = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const { token, hashedToken } = createVerificationToken();
 
     // Initial User Data
     const dateRegistered = new Date();
@@ -113,11 +124,31 @@ const handler = async (req, res) => {
       ...newAccountFields(),
       consentAgreedAt: dateRegistered,
       ageConfirmedAt: dateRegistered,
+      // Email verification (S9): only the token's hash is stored
+      emailVerifiedAt: null,
+      emailVerifyToken: hashedToken,
+      emailVerifyExpire: verificationExpiry(dateRegistered),
+      emailVerifySentAt: dateRegistered,
       createdAt: dateRegistered,
       updatedAt: dateRegistered,
     });
 
-    return res.status(201).json({ message: "User created successfully" });
+    // A failed send keeps the account. The send time is cleared so the person
+    // can ask for a new link straight away instead of waiting five minutes.
+    let emailSent = true;
+    try {
+      await sendVerificationEmail({ to: email, username, token });
+    } catch (mailError) {
+      emailSent = false;
+      console.error("Verification email failed:", mailError);
+      try {
+        await db.collection("users").updateOne({ email }, { $set: { emailVerifySentAt: null } });
+      } catch (resetError) {
+        console.error("Could not clear emailVerifySentAt:", resetError);
+      }
+    }
+
+    return res.status(201).json({ message: "User created successfully", emailSent });
 
   } catch (error) {
     console.error("Registration Error:", error);

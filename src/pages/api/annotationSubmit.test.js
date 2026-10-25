@@ -59,7 +59,8 @@ function setupMocks({ hasSession = true, userRole = "user" } = {}) {
   );
 
   const usersCol = createMockCollection({
-    findOne: vi.fn().mockResolvedValue({ role: userRole }),
+    // Confirmed address (S9), so the email gate stays open
+    findOne: vi.fn().mockResolvedValue({ role: userRole, emailVerifiedAt: new Date("2026-10-01T00:00:00Z") }),
   });
   const sessionsCol = createMockCollection({
     findOne: vi.fn().mockResolvedValue({ userId: MOCK_USER_ID, status: "active", imageIDs: [] }),
@@ -378,7 +379,7 @@ describe("POST /api/annotationSubmit", () => {
       expect(res._json.message).toBe("Every box must have a category from the list.");
       expect(mocks.usersCol.findOne).toHaveBeenCalledWith(
         expect.objectContaining({ _id: expect.anything() }),
-        { projection: { role: 1 } }
+        { projection: { role: 1, emailVerifiedAt: 1 } }
       );
       expect(mocks.sessionsCol.findOne).not.toHaveBeenCalled();
       expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
@@ -703,5 +704,36 @@ describe("POST /api/annotationSubmit", () => {
       expect(update.$set.sceneLevel).toBeNull();
       expect(update.$set).not.toHaveProperty("sceneScale");
     });
+  });
+});
+
+// Email verification before annotation (S9, decided 21 Oct 2026)
+describe("POST /api/annotationSubmit email verification", () => {
+  it("refuses a contributor whose address is not confirmed, before validating or writing anything", async () => {
+    const mocks = setupMocks();
+    mocks.usersCol.findOne.mockResolvedValue({ role: "user", emailVerifiedAt: null });
+    const res = createMockRes();
+    await handler(createMockReq({ body: validBody }), res);
+    expect(res._status).toBe(403);
+    expect(res._json.code).toBe("EMAIL_NOT_VERIFIED");
+    expect(mocks.sessionsCol.findOne).not.toHaveBeenCalled();
+    expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+  });
+
+  it("never refuses an annotator, confirmed or not", async () => {
+    const mocks = setupMocks({ userRole: "annotator" });
+    mocks.usersCol.findOne.mockResolvedValue({ role: "annotator", emailVerifiedAt: null });
+    const res = createMockRes();
+    await handler(createMockReq({ body: validBody }), res);
+    expect(res._status).not.toBe(403);
+  });
+
+  it("reads the role and the confirmation together from the database", async () => {
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    expect(mocks.usersCol.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: expect.anything() }),
+      { projection: { role: 1, emailVerifiedAt: 1 } }
+    );
   });
 });

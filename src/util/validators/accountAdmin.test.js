@@ -118,8 +118,8 @@ describe("summarizeAccount", () => {
     const row = summarizeAccount({ ...contributor, createdAt: "2026-09-30", age: "20-24" }, 7, ADMIN_ID);
     expect(row).toEqual({
       id: contributor._id, username: "rans_test", email: "t@example.com", role: "user", roleLabel: "Contributor",
-      createdAt: "2026-09-30", profileComplete: true, isPilot: false, annotations: 7, activeSession: false, isSelf: false,
-      editable: true,
+      createdAt: "2026-09-30", profileComplete: true, isPilot: false, emailVerified: false, annotations: 7,
+      activeSession: false, isSelf: false, editable: true,
     });
     expect(summarizeAccount(contributor, 0, ADMIN_ID, true).activeSession).toBe(true);
   });
@@ -133,6 +133,14 @@ describe("summarizeAccount", () => {
     expect(summarizeAccount({ _id: "c".repeat(24) })).toMatchObject({
       username: null, email: null, role: "user", profileComplete: false, annotations: 0, isSelf: false, editable: true,
     });
+  });
+
+  // Email verification (S9): Confirmed or Not confirmed on the tab
+  it("reports the email address confirmed only when emailVerifiedAt is set", () => {
+    expect(summarizeAccount({ ...contributor, emailVerifiedAt: new Date("2026-10-25") }).emailVerified).toBe(true);
+    for (const value of [undefined, null]) {
+      expect(summarizeAccount({ ...contributor, emailVerifiedAt: value }).emailVerified).toBe(false);
+    }
   });
 
   // SIGNUP_PILOT (S11, 23 Oct 2026): the Pilot badge

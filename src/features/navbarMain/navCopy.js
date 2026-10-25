@@ -43,10 +43,14 @@ const SHORTCUT_HIDDEN_ON = new Set(["/contribute", "/contribute/annotate", "/con
  * Until 16 Oct 2026 the phone menu used a different rule from the laptop bar
  * and showed the shortcut on the dashboard and the annotation page as well.
  * One rule now serves both.
+ *
+ * While a contributor's email address is not confirmed (S9) only Resume
+ * Tutorial is offered: a session cannot start yet, and the dashboard says why.
  */
-export function annotateShortcut({ pathname, profileIncomplete, hasCompletedDemo, isTutorialSession, hasActiveSession }) {
+export function annotateShortcut({ pathname, profileIncomplete, hasCompletedDemo, isTutorialSession, hasActiveSession, needsEmailVerification = false }) {
   if (SHORTCUT_HIDDEN_ON.has(pathname) || profileIncomplete || !hasCompletedDemo) return null;
   if (isTutorialSession) return { href: "/contribute/tutorial", label: NAV_COPY.resumeTutorial };
+  if (needsEmailVerification) return null;
   return { href: "/contribute/annotate", label: hasActiveSession ? NAV_COPY.resumeSession : NAV_COPY.annotate };
 }
 
@@ -57,10 +61,12 @@ export const NOTIFICATION_HISTORY_LIMIT = 3;
  * Tags the server writes to a user's `activities` feed, and how the tray shows
  * each. Registration and profile completion keep the old tray's wording ("Welcome
  * to Imprint!", "Profile completed"). A session's own line is shown as stored.
+ * "email" is written when the address is confirmed (S9, /api/auth/verify-email).
  */
 const ACTIVITY_VIEWS = {
   register: () => ({ title: "Welcome to Imprint!", text: "Thanks for joining our community." }),
   profile: () => ({ title: "Profile completed", text: "You're all set to start mapping." }),
+  email: () => ({ title: "Email confirmed", text: "Your email address is confirmed." }),
   "Annotation Session Done": (a) => ({ title: "Session finished", text: a.activity }),
   "Session Abandoned": (a) => {
     // Stored as "Abandoned session (2 annotations finished)"
@@ -72,7 +78,7 @@ const ACTIVITY_VIEWS = {
 /**
  * The tray's history (16 Oct 2026): the most recent entries of the user's
  * activity feed (users.activities, written by register, choose-username,
- * complete-profile, annotationComplete and annotationAbandon, read through
+ * complete-profile, verify-email, annotationComplete and annotationAbandon, read through
  * /api/extractUser), newest first, at most `limit`. The old tray's history
  * was static text that every user saw. Entries without a usable date or text
  * are skipped.

@@ -5,7 +5,8 @@ import { createRoot } from "react-dom/client";
 import { readSessionData, readTotalCount, readCurrentCount } from "@/util/sessionCache";
 
 const reload = vi.fn();
-vi.mock("next/router", () => ({ useRouter: () => ({ reload }) }));
+const replace = vi.fn();
+vi.mock("next/router", () => ({ useRouter: () => ({ reload, replace }) }));
 vi.mock("next/link", () => ({ default: ({ children }) => children }));
 
 import AnnotationSessionSelection from "./selection";
@@ -34,6 +35,7 @@ function serve(served) {
 beforeEach(() => {
   window.localStorage.clear();
   reload.mockClear();
+  replace.mockClear();
   host = document.createElement("main");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -69,5 +71,45 @@ describe("starting a session", () => {
     serve(50);
     await start(50);
     expect(readTotalCount()).toBe(50);
+  });
+});
+
+// Email verification before annotation (S9, decided 21 Oct 2026)
+describe("a contributor whose email address is not confirmed", () => {
+  const refuse = () => ({
+    ok: false,
+    status: 403,
+    json: async () => ({ message: "Confirm your email address to start annotating.", code: "EMAIL_NOT_VERIFIED" }),
+  });
+
+  it("is sent to Check your inbox as the picker opens", async () => {
+    globalThis.fetch = vi.fn(async () => refuse());
+    await act(async () => {
+      root.render(<AnnotationSessionSelection />);
+    });
+    expect(replace).toHaveBeenCalledWith("/check-email");
+  });
+
+  it("is sent to Check your inbox from Start, with no alert and no session saved", async () => {
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      if (!body.annotationTotalCount) return { ok: true, json: async () => ({ imgRecords: [], sessionSizes: [5, 10, 20, 40], isAnnotator: false }) };
+      return refuse();
+    });
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    await start(10);
+    expect(replace).toHaveBeenCalledWith("/check-email");
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(readTotalCount()).toBeNull();
+    expect(reload).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it("is not redirected by any other refusal", async () => {
+    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 403, json: async () => ({ message: "Forbidden" }) }));
+    await act(async () => {
+      root.render(<AnnotationSessionSelection />);
+    });
+    expect(replace).not.toHaveBeenCalled();
   });
 });

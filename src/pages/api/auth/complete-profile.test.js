@@ -212,3 +212,26 @@ describe("POST /api/auth/complete-profile with SIGNUP_PILOT", () => {
     expect(update.$setOnInsert).not.toHaveProperty("isPilot");
   });
 });
+
+// Email verification (S9): only a Google account is created here, and Google
+// has verified the address
+describe("POST /api/auth/complete-profile email verification", () => {
+  it("creates the account confirmed, on insert only, so an existing account is never confirmed here", async () => {
+    const mocks = setupMocks();
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert.emailVerifiedAt).toBeInstanceOf(Date);
+    expect(update.$set).not.toHaveProperty("emailVerifiedAt");
+  });
+
+  it("matches and stores the address trimmed and lowercased, in both writes", async () => {
+    getServerSession.mockResolvedValue(mockAuthSession({ email: "Test@Example.COM " }));
+    const usersCol = createMockCollection();
+    connectToDatabase.mockResolvedValue({ db: createMockDb({ users: usersCol }) });
+    await handler(createMockReq({ body: validBody }), createMockRes());
+    const [first, second] = usersCol.updateOne.mock.calls;
+    expect(first[0]).toEqual({ email: "test@example.com" });
+    expect(first[1].$set.email).toBe("test@example.com");
+    expect(second[0]).toEqual({ email: "test@example.com" });
+  });
+});

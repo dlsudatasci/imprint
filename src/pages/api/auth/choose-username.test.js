@@ -200,3 +200,29 @@ describe("POST /api/auth/choose-username with SIGNUP_PILOT", () => {
     }
   });
 });
+
+// Email verification (S9): Google has verified the address
+describe("POST /api/auth/choose-username email verification", () => {
+  const body = { username: "newuser", consentAgreed: true, ageConfirmed: true };
+
+  it("creates a Google account confirmed, on insert only, so an existing account is never confirmed here", async () => {
+    const mocks = setupMocks();
+    const before = Date.now();
+    await handler(createMockReq({ body }), createMockRes());
+    const [, update] = mocks.usersCol.updateOne.mock.calls[0];
+    expect(update.$setOnInsert.emailVerifiedAt).toBeInstanceOf(Date);
+    expect(update.$setOnInsert.emailVerifiedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(update.$set).not.toHaveProperty("emailVerifiedAt");
+  });
+
+  it("matches and stores the address trimmed and lowercased", async () => {
+    getServerSession.mockResolvedValue(mockAuthSession({ email: " Test@Example.COM" }));
+    const usersCol = createMockCollection({ findOne: vi.fn().mockResolvedValue(null) });
+    connectToDatabase.mockResolvedValue({ db: createMockDb({ users: usersCol }) });
+    await handler(createMockReq({ body }), createMockRes());
+    expect(usersCol.findOne.mock.calls[0][0]).toEqual({ username: "newuser", email: { $ne: "test@example.com" } });
+    const [filter, update] = usersCol.updateOne.mock.calls[0];
+    expect(filter).toEqual({ email: "test@example.com" });
+    expect(update.$set.email).toBe("test@example.com");
+  });
+});

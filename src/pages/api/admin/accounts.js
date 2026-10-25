@@ -2,7 +2,8 @@
  * /api/admin/accounts — the admin Accounts tab (added 1 Oct 2026).
  *
  * GET   every account with username, email, role, sign-up date, whether the
- *       profile is complete, whether it is a pilot account (isPilot, S11), and
+ *       profile is complete, whether it is a pilot account (isPilot, S11),
+ *       whether the email address is confirmed (emailVerified, S9), and
  *       number of annotations, plus signupRole: the role new sign-ups get from
  *       the server's SIGNUP_ROLE setting (6 Oct 2026), so the tab can warn while
  *       every new account is an annotator, and signupPilot: whether the
@@ -67,7 +68,7 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const users = await db
         .collection("users")
-        .find({}, { projection: { username: 1, email: 1, role: 1, createdAt: 1, age: 1, isPilot: 1 } })
+        .find({}, { projection: { username: 1, email: 1, role: 1, createdAt: 1, age: 1, isPilot: 1, emailVerifiedAt: 1 } })
         .sort({ createdAt: -1 })
         .toArray();
       const perUser = await db

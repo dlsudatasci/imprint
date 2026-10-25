@@ -377,6 +377,7 @@ export default function TutorialPage({ isAnnotator = false }) {
         }
 
         clearSession();
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- kept as a full page load, as it was before the Next.js upgrade brought this rule (S7)
         window.location.href = "/contribute";
         return;
       }

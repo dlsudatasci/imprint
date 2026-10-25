@@ -9,6 +9,8 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+# Yarn only: yarn.lock is the lockfile, so an npm one is never committed (26 Oct 2026)
+package-lock.json
 
 # testing
 /coverage

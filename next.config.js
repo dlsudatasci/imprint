@@ -19,6 +19,11 @@ const nextConfig = {
   // anyone read the original source. Server-side stack traces are unaffected.
   productionBrowserSourceMaps: false,
 
+  // From Next.js 16.3, `next dev` writes a managed block into AGENTS.md at the
+  // project root whenever it detects an AI coding agent. Off, so the dev server
+  // never adds or changes files in the repository (S7, upgrade to 16.4).
+  agentRules: false,
+
   // No `eslint` key: Next 16 removed it along with `next lint`, and rejects it as
   // an unrecognized option. `next build` no longer runs ESLint at all, which is
   // what `ignoreDuringBuilds: true` used to buy us. Linting stays a separate step

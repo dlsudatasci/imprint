@@ -21,6 +21,10 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Outlines } from '@react-three/drei';
 import * as THREE from 'three';
 import CrayonFilters from './CrayonFilters';
+import { quietClockDeprecation } from '@/util/threeConsole';
+
+// Before the <Canvas> below mounts and fiber makes its THREE.Clock (26 Oct 2026)
+quietClockDeprecation();
 
 /**
  * Palette, drawn from SidewalkLoader so the two read as one world.

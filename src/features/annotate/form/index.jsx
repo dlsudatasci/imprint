@@ -261,6 +261,7 @@ export default function AnnotateForm({
             // The session cache is kept (8 Oct 2026): it holds the current
             // image's unsubmitted boxes and answers, which Resume restores on
             // this device. The tool saves a waiting edit as the page is left.
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full page load on purpose: the waiting edit is saved on pagehide (S7)
             window.location.href = "/contribute";
           } catch (e) {
             console.error(e);
@@ -284,6 +285,7 @@ export default function AnnotateForm({
               await fetch("/api/annotationAbandon", { method: "POST" });
             }
             clearSession();
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- kept as a full page load, as it was before the Next.js upgrade brought this rule (S7)
             window.location.href = "/contribute";
           } catch (e) {
             console.error(e);

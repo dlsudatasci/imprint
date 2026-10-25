@@ -148,6 +148,14 @@ describe("deploy/nginx.conf request limit (S8)", () => {
     expect(existsSync(`${root}/src/pages/api/auth/[...nextauth].js`)).toBe(true);
   });
 
+  // S13: room for the app's response headers, a safety margin for the login cookie
+  it("gives the app's response headers room, for the whole server", () => {
+    const lines = server.map((d) => d.words.join(" "));
+    expect(lines).toContain("proxy_buffer_size 16k");
+    expect(lines).toContain("proxy_buffers 8 16k");
+    expect(lines).toContain("proxy_busy_buffers_size 32k");
+  });
+
   it("parses the file it checks", () => {
     expect(locations.map((l) => l.words.slice(1).join(" "))).toEqual(expect.arrayContaining(["/", "/_next/static/", "= /api/health"]));
   });

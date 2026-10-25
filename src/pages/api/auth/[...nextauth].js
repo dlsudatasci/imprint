@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/util/mongodb";
 import { normalizeEmail, needsEmailVerification } from "@/util/validators/emailVerification.mjs";
+import { toSessionUser, withoutPrivateFields } from "@/util/sessionUser";
 
 export const authOptions = {
   providers: [
@@ -99,6 +100,12 @@ export const authOptions = {
      *   - pages that can't tolerate an out-of-date value, such as the
      *     dashboard's tutorial flag and annotation total, read the database
      *     directly on the server instead
+     *
+     * The token holds only the fields in SESSION_USER_FIELDS (src/util/
+     * sessionUser.js, S13): the last step on every call cuts token.user down to
+     * them, after the flags below are worked out from the full record. So a
+     * cookie stays small whatever the account's history, and one minted before
+     * S13 with the whole record shrinks on its next request.
      */
     jwt: async ({ token, user, account, trigger, session }) => {
       // Onboarding progress, pushed up from the client after choose-username,
@@ -202,53 +209,27 @@ export const authOptions = {
         }
       }
 
+      // Only the fields the app reads, on every call (S13). This is what keeps
+      // the activity feed, the demographics and the password hash out of the
+      // cookie, and what shrinks a cookie minted before this change.
+      if (token.user) {
+        token.user = toSessionUser(token.user);
+      }
+
       return token;
     },
     
     /**
      * Session Callback — what the browser actually gets to see.
      *
-     * The token carries the whole user document, so this strips it down before
-     * it reaches the client. Two reasons to remove things here:
-     *
-     *   hashedPassword              must never leave the server, full stop
-     *   age, city, mobilityAids,    the demographic and research answers behind
-     *   commuteFrequency,           the study. The UI only needs to know
-     *   educationalAttainment,      *whether* the profile is filled in
-     *   occupation,                 (isProfileIncomplete, computed above),
-     *   walkingFrequency,           not the answers themselves
-     *   accessibilityFamiliarity,
-     *   priorAnnotationExperience
-     *   activities                  potentially hundreds of entries; the
-     *                               dashboard fetches them separately rather
-     *                               than paying for them on every request,
-     *                               since the session rides along in a cookie
-     *   emailVerifyToken,           the hash behind the confirmation link and
-     *   emailVerifyExpire,          its timing (S9). Only the server needs them
-     *   emailVerifySentAt
-     *
-     * Denylist rather than allowlist, which means a new field added to the user
-     * document is exposed by default — worth checking when you add one.
+     * token.user already holds only the fields in SESSION_USER_FIELDS (the jwt
+     * callback above, S13), so it is passed on as it is. The password hash, the
+     * activity feed and the S9 token fields are removed once more anyway
+     * (NEVER_IN_SESSION), in case one is ever added to the allowlist by mistake.
      */
     session: async ({ session, token }) => {
       if (token.user) {
-        const sessionUser = { ...token.user };
-        delete sessionUser.age;
-        delete sessionUser.city;
-        delete sessionUser.hashedPassword;
-        delete sessionUser.mobilityAids;
-        delete sessionUser.commuteFrequency;
-        delete sessionUser.activities;
-        delete sessionUser.educationalAttainment;
-        delete sessionUser.occupation;
-        delete sessionUser.walkingFrequency;
-        delete sessionUser.accessibilityFamiliarity;
-        delete sessionUser.priorAnnotationExperience;
-        delete sessionUser.emailVerifyToken;
-        delete sessionUser.emailVerifyExpire;
-        delete sessionUser.emailVerifySentAt;
-
-        session.user = sessionUser;
+        session.user = withoutPrivateFields(token.user);
       }
       return session;
     },

@@ -290,6 +290,25 @@ address's attempts.
 
 ---
 
+## Login cookie size
+
+The login cookie holds only the few fields the app reads about the signed-in
+person (S13, 26 Oct 2026, `src/util/sessionUser.js`). It used to carry the whole
+account record, activity feed included, so an account used a lot got a cookie
+of about 19 KB in five pieces, and nginx answered **502 Bad Gateway** at sign-in
+("upstream sent too big header" in `/var/log/nginx/error.log`). Now it is about
+1 KB, one cookie. A cookie from before the change shrinks on its next request.
+
+`deploy/nginx.conf` also raises nginx's buffer for the app's response headers
+(`proxy_buffer_size`, `proxy_buffers`, `proxy_busy_buffers_size`) as a safety
+margin. It is installed with the rate limit above: same file, same steps.
+
+After deploying, sign in with the account that got 502. In the browser's
+cookies for the site, `next-auth.session-token` should be a single cookie, with
+no `.0` and `.1` pieces.
+
+---
+
 ## Known gaps
 
 Worth knowing before this carries real users.

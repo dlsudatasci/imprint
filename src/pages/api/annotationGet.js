@@ -15,6 +15,8 @@ import {
   CONTRIBUTOR_DEPLOYMENT_MATCH,
   toClientImage,
   annotatorModelDevFirst,
+  toModelDevCandidates,
+  pickAnnotatorModelDev,
 } from "@/util/validators/annotationGet";
 import { SCENE_SCALE, toCurrentScale } from "@/util/validators/sceneScale.mjs";
 import { needsEmailVerification, EMAIL_NOT_VERIFIED_RESPONSE } from "@/util/validators/emailVerification.mjs";
@@ -39,7 +41,9 @@ import { needsEmailVerification, EMAIL_NOT_VERIFIED_RESPONSE } from "@/util/vali
  *
  * Who sees what (Step 5, decided 30 Sep 2026):
  *   annotators    reference images first, then model-development images
- *                 (poolStatus "model_dev": the training, validation and test data)
+ *                 (poolStatus "model_dev": the training, validation and test data),
+ *                 the ones no annotator has done before any image twice, with no
+ *                 city shares (S14, 28 Oct 2026, see drawAnnotatorModelDev)
  *   contributors  deployment images (poolStatus "served", not reference) with
  *                 reference images mixed in at one in eight
  *   nobody        reserve images (poolStatus "reserve") until promoted
@@ -94,6 +98,70 @@ async function mergeUserAnnotations(db, userId, imgRecords) {
   }
 
   return imgRecords;
+}
+
+/**
+ * The model-development part of a new annotator session (S14, 28 Oct 2026).
+ * The earlier draw gave every city a share of each session, so finished cities
+ * handed out images a second and third time while 187 images nobody had done
+ * waited in the big cities. Now the images no annotator has completed come
+ * first, those open in nobody else's session before those that are, then the
+ * least-done (pickAnnotatorModelDev has the order).
+ *
+ * "Done" is read from the annotators' completed annotations, not from
+ * annotationCount, which only moves when a session completes. "Open" is
+ * another user's active session: the annotator's own would have been resumed.
+ */
+async function drawAnnotatorModelDev(db, userId, completedImageIDs, requested) {
+  if (requested <= 0) return [];
+
+  const images = await db
+    .collection("Image")
+    .find(
+      { ...ANNOTATOR_MODEL_DEV_MATCH, imageID: { $nin: completedImageIDs } },
+      { projection: { _id: 1, imageID: 1 } }
+    )
+    .toArray();
+  if (images.length === 0) return [];
+
+  const doneRows = await db
+    .collection("annotations")
+    .aggregate([
+      {
+        $match: {
+          source: "annotator",
+          status: "completed",
+          imageID: { $in: images.map((img) => img.imageID) },
+        },
+      },
+      { $group: { _id: "$imageID", count: { $sum: 1 } } },
+    ])
+    .toArray();
+
+  const openSessions = await db
+    .collection("sessions")
+    .find({ status: "active", userId: { $ne: userId } }, { projection: { imageIDs: 1 } })
+    .toArray();
+
+  const picked = pickAnnotatorModelDev({
+    candidates: toModelDevCandidates({
+      images,
+      doneCounts: new Map(doneRows.map((row) => [row._id, row.count])),
+      openImageIds: openSessions.flatMap((s) => s.imageIDs || []),
+      completedImageIDs,
+    }),
+    requested,
+  });
+  if (picked.length === 0) return [];
+
+  // The candidates carry only their ids, so the chosen ones are read in full
+  const full = await db
+    .collection("Image")
+    .find({ _id: { $in: picked.map((img) => img._id) } })
+    .toArray();
+  // Keep the draw's random order: find() returns storage order, roughly by city and frame
+  const byId = new Map(full.map((img) => [String(img._id), img]));
+  return picked.map((img) => byId.get(String(img._id))).filter(Boolean);
 }
 
 const handler = async (req, res) => {
@@ -207,7 +275,10 @@ const handler = async (req, res) => {
       // Annotators complete all 150 reference images before moving on to
       // model-dev images. Both kinds keep their pre-annotation suggestions,
       // which annotators verify (decided 1 Oct 2026). Model-dev images carry
-      // poolStatus "model_dev", which no contributor query matches.
+      // poolStatus "model_dev", which no contributor query matches. Since S14
+      // (28 Oct 2026) the model-dev images nobody has done come before any
+      // image twice and cities get no share: each annotator was asked for 200,
+      // which covers all 1,002 only without repeats (drawAnnotatorModelDev).
 
       // Local testing only: ANNOTATOR_MODEL_DEV_FIRST=true skips the
       // reference images so the whole session is model-dev (see
@@ -242,80 +313,13 @@ const handler = async (req, res) => {
         // Enough reference images to fill the entire session
         imgRecords = refImages;
       } else {
-        // 2. Fill the remainder with model-dev images, city-proportional
-        const remaining = annotationTotalCount - refImages.length;
-
-        const cityDist = await db
-          .collection("Image")
-          .aggregate([
-            {
-              $match: {
-                ...ANNOTATOR_MODEL_DEV_MATCH,
-                imageID: { $nin: completedImageIDs },
-              },
-            },
-            { $group: { _id: "$city", count: { $sum: 1 } } },
-          ])
-          .toArray();
-
-        const totalAvailable = cityDist.reduce((s, c) => s + c.count, 0);
-
-        let modelDevImages = [];
-        if (totalAvailable > 0) {
-          const requested = Math.min(remaining, totalAvailable);
-
-          const allocations = cityDist.map((c) => ({
-            city: c._id,
-            available: c.count,
-            target: Math.min(
-              c.count,
-              Math.max(1, Math.round((c.count / totalAvailable) * requested))
-            ),
-          }));
-
-          let total = allocations.reduce((s, a) => s + a.target, 0);
-          while (total > requested) {
-            allocations.sort((a, b) => b.target - a.target);
-            allocations[0].target--;
-            total--;
-          }
-          while (total < requested) {
-            const expandable = allocations.filter((a) => a.target < a.available);
-            if (expandable.length === 0) break;
-            expandable.sort((a, b) => a.target - b.target);
-            expandable[0].target++;
-            total++;
-          }
-
-          const cityBatches = await Promise.all(
-            allocations
-              .filter((a) => a.target > 0)
-              .map((a) =>
-                db
-                  .collection("Image")
-                  .aggregate([
-                    {
-                      $match: {
-                        city: a.city,
-                        ...ANNOTATOR_MODEL_DEV_MATCH,
-                        imageID: { $nin: completedImageIDs },
-                      },
-                    },
-                    {
-                      $addFields: {
-                        annotationCount: { $ifNull: ["$annotationCount", 0] },
-                        rand: { $rand: {} },
-                      },
-                    },
-                    { $sort: { annotationCount: 1, rand: 1 } },
-                    { $limit: a.target },
-                  ])
-                  .toArray()
-              )
-          );
-
-          modelDevImages = cityBatches.flat();
-        }
+        // 2. Fill the remainder with model-dev images nobody has done first
+        const modelDevImages = await drawAnnotatorModelDev(
+          db,
+          userId,
+          completedImageIDs,
+          annotationTotalCount - refImages.length
+        );
 
         imgRecords = [...refImages, ...modelDevImages];
       }

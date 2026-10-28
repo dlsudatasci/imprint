@@ -85,3 +85,75 @@ export function toClientImage(image) {
 export function annotatorModelDevFirst(env = process.env) {
   return env.NODE_ENV !== "production" && env.ANNOTATOR_MODEL_DEV_FIRST === "true";
 }
+
+function shuffled(items, random) {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/**
+ * The model-development images an annotator may be served, each marked with
+ * what the draw needs (S14, 28 Oct 2026):
+ *
+ *   doneCount      completed annotator annotations on the image, from the
+ *                  `annotations` collection, not annotationCount, which is only
+ *                  incremented when a session completes
+ *   openElsewhere  in another user's active session
+ *   completedByMe  completed by this annotator, so never picked
+ *
+ * `images` are model-development Image documents (at least _id and imageID),
+ * `doneCounts` maps imageID to that count, `openImageIds` holds the Image _ids
+ * of other users' active sessions (as strings or ObjectIds) and
+ * `completedImageIDs` the imageIDs this annotator has completed.
+ */
+export function toModelDevCandidates({ images = [], doneCounts = new Map(), openImageIds = [], completedImageIDs = [] } = {}) {
+  const open = new Set(openImageIds.map(String));
+  const mine = new Set(completedImageIDs);
+  return images
+    .filter(Boolean)
+    .map((img) => ({
+      ...img,
+      doneCount: doneCounts.get(img.imageID) ?? 0,
+      openElsewhere: open.has(String(img._id)),
+      completedByMe: mine.has(img.imageID),
+    }));
+}
+
+/**
+ * Which model-development images go into an annotator's session (S14, 28 Oct
+ * 2026). Each annotator was asked for 200 images, which covers all 1,002 only
+ * if nobody gets an image someone else already did, so the session is filled
+ * in this order:
+ *
+ *   (a) images nobody has done and nobody else has open, in random order
+ *   (b) images nobody has done but someone else has open, so a session is
+ *       never short while untouched images exist
+ *   (c) the least-done images, fewest completed annotator annotations first,
+ *       random among ties
+ *
+ * No city shares: the 1,002 images are fixed, so which annotator does which
+ * city does not change the training set (the earlier city-proportional draw
+ * kept handing out images from finished cities). Candidates the annotator has
+ * completed (`completedByMe`) are never picked. Returns at most `requested`
+ * images, fewer when fewer remain. `random` is there for tests.
+ */
+export function pickAnnotatorModelDev({ candidates = [], requested = 0, random = Math.random } = {}) {
+  const want = toCount(requested);
+  const pool = candidates.filter((c) => c && !c.completedByMe);
+
+  const untouchedFree = pool.filter((c) => !c.doneCount && !c.openElsewhere);
+  const untouchedOpen = pool.filter((c) => !c.doneCount && c.openElsewhere);
+  // Shuffled first, then a stable sort, so ties stay in random order
+  const done = shuffled(pool.filter((c) => c.doneCount > 0), random)
+    .sort((a, b) => a.doneCount - b.doneCount);
+
+  return [
+    ...shuffled(untouchedFree, random),
+    ...shuffled(untouchedOpen, random),
+    ...done,
+  ].slice(0, want);
+}

@@ -1,7 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   GEOMETRY_TOLERANCE_PX,
   TAU_THRESHOLD,
+  IDLE_FLAG_MS,
+  createIdleClock,
+  createAnswerClock,
   filterAnnotationsByTau,
   computeStepTimings,
   computeAnnotatorStepTimings,
@@ -180,6 +183,178 @@ describe("buildSuggestionConfidences", () => {
       { id: "s2", confidence: 0.3, action: "deleted" },
       { id: "s3", confidence: 0.6, action: "modified" },
     ]);
+  });
+});
+
+// The quality-check timing (S10, 28 Oct 2026), with fake timers
+const MINUTE = 60 * 1000;
+
+describe("createIdleClock", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-28T09:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("gives the longest gap between interactions and null under 10 minutes", () => {
+    const clock = createIdleClock();
+    vi.advanceTimersByTime(2000);
+    clock.note();
+    vi.advanceTimersByTime(7000);
+    clock.note();
+    vi.advanceTimersByTime(3000);
+    clock.note();
+    vi.advanceTimersByTime(1000);
+    expect(clock.summarize()).toEqual({ msLongestIdle: 7000, msFromLastIdleToSubmit: null });
+  });
+
+  it("counts the time from mount to the first interaction as a gap", () => {
+    const clock = createIdleClock();
+    vi.advanceTimersByTime(12 * MINUTE);
+    clock.note();
+    vi.advanceTimersByTime(4000);
+    expect(clock.summarize()).toEqual({ msLongestIdle: 12 * MINUTE, msFromLastIdleToSubmit: 4000 });
+  });
+
+  it("flags an idle over 10 minutes followed by a quick submit", () => {
+    const clock = createIdleClock();
+    vi.advanceTimersByTime(30000);
+    clock.note();
+    vi.advanceTimersByTime(11 * MINUTE);
+    clock.note(); // work resumes
+    vi.advanceTimersByTime(1500);
+    clock.note();
+    vi.advanceTimersByTime(1500);
+    expect(clock.summarize()).toEqual({ msLongestIdle: 11 * MINUTE, msFromLastIdleToSubmit: 3000 });
+  });
+
+  it("measures from the interaction that ended the longest gap, not a shorter one after it", () => {
+    const clock = createIdleClock();
+    vi.advanceTimersByTime(15 * MINUTE);
+    clock.note();
+    vi.advanceTimersByTime(MINUTE);
+    clock.note();
+    vi.advanceTimersByTime(MINUTE);
+    const { msLongestIdle, msFromLastIdleToSubmit } = clock.summarize();
+    expect(msLongestIdle).toBe(15 * MINUTE);
+    expect(msFromLastIdleToSubmit).toBe(2 * MINUTE);
+  });
+
+  it("is null at exactly 10 minutes, a number just over", () => {
+    const exact = createIdleClock();
+    vi.advanceTimersByTime(IDLE_FLAG_MS);
+    exact.note();
+    expect(exact.summarize().msFromLastIdleToSubmit).toBeNull();
+
+    const over = createIdleClock();
+    vi.advanceTimersByTime(IDLE_FLAG_MS + 1);
+    over.note();
+    vi.advanceTimersByTime(200);
+    expect(over.summarize()).toEqual({ msLongestIdle: IDLE_FLAG_MS + 1, msFromLastIdleToSubmit: 200 });
+  });
+
+  it("counts the gap from the last interaction to submit, ending at submit", () => {
+    const clock = createIdleClock();
+    vi.advanceTimersByTime(5000);
+    clock.note();
+    vi.advanceTimersByTime(20 * MINUTE);
+    expect(clock.summarize()).toEqual({ msLongestIdle: 20 * MINUTE, msFromLastIdleToSubmit: 0 });
+  });
+
+  it("gives the whole time on the image when nothing was touched, and does not change on summarize", () => {
+    const clock = createIdleClock();
+    vi.advanceTimersByTime(4000);
+    expect(clock.summarize()).toEqual({ msLongestIdle: 4000, msFromLastIdleToSubmit: null });
+    vi.advanceTimersByTime(1000);
+    clock.note();
+    expect(clock.summarize()).toEqual({ msLongestIdle: 5000, msFromLastIdleToSubmit: null });
+  });
+
+  it("takes explicit times and ignores one earlier than the last", () => {
+    const clock = createIdleClock(1000);
+    clock.note(4000);
+    clock.note(2000);
+    clock.note(5000);
+    expect(clock.summarize(6000)).toEqual({ msLongestIdle: 3000, msFromLastIdleToSubmit: null });
+  });
+});
+
+describe("createAnswerClock", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-28T09:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("times each suggestion from when it was shown to its first answer", () => {
+    const clock = createAnswerClock();
+    clock.shown("s1");
+    clock.shown("s2");
+    vi.advanceTimersByTime(800);
+    clock.answered("s1");
+    vi.advanceTimersByTime(2400);
+    clock.answered("s2");
+    expect(clock.msToAnswer("s1")).toBe(800);
+    expect(clock.msToAnswer("s2")).toBe(3200);
+  });
+
+  it("keeps the first answer and the first time shown", () => {
+    const clock = createAnswerClock();
+    clock.shown("s1");
+    vi.advanceTimersByTime(1000);
+    clock.shown("s1");
+    vi.advanceTimersByTime(500);
+    clock.answered("s1");
+    vi.advanceTimersByTime(5000);
+    clock.answered("s1");
+    expect(clock.msToAnswer("s1")).toBe(1500);
+  });
+
+  it("is null for a suggestion never answered, never shown, or answered before it was shown", () => {
+    const clock = createAnswerClock();
+    clock.shown("unanswered");
+    clock.answered("never-shown");
+    clock.shown("restored");
+    clock.unknown("restored");
+    vi.advanceTimersByTime(700);
+    clock.answered("restored");
+    expect(clock.msToAnswer("unanswered")).toBeNull();
+    expect(clock.msToAnswer("never-shown")).toBeNull();
+    expect(clock.msToAnswer("restored")).toBeNull();
+    expect(clock.msToAnswer("missing")).toBeNull();
+  });
+
+  it("does not let unknown undo an answer already timed", () => {
+    const clock = createAnswerClock();
+    clock.shown("s1");
+    vi.advanceTimersByTime(900);
+    clock.answered("s1");
+    clock.unknown("s1");
+    expect(clock.msToAnswer("s1")).toBe(900);
+  });
+});
+
+describe("buildSuggestionConfidences with msToAnswer (S10)", () => {
+  it("adds each answered suggestion's time to answer, null where unknown", () => {
+    const times = { s1: 1200, s2: null };
+    const result = buildSuggestionConfidences(
+      [
+        makeSuggestion({ id: "s1" }),
+        makeSuggestion({ id: "s2", isRejected: true, selected: false, comment: "not_an_object" }),
+        makeSuggestion({ id: "s3", selected: false, isRejected: false }),
+      ],
+      { msToAnswer: (id) => times[id] ?? null }
+    );
+    expect(result).toEqual([
+      { id: "s1", confidence: 0.85, action: "accepted", msToAnswer: 1200 },
+      { id: "s2", confidence: 0.85, action: "not_an_object", msToAnswer: null },
+    ]);
+  });
+
+  it("leaves msToAnswer out when no times are given, as for annotators", () => {
+    const result = buildSuggestionConfidences([makeSuggestion()], {});
+    expect(result[0]).not.toHaveProperty("msToAnswer");
+    expect(buildSuggestionConfidences([makeSuggestion()])[0]).not.toHaveProperty("msToAnswer");
   });
 });
 

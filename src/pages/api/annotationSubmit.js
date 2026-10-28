@@ -15,7 +15,7 @@ import {
   hasEmptyBox,
 } from "@/util/validators/annotationSubmit";
 import { filterAnnotationsByTau, TAU_THRESHOLD } from "@/util/validators/telemetryPayload";
-import { sanitizeDeviceTelemetry, classifyBrowser } from "@/util/validators/deviceTelemetry";
+import { sanitizeDeviceTelemetry, sanitizeQcTelemetry, classifyBrowser } from "@/util/validators/deviceTelemetry";
 import {
   requiresSidewalkMask,
   normalizeSidewalkMask,
@@ -241,9 +241,10 @@ const handler = async (req, res) => {
         // the server's (9 Oct 2026). A client timestamp is dropped:
         // logTelemetryEvent sets its own. Device fields are kept only with
         // allowed values, and the browser family comes from the User-Agent
-        // header, which is never stored.
+        // header, which is never stored. The quality-check timing (S10) is
+        // kept the same way, and only for contributors.
         // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
-        const { timestamp, ...clientTelemetry } = sanitizeDeviceTelemetry(telemetry);
+        const { timestamp, ...clientTelemetry } = sanitizeQcTelemetry(sanitizeDeviceTelemetry(telemetry), { isAnnotator });
         await logTelemetryEvent({
           ...clientTelemetry,
           event: "IMAGE_SUBMITTED",

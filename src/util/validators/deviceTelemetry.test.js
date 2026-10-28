@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { summarizeInputTypes, classifyDevice, classifyBrowser, sanitizeDeviceTelemetry, isPhone } from "./deviceTelemetry";
+import { summarizeInputTypes, classifyDevice, classifyBrowser, sanitizeDeviceTelemetry, sanitizeQcTelemetry, QC_FIELD_RULES, isPhone } from "./deviceTelemetry";
 
 /** Device and input telemetry for each submitted image (9 Oct 2026). */
 const UA = {
@@ -124,3 +124,85 @@ describe("full-screen telemetry", () => {
   });
 });
 
+
+// The quality-check timing (S10, 28 Oct 2026)
+describe("sanitizeQcTelemetry", () => {
+  const WEEK = 7 * 86400000;
+  const good = {
+    msLongestIdle: 660000,
+    msFromLastIdleToSubmit: 3000,
+    suggestionConfidences: [
+      { id: "s1", confidence: 0.9, action: "accepted", msToAnswer: 800 },
+      { id: "s2", confidence: 0.4, action: "deleted", msToAnswer: null },
+      { id: "s3", confidence: 0.2, action: "hidden_below_tau", msToAnswer: null },
+    ],
+  };
+
+  it("names the two image-level fields", () => {
+    expect(Object.keys(QC_FIELD_RULES)).toEqual(["msLongestIdle", "msFromLastIdleToSubmit"]);
+  });
+
+  it("keeps whole milliseconds and null, and passes other telemetry through", () => {
+    expect(sanitizeQcTelemetry({ ...good, imageDurationMs: 700000 })).toEqual({ ...good, imageDurationMs: 700000 });
+    expect(sanitizeQcTelemetry({ msLongestIdle: 0, msFromLastIdleToSubmit: null })).toEqual({ msLongestIdle: 0, msFromLastIdleToSubmit: null });
+    expect(sanitizeQcTelemetry({ msLongestIdle: WEEK, msFromLastIdleToSubmit: WEEK })).toEqual({ msLongestIdle: WEEK, msFromLastIdleToSubmit: WEEK });
+  });
+
+  it("drops fractions, negatives, strings, NaN and anything over a week", () => {
+    for (const bad of [1.5, -1, "3000", NaN, Infinity, WEEK + 1, true, {}]) {
+      const out = sanitizeQcTelemetry({ msLongestIdle: bad, msFromLastIdleToSubmit: bad });
+      expect(out).not.toHaveProperty("msLongestIdle");
+      expect(out).not.toHaveProperty("msFromLastIdleToSubmit");
+    }
+    // null means "not over 10 minutes" for the second field only
+    expect(sanitizeQcTelemetry({ msLongestIdle: null })).toEqual({});
+  });
+
+  it("drops a bad msToAnswer from its entry and keeps the rest of the entry", () => {
+    const out = sanitizeQcTelemetry({
+      suggestionConfidences: [
+        { id: "s1", action: "accepted", msToAnswer: -5 },
+        { id: "s2", action: "accepted", msToAnswer: "fast" },
+        { id: "s3", action: "accepted", msToAnswer: 250.5 },
+        { id: "s4", action: "accepted", msToAnswer: 250 },
+        { id: "s5", action: "accepted" },
+      ],
+    });
+    expect(out.suggestionConfidences).toEqual([
+      { id: "s1", action: "accepted" },
+      { id: "s2", action: "accepted" },
+      { id: "s3", action: "accepted" },
+      { id: "s4", action: "accepted", msToAnswer: 250 },
+      { id: "s5", action: "accepted" },
+    ]);
+  });
+
+  it("drops every quality-check field for annotators", () => {
+    const out = sanitizeQcTelemetry({ ...good, msObjectStep: 4000 }, { isAnnotator: true });
+    expect(out).not.toHaveProperty("msLongestIdle");
+    expect(out).not.toHaveProperty("msFromLastIdleToSubmit");
+    expect(out.msObjectStep).toBe(4000);
+    expect(out.suggestionConfidences).toEqual([
+      { id: "s1", confidence: 0.9, action: "accepted" },
+      { id: "s2", confidence: 0.4, action: "deleted" },
+      { id: "s3", confidence: 0.2, action: "hidden_below_tau" },
+    ]);
+  });
+
+  it("leaves a non-array suggestionConfidences and odd entries alone, gives {} for anything not an object", () => {
+    expect(sanitizeQcTelemetry({ suggestionConfidences: "x" })).toEqual({ suggestionConfidences: "x" });
+    expect(sanitizeQcTelemetry({ suggestionConfidences: [null, 3] })).toEqual({ suggestionConfidences: [null, 3] });
+    expect(sanitizeQcTelemetry("text")).toEqual({});
+    expect(sanitizeQcTelemetry([1])).toEqual({});
+    expect(sanitizeQcTelemetry(null)).toEqual({});
+  });
+
+  it("does not change the telemetry it was given", () => {
+    const input = JSON.parse(JSON.stringify(good));
+    input.msLongestIdle = -1;
+    input.suggestionConfidences[0].msToAnswer = -1;
+    const copy = JSON.parse(JSON.stringify(input));
+    sanitizeQcTelemetry(input, { isAnnotator: true });
+    expect(input).toEqual(copy);
+  });
+});

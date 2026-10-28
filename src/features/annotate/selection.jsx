@@ -143,7 +143,8 @@ export default function AnnotationSessionSelection() {
                 <SessionSizeOptions options={options} selected={selected} onSelect={setSelected} disabled={loading} />
 
                 {/* Action Buttons */}
-                <div className="flex flex-col sm:flex-row justify-center gap-4 mt-10">
+                {/* Start Session above Cancel on a phone, Cancel first from 640 px (28 Oct 2026) */}
+                <div className="flex flex-col-reverse sm:flex-row justify-center gap-4 mt-10">
                   {/* tabIndex -1: Tab stops on the Button, not the link and the Button (17 Oct 2026) */}
                   <Link
                     href={loading ? "" : "/contribute"}

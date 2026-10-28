@@ -37,7 +37,7 @@ export const TRAY_COPY = Object.freeze({
   // The top of the answers sheet on a phone or tablet (9 Oct 2026)
   next: "Next",
   // The first row of the sheet, beside Show all and Hide all (14 Oct 2026)
-  stepHeading: "Step 1: Identify Objects",
+  stepHeading: "Step 1: Identify Objects and Obstructions",
   noObjectsTouch: "No suggestions in this image. Tap Add box for any object the model missed.",
 });
 

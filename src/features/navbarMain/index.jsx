@@ -9,6 +9,7 @@ import { useScrolled } from "@/hooks/useScrolled";
 import { useSession, signOut } from "next-auth/react";
 import { LogOutIcon, MenuIcon, CloseIcon, AlertIcon, Container } from "@/ui";
 import { clearSession, readTotalCount, readCurrentCount, readTutorialFlag } from "@/util/sessionCache";
+import { syncCachedSession } from "@/util/syncCachedSession";
 import { NAV_COPY as COPY, PUBLIC_LINKS, annotateShortcut, notificationHistory, historyDate } from "./navCopy";
 
 /**
@@ -71,6 +72,15 @@ export default function Nav({ sticky = false }) {
       } else {
         setHasActiveSession(true);
         setIsTutorialSession(false);
+        // Then ask the server: the session may have been finished or stopped
+        // on another device since (27 Oct 2026)
+        let stale = false;
+        syncCachedSession().then((synced) => {
+          if (!stale && synced) setHasActiveSession(synced.active);
+        });
+        return () => {
+          stale = true;
+        };
       }
       return;
     }
@@ -325,7 +335,7 @@ export default function Nav({ sticky = false }) {
             <Container as="ul" className="m-0 list-none py-2">
               {PUBLIC_LINKS.map((l) => (
                 <li key={l.href}>
-                  <NavLink href={l.href} onClick={closeMenu} className="flex min-h-[48px] items-center text-base border-b border-line-card">
+                  <NavLink href={l.href} onClick={closeMenu} variant="menu" className="flex min-h-[48px] items-center text-base border-b border-line-card">
                     {l.label}
                   </NavLink>
                 </li>

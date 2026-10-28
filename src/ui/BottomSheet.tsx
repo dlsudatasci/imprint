@@ -306,7 +306,9 @@ export default function BottomSheet({ id, snap, onSnapChange, header, children, 
       <div
         ref={footerRef}
         inert={footerAway}
-        className="absolute inset-x-0 bottom-0 z-20 pointer-events-auto bg-surface border-t border-line px-4 pt-3"
+        // Nothing in it (a box open on the first photo, 28 Oct 2026): not
+        // shown, so it measures 0 and the sheet's points leave it out
+        className={`absolute inset-x-0 bottom-0 z-20 pointer-events-auto bg-surface border-t border-line px-4 pt-3${footer ? "" : " hidden"}`}
         style={{
           paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))",
           transform: footerShift > 0 ? `translateY(${footerShift}px)` : undefined,

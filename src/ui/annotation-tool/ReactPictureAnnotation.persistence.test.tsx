@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import ReactPictureAnnotation, { SESSION_CHANGED_MESSAGE, SESSION_CHANGED_RELOAD_MS } from "./ReactPictureAnnotation";
+import ReactPictureAnnotation, { SESSION_CHANGED_MESSAGE, SESSION_CHANGED_RELOAD_MS, ADD_BOX_COPY, ADD_BOX_HINT_MS } from "./ReactPictureAnnotation";
 import { readSessionData, writeSession, readCurrentCount, writeCurrentCount } from "@/util/sessionCache";
 import { LOUPE_SIZE_PX, LOUPE_BOX_GAP_PX, LOUPE_MARGIN_PX, LOUPE_FINGER_CLEAR_PX } from "./loupe";
 import { PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
@@ -1373,7 +1373,8 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     expect(sheet()!.textContent).toContain("Keep");
     expect(tool.state.sheetSnap).toBe("panel");
     expect(tool.selectedId).toBe("a-car");
-    expect(submit().closest("[inert]")).toBeNull();
+    // Next is not there while the box is open (28 Oct 2026)
+    expect(Array.from(host.querySelectorAll("button")).some((b) => /^(Next|Finish)/.test(b.textContent?.trim() ?? ""))).toBe(false);
     // And going in with it open puts the sheet down again
     act(() => root!.render(element({ isAnnotator: true, layout: "sheet", askSidewalk: true, focus: true, onExitFocus })));
     expect(tool.state.sheetSnap).toBe("collapsed");
@@ -1409,7 +1410,8 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     expect(canvas()).toBe(canvasBefore);
     expect(sheet()).toBe(sheetBefore);
     expect(host.querySelector("[data-open-sheet]")).toBeNull();
-    expect(submit().closest("[inert]")).toBeNull();
+    // Next is not there while the box is open (28 Oct 2026)
+    expect(Array.from(host.querySelectorAll("button")).some((b) => /^(Next|Finish)/.test(b.textContent?.trim() ?? ""))).toBe(false);
     act(() => button(scroller, "Keep")!.click());
     expect(data(tool, "a-car").selected).toBe(true);
     expect(tool.state.sheetSnap).toBe("collapsed");
@@ -2155,8 +2157,9 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
     expect(alert.textContent).toBe(tool.state.error);
     expect(alert.closest("#answer-sheet")).toBeNull();
     expect(alert.closest(".pointer-events-none")).not.toBeNull();
-    // The footer is the step's buttons alone
-    const footer = submitButton().parentElement!.closest(".z-20")!;
+    // The footer is the step's buttons alone (here none: the failed Next
+    // opened the box left, and Next is not there while it is open)
+    const footer = Array.from(host.querySelectorAll("div")).find((d) => d.className.includes("bottom-0 z-20"))!;
     expect(footer.querySelector("[role='alert']")).toBeNull();
     act(() => vi.advanceTimersByTime(messageVisibleMs(tool.state.error!)));
     expect(alert.closest("[aria-hidden]")!.getAttribute("aria-hidden")).toBe("true");
@@ -2182,5 +2185,63 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
     const tool = open("contributor", { layout: "sheet", focus: true });
     set(tool, { "a-car": { selected: true, obstructs: true, severity: null }, "b-pole": { isRejected: true, obstructs: false } });
     expect(host.querySelector("[data-focus-chip] span")!.textContent).toBe("2 still to decide");
+  });
+});
+
+// 27 Oct 2026: fewer buttons while a box is open on a phone; 28 Oct 2026: both roles, and its space goes too
+describe("an open box on a phone or tablet", () => {
+  const nextButton = () => Array.from(host!.querySelectorAll("button")).find((b) => /^(Next Image|Finish Session|Next: .+)$/.test(b.textContent?.trim() ?? ""));
+
+  it("takes Next Image away while a contributor's box is open, and brings it back when the box closes", () => {
+    const tool = mount({ layout: "sheet" });
+    expect(nextButton()).toBeDefined();
+    act(() => tool.selectBoxById("a-car"));
+    expect(tool.selectedId).toBe("a-car");
+    expect(nextButton()).toBeUndefined();
+    act(() => tool.setState({ showInput: false }));
+    expect(nextButton()).toBeDefined();
+  });
+
+  it("does the same for an annotator", () => {
+    const tool = mount({ isAnnotator: true, layout: "sheet" });
+    expect(nextButton()).toBeDefined();
+    act(() => tool.selectBoxById("a-car"));
+    expect(nextButton()).toBeUndefined();
+  });
+
+  it("keeps Previous where there is one, and drops an empty footer from the sheet", () => {
+    window.localStorage.clear();
+    writeSession({ total: 3, current: 2, data: { imgRecords: [record(), record(), record()], isAnnotator: false } });
+    const tool = mount({ layout: "sheet", current: 2 });
+    act(() => tool.selectBoxById("a-car"));
+    const buttons = Array.from(host!.querySelectorAll("button")).map((b) => b.textContent?.trim());
+    expect(buttons).toContain("Previous");
+    expect(nextButton()).toBeUndefined();
+    unmount();
+
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: false } });
+    const first = mount({ layout: "sheet" });
+    act(() => first.selectBoxById("a-car"));
+    const footer = Array.from(host!.querySelectorAll("div")).find((d) => d.className.includes("bottom-0 z-20"));
+    expect(footer?.className).toContain(" hidden");
+  });
+
+  it("keeps Next Image on the laptop layout", () => {
+    const tool = mount();
+    act(() => tool.selectBoxById("a-car"));
+    expect(nextButton()).toBeDefined();
+  });
+
+  it("fades the Add box hint after a few seconds, without a drag", () => {
+    const tool = mount({ layout: "sheet" }) as unknown as Tool & { addBoxFromButton(): void; currentImageElement: unknown };
+    tool.currentImageElement = { width: 640, height: 360 };
+    act(() => tool.addBoxFromButton());
+    const hint = () => Array.from(host!.querySelectorAll("p")).find((p) => p.textContent === ADD_BOX_COPY.hint);
+    expect(hint()?.className).toContain("opacity-100");
+    act(() => vi.advanceTimersByTime(ADD_BOX_HINT_MS));
+    expect(hint()?.className).toContain("opacity-0");
+    act(() => vi.advanceTimersByTime(400));
+    expect(hint()).toBeUndefined();
   });
 });

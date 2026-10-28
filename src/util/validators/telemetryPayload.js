@@ -47,7 +47,82 @@ function computeAnnotatorStepTimings(mountTime, obstructionStepStartMs, submitTi
   };
 }
 
-function buildSuggestionConfidences(annotations) {
+// Two of the quality checks fixed on 21 Oct 2026 (S10, imprint-model-training
+// pipeline_methodology.md section 7af, chapter_4.tex line 300): an image idle
+// for more than 10 minutes then submitted under 5 seconds after work resumed,
+// and a session where every suggestion was confirmed at a mean under 1 second.
+// imprint-model-training computes the flags from the exported logs. The tool
+// only records the times, for contributors only (annotators are not screened).
+const IDLE_FLAG_MS = 10 * 60 * 1000;
+
+/**
+ * The gaps between interactions on one image, from mount to submit. note() is
+ * called on every pointer, key or touch event while the image is open. Times
+ * default to Date.now(), so fake timers drive it in tests.
+ *
+ * summarize() gives msLongestIdle, the longest gap (mount and submit count as
+ * its ends), and msFromLastIdleToSubmit, the time from the interaction that
+ * ended that gap to submit when the gap was over 10 minutes, else null.
+ */
+function createIdleClock(startMs = Date.now()) {
+  let last = startMs;
+  let longest = 0;
+  let longestEnd = startMs;
+  return {
+    note(at = Date.now()) {
+      if (at < last) return;
+      if (at - last > longest) {
+        longest = at - last;
+        longestEnd = at;
+      }
+      last = at;
+    },
+    summarize(submitMs = Date.now()) {
+      let gap = longest;
+      let end = longestEnd;
+      if (submitMs - last > gap) {
+        gap = submitMs - last;
+        end = submitMs;
+      }
+      return {
+        msLongestIdle: gap,
+        msFromLastIdleToSubmit: gap > IDLE_FLAG_MS ? submitMs - end : null,
+      };
+    },
+  };
+}
+
+/**
+ * When each suggestion was first shown with the photo and first answered
+ * (Yes, No or Not an object) on one image. Later answers and Go back do not
+ * move either time. A suggestion already answered when it is first shown (its
+ * answer restored after a refresh) is marked unknown: its time to answer
+ * cannot be known, so it stays null.
+ */
+function createAnswerClock() {
+  const shownAt = new Map();
+  const answeredAt = new Map();
+  return {
+    shown(id, at = Date.now()) {
+      if (!shownAt.has(id)) shownAt.set(id, at);
+    },
+    answered(id, at = Date.now()) {
+      if (shownAt.has(id) && !answeredAt.has(id)) answeredAt.set(id, at);
+    },
+    unknown(id) {
+      if (!answeredAt.has(id)) answeredAt.set(id, null);
+    },
+    msToAnswer(id) {
+      const answered = answeredAt.get(id);
+      const shown = shownAt.get(id);
+      return answered == null || shown == null ? null : answered - shown;
+    },
+  };
+}
+
+// msToAnswer (contributors, S10): a function from a suggestion's id to its
+// time to answer. Left out for annotators, whose entries carry no msToAnswer.
+function buildSuggestionConfidences(annotations, { msToAnswer } = {}) {
   const result = [];
   for (const obj of annotations) {
     if (obj.editable) continue;
@@ -80,6 +155,7 @@ function buildSuggestionConfidences(annotations) {
       id: obj.id,
       confidence: obj.confidence ?? null,
       action,
+      ...(typeof msToAnswer === "function" ? { msToAnswer: msToAnswer(obj.id) } : {}),
     });
   }
   return result;
@@ -194,7 +270,10 @@ function buildSubmissionCounts(annotations) {
 export {
   GEOMETRY_TOLERANCE_PX,
   TAU_THRESHOLD,
+  IDLE_FLAG_MS,
   filterAnnotationsByTau,
+  createIdleClock,
+  createAnswerClock,
   computeStepTimings,
   computeAnnotatorStepTimings,
   buildSuggestionConfidences,

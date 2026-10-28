@@ -261,6 +261,31 @@ describe("POST /api/annotationSubmit", () => {
     expect(second).toMatchObject({ layout: "sheet", browserFamily: "other" });
   });
 
+  // The quality-check timing (S10, 28 Oct 2026)
+  it("logs a contributor's idle and answer times, and drops values out of range", async () => {
+    setupMocks();
+    const qc = {
+      msLongestIdle: 660000,
+      msFromLastIdleToSubmit: 3000,
+      suggestionConfidences: [{ id: "s1", confidence: 0.9, action: "accepted", msToAnswer: 700 }],
+    };
+    await handler(createMockReq({ body: { ...validBody, telemetry: qc } }), createMockRes());
+    expect(logTelemetryEvent.mock.calls[0][0]).toMatchObject({ event: "IMAGE_SUBMITTED", ...qc });
+
+    vi.clearAllMocks();
+    setupMocks();
+    await handler(createMockReq({
+      body: {
+        ...validBody,
+        telemetry: { msLongestIdle: -4, msFromLastIdleToSubmit: "soon", suggestionConfidences: [{ id: "s1", action: "accepted", msToAnswer: 1e15 }] },
+      },
+    }), createMockRes());
+    const second = logTelemetryEvent.mock.calls[0][0];
+    expect(second).not.toHaveProperty("msLongestIdle");
+    expect(second).not.toHaveProperty("msFromLastIdleToSubmit");
+    expect(second.suggestionConfidences).toEqual([{ id: "s1", action: "accepted" }]);
+  });
+
   it("does not call logTelemetryEvent when telemetry is absent", async () => {
     setupMocks();
     const req = createMockReq({ body: { ...validBody, telemetry: undefined } });
@@ -407,6 +432,22 @@ describe("POST /api/annotationSubmit", () => {
       expect(res._status).toBe(422);
       expect(res._json.message).toBe("A suggested box does not belong to this image.");
       expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+    });
+
+    it("logs no quality-check timing for annotators, who are not screened (S10)", async () => {
+      setupAnnotator();
+      const telemetry = {
+        msObjectStep: 4000,
+        msLongestIdle: 660000,
+        msFromLastIdleToSubmit: 3000,
+        suggestionConfidences: [{ id: "p1", confidence: 0.9, action: "accepted", msToAnswer: 700 }],
+      };
+      await handler(createMockReq({ body: { ...annotatorBody(), telemetry } }), createMockRes());
+      const logged = logTelemetryEvent.mock.calls[0][0];
+      expect(logged.msObjectStep).toBe(4000);
+      expect(logged).not.toHaveProperty("msLongestIdle");
+      expect(logged).not.toHaveProperty("msFromLastIdleToSubmit");
+      expect(logged.suggestionConfidences).toEqual([{ id: "p1", confidence: 0.9, action: "accepted" }]);
     });
 
     it("allows a suggestion hidden by the confidence threshold to be missing", async () => {

@@ -12,6 +12,8 @@ import {
   buildGeometryChanges,
   buildLabelChanges,
   buildSubmissionCounts,
+  createIdleClock,
+  createAnswerClock,
 } from "@/util/validators/telemetryPayload";
 import {
   NOT_AN_OBJECT,
@@ -227,6 +229,13 @@ const SIDEWALK_CLOSE_PX = 12;
  * tap marked a box and the copied mousedown unmarked it straight away.
  */
 const COMPAT_MOUSE_MS = 1000;
+/**
+ * The events that count as an interaction for the idle check (S10): any
+ * pointer, key or touch event on the page while an image is open, the photo,
+ * the panels, the answer lists and Step 2 alike. A wheel or trackpad scroll
+ * through the lists counts too.
+ */
+export const INTERACTION_EVENTS = Object.freeze(["pointerdown", "pointermove", "pointerup", "keydown", "touchstart", "touchmove", "wheel"] as const);
 
 /** How near the first tap, in CSS px, the second of a double tap lands (isDoubleTap) */
 const DOUBLE_TAP_PX = 30;
@@ -581,6 +590,13 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private focusModeCount = 0;
   private focusModeMs = 0;
   private focusStartMs: number | null = null;
+  // The timing two quality checks need (S10, 28 Oct 2026), per image, sent for
+  // contributors only: the gaps between interactions, and when each
+  // suggestion was first shown with the photo and first answered
+  private idleClock = createIdleClock(this.mountTime);
+  private answerClock = createAnswerClock();
+  private photoShown = false;
+  private noteInteraction = () => this.idleClock.note();
 
   // Annotators give no severity and answer no scene-level questions (decided
   // 3 Oct 2026). Every role-dependent part of the tool reads these getters.
@@ -864,6 +880,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", this.onSidewalkKeyDown);
+      // Any pointer, key or touch event anywhere in the tool ends an idle gap
+      for (const type of INTERACTION_EVENTS) window.addEventListener(type, this.noteInteraction, { capture: true, passive: true });
       // Save a waiting edit when the page is left, reloaded or hidden
       window.addEventListener("pagehide", this.flushEdits);
       document.addEventListener("visibilitychange", this.onVisibilityChange);
@@ -920,6 +938,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.focusModeCount = this.inFocus ? 1 : 0;
       this.focusModeMs = 0;
       this.focusStartMs = this.inFocus ? Date.now() : null;
+      this.idleClock = createIdleClock(this.mountTime);
+      this.answerClock = createAnswerClock();
+      this.photoShown = false;
       this.cleanImage();
       if (this.currentImageElement) {
         this.currentImageElement.src = image;
@@ -999,6 +1020,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.editSaver.flush();
     if (typeof window !== "undefined") {
       window.removeEventListener("keydown", this.onSidewalkKeyDown);
+      for (const type of INTERACTION_EVENTS) window.removeEventListener(type, this.noteInteraction, { capture: true });
       window.removeEventListener("pagehide", this.flushEdits);
       document.removeEventListener("visibilitychange", this.onVisibilityChange);
       window.removeEventListener(SHEET_EVENT, this.onSheetRequest);
@@ -4008,12 +4030,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       : computeStepTimings(this.mountTime, this.sceneStepStartMs, submitTime, {
         hasSceneStep: this.askScene,
       });
-    const suggestionConfidences = buildSuggestionConfidences(this.currentAnnotationData);
+    // Contributors only (S10): annotators are not screened
+    const suggestionConfidences = buildSuggestionConfidences(
+      this.currentAnnotationData,
+      objectStep ? {} : { msToAnswer: (id: string) => this.answerClock.msToAnswer(id) }
+    );
     const hiddenConfidences = this.hiddenSuggestions.map((s) => ({
       id: s.id,
       confidence: s.confidence ?? null,
       action: "hidden_below_tau",
+      ...(objectStep ? {} : { msToAnswer: null }),
     }));
+    const idleTelemetry = objectStep ? {} : this.idleClock.summarize(submitTime);
     const geometryChanges = buildGeometryChanges(this.currentAnnotationData);
     const labelChanges = buildLabelChanges(this.currentAnnotationData);
 
@@ -4029,6 +4057,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const telemetryPayload = {
       imageDurationMs: durationMs,
       ...stepTimings,
+      ...idleTelemetry,
       ...sidewalkTelemetry,
       imagePositionInSession: this.props.currentAnnotationCount,
       isReferenceImage: this.props.isReference ?? false,
@@ -4364,6 +4393,27 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     });
   }
 
+  /** The photo has loaded and been painted with its boxes. */
+  private onPhotoShown = () => {
+    this.photoShown = true;
+    this.noteSuggestionsShown();
+  };
+
+  /**
+   * Starts each suggestion's time to answer once the photo shows (S10). A
+   * suggestion already answered by then had its answer restored after a
+   * refresh, so its time is unknown.
+   */
+  private noteSuggestionsShown() {
+    if (!this.photoShown) return;
+    for (const shape of this.shapes) {
+      const data = shape.getAnnotationData();
+      if (data.editable) continue;
+      this.answerClock.shown(data.id);
+      if (data.selected || data.isRejected) this.answerClock.unknown(data.id);
+    }
+  }
+
   /**
    * Rebuilds the shapes array from props, but only when something actually
    * differs — a blanket rebuild on every update would discard the user's
@@ -4394,6 +4444,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         }
       );
       this.onShapeChange();
+      this.noteSuggestionsShown();
     };
 
     for (const annotationDataItem of visible) {
@@ -4456,6 +4507,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         if (!this.askSeverity) {
           data.severity = null;
         }
+        this.answerClock.answered(data.id);
         data.selected = true;
         data.isRejected = false;
         data.obstructs = true;
@@ -4485,6 +4537,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (selectTarget >= 0) {
       if (!this.shapes[selectTarget].getAnnotationData().editable) {
         const data = this.shapes[selectTarget].getAnnotationData();
+        this.answerClock.answered(data.id);
         data.selected = false;
         data.isRejected = true;
         data.obstructs = false;
@@ -4505,6 +4558,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (selectTarget >= 0) {
       const data = this.shapes[selectTarget].getAnnotationData();
       if (data.editable) return;
+      this.answerClock.answered(data.id);
       // Annotators give no obstruction answer, so their Not an object box keeps obstructs null
       const patch = this.annotatorObjectStep ? annotatorNotAnObjectPatch() : notAnObjectPatch();
       Object.assign(data, patch);
@@ -4714,6 +4768,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           }
           this.onImageChange();
           this.onShapeChange();
+          this.onPhotoShown();
         });
         nextImageNode.alt = "";
         nextImageNode.src = this.props.image;

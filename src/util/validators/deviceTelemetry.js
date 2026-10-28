@@ -96,3 +96,44 @@ export function sanitizeDeviceTelemetry(telemetry) {
   }
   return out;
 }
+
+// A week: an image left open overnight, or over a weekend, is the case the
+// idle check is for, so the range is wide
+const QC_MAX_MS = 7 * 86400000;
+const isMs = isIntIn(0, QC_MAX_MS);
+const isMsOrNull = (v) => v === null || isMs(v);
+
+/**
+ * The timing two quality checks need (S10, 28 Oct 2026): the longest idle gap
+ * on the image, the time from the end of that gap to submit when it was over
+ * 10 minutes, and each suggestion's time to answer.
+ */
+export const QC_FIELD_RULES = Object.freeze({
+  msLongestIdle: isMs,
+  msFromLastIdleToSubmit: isMsOrNull,
+});
+
+/**
+ * A copy of the telemetry with the quality-check timing kept only when its
+ * value is allowed: whole milliseconds from 0 to a week, null where null
+ * means something. A suggestion's msToAnswer is dropped from its entry the
+ * same way. Annotators are not screened, so every one of these fields is
+ * dropped from their telemetry. Other fields pass through unchanged.
+ */
+export function sanitizeQcTelemetry(telemetry, { isAnnotator = false } = {}) {
+  if (!telemetry || typeof telemetry !== "object" || Array.isArray(telemetry)) return {};
+  const out = { ...telemetry };
+  for (const [field, allowed] of Object.entries(QC_FIELD_RULES)) {
+    if (field in out && (isAnnotator || !allowed(out[field]))) delete out[field];
+  }
+  if (Array.isArray(out.suggestionConfidences)) {
+    out.suggestionConfidences = out.suggestionConfidences.map((entry) => {
+      if (!entry || typeof entry !== "object" || !("msToAnswer" in entry)) return entry;
+      if (!isAnnotator && isMsOrNull(entry.msToAnswer)) return entry;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
+      const { msToAnswer, ...rest } = entry;
+      return rest;
+    });
+  }
+  return out;
+}

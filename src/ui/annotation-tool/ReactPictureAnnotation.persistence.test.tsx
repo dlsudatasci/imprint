@@ -77,6 +77,8 @@ type Tool = {
   selectBoxById(id: string): void;
   onSelectObstruction(): void;
   onUnselectObstruction(): void;
+  onMarkNotAnObject(): void;
+  onPhotoShown(): void;
   onSetSeverity(severity: number): void;
   onInputCommentChange(comment: string): void;
   onSetObstructs(obstructs: boolean): void;
@@ -598,6 +600,140 @@ describe("moving on from an image (8 Oct 2026)", () => {
       await Promise.all([tool.onPrevious(), tool.onPrevious()]);
     });
     expect(readCurrentCount()).toBe(1);
+  });
+});
+
+describe("the timing two quality checks need (S10, 28 Oct 2026)", () => {
+  const MINUTE = 60 * 1000;
+
+  function fastServer() {
+    const fetchMock = vi.fn(async () => ({ status: 200, ok: true, json: async () => ({}) }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+  const sentTelemetry = (fetchMock: ReturnType<typeof vi.fn>) => {
+    const call = fetchMock.mock.calls.find(([url]) => url === "/api/annotationSubmit") as unknown as [string, { body: string }];
+    return JSON.parse(call[1].body).telemetry;
+  };
+  const answerNo = (tool: Tool, id: string) => act(() => {
+    tool.selectBoxById(id);
+    tool.onUnselectObstruction();
+  });
+  const noSidewalk = (tool: Tool) => act(() => {
+    tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+  });
+  const interact = (type: "pointerdown" | "keydown" | "touchstart") => act(() => {
+    const event = type === "keydown" ? new KeyboardEvent(type, { bubbles: true }) : new Event(type, { bubbles: true });
+    document.body.dispatchEvent(event);
+  });
+  const confidence = (telemetry: { suggestionConfidences: Array<{ id: string }> }, id: string) =>
+    telemetry.suggestionConfidences.find((entry) => entry.id === id);
+
+  beforeEach(() => vi.setSystemTime(new Date("2026-10-28T09:00:00Z")));
+
+  it("sends a contributor's longest idle, the time from its end to submit, and each suggestion's time to answer", async () => {
+    const tool = mount();
+    act(() => tool.onPhotoShown());
+    act(() => vi.advanceTimersByTime(2000));
+    interact("pointerdown");
+    answerNo(tool, "a-car");
+    // Away for 11 minutes, then a key press
+    act(() => vi.advanceTimersByTime(11 * MINUTE));
+    interact("keydown");
+    act(() => vi.advanceTimersByTime(500));
+    interact("touchstart");
+    answerNo(tool, "b-pole");
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => {
+      tool.selectBoxById("c-tree");
+      tool.onMarkNotAnObject();
+    });
+    noSidewalk(tool);
+    act(() => vi.advanceTimersByTime(1000));
+    interact("pointerdown");
+    const fetchMock = fastServer();
+    await act(async () => {
+      await tool.submit();
+    });
+    const telemetry = sentTelemetry(fetchMock);
+    expect(telemetry.msLongestIdle).toBe(11 * MINUTE);
+    expect(telemetry.msFromLastIdleToSubmit).toBe(2500);
+    expect(confidence(telemetry, "a-car")).toMatchObject({ action: "deleted", msToAnswer: 2000 });
+    expect(confidence(telemetry, "b-pole")).toMatchObject({ action: "deleted", msToAnswer: 2000 + 11 * MINUTE + 500 });
+    expect(confidence(telemetry, "c-tree")).toMatchObject({ action: "not_an_object", msToAnswer: 2000 + 11 * MINUTE + 1500 });
+  });
+
+  it("sends null under 10 minutes idle, and for an answer restored after a refresh", async () => {
+    const restored = record();
+    Object.assign(restored.annotationList[0], {
+      isRejected: true,
+      obstructs: false,
+      initialState: { comment: "car", mark: mark(100, 100, 200, 120) },
+    });
+    writeSession({ total: 1, current: 1, data: { imgRecords: [restored], isAnnotator: false } });
+    const tool = mount();
+    act(() => tool.onPhotoShown());
+    act(() => vi.advanceTimersByTime(3000));
+    interact("pointerdown");
+    answerNo(tool, "b-pole");
+    answerNo(tool, "c-tree");
+    noSidewalk(tool);
+    act(() => vi.advanceTimersByTime(4000));
+    interact("pointerdown");
+    const fetchMock = fastServer();
+    await act(async () => {
+      await tool.submit();
+    });
+    const telemetry = sentTelemetry(fetchMock);
+    expect(telemetry.msLongestIdle).toBe(4000);
+    expect(telemetry.msFromLastIdleToSubmit).toBeNull();
+    expect(confidence(telemetry, "a-car")).toMatchObject({ action: "deleted", msToAnswer: null });
+    expect(confidence(telemetry, "b-pole")).toMatchObject({ msToAnswer: 3000 });
+  });
+
+  it("does not start the time to answer before the photo shows", async () => {
+    const tool = mount();
+    act(() => vi.advanceTimersByTime(900));
+    for (const id of ["a-car", "b-pole", "c-tree"]) answerNo(tool, id);
+    noSidewalk(tool);
+    const fetchMock = fastServer();
+    await act(async () => {
+      await tool.submit();
+    });
+    for (const entry of sentTelemetry(fetchMock).suggestionConfidences) expect(entry.msToAnswer).toBeNull();
+  });
+
+  it("sends none of it for annotators", async () => {
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+    const tool = mount({ isAnnotator: true }) as Tool & { state: { obstructionsConfirmed: boolean } };
+    act(() => tool.onPhotoShown());
+    act(() => vi.advanceTimersByTime(11 * MINUTE));
+    interact("pointerdown");
+    act(() => {
+      for (const shape of tool.shapes) (shape.getAnnotationData() as { selected?: boolean }).selected = true;
+      tool.enterObstructionStep();
+    });
+    act(() => tool.setState({ obstructionsConfirmed: true }));
+    const fetchMock = fastServer();
+    await act(async () => {
+      await tool.submit();
+    });
+    const telemetry = sentTelemetry(fetchMock);
+    expect(telemetry.msObjectStep).toEqual(expect.any(Number));
+    expect(telemetry).not.toHaveProperty("msLongestIdle");
+    expect(telemetry).not.toHaveProperty("msFromLastIdleToSubmit");
+    expect(telemetry.suggestionConfidences).toHaveLength(3);
+    for (const entry of telemetry.suggestionConfidences) expect(entry).not.toHaveProperty("msToAnswer");
+  });
+
+  it("stops listening when the tool unmounts", () => {
+    const removed = vi.spyOn(window, "removeEventListener");
+    mount();
+    unmount();
+    for (const type of ["pointerdown", "pointermove", "keydown", "touchstart", "wheel"]) {
+      expect(removed.mock.calls.some(([name]) => name === type)).toBe(true);
+    }
+    removed.mockRestore();
   });
 });
 

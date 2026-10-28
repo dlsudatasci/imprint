@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { connectToDatabase } from "@/util/mongodb";
 import { ObjectId } from "mongodb";
 import { readTotalCount, readCurrentCount, readTutorialFlag, clearSession } from "@/util/sessionCache";
+import { syncCachedSession } from "@/util/syncCachedSession";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { needsEmailVerification } from "@/util/validators/emailVerification.mjs";
 
@@ -114,6 +115,11 @@ export default function ContributePage({ session, liveUser = null }) {
             current: localCurrent,
             total: localTotal,
           });
+          // Then ask the server: the session may have been finished or
+          // stopped on another device since (27 Oct 2026)
+          const synced = await syncCachedSession();
+          if (synced && !synced.active) setSessionState({ status: "none", current: 0, total: 0 });
+          else if (synced) setSessionState({ status: "active", current: synced.current, total: synced.total });
         }
         return;
       }

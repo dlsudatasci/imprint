@@ -40,6 +40,10 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+// What /api/annotationGet says is active; every other call answers {}
+function serverSession(body) {
+  globalThis.fetch = vi.fn(async (url) => ({ ok: true, json: async () => (url === "/api/annotationGet" ? body : {}) }));
+}
 const user = (extra = {}) => ({ data: { user: { _id: "u1", username: "rans", hasCompletedTutorial: true, ...extra } }, status: "authenticated" });
 const button = (label) => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === label);
 
@@ -51,7 +55,8 @@ async function mount(session, liveUser) {
 
 describe("the dashboard's buttons", () => {
   it("asks before stopping a session, and stops only on Yes", async () => {
-    writeSession({ total: 10, current: 3, data: { imgRecords: [] } });
+    writeSession({ total: 10, current: 3, data: { imgRecords: [{ _id: "a" }] } });
+    serverSession({ isExistingSession: true, currentCount: 3, imgRecords: [{ _id: "a" }] });
     await mount(user());
     await act(async () => button(DASHBOARD_COPY.stopSession).click());
     expect(globalThis.fetch).not.toHaveBeenCalledWith("/api/annotationAbandon", expect.anything());
@@ -63,6 +68,16 @@ describe("the dashboard's buttons", () => {
     expect(globalThis.fetch).toHaveBeenCalledWith("/api/annotationAbandon", { method: "POST" });
     expect(readTotalCount()).toBeNull();
     expect(reload).toHaveBeenCalled();
+  });
+
+  // 27 Oct 2026: finished on a phone, the laptop still said Resume Session until it was pressed
+  it("stops offering Resume when the saved session was finished on another device", async () => {
+    writeSession({ total: 10, current: 3, data: { imgRecords: [{ _id: "a" }] } });
+    serverSession({ imgRecords: [] });
+    await mount(user());
+    expect(button(DASHBOARD_COPY.stopSession)).toBeUndefined();
+    expect(button(DASHBOARD_COPY.annotate)).toBeDefined();
+    expect(readTotalCount()).toBeNull();
   });
 
   it("never puts a button inside a button, and Tab stops once per action", async () => {

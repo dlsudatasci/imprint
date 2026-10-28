@@ -12,12 +12,16 @@ import { cn } from '../cn';
  * so is the <p> that used to sit inside the link.
  *
  * Matches on the pathname, so /about?x=1 and /about#team still mark About.
+ *
+ * `variant="menu"` is for the phone menu's rows (27 Oct 2026): every row is
+ * ink, like Dashboard and Log out under it, and the current page is marked by
+ * weight alone. Muted rows there read as switched off.
  */
 export function isCurrentPath(pathname, href) {
   return pathname === href;
 }
 
-export default function Link({ href, children, className, onClick }) {
+export default function Link({ href, children, className, onClick, variant = 'bar' }) {
   const router = useRouter();
   const current = isCurrentPath(router?.pathname, href);
 
@@ -29,7 +33,7 @@ export default function Link({ href, children, className, onClick }) {
       className={cn(
         'text-sm transition-colors duration-300 ease-in-out',
         'rounded-control focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-        current ? 'font-semibold text-ink' : 'font-medium text-muted hover:text-ink',
+        current ? 'font-semibold text-ink' : variant === 'menu' ? 'font-medium text-ink' : 'font-medium text-muted hover:text-ink',
         className,
       )}
     >

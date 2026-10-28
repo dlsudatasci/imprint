@@ -165,7 +165,7 @@ describe("keeping in step with the annotation tool", () => {
   it("draws Step 1 with the tool's own card, the photo in its grey well", () => {
     const el = show(0);
     const card = el.querySelector("[data-step1-card]");
-    expect(card.querySelector("h2").textContent).toBe("Step 1: Identify Objects");
+    expect(card.querySelector("h2").textContent).toBe("Step 1: Identify Objects and Obstructions");
     expect(card.querySelector("[data-step1-well] [data-demo-photo]")).not.toBeNull();
     expect(card.querySelector("#box-review-section")).not.toBeNull();
   });

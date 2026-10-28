@@ -190,6 +190,10 @@ export const ADD_BOX_COPY = Object.freeze({
   fit: "Fit",
   hint: "Drag the corners to fit the object.",
 });
+/** How long the Add box hint stays before it fades, if the corners are not dragged first (27 Oct 2026: it sat over the photo) */
+export const ADD_BOX_HINT_MS = 4000;
+/** Its fade */
+const ADD_BOX_HINT_FADE_MS = 300;
 
 /** The icon of each Sidewalk drawing tool (sidewalkTools.js), at a size. */
 const SIDEWALK_TOOL_ICONS: Record<string, (size: number) => React.ReactNode> = {
@@ -449,6 +453,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     zoomed: false,
     loupe: null as { left: number; top: number } | null,
     addBoxHintId: null as string | null,
+    addBoxHintFading: false,
     anyCoarsePointer: false,
     // A finger is the primary pointer (an iPad, a phone): the words say "tap"
     coarsePointer: false,
@@ -984,6 +989,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   }
 
   public componentWillUnmount = () => {
+    window.clearTimeout(this.addBoxHintTimer);
     if (this.messageTimer) clearTimeout(this.messageTimer);
     this.resizeObserver?.disconnect();
     this.sheetAreaObserver?.disconnect();
@@ -1304,6 +1310,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         : annotatorObjectStep && !inObstructionStep
           ? { label: askSidewalk ? "Next: Sidewalk" : hasRealObjects ? "Next: Obstructions" : finishLabel, onClick: this.onObjectsNext }
           : { label: finishLabel, onClick: this.submit };
+      // Not there while a box is open, both roles, so it cannot be hit by
+      // mistake (27 Oct 2026), and its space goes with it (28 Oct 2026). With
+      // no back button either the footer is empty, and the sheet drops it.
+      const hideNext = this.state.showInput && this.selectedId !== null;
+      if (hideNext && !back) return null;
       return (
         <div className="flex gap-2">
           {back && (
@@ -1311,9 +1322,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               {back.label}
             </Button>
           )}
-          <Button submit fullWidth onClick={next.onClick} disabled={this.state.submitting} className="whitespace-nowrap">
-            {this.state.submitting ? "Saving..." : next.label}
-          </Button>
+          {!hideNext && (
+            <Button submit fullWidth onClick={next.onClick} disabled={this.state.submitting} className="whitespace-nowrap">
+              {this.state.submitting ? "Saving..." : next.label}
+            </Button>
+          )}
         </div>
       );
     }
@@ -1767,7 +1780,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         {showHint && (
           <p
             role="status"
-            className="pointer-events-none absolute left-1/2 -translate-x-1/2 z-10 px-3 py-2 rounded-full bg-ink/80 text-white text-xs font-semibold whitespace-nowrap"
+            className={`pointer-events-none absolute left-1/2 -translate-x-1/2 z-10 px-3 py-2 rounded-full bg-ink/80 text-white text-xs font-semibold whitespace-nowrap transition-opacity duration-300 motion-reduce:transition-none ${this.state.addBoxHintFading ? "opacity-0" : "opacity-100"}`}
             style={{ top: edge("top") }}
           >
             {ADD_BOX_COPY.hint}
@@ -2297,8 +2310,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.inputTypesUsed.add("touch");
     this.inputMode = "touch";
     this.selectBoxById(id);
-    this.setState({ addBoxHintId: id });
+    this.setState({ addBoxHintId: id, addBoxHintFading: false });
+    // It fades on its own after a few seconds, as well as on the first drag
+    window.clearTimeout(this.addBoxHintTimer);
+    this.addBoxHintTimer = window.setTimeout(() => {
+      if (this.state.addBoxHintId !== id) return;
+      this.setState({ addBoxHintFading: true });
+      this.addBoxHintTimer = window.setTimeout(() => {
+        if (this.state.addBoxHintId === id) this.setState({ addBoxHintId: null, addBoxHintFading: false });
+      }, ADD_BOX_HINT_FADE_MS);
+    }, ADD_BOX_HINT_MS);
   };
+  private addBoxHintTimer: number | undefined = undefined;
 
   private preventContextMenu = (event: React.MouseEvent) => event.preventDefault();
 

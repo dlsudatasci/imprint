@@ -11,6 +11,8 @@ import {
   CONTRIBUTOR_DEPLOYMENT_MATCH,
   toClientImage,
   annotatorModelDevFirst,
+  toModelDevCandidates,
+  pickAnnotatorModelDev,
 } from "./annotationGet.js";
 
 describe("session size constants", () => {
@@ -241,5 +243,149 @@ describe("annotatorModelDevFirst", () => {
     for (const value of [undefined, "", "1", "yes", "TRUE", "false"]) {
       expect(annotatorModelDevFirst({ NODE_ENV: "development", ANNOTATOR_MODEL_DEV_FIRST: value })).toBe(false);
     }
+  });
+});
+
+// Annotators get model-development images nobody has done, before any image
+// twice (S14, 28 Oct 2026)
+describe("pickAnnotatorModelDev", () => {
+  let next = 0;
+  const img = (city, extra = {}) => ({ _id: `id-${++next}`, imageID: next, city, doneCount: 0, openElsewhere: false, ...extra });
+  const ids = (list) => list.map((c) => c._id).sort();
+
+  it("fills a session with untouched images only while enough remain", () => {
+    const untouched = Array.from({ length: 30 }, () => img("makati"));
+    const done = Array.from({ length: 30 }, () => img("makati", { doneCount: 1 }));
+    const picked = pickAnnotatorModelDev({ candidates: [...done, ...untouched], requested: 25 });
+    expect(picked).toHaveLength(25);
+    expect(picked.every((c) => c.doneCount === 0)).toBe(true);
+  });
+
+  it("takes nothing from another user's open session while unclaimed untouched images remain", () => {
+    const free = Array.from({ length: 12 }, () => img("quezon_city"));
+    const open = Array.from({ length: 12 }, () => img("quezon_city", { openElsewhere: true }));
+    const picked = pickAnnotatorModelDev({ candidates: [...open, ...free], requested: 10 });
+    expect(picked.some((c) => c.openElsewhere)).toBe(false);
+  });
+
+  it("never picks an image the annotator has completed, even with nothing else left", () => {
+    const mine = Array.from({ length: 5 }, () => img("makati", { doneCount: 1, completedByMe: true }));
+    const other = img("makati", { doneCount: 3 });
+    const picked = pickAnnotatorModelDev({ candidates: [...mine, other], requested: 10 });
+    expect(ids(picked)).toEqual([other._id]);
+  });
+
+  it("gives a finished city nothing while another city has untouched images", () => {
+    // Every small-city image done once, the untouched ones all in big cities
+    const finished = ["pasig", "taguig", "pateros", "navotas"].flatMap((city) =>
+      Array.from({ length: 20 }, () => img(city, { doneCount: 1 })));
+    const waiting = ["las_pinas", "makati", "mandaluyong", "quezon_city"].flatMap((city) =>
+      Array.from({ length: 5 }, () => img(city)));
+    for (let run = 0; run < 20; run++) {
+      const picked = pickAnnotatorModelDev({ candidates: [...finished, ...waiting], requested: 10 });
+      expect(picked).toHaveLength(10);
+      expect(picked.every((c) => ["las_pinas", "makati", "mandaluyong", "quezon_city"].includes(c.city))).toBe(true);
+    }
+  });
+
+  it("with fewer untouched images than asked, fills from open ones, then the least-done first", () => {
+    const free = [img("makati"), img("makati")];
+    const open = [img("makati", { openElsewhere: true })];
+    const twice = [img("pasig", { doneCount: 2 }), img("pasig", { doneCount: 2 })];
+    const once = [img("pasig", { doneCount: 1 }), img("pasig", { doneCount: 1, openElsewhere: true })];
+    const thrice = [img("pasig", { doneCount: 3 })];
+    const picked = pickAnnotatorModelDev({ candidates: [...thrice, ...twice, ...once, ...open, ...free], requested: 6 });
+
+    expect(ids(picked.slice(0, 2))).toEqual(ids(free));
+    expect(picked[2]._id).toBe(open[0]._id);
+    expect(ids(picked.slice(3, 5))).toEqual(ids(once));
+    expect(twice.map((c) => c._id)).toContain(picked[5]._id);
+  });
+
+  it("orders untouched images at random, and least-done ties at random", () => {
+    const untouched = Array.from({ length: 6 }, () => img("makati"));
+    const ties = Array.from({ length: 6 }, () => img("pasig", { doneCount: 1 }));
+    const first = new Set();
+    const firstTie = new Set();
+    for (let run = 0; run < 60; run++) {
+      first.add(pickAnnotatorModelDev({ candidates: untouched, requested: 1 })[0]._id);
+      firstTie.add(pickAnnotatorModelDev({ candidates: ties, requested: 1 })[0]._id);
+    }
+    expect(first.size).toBeGreaterThan(1);
+    expect(firstTie.size).toBeGreaterThan(1);
+  });
+
+  it("uses the random source it is given", () => {
+    const candidates = [img("a"), img("b"), img("c")];
+    const once = pickAnnotatorModelDev({ candidates, requested: 3, random: () => 0 });
+    const again = pickAnnotatorModelDev({ candidates, requested: 3, random: () => 0 });
+    expect(once.map((c) => c._id)).toEqual(again.map((c) => c._id));
+  });
+
+  it("returns what remains when fewer images are left than asked, and nothing when none are", () => {
+    const left = [img("makati"), img("pasig", { doneCount: 4 }), img("pasig", { completedByMe: true, doneCount: 1 })];
+    expect(pickAnnotatorModelDev({ candidates: left, requested: 50 })).toHaveLength(2);
+    expect(pickAnnotatorModelDev({ candidates: [], requested: 10 })).toEqual([]);
+    expect(pickAnnotatorModelDev({ candidates: left.slice(2), requested: 10 })).toEqual([]);
+  });
+
+  it("returns nothing for a count that is not a positive whole number, and handles missing input", () => {
+    const candidates = [img("makati")];
+    for (const requested of [0, -3, 2.5, "10", undefined]) {
+      expect(pickAnnotatorModelDev({ candidates, requested })).toEqual([]);
+    }
+    expect(pickAnnotatorModelDev()).toEqual([]);
+  });
+
+  it("does not change the candidates it is given", () => {
+    const candidates = [img("a", { doneCount: 2 }), img("b"), img("c", { doneCount: 1 })];
+    const copy = structuredClone(candidates);
+    pickAnnotatorModelDev({ candidates, requested: 3 });
+    expect(candidates).toEqual(copy);
+  });
+});
+
+describe("toModelDevCandidates", () => {
+  const images = [
+    { _id: "a", imageID: 1 },
+    { _id: "b", imageID: 2 },
+    { _id: "c", imageID: 3 },
+  ];
+
+  it("marks each image with its completed annotator count, whether it is open elsewhere and whether it is the annotator's own", () => {
+    const candidates = toModelDevCandidates({
+      images,
+      doneCounts: new Map([[2, 3]]),
+      openImageIds: ["c"],
+      completedImageIDs: [1],
+    });
+    expect(candidates).toEqual([
+      { _id: "a", imageID: 1, doneCount: 0, openElsewhere: false, completedByMe: true },
+      { _id: "b", imageID: 2, doneCount: 3, openElsewhere: false, completedByMe: false },
+      { _id: "c", imageID: 3, doneCount: 0, openElsewhere: true, completedByMe: false },
+    ]);
+  });
+
+  it("matches open session images by _id, ObjectId or string", () => {
+    const objectIdLike = { toString: () => "b" };
+    const [, b] = toModelDevCandidates({ images: [images[0], { _id: objectIdLike, imageID: 2 }], openImageIds: ["b"] });
+    expect(b.openElsewhere).toBe(true);
+    const [a] = toModelDevCandidates({ images, openImageIds: [{ toString: () => "a" }] });
+    expect(a.openElsewhere).toBe(true);
+  });
+
+  it("feeds the draw so the annotator's own and the done images come last or not at all", () => {
+    const candidates = toModelDevCandidates({
+      images,
+      doneCounts: new Map([[1, 1], [2, 1]]),
+      openImageIds: [],
+      completedImageIDs: [1],
+    });
+    expect(pickAnnotatorModelDev({ candidates, requested: 3 }).map((c) => c.imageID)).toEqual([3, 2]);
+  });
+
+  it("handles missing input", () => {
+    expect(toModelDevCandidates()).toEqual([]);
+    expect(toModelDevCandidates({ images: [null, images[0]] })).toHaveLength(1);
   });
 });

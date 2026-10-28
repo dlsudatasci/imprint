@@ -11,7 +11,7 @@ import { buildTrays } from "@/features/annotate/objectTrays";
 import { buildDisplayLabels, formatLabel } from "@/util/buildDisplayLabels";
 import { getSuggestionPanelMode } from "@/util/suggestionJudgment";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
-import { DEMO_IMAGES, DEMO_IMAGE_SIZE } from "./demoScript";
+import { DEMO_IMAGES, DEMO_IMAGE_SIZE, TICKS, demoFrame, tickOf } from "./demoScript";
 
 /**
  * The annotation screen as the preview draws it (HowItWorks).
@@ -90,6 +90,30 @@ export function findTarget(root, target, boxes) {
   if (target.name === "scene") return root.querySelector(`[data-scene-option="${target.field}:${target.value}"]`);
   if (target.name === "next") return root.querySelector('[data-demo="next"] button');
   return null;
+}
+
+/**
+ * The first photo's answer lists at their fullest in the run (every object
+ * answered, Lamp Post #2 drawn). Laid out invisibly under the real lists, so
+ * the close shot can be framed for their tallest from the start and the
+ * camera never moves as they grow (28 Oct 2026). Its ids are dropped as it
+ * mounts, so the page has one of each.
+ */
+const FULLEST_BOXES = demoFrame(tickOf("drawn-confirm", "end") / TICKS).boxes;
+const FULLEST_TRAYS = buildTrays(FULLEST_BOXES, { labels: buildDisplayLabels(FULLEST_BOXES) });
+const dropIds = (el) => {
+  if (!el) return;
+  el.querySelectorAll("[id], [aria-labelledby]").forEach((node) => {
+    node.removeAttribute("id");
+    node.removeAttribute("aria-labelledby");
+  });
+};
+function FullestTrays() {
+  return (
+    <div ref={dropIds} data-trays-fullest aria-hidden="true" className="pointer-events-none invisible absolute inset-x-0 top-0">
+      <ObjectTrays trays={FULLEST_TRAYS} selectedId={null} hiddenIds={[]} onOpen={noop} onToggleHidden={noop} onShowAll={noop} onHideAll={noop} />
+    </div>
+  );
 }
 
 /** One box on the photo, drawn the way Shape.paint draws it. */
@@ -254,15 +278,18 @@ const Screen = memo(function Screen({ view, photoWidth }) {
               </div>
             }
             answers={
-              <ObjectTrays
-                trays={trays}
-                selectedId={selectedId}
-                hiddenIds={[]}
-                onOpen={noop}
-                onToggleHidden={noop}
-                onShowAll={noop}
-                onHideAll={noop}
-              />
+              <div className="relative">
+                <ObjectTrays
+                  trays={trays}
+                  selectedId={selectedId}
+                  hiddenIds={[]}
+                  onOpen={noop}
+                  onToggleHidden={noop}
+                  onShowAll={noop}
+                  onHideAll={noop}
+                />
+                {imageIndex === 0 && <FullestTrays />}
+              </div>
             }
           />
         </div>
@@ -271,7 +298,7 @@ const Screen = memo(function Screen({ view, photoWidth }) {
         </div>
       </div>
       <div className="flex justify-center mt-10 mb-4">
-        <span data-demo="next" data-demo-region="actions">
+        <span data-demo="next" data-demo-region="actions" className="inline-block motion-safe:transition-opacity motion-safe:duration-300 motion-safe:ease-in-out">
           <Button submit disabled={saving} className="whitespace-nowrap">
             {saving ? "Saving..." : "Next Image"}
           </Button>
@@ -344,6 +371,40 @@ export function keepBelow(camera, top, region) {
   if (camera.y <= highest) return camera;
   return { ...camera, y: Math.max(highest, -region.y * camera.z) };
 }
+
+/**
+ * The close shot of the work (28 Oct 2026): `region` is the Step 1 card from
+ * the inside of the photo's grey well down to the foot of its answer lists
+ * at their fullest, so the photo and the lists under it. The shot shows all
+ * of its width, nothing cropped (Rans: cropping cut the lists' words), as
+ * much of its height as fits, centred in the frame, so the room above and
+ * below is the same (Rans). Above, that room shows the foot of Step 1's
+ * instructions, which DemoStage blurs (showsAbove). Never past MAX_ZOOM. It
+ * is the same all through the run, so the camera holds still.
+ */
+export function workShot(region, view) {
+  const z = Math.min(MAX_ZOOM, view.w / region.w, view.h / region.h);
+  return { z, x: view.w / 2 - (region.x + region.w / 2) * z, y: view.h / 2 - (region.y + region.h / 2) * z };
+}
+
+/** Whether anything above design y `top` (the photo's well) shows in the frame with this camera */
+export function showsAbove(top, camera) {
+  return top * camera.z + camera.y > 0.5;
+}
+
+/**
+ * Whether design y `top` (Next Image's) would show in the frame with this
+ * camera. In the close shot Next Image is faded out while it would, so the
+ * room under the lists is plain ground, not a cut-off button (Rans, 28 Oct
+ * 2026), and back in as the camera goes out to the whole page.
+ */
+export function showsBelow(top, camera, view) {
+  return top * camera.z + camera.y < view.h;
+}
+
+// How Step 1's instructions blur above the close shot, and how fast they blur and clear
+const HEADER_BLUR = 5;
+const SHOT_FADE = "400ms cubic-bezier(0.2, 0.8, 0.2, 1)";
 
 // The step card's margin from the frame's edges, and how far inside the photo it sits
 const CARD_EDGE = 24;
@@ -530,7 +591,41 @@ export default function DemoStage({ frame, instant = false, captionRef = null })
     const phoneCard = vp.w < COMPACT_VIEW ? captionRef?.current : null;
     const shotView = phoneCard ? { w: vp.w, h: Math.max(vp.h / 2, phoneCard.offsetTop - 12) } : vp;
     const fitted = cameraFor(region, shotView, stage);
-    const centred = frame.camera === "photo" ? keepBelow(fitted, wellTop, region) : fitted;
+    // The photo shot is the photo and its answer lists across their full width (workShot).
+    // In a narrow frame, while a box is open, it follows the box and its panel instead
+    // (regionRect), kept below the well
+    const step1CardEl = root.querySelector("[data-step1-card]");
+    const step1Card = rectIn(step1CardEl, root);
+    // The foot of the answer lists at their fullest (FullestTrays), or as they are
+    const lists = rectIn(root.querySelector("#box-review-section"), root);
+    const fullest = root.querySelector("[data-trays-fullest]");
+    const listsFoot = lists ? lists.y + Math.max(lists.h, fullest ? fullest.offsetHeight : 0) : step1Card ? step1Card.y + step1Card.h : 0;
+    const followsPanel = vp.w < COMPACT_VIEW && Boolean(root.querySelector("[data-demo-panel]"));
+    const work = !followsPanel && photo && step1Card ? { x: step1Card.x, y: wellTop, w: step1Card.w, h: listsFoot - wellTop } : null;
+    const centred = frame.camera !== "photo" ? fitted : work ? workShot(work, vp) : keepBelow(fitted, wellTop, region);
+
+    // In the close shot the foot of Step 1's instructions shows above the photo: blurred and
+    // dimmed, like content under a frame's edge, and clear again as the camera goes out (Rans,
+    // 28 Oct 2026). On the instructions themselves, so it moves with the camera
+    const header = step1CardEl?.firstElementChild;
+    if (header) {
+      const blur = Boolean(work) && frame.camera === "photo" && showsAbove(wellTop, centred);
+      const filter = blur ? `blur(${HEADER_BLUR}px)` : "";
+      if (header.style.filter !== filter) {
+        header.style.transition = instant ? "" : `filter ${SHOT_FADE}, opacity ${SHOT_FADE}`;
+        header.style.filter = filter;
+        header.style.opacity = blur ? "0.45" : "";
+      }
+    }
+
+    // Next Image fades out while the close shot would show the top of it, judged where the camera is heading
+    const nextButton = root.querySelector('[data-demo="next"]');
+    const nextRect = rectIn(nextButton, root);
+    if (nextButton && nextRect) {
+      const hide = Boolean(work) && frame.camera === "photo" && showsBelow(nextRect.y, centred, vp);
+      const opacity = hide ? "0" : "";
+      if (nextButton.style.opacity !== opacity) nextButton.style.opacity = opacity;
+    }
 
     // ---- The step card ----
     const caption = captionRef?.current;

@@ -2209,14 +2209,16 @@ describe("an open box on a phone or tablet", () => {
     expect(nextButton()).toBeUndefined();
   });
 
-  it("keeps Previous where there is one, and drops an empty footer from the sheet", () => {
+  it("takes Previous away too, and drops the empty footer from the sheet", () => {
     window.localStorage.clear();
     writeSession({ total: 3, current: 2, data: { imgRecords: [record(), record(), record()], isAnnotator: false } });
     const tool = mount({ layout: "sheet", current: 2 });
     act(() => tool.selectBoxById("a-car"));
     const buttons = Array.from(host!.querySelectorAll("button")).map((b) => b.textContent?.trim());
-    expect(buttons).toContain("Previous");
+    expect(buttons).not.toContain("Previous");
     expect(nextButton()).toBeUndefined();
+    act(() => tool.setState({ showInput: false }));
+    expect(Array.from(host!.querySelectorAll("button")).map((b) => b.textContent?.trim())).toContain("Previous");
     unmount();
 
     window.localStorage.clear();

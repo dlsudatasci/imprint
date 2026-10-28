@@ -191,7 +191,7 @@ export const ADD_BOX_COPY = Object.freeze({
   hint: "Drag the corners to fit the object.",
 });
 /** How long the Add box hint stays before it fades, if the corners are not dragged first (27 Oct 2026: it sat over the photo) */
-export const ADD_BOX_HINT_MS = 4000;
+export const ADD_BOX_HINT_MS = 3000;
 /** Its fade */
 const ADD_BOX_HINT_FADE_MS = 300;
 
@@ -1310,11 +1310,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         : annotatorObjectStep && !inObstructionStep
           ? { label: askSidewalk ? "Next: Sidewalk" : hasRealObjects ? "Next: Obstructions" : finishLabel, onClick: this.onObjectsNext }
           : { label: finishLabel, onClick: this.submit };
-      // Not there while a box is open, both roles, so it cannot be hit by
-      // mistake (27 Oct 2026), and its space goes with it (28 Oct 2026). With
-      // no back button either the footer is empty, and the sheet drops it.
-      const hideNext = this.state.showInput && this.selectedId !== null;
-      if (hideNext && !back) return null;
+      // Neither button while a box is open, both roles, so neither can be hit
+      // by mistake (27-28 Oct 2026): the footer is empty, and the sheet drops it
+      const boxOpen = this.state.showInput && this.selectedId !== null;
+      if (boxOpen) return null;
       return (
         <div className="flex gap-2">
           {back && (
@@ -1322,11 +1321,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               {back.label}
             </Button>
           )}
-          {!hideNext && (
-            <Button submit fullWidth onClick={next.onClick} disabled={this.state.submitting} className="whitespace-nowrap">
-              {this.state.submitting ? "Saving..." : next.label}
-            </Button>
-          )}
+          <Button submit fullWidth onClick={next.onClick} disabled={this.state.submitting} className="whitespace-nowrap">
+            {this.state.submitting ? "Saving..." : next.label}
+          </Button>
         </div>
       );
     }

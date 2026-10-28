@@ -132,9 +132,9 @@ describe("sanitizeQcTelemetry", () => {
     msLongestIdle: 660000,
     msFromLastIdleToSubmit: 3000,
     suggestionConfidences: [
-      { id: "s1", confidence: 0.9, action: "accepted", msToAnswer: 800 },
-      { id: "s2", confidence: 0.4, action: "deleted", msToAnswer: null },
-      { id: "s3", confidence: 0.2, action: "hidden_below_tau", msToAnswer: null },
+      { id: "s1", confidence: 0.9, disposition: "accepted", msToAnswer: 800 },
+      { id: "s2", confidence: 0.4, disposition: "accepted", msToAnswer: null },
+      { id: "s3", confidence: 0.2, disposition: "hidden_below_tau", msToAnswer: null },
     ],
   };
 
@@ -161,19 +161,19 @@ describe("sanitizeQcTelemetry", () => {
   it("drops a bad msToAnswer from its entry and keeps the rest of the entry", () => {
     const out = sanitizeQcTelemetry({
       suggestionConfidences: [
-        { id: "s1", action: "accepted", msToAnswer: -5 },
-        { id: "s2", action: "accepted", msToAnswer: "fast" },
-        { id: "s3", action: "accepted", msToAnswer: 250.5 },
-        { id: "s4", action: "accepted", msToAnswer: 250 },
-        { id: "s5", action: "accepted" },
+        { id: "s1", disposition: "accepted", msToAnswer: -5 },
+        { id: "s2", disposition: "accepted", msToAnswer: "fast" },
+        { id: "s3", disposition: "accepted", msToAnswer: 250.5 },
+        { id: "s4", disposition: "accepted", msToAnswer: 250 },
+        { id: "s5", disposition: "accepted" },
       ],
     });
     expect(out.suggestionConfidences).toEqual([
-      { id: "s1", action: "accepted" },
-      { id: "s2", action: "accepted" },
-      { id: "s3", action: "accepted" },
-      { id: "s4", action: "accepted", msToAnswer: 250 },
-      { id: "s5", action: "accepted" },
+      { id: "s1", disposition: "accepted" },
+      { id: "s2", disposition: "accepted" },
+      { id: "s3", disposition: "accepted" },
+      { id: "s4", disposition: "accepted", msToAnswer: 250 },
+      { id: "s5", disposition: "accepted" },
     ]);
   });
 
@@ -183,9 +183,9 @@ describe("sanitizeQcTelemetry", () => {
     expect(out).not.toHaveProperty("msFromLastIdleToSubmit");
     expect(out.msObjectStep).toBe(4000);
     expect(out.suggestionConfidences).toEqual([
-      { id: "s1", confidence: 0.9, action: "accepted" },
-      { id: "s2", confidence: 0.4, action: "deleted" },
-      { id: "s3", confidence: 0.2, action: "hidden_below_tau" },
+      { id: "s1", confidence: 0.9, disposition: "accepted" },
+      { id: "s2", confidence: 0.4, disposition: "accepted" },
+      { id: "s3", confidence: 0.2, disposition: "hidden_below_tau" },
     ]);
   });
 

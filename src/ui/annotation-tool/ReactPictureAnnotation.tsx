@@ -4011,16 +4011,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       return;
     }
 
+    // One count per disposition, and every real object (S6)
     const counts = buildSubmissionCounts(answered);
-    const {
-      manualBoxCount,
-      acceptedSuggestionCount,
-      modifiedSuggestionCount,
-      deletedSuggestionCount,
-      notAnObjectSuggestionCount,
-      obstructionCount,
-      nonObstructionCount,
-    } = counts;
 
     const submitTime = Date.now();
     const stepTimings = objectStep
@@ -4030,15 +4022,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       : computeStepTimings(this.mountTime, this.sceneStepStartMs, submitTime, {
         hasSceneStep: this.askScene,
       });
-    // Contributors only (S10): annotators are not screened
+    // From the answers as sent, so an annotator's obstructs is the confirmed
+    // one (S6). msToAnswer for contributors only (S10): annotators are not screened.
     const suggestionConfidences = buildSuggestionConfidences(
-      this.currentAnnotationData,
+      answered,
       objectStep ? {} : { msToAnswer: (id: string) => this.answerClock.msToAnswer(id) }
     );
+    // Never shown, so never answered
     const hiddenConfidences = this.hiddenSuggestions.map((s) => ({
       id: s.id,
       confidence: s.confidence ?? null,
-      action: "hidden_below_tau",
+      disposition: "hidden_below_tau",
+      obstructs: null,
       ...(objectStep ? {} : { msToAnswer: null }),
     }));
     const idleTelemetry = objectStep ? {} : this.idleClock.summarize(submitTime);
@@ -4061,14 +4056,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       ...sidewalkTelemetry,
       imagePositionInSession: this.props.currentAnnotationCount,
       isReferenceImage: this.props.isReference ?? false,
-      manualBoxCount,
-      acceptedSuggestionCount,
-      modifiedSuggestionCount,
-      deletedSuggestionCount,
-      notAnObjectSuggestionCount,
-      totalBoxesSubmitted: manualBoxCount + acceptedSuggestionCount + modifiedSuggestionCount,
-      obstructionCount,
-      nonObstructionCount,
+      ...counts,
       tauThreshold: TAU_THRESHOLD,
       hiddenSuggestionCount: this.hiddenSuggestions.length,
       suggestionConfidences: [...suggestionConfidences, ...hiddenConfidences],

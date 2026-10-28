@@ -267,7 +267,7 @@ describe("POST /api/annotationSubmit", () => {
     const qc = {
       msLongestIdle: 660000,
       msFromLastIdleToSubmit: 3000,
-      suggestionConfidences: [{ id: "s1", confidence: 0.9, action: "accepted", msToAnswer: 700 }],
+      suggestionConfidences: [{ id: "s1", confidence: 0.9, disposition: "accepted", msToAnswer: 700 }],
     };
     await handler(createMockReq({ body: { ...validBody, telemetry: qc } }), createMockRes());
     expect(logTelemetryEvent.mock.calls[0][0]).toMatchObject({ event: "IMAGE_SUBMITTED", ...qc });
@@ -277,13 +277,13 @@ describe("POST /api/annotationSubmit", () => {
     await handler(createMockReq({
       body: {
         ...validBody,
-        telemetry: { msLongestIdle: -4, msFromLastIdleToSubmit: "soon", suggestionConfidences: [{ id: "s1", action: "accepted", msToAnswer: 1e15 }] },
+        telemetry: { msLongestIdle: -4, msFromLastIdleToSubmit: "soon", suggestionConfidences: [{ id: "s1", disposition: "accepted", msToAnswer: 1e15 }] },
       },
     }), createMockRes());
     const second = logTelemetryEvent.mock.calls[0][0];
     expect(second).not.toHaveProperty("msLongestIdle");
     expect(second).not.toHaveProperty("msFromLastIdleToSubmit");
-    expect(second.suggestionConfidences).toEqual([{ id: "s1", action: "accepted" }]);
+    expect(second.suggestionConfidences).toEqual([{ id: "s1", disposition: "accepted" }]);
   });
 
   it("does not call logTelemetryEvent when telemetry is absent", async () => {
@@ -440,14 +440,14 @@ describe("POST /api/annotationSubmit", () => {
         msObjectStep: 4000,
         msLongestIdle: 660000,
         msFromLastIdleToSubmit: 3000,
-        suggestionConfidences: [{ id: "p1", confidence: 0.9, action: "accepted", msToAnswer: 700 }],
+        suggestionConfidences: [{ id: "p1", confidence: 0.9, disposition: "accepted", msToAnswer: 700 }],
       };
       await handler(createMockReq({ body: { ...annotatorBody(), telemetry } }), createMockRes());
       const logged = logTelemetryEvent.mock.calls[0][0];
       expect(logged.msObjectStep).toBe(4000);
       expect(logged).not.toHaveProperty("msLongestIdle");
       expect(logged).not.toHaveProperty("msFromLastIdleToSubmit");
-      expect(logged.suggestionConfidences).toEqual([{ id: "p1", confidence: 0.9, action: "accepted" }]);
+      expect(logged.suggestionConfidences).toEqual([{ id: "p1", confidence: 0.9, disposition: "accepted" }]);
     });
 
     it("allows a suggestion hidden by the confidence threshold to be missing", async () => {

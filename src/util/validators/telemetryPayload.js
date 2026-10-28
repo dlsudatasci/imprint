@@ -1,4 +1,5 @@
 import { isNotAnObject } from "@/util/suggestionJudgment";
+import { isTaxonomyCategory } from "@/util/taxonomy";
 
 const GEOMETRY_TOLERANCE_PX = 3;
 const TAU_THRESHOLD = 0.5;
@@ -120,41 +121,69 @@ function createAnswerClock() {
   };
 }
 
-// msToAnswer (contributors, S10): a function from a suggestion's id to its
-// time to answer. Left out for annotators, whose entries carry no msToAnswer.
+/**
+ * What was done to an answered suggestion, in the manuscript's names
+ * (chapter_4.tex lines 170 and 184, S6, 29 Oct 2026). The obstruction answer
+ * is not part of it: a No is an answer about an object, not a removal.
+ *   - removed: marked Not an object, a false detection
+ *   - accepted: kept with the same category and the box within the 3 px tolerance
+ *   - relabeled: the category changed to another of the 18
+ *   - custom_category: the category changed to free text
+ *   - modified: the box moved or resized beyond the tolerance
+ *   - relabeled_and_modified, custom_category_and_modified: both changes
+ * Categories are compared without case, with spaces and underscores alike.
+ */
+const SUGGESTION_DISPOSITIONS = Object.freeze([
+  "removed",
+  "accepted",
+  "relabeled",
+  "custom_category",
+  "modified",
+  "relabeled_and_modified",
+  "custom_category_and_modified",
+]);
+
+function categoryKey(comment) {
+  return typeof comment === "string" ? comment.trim().toLowerCase().replace(/[\s_]+/g, "_") : "";
+}
+
+function suggestionDisposition(obj) {
+  if (isNotAnObject(obj)) return "removed";
+  const init = obj.initialState;
+  if (!init) return "accepted";
+  const category = categoryKey(obj.comment);
+  const categoryChanged = categoryKey(init.comment) !== category;
+  const boxChanged =
+    Math.abs(init.mark.x - obj.mark.x) > GEOMETRY_TOLERANCE_PX ||
+    Math.abs(init.mark.y - obj.mark.y) > GEOMETRY_TOLERANCE_PX ||
+    Math.abs(init.mark.width - obj.mark.width) > GEOMETRY_TOLERANCE_PX ||
+    Math.abs(init.mark.height - obj.mark.height) > GEOMETRY_TOLERANCE_PX;
+  if (!categoryChanged) return boxChanged ? "modified" : "accepted";
+  const label = isTaxonomyCategory(category) ? "relabeled" : "custom_category";
+  return boxChanged ? `${label}_and_modified` : label;
+}
+
+/**
+ * One entry per answered suggestion: its id, the model's confidence, its
+ * disposition and the obstruction answer (true, false, or null when none was
+ * given). Unanswered suggestions and drawn boxes are left out, and drawn boxes
+ * keep their own counts. disposition and obstructs replaced the single action
+ * label (S6, 29 Oct 2026), which called a contributor's No "deleted".
+ *
+ * msToAnswer (contributors, S10): a function from a suggestion's id to its
+ * time to answer. Left out for annotators, whose entries carry no msToAnswer.
+ */
 function buildSuggestionConfidences(annotations, { msToAnswer } = {}) {
   const result = [];
   for (const obj of annotations) {
     if (obj.editable) continue;
-
-    let action;
-    if (obj.isRejected) {
-      action = isNotAnObject(obj) ? "not_an_object" : "deleted";
-    } else if (obj.selected) {
-      const init = obj.initialState;
-      let isModified = false;
-      if (init) {
-        const normalizedInit = init.comment ? init.comment.toLowerCase().replace(/_/g, " ") : "";
-        const normalizedObj = obj.comment ? obj.comment.toLowerCase().replace(/_/g, " ") : "";
-        if (normalizedInit !== normalizedObj) isModified = true;
-        if (
-          Math.abs(init.mark.x - obj.mark.x) > GEOMETRY_TOLERANCE_PX ||
-          Math.abs(init.mark.y - obj.mark.y) > GEOMETRY_TOLERANCE_PX ||
-          Math.abs(init.mark.width - obj.mark.width) > GEOMETRY_TOLERANCE_PX ||
-          Math.abs(init.mark.height - obj.mark.height) > GEOMETRY_TOLERANCE_PX
-        ) {
-          isModified = true;
-        }
-      }
-      action = isModified ? "modified" : "accepted";
-    } else {
-      continue;
-    }
+    if (!obj.isRejected && !obj.selected) continue;
 
     result.push({
       id: obj.id,
       confidence: obj.confidence ?? null,
-      action,
+      disposition: suggestionDisposition(obj),
+      obstructs: typeof obj.obstructs === "boolean" ? obj.obstructs : null,
       ...(typeof msToAnswer === "function" ? { msToAnswer: msToAnswer(obj.id) } : {}),
     });
   }
@@ -209,59 +238,55 @@ function buildLabelChanges(annotations) {
   return result;
 }
 
+// The count each disposition goes to, in SUGGESTION_DISPOSITIONS order
+const DISPOSITION_COUNT_FIELDS = Object.freeze({
+  removed: "removedSuggestionCount",
+  accepted: "acceptedSuggestionCount",
+  relabeled: "relabeledSuggestionCount",
+  custom_category: "customCategorySuggestionCount",
+  modified: "modifiedSuggestionCount",
+  relabeled_and_modified: "relabeledAndModifiedSuggestionCount",
+  custom_category_and_modified: "customCategoryAndModifiedSuggestionCount",
+});
+
+/**
+ * The image's counts. Every answered suggestion is counted once, under the
+ * disposition its suggestionConfidences entry gets (suggestionDisposition), so
+ * the counts and the entries never disagree (S6, 29 Oct 2026). A No counts
+ * under its disposition, usually accepted, and Not an object under removed.
+ *
+ * totalBoxesSubmitted counts every real object: drawn boxes and every answered
+ * suggestion that is not Not an object, Yes or No alike. obstructionCount and
+ * nonObstructionCount follow obstructs on those objects.
+ */
 function buildSubmissionCounts(annotations) {
-  let manualBoxCount = 0;
-  let acceptedSuggestionCount = 0;
-  let modifiedSuggestionCount = 0;
-  let deletedSuggestionCount = 0;
-  let notAnObjectSuggestionCount = 0;
+  const counts = { manualBoxCount: 0 };
+  for (const field of Object.values(DISPOSITION_COUNT_FIELDS)) counts[field] = 0;
+  let realSuggestionCount = 0;
   let obstructionCount = 0;
   let nonObstructionCount = 0;
 
   for (const obj of annotations) {
     if (obj.editable) {
-      manualBoxCount++;
+      counts.manualBoxCount++;
       if (obj.obstructs === true) obstructionCount++;
       else if (obj.obstructs === false) nonObstructionCount++;
-    } else if (obj.isRejected) {
-      if (isNotAnObject(obj)) {
-        notAnObjectSuggestionCount++;
-      } else {
-        deletedSuggestionCount++;
-        if (obj.obstructs === false) nonObstructionCount++;
-      }
-    } else if (obj.selected) {
-      const init = obj.initialState;
-      let isModified = false;
-      if (init) {
-        const normalizedInit = init.comment ? init.comment.toLowerCase().replace(/_/g, " ") : "";
-        const normalizedObj = obj.comment ? obj.comment.toLowerCase().replace(/_/g, " ") : "";
-        if (normalizedInit !== normalizedObj) isModified = true;
-        if (
-          Math.abs(init.mark.x - obj.mark.x) > GEOMETRY_TOLERANCE_PX ||
-          Math.abs(init.mark.y - obj.mark.y) > GEOMETRY_TOLERANCE_PX ||
-          Math.abs(init.mark.width - obj.mark.width) > GEOMETRY_TOLERANCE_PX ||
-          Math.abs(init.mark.height - obj.mark.height) > GEOMETRY_TOLERANCE_PX
-        ) {
-          isModified = true;
-        }
-      }
-      if (isModified) {
-        modifiedSuggestionCount++;
-      } else {
-        acceptedSuggestionCount++;
-      }
-      if (obj.obstructs === true) obstructionCount++;
-      else if (obj.obstructs === false) nonObstructionCount++;
+      continue;
     }
+    if (!obj.isRejected && !obj.selected) continue;
+    const disposition = suggestionDisposition(obj);
+    counts[DISPOSITION_COUNT_FIELDS[disposition]]++;
+    if (disposition === "removed") continue;
+
+    realSuggestionCount++;
+    // A No is isRejected with obstructs false, so a true there is not an answer
+    if (obj.obstructs === true && !obj.isRejected) obstructionCount++;
+    else if (obj.obstructs === false) nonObstructionCount++;
   }
 
   return {
-    manualBoxCount,
-    acceptedSuggestionCount,
-    modifiedSuggestionCount,
-    deletedSuggestionCount,
-    notAnObjectSuggestionCount,
+    ...counts,
+    totalBoxesSubmitted: counts.manualBoxCount + realSuggestionCount,
     obstructionCount,
     nonObstructionCount,
   };
@@ -271,6 +296,8 @@ export {
   GEOMETRY_TOLERANCE_PX,
   TAU_THRESHOLD,
   IDLE_FLAG_MS,
+  SUGGESTION_DISPOSITIONS,
+  DISPOSITION_COUNT_FIELDS,
   filterAnnotationsByTau,
   createIdleClock,
   createAnswerClock,

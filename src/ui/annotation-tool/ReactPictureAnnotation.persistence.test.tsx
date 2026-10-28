@@ -658,9 +658,9 @@ describe("the timing two quality checks need (S10, 28 Oct 2026)", () => {
     const telemetry = sentTelemetry(fetchMock);
     expect(telemetry.msLongestIdle).toBe(11 * MINUTE);
     expect(telemetry.msFromLastIdleToSubmit).toBe(2500);
-    expect(confidence(telemetry, "a-car")).toMatchObject({ action: "deleted", msToAnswer: 2000 });
-    expect(confidence(telemetry, "b-pole")).toMatchObject({ action: "deleted", msToAnswer: 2000 + 11 * MINUTE + 500 });
-    expect(confidence(telemetry, "c-tree")).toMatchObject({ action: "not_an_object", msToAnswer: 2000 + 11 * MINUTE + 1500 });
+    expect(confidence(telemetry, "a-car")).toMatchObject({ disposition: "accepted", obstructs: false, msToAnswer: 2000 });
+    expect(confidence(telemetry, "b-pole")).toMatchObject({ disposition: "accepted", obstructs: false, msToAnswer: 2000 + 11 * MINUTE + 500 });
+    expect(confidence(telemetry, "c-tree")).toMatchObject({ disposition: "removed", msToAnswer: 2000 + 11 * MINUTE + 1500 });
   });
 
   it("sends null under 10 minutes idle, and for an answer restored after a refresh", async () => {
@@ -687,7 +687,7 @@ describe("the timing two quality checks need (S10, 28 Oct 2026)", () => {
     const telemetry = sentTelemetry(fetchMock);
     expect(telemetry.msLongestIdle).toBe(4000);
     expect(telemetry.msFromLastIdleToSubmit).toBeNull();
-    expect(confidence(telemetry, "a-car")).toMatchObject({ action: "deleted", msToAnswer: null });
+    expect(confidence(telemetry, "a-car")).toMatchObject({ disposition: "accepted", msToAnswer: null });
     expect(confidence(telemetry, "b-pole")).toMatchObject({ msToAnswer: 3000 });
   });
 
@@ -734,6 +734,75 @@ describe("the timing two quality checks need (S10, 28 Oct 2026)", () => {
       expect(removed.mock.calls.some(([name]) => name === type)).toBe(true);
     }
     removed.mockRestore();
+  });
+});
+
+describe("what was done to each suggestion, in the manuscript's names (S6, 29 Oct 2026)", () => {
+  type Entry = { id: string; disposition: string; obstructs: boolean | null };
+  async function sentEntries(tool: Tool) {
+    const fetchMock = vi.fn(async () => ({ status: 200, ok: true, json: async () => ({}) }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await act(async () => {
+      await tool.submit();
+    });
+    const calls = fetchMock.mock.calls as unknown as Array<[string, { body: string }]>;
+    const call = calls.find(([url]) => url === "/api/annotationSubmit")!;
+    const telemetry = JSON.parse(call[1].body).telemetry;
+    lastTelemetry = telemetry;
+    const entries: Entry[] = telemetry.suggestionConfidences;
+    return new Map(entries.map((entry) => [entry.id, entry]));
+  }
+  let lastTelemetry: Record<string, unknown> = {};
+
+  it("sends a contributor's No as an object answered No, not a deleted box", async () => {
+    const tool = mount();
+    act(() => {
+      tool.selectBoxById("a-car");
+      tool.onUnselectObstruction();
+      tool.selectBoxById("b-pole");
+      tool.onSelectObstruction();
+    });
+    act(() => tool.onSetSeverity(3));
+    act(() => {
+      tool.selectBoxById("c-tree");
+      tool.onMarkNotAnObject();
+      tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+    });
+    const entries = await sentEntries(tool);
+    expect(entries.get("a-car")).toMatchObject({ disposition: "accepted", obstructs: false });
+    expect(entries.get("b-pole")).toMatchObject({ disposition: "accepted", obstructs: true });
+    expect(entries.get("c-tree")).toMatchObject({ disposition: "removed" });
+    for (const entry of Array.from(entries.values())) expect(entry).not.toHaveProperty("action");
+    // Nothing sent says deleted, in the entries or the image's counts
+    expect(JSON.stringify(lastTelemetry)).not.toContain("deleted");
+    // The image's counts agree: the No is accepted, Not an object removed
+    expect(lastTelemetry).toMatchObject({
+      acceptedSuggestionCount: 2,
+      removedSuggestionCount: 1,
+      relabeledSuggestionCount: 0,
+      modifiedSuggestionCount: 0,
+      obstructionCount: 1,
+      nonObstructionCount: 1,
+      // Every real object: the Yes and the No
+      totalBoxesSubmitted: 2,
+    });
+  });
+
+  it("sends an annotator's confirmed obstruction answers, false for every object not marked", async () => {
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+    const tool = mount({ isAnnotator: true });
+    act(() => {
+      for (const shape of tool.shapes) (shape.getAnnotationData() as { selected?: boolean }).selected = true;
+      tool.enterObstructionStep();
+    });
+    act(() => {
+      (tool.shapes.find((shape) => shape.getAnnotationData().id === "c-tree")!.getAnnotationData() as { obstructs?: boolean }).obstructs = true;
+      tool.setState({ obstructionsConfirmed: true });
+    });
+    const entries = await sentEntries(tool);
+    expect(entries.get("c-tree")).toMatchObject({ disposition: "accepted", obstructs: true });
+    expect(entries.get("a-car")).toMatchObject({ disposition: "accepted", obstructs: false });
+    expect(entries.get("b-pole")).toMatchObject({ disposition: "accepted", obstructs: false });
   });
 });
 

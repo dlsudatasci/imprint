@@ -200,8 +200,11 @@ On the landing page (15 Oct 2026) a preview of the contributor task plays as the
 (`HowItWorks`, §9c): it starts playing while it slides into view, growing from 0.88 to full
 size as it arrives, then pins with `position: sticky`, and the next scroll goes close in.
 A cursor moves between boxes and buttons, and a camera glides close in on the photo and back
-out to the whole page. The camera never moves within a shot: the step card fades out of the way
-instead. On phones and tablets (22 Oct 2026) a fingertip taps instead, the answers sheet moves on the
+out to the whole page. The camera never moves within a shot. On a laptop the steps are a rail of
+steps on a line to its left (28 Oct 2026), filling the preview's height: the current step is
+open, the tallest, and the line under it fills with the scroll. As a step ends it folds and
+shrinks while the next unfolds and grows (400 ms, the tool's panel curve). On a laptop that
+line is the only progress shown: the line along the preview's bottom is gone. On phones and tablets (22 Oct 2026) a fingertip taps instead, the answers sheet moves on the
 tool's spring and the photo pans as the tool's does, with no camera. It is the one place motion follows the scroll. With `prefers-reduced-motion: reduce` it does not move at all: one still per step with
 Previous step and Next step.
 
@@ -541,25 +544,52 @@ Below the city figures, the landing page plays the contributor task as the visit
   `top: var(--nav-h)` and is `calc(100svh - var(--nav-h))` tall. `useScrollProgress` reads the
   frame's `top` (`stickyTop`), so the preview still starts and ends where the frame starts and
   stops sticking. With reduced motion the stills are the same height.
-- **The frame**: in the page's `Container` margins like the hero and its map, as tall as the
-  screen less `py-4 lg:py-6`, `rounded-card border border-line bg-ground` like the map.
-- **The camera** films it: the whole page, then close in on the photo for Steps 1 to 3 without a break (fitted
-  to the frame, never past 2), panned down so nothing above the photo's grey well shows: no
-  Step 1 heading and no cut-off line of its instructions (`keepBelow`). Then back out to the whole page, centred, for Step 2 and
-  Next Image (a close shot of Step 2 left empty ground beside it). The page is laid out at 1200 design px and never zoomed past 2.
-  Beyond its edges is the same `bg-ground`. On phones Step 1, Step 2 or Next Image stand in
-  for the whole page.
-- **The step card** sits inside the photo's bottom-left corner, 16 px in, as the close shot
-  shows it (`captionPlace`, across the width at the bottom on phones), worked out from the
-  frame's size only, so it does not move while the preview plays. On a phone the camera frames
-  its shots in the space above the card. The camera never moves for the card (panning around
-  it made the view shake while scrolling, Rans, 15 Oct 2026). Instead the card fades to 0.3
-  (faded, not hidden): where the script marks it (`{ card: "faded" }` in `demoScript.js`), from
-  the moment Lamp Post #2's panel appears through its severity, steps close together (at full
-  strength while the box is drawn), and wherever else the cursor comes near it or more than a
-  twentieth of a box, panel or list goes under it at that screen size (`cardCovers`, Car #1's
-  panel on a laptop, not Motorcycle #1's). It fades at once, so it is
-  never over a panel that has just opened, and comes back over 300 ms. It is an overlay, so `shadow-2xl`.
+- **The frame**: as tall as the screen less `py-4 lg:py-6`, `rounded-card border border-line
+  bg-ground` like the map. On a laptop it shares a row with the step rail, in the page's own
+  `Container` margins like the hero, the map and the figures (Rans, 28 Oct 2026, after trying the
+  wider 1600 px width). The row is at most 760 px tall, centred in the screen: at the full 840 px
+  width the close shot of the photo and its lists is about 723 px tall, so a taller frame only
+  added empty ground under them on a big screen. The rail and the frame grow in together as they
+  arrive.
+- **The camera** films it: the whole page, then close in for Steps 1 to 3 without a break, then
+  back out to the whole page, centred, for Step 2 and Next Image (a close shot of Step 2 left
+  empty ground beside it). The close shot (28 Oct 2026, `workShot`) is the photo and the answer
+  lists under it: the Step 1 card from the inside of the photo's grey well to the foot of the lists
+  at their fullest in the run (measured from an invisible copy laid out under the real lists, its
+  ids dropped), across the card's full width (nothing cropped, Rans: cropping cut the lists'
+  words), centred in the frame so the room above and below is the same, and the same all through
+  the run, so the camera holds still. The room above shows the foot of Step 1's instructions,
+  blurred (5 px) and dimmed (0.45) while the close shot is on and clear again as the camera goes
+  out, over the same 400 ms on the panel curve (`showsAbove`), like content under a frame's edge.
+  Where the room below would reach Next Image (a 1024 px laptop), it fades out (300 ms) and back in
+  as the camera goes out (`showsBelow`). In a frame
+  under 700 px wide, while a box is open, the camera follows the box and its panel instead. The
+  page is laid out at 1200 design px and never zoomed past 2. Beyond its edges is the same
+  `bg-ground`.
+- **The step rail** (28 Oct 2026, the advisor's suggestion, replacing the step card over the
+  photo's corner): the five steps on a line left of the frame, 280 px wide (320 from `xl`),
+  so the left side moves along as the page scrolls. No boxes (Rans, 28 Oct 2026: tall cards left
+  odd empty space): each step is a numbered 32 px dot and its title, with a 2 px line down to the
+  next step, so the space between the steps is the line itself. The current step is open: a
+  filled `bg-primary` dot, its title in `text-ink` and its text, and the line under it fills
+  downward as the scroll goes through the step (`chapterShare`, `scaleY`, so it stays on the
+  compositor and moves 1:1 with the scroll). The steps done have a tick on `primary-100` and a
+  full line, the steps to come a grey dot (`bg-line`) and title (`text-muted`). The titles are
+  `text-lg`, `text-xl` from `xl`. The steps fill the frame's height: each but the last takes a
+  share (`flex-grow`, `basis-0`), the open one three; the last takes only the height it needs,
+  so the line always ends on Step 5 at the rail's foot, level with the frame's bottom. On a 1440
+  by 900 laptop the open step is about 378 px and the others 126. A step is never shorter than
+  its content (flex's `min-height: auto`). As a step ends it folds and the next unfolds:
+  `grid-template-rows` 0fr to 1fr with the opacity, and the shares with them, 400 ms on
+  `cubic-bezier(0.2, 0.8, 0.2, 1)` (the curve the tool's panels open on, a spring's settle
+  without overshoot), so the rail keeps its height and the steps slide rather than jump. A
+  transition starts from wherever it is, so scrolling back mid-change turns it round. The line
+  that ran along the frame's bottom is gone on a laptop (Rans, 28 Oct 2026): the rail's line
+  shows the progress. The rail is `aria-hidden` and takes no focus. With reduced motion it
+  changes at once, the lines do not fill, and Previous step and Next step sit under the open
+  step's text. `captionPlace`, `cardCovers` and the script's `{ card: "faded" }` marks stay in
+  `DemoStage.jsx` and `demoScript.js` for a `captionRef`, but the landing page no longer passes
+  one.
 - **Drawn from the tool's own components**: `Step1Card` (Step 1's heading, instructions, the
   photo's grey well and the answers under it), `DefaultInputSection`, `SeverityPicker`,
   `ObjectTrays` and `SceneQuestions`. The boxes take their colours, line widths and dashes,
@@ -594,8 +624,11 @@ Below the city figures, the landing page plays the contributor task as the visit
   magnifier), the Step 2 line pulling the sheet up, Next Image. No camera: the whole screen is
   always in view. The chapter is a band across the top of the frame, where the tool's top bar
   would be (left out, as the laptop preview leaves out the progress strip), so it never covers
-  the sheet. It keeps room for two lines of text, so the screen under it never changes size,
-  and its bottom edge carries the progress line. The screen is laid out at the size of the
+  the sheet. Every chapter's text is laid in one grid cell and only the current one shows, so
+  the band is as tall as the longest text at that width and no taller (28 Oct 2026: before, it
+  kept three lines everywhere and clamped, which left a white line under the two-line texts on
+  tablets and cut Step 2 short on a 320 px phone). The screen under it never changes size, and
+  its bottom edge carries the progress line. The screen is laid out at the size of the
   space it is shown in, and below 520 by 320 design px it is laid out at that size and scaled
   down to fit. Built from the tool's pieces (the sheet variants of `DefaultInputSection`,
   `SeverityPicker` and `SceneQuestions`, `ObjectTraysPeek`, stacked `ObjectTrays`) and its pure

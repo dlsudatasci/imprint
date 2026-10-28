@@ -11,8 +11,8 @@ vi.mock("next/dynamic", () => ({
   default: () => (props) => <div data-stage data-tick={props.frame.tick} data-touch={String(props.frame.snap !== undefined)} data-coarse={String(Boolean(props.coarse))} />,
 }));
 
-import HowItWorks, { LEAD_IN, TOUCH_STILL_TICKS, TRACK_SCREENS } from "./HowItWorks";
-import { ENTRANCE_END, TICKS } from "./howItWorks/demoScript";
+import HowItWorks, { LEAD_IN, TOUCH_STILL_TICKS, TRACK_SCREENS, chapterShare } from "./HowItWorks";
+import { CHAPTERS, ENTRANCE_END, TICKS, chapterAt } from "./howItWorks/demoScript";
 import { HOW_IT_WORKS_COPY as COPY } from "./howItWorks/howItWorksCopy";
 import { SHEET_LAYOUT_QUERY, TOUCH_DEVICE_QUERY } from "@/hooks/useAnnotateLayout";
 
@@ -51,10 +51,16 @@ describe("HowItWorks", () => {
     expect(stage.closest("[inert]")).not.toBeNull();
     expect(stage.closest('[aria-hidden="true"]')).not.toBeNull();
     expect(el.textContent).not.toContain("Next step");
-    // In the page's margins (the Container the hero uses), framed like the map
+    // Framed like the map, in the page's own margins like the hero, the map and the figures (28 Oct 2026)
     const frame = stage.closest(".rounded-card");
     expect(frame.className).toContain("border-line");
     expect(frame.closest(".max-w-7xl")).not.toBeNull();
+    expect(frame.closest(".max-w-\\[1600px\\]")).toBeNull();
+    // At most 760 px tall, centred in the screen: the height the close shot of the photo and its
+    // lists needs at the full 840 px width, so a big screen shows no empty band under them
+    const row = el.querySelector("[data-frame]");
+    expect(row.className).toContain("max-h-[760px]");
+    expect(row.parentElement.className).toContain("justify-center");
   });
 
   it("starts half a screen early, the frame growing in as it arrives, in step with the script", () => {
@@ -65,19 +71,78 @@ describe("HowItWorks", () => {
     expect(el.querySelector("[data-frame]").style.transform).toBe("scale(0.88)");
   });
 
-  it("keeps the step card in the bottom-left corner for every chapter", () => {
+  it("shows the chapters as steps on a line left of the preview, filling its height, the first one open (28 Oct 2026)", () => {
+    const el = render({ reduced: false });
+    const row = el.querySelector("[data-frame]");
+    const rail = row.querySelector("[data-rail]");
+    // Left of the preview, in the row that grows in as it arrives, and no card over the photo
+    expect(row.firstElementChild).toBe(rail);
+    expect(row.lastElementChild.querySelector("[data-stage]")).not.toBeNull();
+    expect(el.querySelector("[data-caption]")).toBeNull();
+    const cards = Array.from(rail.querySelectorAll("[data-step]"));
+    expect(cards.map((c) => c.dataset.step)).toEqual(["open", "next", "next", "next", "next"]);
+    cards.forEach((card, i) => expect(card.textContent).toContain(COPY.chapters[i].title));
+    cards.forEach((card, i) => expect(card.textContent.startsWith(String(i + 1))).toBe(true));
+    expect(cards[0].textContent).toContain(COPY.chapters[0].text);
+    // The open step's text is unfolded, the others folded to their title
+    const unfold = (card) => card.querySelector("[data-unfold]").className;
+    expect(unfold(cards[0])).toContain("grid-rows-[1fr]");
+    cards.slice(1).forEach((card) => expect(unfold(card)).toContain("grid-rows-[0fr]"));
+    // A line runs from each step down to the next, none under the last, and the one under the
+    // open step fills with the scroll through it: nothing yet at the top (jsdom has no layout)
+    cards.slice(0, -1).forEach((card) => expect(card.querySelector("[data-step-bar]")).not.toBeNull());
+    expect(cards.at(-1).querySelector("[data-step-bar]")).toBeNull();
+    cards.slice(0, -1).forEach((card) => expect(card.querySelector("[data-step-bar]").style.transform).toBe("scaleY(0)"));
+    // No boxes: the space between the steps is the line (Rans, 28 Oct 2026)
+    cards.forEach((card) => expect(card.className).not.toMatch(/(^|\s)(border|rounded-card|shadow-lg)(\s|$)/));
+    // The steps fill the rail's height beside the preview: each but the last a share, the open
+    // one three, the share moving on the fold's curve. The last takes only what it needs, so the
+    // line always ends on it at the rail's foot
+    cards.forEach((card) => expect(card.className).toContain("transition-[flex-grow"));
+    cards.slice(0, -1).forEach((card) => expect(card.className).toContain("basis-0"));
+    expect(cards[0].className).toContain("grow-[3]");
+    cards.slice(1, -1).forEach((card) => expect(card.className).toMatch(/(^|\s)grow(\s|$)/));
+    expect(cards.at(-1).className).toContain("grow-0");
+    expect(cards.at(-1).className).not.toContain("basis-0");
+    // Nothing in it for screen readers or the keyboard: they get the list in the heading
+    expect(rail.querySelectorAll("button, a, [tabindex]")).toHaveLength(0);
+    rail.querySelectorAll("p").forEach((p) => expect(p.closest('[aria-hidden="true"]')).not.toBeNull());
+  });
+
+  it("has no progress line along the preview's bottom on a laptop: the open card's bar shows how far through (28 Oct 2026)", () => {
+    const el = render({ reduced: false });
+    const preview = el.querySelector("[data-frame]").lastElementChild;
+    expect(preview.querySelector("[data-stage]")).not.toBeNull();
+    expect(preview.querySelector(".bottom-0, .bg-primary")).toBeNull();
+    expect(el.querySelector('[data-step="open"] [data-step-bar]')).not.toBeNull();
+  });
+
+  it("tells the rail how far through its chapter the scroll is, in step with the captions", () => {
+    CHAPTERS.forEach((c, i) => {
+      expect(chapterShare(c.start)).toEqual({ index: i, share: 0 });
+      const stop = i + 1 < CHAPTERS.length ? CHAPTERS[i + 1].start : TICKS;
+      expect(chapterShare((c.start + stop) / 2).share).toBeCloseTo(0.5);
+      expect(chapterShare((c.start + stop) / 2).index).toBe(chapterAt((c.start + stop) / 2));
+    });
+    expect(chapterShare(TICKS)).toEqual({ index: CHAPTERS.length - 1, share: 1 });
+  });
+
+  it("with reduced motion, moves the open card down the rail with Next step, the steps done ticked", () => {
     const el = render({ reduced: true });
-    const card = () => el.querySelector("[data-caption]");
-    const placed = card().className;
-    expect(placed).toContain("sm:left-6");
-    expect(placed).toContain("sm:bottom-[30px]");
-    expect(placed).not.toMatch(/(^|\s)(sm:)?top-/);
-    const button = Array.from(el.querySelectorAll("button")).find((b) => b.textContent === "Next step");
-    for (let i = 0; i < 4; i += 1) {
-      act(() => button.click());
-      expect(card().className).toBe(placed);
-      expect(card().style.transform).toBe("");
-    }
+    const steps = () => Array.from(el.querySelectorAll("[data-rail] [data-step]")).map((c) => c.dataset.step);
+    const button = (name) => Array.from(el.querySelectorAll("button")).find((b) => b.textContent === name);
+    expect(steps()).toEqual(["open", "next", "next", "next", "next"]);
+    // The buttons are under the open step's text, and its line does not fill (no scroll)
+    expect(button("Next step").closest('[data-step="open"]')).not.toBeNull();
+    expect(el.querySelector('[data-step="open"] [data-step-bar]').style.transform).toBe("scaleY(0)");
+    act(() => button("Next step").click());
+    expect(steps()).toEqual(["done", "open", "next", "next", "next"]);
+    expect(el.querySelector('[data-step="done"] svg')).not.toBeNull();
+    // A step done has its line full, down to the open one
+    expect(el.querySelector('[data-step="done"] [data-step-bar]').style.transform).toBe("scaleY(1)");
+    expect(button("Next step").closest('[data-step="open"]').textContent).toContain(COPY.chapters[1].title);
+    act(() => button("Previous step").click());
+    expect(steps()).toEqual(["open", "next", "next", "next", "next"]);
   });
 
   it("with reduced motion, shows one still per chapter, stepped by hand, and no track", () => {
@@ -132,12 +197,20 @@ describe("HowItWorks on phones and tablets (22 Oct 2026)", () => {
     expect(el.querySelector("[data-stage]").dataset.coarse).toBe("true");
   });
 
-  it("keeps the band one height for every chapter: three lines of text, clamped (23 Oct 2026)", () => {
+  it("keeps the band one height for every chapter, as tall as the longest text and no taller, nothing cut short (28 Oct 2026)", () => {
     const el = render({ reduced: true, narrow: true });
-    const text = Array.from(el.querySelectorAll("[data-caption] p")).at(-1);
-    expect(text.textContent).toBe(COPY.touchChapters[0].text);
-    expect(text.className).toContain("min-h-[3.75rem]");
-    expect(text.className).toContain("line-clamp-3");
+    const button = (name) => Array.from(el.querySelectorAll("button")).find((b) => b.textContent === name);
+    for (let i = 0; i < COPY.touchChapters.length; i += 1) {
+      // Every text in the same grid cell, so the cell takes the tallest, and only the current one shown
+      const texts = Array.from(el.querySelectorAll("[data-band-text] > p"));
+      expect(texts.map((p) => p.textContent)).toEqual(COPY.touchChapters.map((c) => c.text));
+      texts.forEach((p, k) => {
+        expect(p.className).toContain("[grid-area:1/1]");
+        expect(p.classList.contains("invisible")).toBe(k !== i);
+        expect(p.className).not.toMatch(/line-clamp|truncate|min-h-/);
+      });
+      if (i < COPY.touchChapters.length - 1) act(() => button("Next step").click());
+    }
   });
 
   it("with reduced motion, shows one still per chapter, stepped by hand, ending on the second photo", () => {

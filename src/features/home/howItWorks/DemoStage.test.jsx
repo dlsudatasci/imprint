@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import DemoStage, { cameraFor, cardCovers, keepBelow, captionPlace, findTarget } from "./DemoStage";
+import DemoStage, { cameraFor, cardCovers, keepBelow, captionPlace, findTarget, workShot, showsBelow, showsAbove } from "./DemoStage";
 import { demoFrame, DEMO_IMAGES, STEPS, TICKS, tickOf } from "./demoScript";
 import { defaultShapeStyle } from "@/ui/annotation-tool/Shape";
 
@@ -220,6 +220,48 @@ describe("cardCovers", () => {
     expect(cardCovers(card, { areas: [{ x: 300, y: 300, w: 330, h: 400 }] })).toBe(true);
     expect(cardCovers(card, { areas: [null, { x: 600, y: 200, w: 300, h: 200 }] })).toBe(false);
     expect(cardCovers(null, { pointer: { x: 30, y: 530, w: 10, h: 10 } })).toBe(false);
+  });
+});
+
+describe("workShot", () => {
+  // Measured on a 1440 by 900 laptop (28 Oct 2026): the Step 1 card 733 design px wide from x 24,
+  // the photo's well from y 157, the answer lists' foot at their fullest 761, Next Image from 828
+  const work = { x: 24, y: 157, w: 733, h: 761 - 157 };
+  const laptop = { w: 840, h: 760 };
+
+  it("centres the photo and its lists in the frame across their full width: as much room above as below, nothing cropped", () => {
+    const shot = workShot(work, laptop);
+    const above = work.y * shot.z + shot.y;
+    const below = laptop.h - ((work.y + work.h) * shot.z + shot.y);
+    expect(above).toBeGreaterThan(0);
+    expect(above).toBeCloseTo(below);
+    expect(work.x * shot.z + shot.x).toBeGreaterThanOrEqual(-0.5);
+    expect((work.x + work.w) * shot.z + shot.x).toBeLessThanOrEqual(laptop.w + 0.5);
+    expect((work.x + work.w / 2) * shot.z + shot.x).toBeCloseTo(laptop.w / 2);
+  });
+
+  it("fills a short frame's height instead, when the full width would run past it", () => {
+    const view = { w: 1200, h: 500 };
+    const shot = workShot(work, view);
+    expect(work.y * shot.z + shot.y).toBeCloseTo(0);
+    expect((work.y + work.h) * shot.z + shot.y).toBeCloseTo(view.h);
+    expect(work.w * shot.z).toBeLessThan(view.w);
+  });
+
+  it("never zooms past twice the design size, still centred", () => {
+    const shot = workShot({ x: 0, y: 100, w: 100, h: 100 }, { w: 800, h: 800 });
+    expect(shot.z).toBe(2);
+    expect(150 * shot.z + shot.y).toBeCloseTo(400);
+  });
+
+  it("says when the instructions show above the photo, to blur them, and when Next Image would peek in, to fade it", () => {
+    const shot = workShot(work, laptop);
+    expect(showsAbove(work.y, shot)).toBe(true);
+    expect(showsAbove(work.y, workShot(work, { w: 1200, h: 500 }))).toBe(false);
+    // On the laptop the room below stops short of Next Image, on a 1024 px one it reaches it
+    expect(showsBelow(828, shot, laptop)).toBe(false);
+    const narrow = { w: 632, h: 656 };
+    expect(showsBelow(828, workShot(work, narrow), narrow)).toBe(true);
   });
 });
 

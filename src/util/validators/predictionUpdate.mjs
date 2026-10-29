@@ -212,3 +212,68 @@ export function updateOperation(update, modelVersion, now = new Date()) {
     },
   };
 }
+
+/** A session a contributor or annotator still has open */
+export const ACTIVE_SESSION_STATUS = "active";
+
+/**
+ * Whether an update may be written, given the number of active sessions (S5,
+ * 29 Oct 2026). annotationSubmit stores each contributor answer with the
+ * image record's modelVersion, so a write while a session is open would label
+ * answers given on the old model's proposals with the new one. With --apply
+ * any active session refuses the write, with no way round it. A run without
+ * --apply only warns. The messages give the count and nothing else.
+ */
+export function activeSessionCheck(activeSessions, { apply = false } = {}) {
+  if (!(activeSessions > 0)) return { refuse: false, message: null };
+  const count = `${activeSessions} active session(s)`;
+  if (!apply) {
+    return { refuse: false, message: `Warning: ${count}. --apply will refuse to write until no session is active.` };
+  }
+  return {
+    refuse: true,
+    message: `${count}. Refusing to write while any session is active, so no answer is stored with a model its contributor was not shown. No image was changed. Run again once every session has ended.`,
+  };
+}
+
+/**
+ * The write step of update-predictions.mjs, for a plan with no problems.
+ * Counts active sessions first. Without `apply`, or with any active session,
+ * nothing is written. Otherwise writes every planned update and, when any
+ * image changed, logs MODEL_PREDICTIONS_UPDATED.
+ *
+ * Returns { activeSessions, message, refused, written, modified, unchanged,
+ * logged }, where unchanged is the number of planned images that changed
+ * between the read and the write and were left alone.
+ */
+export async function runPredictionUpdate(db, { data, updates, counts }, { apply = false, partial = false, now = new Date() } = {}) {
+  const activeSessions = await db.collection("sessions").countDocuments({ status: ACTIVE_SESSION_STATUS });
+  const { refuse, message } = activeSessionCheck(activeSessions, { apply });
+  const result = { activeSessions, message, refused: refuse, written: false, modified: 0, unchanged: 0, logged: false };
+  if (!apply || refuse) return result;
+
+  result.written = true;
+  if (updates.length > 0) {
+    const write = await db.collection("Image").bulkWrite(updates.map((u) => updateOperation(u, data.modelVersion, now)), { ordered: false });
+    result.modified = write.modifiedCount;
+    result.unchanged = Math.max(0, updates.length - write.matchedCount);
+  }
+
+  // A run that wrote nothing (every image already at this version) is not a cycle
+  if (result.modified > 0) {
+    await db.collection("telemetry_logs").insertOne({
+      event: "MODEL_PREDICTIONS_UPDATED",
+      modelVersion: data.modelVersion,
+      decisionThreshold: data.decisionThreshold,
+      predictionsInFile: counts.imagesInFile,
+      imagesUpdated: result.modified,
+      imagesSkippedSameVersion: counts.imagesSkippedSameVersion,
+      proposalsWritten: counts.proposalsWritten,
+      servedImagesNotInFile: counts.servedImagesNotInFile,
+      partial,
+      timestamp: now,
+    });
+    result.logged = true;
+  }
+  return result;
+}

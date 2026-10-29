@@ -181,3 +181,71 @@ export function hasEmptyBox(boxes) {
   if (!Array.isArray(boxes)) return false;
   return boxes.some((box) => hasMarkObject(box) && box.comment !== NOT_AN_OBJECT && !(markArea(box.mark) > 0));
 }
+
+/*
+ * The model's own values, from the image record (S5, 29 Oct 2026). The
+ * detector's confidence and its category and box (initialState) feed the
+ * analysis of trust and anchoring and the retraining rows, so they are taken
+ * from the image record by id, never from the browser: a stale tab, a bug or
+ * a crafted request could send anything (found 16 Oct 2026).
+ */
+
+/** A record suggestion's confidence, or null when it has none. */
+function recordConfidence(entry) {
+  return typeof entry?.confidence === "number" && Number.isFinite(entry.confidence) ? entry.confidence : null;
+}
+
+function recordById(annotationList) {
+  return new Map((annotationList || []).map((entry) => [String(entry.id), entry]));
+}
+
+/**
+ * Both roles: each submitted suggestion matched to the image record's entry
+ * of the same id, with its confidence and initialState (the model's comment
+ * and mark) replaced by the record's. Every entry of selectedObjectsID is a
+ * suggestion, so editable is false. A suggestion with an id the record does
+ * not have is refused. Gives { valid, message } or { valid, boxes }.
+ */
+export function applyRecordSuggestions(selectedObjectsID, annotationList) {
+  if (!Array.isArray(selectedObjectsID)) return { valid: true, boxes: selectedObjectsID };
+  const byId = recordById(annotationList);
+  const boxes = [];
+  for (const box of selectedObjectsID) {
+    const entry = box && byId.get(String(box.id));
+    if (!entry) return { valid: false, message: "A suggested box does not belong to this image." };
+    boxes.push({
+      ...box,
+      editable: false,
+      confidence: recordConfidence(entry),
+      initialState: { comment: entry.comment ?? null, mark: entry.mark ? { ...entry.mark } : null },
+    });
+  }
+  return { valid: true, boxes };
+}
+
+/** Both roles: drawn boxes have no confidence and no model state. */
+export function clearDrawnModelFields(newObjects) {
+  if (!Array.isArray(newObjects)) return newObjects;
+  return newObjects.map((box) => {
+    if (!box || typeof box !== "object") return box;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
+    const { initialState, ...rest } = box;
+    return { ...rest, confidence: null };
+  });
+}
+
+/**
+ * A copy of the telemetry with each suggestionConfidences entry's confidence,
+ * the hidden ones' included, taken from the image record by id. An entry
+ * whose id the record does not have is dropped. Other fields pass through.
+ */
+export function withRecordConfidences(telemetry, annotationList) {
+  if (!telemetry || typeof telemetry !== "object" || !Array.isArray(telemetry.suggestionConfidences)) return telemetry;
+  const byId = recordById(annotationList);
+  const suggestionConfidences = [];
+  for (const entry of telemetry.suggestionConfidences) {
+    const record = entry && typeof entry === "object" ? byId.get(String(entry.id)) : undefined;
+    if (record) suggestionConfidences.push({ ...entry, confidence: recordConfidence(record) });
+  }
+  return { ...telemetry, suggestionConfidences };
+}

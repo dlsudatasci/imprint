@@ -13,7 +13,11 @@ import {
   validateAnnotatorBoxes,
   normalizeSubmittedMarks,
   hasEmptyBox,
+  applyRecordSuggestions,
+  clearDrawnModelFields,
+  withRecordConfidences,
 } from "@/util/validators/annotationSubmit";
+import { DEFAULT_MODEL_VERSION } from "@/util/validators/annotationGet";
 import { filterAnnotationsByTau, TAU_THRESHOLD } from "@/util/validators/telemetryPayload";
 import { sanitizeDeviceTelemetry, sanitizeQcTelemetry, classifyBrowser } from "@/util/validators/deviceTelemetry";
 import {
@@ -49,10 +53,11 @@ const handler = async (req, res) => {
     const username = session.user.username;
     const date = new Date();
 
-    // The form validates these too, but the endpoint is reachable directly
+    // The form validates these too, but the endpoint is reachable directly.
+    // The model version, confidences and initialState come from the image
+    // record, not the body (S5).
     const {
       imageID,
-      servedModelVersion,
       currentAnnotationCount,
       telemetry,
       canvasVersion,
@@ -128,7 +133,7 @@ const handler = async (req, res) => {
 
       const imageRecord = await db.collection("Image").findOne(
         { imageID: imageID, _id: { $in: activeSession.imageIDs || [] } },
-        { projection: { city: 1, width: 1, height: 1, annotationList: 1, poolStatus: 1, isReference: 1, sidewalkAgreement: 1 } }
+        { projection: { city: 1, width: 1, height: 1, annotationList: 1, poolStatus: 1, isReference: 1, sidewalkAgreement: 1, modelVersion: 1 } }
       );
 
       if (!imageRecord) {
@@ -145,16 +150,22 @@ const handler = async (req, res) => {
         return res.status(422).json({ message: "A box has no area inside the image." });
       }
 
-      // Annotators: every suggestion the tool shows must be decided, and only
-      // this image's suggestions may be submitted. Suggestions hidden by the
-      // confidence threshold are never shown, so they may be missing.
+      // Both roles (S5, 29 Oct 2026): only this image's suggestions may be
+      // submitted, each stored with the record's confidence and initialState,
+      // and drawn boxes with no confidence
+      const suggestions = imageRecord.annotationList || [];
+      const matched = applyRecordSuggestions(selectedObjectsID, suggestions);
+      if (!matched.valid) {
+        return res.status(422).json({ message: matched.message });
+      }
+      selectedObjectsID = matched.boxes;
+      newObjects = clearDrawnModelFields(newObjects);
+
+      // Annotators: every suggestion the tool shows must be decided.
+      // Suggestions hidden by the confidence threshold are never shown, so
+      // they may be missing.
       if (isAnnotator) {
-        const suggestions = imageRecord.annotationList || [];
-        const knownIds = new Set(suggestions.map((a) => String(a.id)));
         const submittedIds = new Set(selectedObjectsID.map((b) => String(b.id)));
-        if (selectedObjectsID.some((b) => !knownIds.has(String(b.id)))) {
-          return res.status(422).json({ message: "A suggested box does not belong to this image." });
-        }
         const { visible } = filterAnnotationsByTau(suggestions, TAU_THRESHOLD);
         if (visible.some((a) => !submittedIds.has(String(a.id)))) {
           return res.status(422).json({ message: "Every suggested box must be kept or marked not an object." });
@@ -192,7 +203,9 @@ const handler = async (req, res) => {
             date,
             city,
             username,
-            servedModelVersion: isAnnotator ? null : (servedModelVersion || null),
+            // The model the record's suggestions came from (S5), as
+            // annotationGet serves it
+            servedModelVersion: isAnnotator ? null : (imageRecord.modelVersion || DEFAULT_MODEL_VERSION),
             source: isAnnotator ? "annotator" : "contributor",
             sceneLevel,
             schemaVersion: 2,
@@ -242,9 +255,11 @@ const handler = async (req, res) => {
         // logTelemetryEvent sets its own. Device fields are kept only with
         // allowed values, and the browser family comes from the User-Agent
         // header, which is never stored. The quality-check timing (S10) is
-        // kept the same way, and only for contributors.
+        // kept the same way, and only for contributors. Each suggestion's
+        // confidence comes from the image record (S5).
+        const sanitized = sanitizeQcTelemetry(sanitizeDeviceTelemetry(telemetry), { isAnnotator });
         // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
-        const { timestamp, ...clientTelemetry } = sanitizeQcTelemetry(sanitizeDeviceTelemetry(telemetry), { isAnnotator });
+        const { timestamp, ...clientTelemetry } = withRecordConfidences(sanitized, suggestions);
         await logTelemetryEvent({
           ...clientTelemetry,
           event: "IMAGE_SUBMITTED",

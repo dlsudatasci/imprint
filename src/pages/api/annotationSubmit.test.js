@@ -11,6 +11,14 @@ import { getServerSession } from "next-auth/next";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import handler from "./annotationSubmit.js";
 
+const rect = (x, y, width, height) => ({ type: "RECT", x, y, width, height });
+
+// The suggestion on a contributor's image record. A contributor's suggestions
+// are matched to it by id, as annotators' are (S5, 29 Oct 2026).
+const CONTRIBUTOR_SUGGESTIONS = [
+  { id: "c1", comment: "tree", confidence: 0.91, mark: rect(100, 100, 80, 200) },
+];
+
 const validBody = {
   imageID: 42,
   sceneLevel: {
@@ -19,12 +27,10 @@ const validBody = {
     walkability: 3,
     overallAccessibility: 3,
   },
-  selectedObjectsID: [{ obstructs: true, severity: 3 }],
+  selectedObjectsID: [{ id: "c1", obstructs: true, severity: 3 }],
   newObjects: [{ obstructs: false }],
   currentAnnotationCount: 1,
 };
-
-const rect = (x, y, width, height) => ({ type: "RECT", x, y, width, height });
 
 // A 1280 by 960 image with two visible pre-annotations
 const ANNOTATOR_IMAGE = {
@@ -67,7 +73,7 @@ function setupMocks({ hasSession = true, userRole = "user" } = {}) {
     updateOne: vi.fn().mockResolvedValue({ modifiedCount: 1 }),
   });
   const imageCol = createMockCollection({
-    findOne: vi.fn().mockResolvedValue({ city: "makati" }),
+    findOne: vi.fn().mockResolvedValue({ city: "makati", annotationList: CONTRIBUTOR_SUGGESTIONS }),
   });
   const annotationsCol = createMockCollection({
     countDocuments: vi.fn().mockResolvedValue(5),
@@ -267,7 +273,7 @@ describe("POST /api/annotationSubmit", () => {
     const qc = {
       msLongestIdle: 660000,
       msFromLastIdleToSubmit: 3000,
-      suggestionConfidences: [{ id: "s1", confidence: 0.9, disposition: "accepted", msToAnswer: 700 }],
+      suggestionConfidences: [{ id: "c1", confidence: 0.91, disposition: "accepted", msToAnswer: 700 }],
     };
     await handler(createMockReq({ body: { ...validBody, telemetry: qc } }), createMockRes());
     expect(logTelemetryEvent.mock.calls[0][0]).toMatchObject({ event: "IMAGE_SUBMITTED", ...qc });
@@ -277,13 +283,13 @@ describe("POST /api/annotationSubmit", () => {
     await handler(createMockReq({
       body: {
         ...validBody,
-        telemetry: { msLongestIdle: -4, msFromLastIdleToSubmit: "soon", suggestionConfidences: [{ id: "s1", disposition: "accepted", msToAnswer: 1e15 }] },
+        telemetry: { msLongestIdle: -4, msFromLastIdleToSubmit: "soon", suggestionConfidences: [{ id: "c1", disposition: "accepted", msToAnswer: 1e15 }] },
       },
     }), createMockRes());
     const second = logTelemetryEvent.mock.calls[0][0];
     expect(second).not.toHaveProperty("msLongestIdle");
     expect(second).not.toHaveProperty("msFromLastIdleToSubmit");
-    expect(second.suggestionConfidences).toEqual([{ id: "s1", disposition: "accepted" }]);
+    expect(second.suggestionConfidences).toEqual([{ id: "c1", confidence: 0.91, disposition: "accepted" }]);
   });
 
   it("does not call logTelemetryEvent when telemetry is absent", async () => {
@@ -302,7 +308,7 @@ describe("POST /api/annotationSubmit", () => {
     const req = createMockReq({
       body: {
         ...validBody,
-        selectedObjectsID: [{ comment: "not_an_object", obstructs: false }],
+        selectedObjectsID: [{ id: "c1", comment: "not_an_object", obstructs: false }],
       },
     });
     const res = createMockRes();
@@ -317,7 +323,7 @@ describe("POST /api/annotationSubmit", () => {
     const req = createMockReq({
       body: {
         ...validBody,
-        selectedObjectsID: [{ comment: "not_an_object", obstructs: true, severity: 3 }],
+        selectedObjectsID: [{ id: "c1", comment: "not_an_object", obstructs: true, severity: 3 }],
       },
     });
     const res = createMockRes();
@@ -440,14 +446,14 @@ describe("POST /api/annotationSubmit", () => {
         msObjectStep: 4000,
         msLongestIdle: 660000,
         msFromLastIdleToSubmit: 3000,
-        suggestionConfidences: [{ id: "p1", confidence: 0.9, disposition: "accepted", msToAnswer: 700 }],
+        suggestionConfidences: [{ id: "p1", confidence: null, disposition: "accepted", msToAnswer: 700 }],
       };
       await handler(createMockReq({ body: { ...annotatorBody(), telemetry } }), createMockRes());
       const logged = logTelemetryEvent.mock.calls[0][0];
       expect(logged.msObjectStep).toBe(4000);
       expect(logged).not.toHaveProperty("msLongestIdle");
       expect(logged).not.toHaveProperty("msFromLastIdleToSubmit");
-      expect(logged.suggestionConfidences).toEqual([{ id: "p1", confidence: 0.9, disposition: "accepted" }]);
+      expect(logged.suggestionConfidences).toEqual([{ id: "p1", confidence: null, disposition: "accepted" }]);
     });
 
     it("allows a suggestion hidden by the confidence threshold to be missing", async () => {
@@ -462,18 +468,18 @@ describe("POST /api/annotationSubmit", () => {
 
   // Both roles (4 Oct 2026): marks normalized and clipped to the image
   describe("box geometry", () => {
-    it("asks the Image lookup for width, height, annotationList, poolStatus, isReference and sidewalkAgreement", async () => {
+    it("asks the Image lookup for width, height, annotationList, poolStatus, isReference, sidewalkAgreement and modelVersion", async () => {
       const mocks = setupMocks();
       await handler(createMockReq({ body: validBody }), createMockRes());
 
       expect(mocks.imageCol.findOne.mock.calls[0][1]).toEqual({
-        projection: { city: 1, width: 1, height: 1, annotationList: 1, poolStatus: 1, isReference: 1, sidewalkAgreement: 1 },
+        projection: { city: 1, width: 1, height: 1, annotationList: 1, poolStatus: 1, isReference: 1, sidewalkAgreement: 1, modelVersion: 1 },
       });
     });
 
     it("stores a contributor box drawn up and to the left with positive width and height", async () => {
       const mocks = setupMocks();
-      mocks.imageCol.findOne.mockResolvedValue({ city: "makati", width: 1280, height: 960 });
+      mocks.imageCol.findOne.mockResolvedValue({ city: "makati", width: 1280, height: 960, annotationList: CONTRIBUTOR_SUGGESTIONS });
       const body = { ...validBody, newObjects: [{ id: "n1", comment: "tree", obstructs: false, mark: rect(300, 200, -100, -50) }] };
       const res = createMockRes();
       await handler(createMockReq({ body }), res);
@@ -496,7 +502,7 @@ describe("POST /api/annotationSubmit", () => {
 
     it("returns 422 for a box entirely outside the image", async () => {
       const mocks = setupMocks();
-      mocks.imageCol.findOne.mockResolvedValue({ city: "makati", width: 1280, height: 960 });
+      mocks.imageCol.findOne.mockResolvedValue({ city: "makati", width: 1280, height: 960, annotationList: CONTRIBUTOR_SUGGESTIONS });
       const body = { ...validBody, newObjects: [{ id: "n1", comment: "tree", obstructs: false, mark: rect(1400, 100, 50, 50) }] };
       const res = createMockRes();
       await handler(createMockReq({ body }), res);
@@ -506,15 +512,15 @@ describe("POST /api/annotationSubmit", () => {
       expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
     });
 
-    it("leaves the pipeline's initialState box alone", async () => {
+    it("leaves the pipeline's initialState box alone, as the record has it", async () => {
       const mocks = setupMocks();
-      mocks.imageCol.findOne.mockResolvedValue({ city: "makati", width: 1280, height: 960 });
-      const initialState = { comment: "tree", mark: rect(10, 10, 20, 20) };
-      const body = { ...validBody, selectedObjectsID: [{ id: "s1", comment: "tree", obstructs: false, initialState, mark: rect(40, 40, -20, -20) }] };
+      const pipelineBox = rect(10, 10, 20, 20);
+      mocks.imageCol.findOne.mockResolvedValue({ city: "makati", width: 1280, height: 960, annotationList: [{ id: "s1", comment: "tree", mark: pipelineBox }] });
+      const body = { ...validBody, selectedObjectsID: [{ id: "s1", comment: "tree", obstructs: false, initialState: { comment: "tree", mark: rect(10, 10, 20, 20) }, mark: rect(40, 40, -20, -20) }] };
       await handler(createMockReq({ body }), createMockRes());
 
       const stored = mocks.annotationsCol.updateOne.mock.calls[0][1].$set.selectedObjectsID[0];
-      expect(stored.initialState).toEqual(initialState);
+      expect(stored.initialState).toEqual({ comment: "tree", mark: pipelineBox });
       expect(stored.mark).toEqual(rect(20, 20, 20, 20));
     });
   });
@@ -549,7 +555,8 @@ describe("POST /api/annotationSubmit", () => {
 
     const $set = mocks.annotationsCol.updateOne.mock.calls[0][1].$set;
     expect($set.sceneLevel).toEqual(validBody.sceneLevel);
-    expect($set.selectedObjectsID).toEqual(validBody.selectedObjectsID);
+    expect($set.selectedObjectsID).toHaveLength(1);
+    expect($set.selectedObjectsID[0]).toMatchObject(validBody.selectedObjectsID[0]);
   });
 
   it("returns 500 when the role lookup throws", async () => {
@@ -665,7 +672,7 @@ describe("POST /api/annotationSubmit", () => {
     it("writes no sidewalkMask field for a contributor on a flagged reference image", async () => {
       const { mocks, res } = await submitAs({
         role: "user",
-        image: { city: "makati", width: 1280, height: 960, poolStatus: "served", isReference: true, sidewalkAgreement: true },
+        image: { city: "makati", width: 1280, height: 960, annotationList: CONTRIBUTOR_SUGGESTIONS, poolStatus: "served", isReference: true, sidewalkAgreement: true },
         body: { ...validBody, sidewalkMask: { noSidewalk: true, polygons: [] } },
       });
       expect(res._status).toBe(200);
@@ -675,7 +682,7 @@ describe("POST /api/annotationSubmit", () => {
     it("writes no sidewalkMask field for a contributor", async () => {
       const { mocks, res } = await submitAs({
         role: "user",
-        image: { city: "makati", width: 1280, height: 960, poolStatus: "model_dev", isReference: false },
+        image: { city: "makati", width: 1280, height: 960, annotationList: CONTRIBUTOR_SUGGESTIONS, poolStatus: "model_dev", isReference: false },
         body: { ...validBody, sidewalkMask: { noSidewalk: true, polygons: [] } },
       });
       expect(res._status).toBe(200);
@@ -686,7 +693,7 @@ describe("POST /api/annotationSubmit", () => {
   // Photo frame fix (9 Oct 2026): pages loaded after it send canvasVersion 2,
   // so the analysis knows these marks need no frame offset correction
   describe("canvas version", () => {
-    const CONTRIBUTOR_IMAGE = { city: "makati", width: 1280, height: 960 };
+    const CONTRIBUTOR_IMAGE = { city: "makati", width: 1280, height: 960, annotationList: CONTRIBUTOR_SUGGESTIONS };
 
     async function submit({ role, canvasVersion }) {
       const mocks = setupMocks({ userRole: role });
@@ -715,7 +722,7 @@ describe("POST /api/annotationSubmit", () => {
   describe("scene scale", () => {
     async function submit({ role = "user", sceneScale } = {}) {
       const mocks = setupMocks({ userRole: role });
-      mocks.imageCol.findOne.mockResolvedValue(role === "annotator" ? ANNOTATOR_IMAGE : { city: "makati", width: 1280, height: 960 });
+      mocks.imageCol.findOne.mockResolvedValue(role === "annotator" ? ANNOTATOR_IMAGE : { city: "makati", width: 1280, height: 960, annotationList: CONTRIBUTOR_SUGGESTIONS });
       const body = role === "annotator" ? annotatorBody() : { ...validBody };
       if (sceneScale !== undefined) body.sceneScale = sceneScale;
       const res = createMockRes();
@@ -749,6 +756,126 @@ describe("POST /api/annotationSubmit", () => {
 });
 
 // Email verification before annotation (S9, decided 21 Oct 2026)
+// The detector's own values come from the image record, never the browser
+// (S5, 29 Oct 2026)
+describe("POST /api/annotationSubmit stores the image record's model values", () => {
+  const RECORD = {
+    city: "makati",
+    width: 1280,
+    height: 960,
+    modelVersion: "v1-xgboost",
+    annotationList: [
+      { id: "c1", comment: "tree", confidence: 0.91, mark: rect(100, 100, 80, 200) },
+      { id: "c2", comment: "car", confidence: 0.64, mark: rect(400, 300, 200, 120) },
+      { id: "c3", comment: "bench", confidence: 0.2, mark: rect(700, 600, 40, 40) },
+    ],
+  };
+  const tampered = (overrides = {}) => ({
+    id: "c1",
+    comment: "tree",
+    obstructs: false,
+    confidence: 0.99,
+    initialState: { comment: "bollard", mark: rect(0, 0, 5, 5) },
+    mark: rect(100, 100, 80, 200),
+    ...overrides,
+  });
+
+  async function submit({ role = "user", image = RECORD, body } = {}) {
+    const mocks = setupMocks({ userRole: role });
+    mocks.imageCol.findOne.mockResolvedValue(image);
+    const res = createMockRes();
+    await handler(createMockReq({ body: body ?? { ...validBody, selectedObjectsID: [tampered()] } }), res);
+    const $set = mocks.annotationsCol.updateOne.mock.calls[0]?.[1].$set;
+    return { mocks, res, $set };
+  }
+
+  it("stores the record's confidence over a tampered one", async () => {
+    const { res, $set } = await submit();
+    expect(res._status).toBe(200);
+    expect($set.selectedObjectsID[0].confidence).toBe(0.91);
+  });
+
+  it("stores the record's category and box in initialState over a tampered one", async () => {
+    const { $set } = await submit();
+    expect($set.selectedObjectsID[0].initialState).toEqual({ comment: "tree", mark: rect(100, 100, 80, 200) });
+    // The answer and the contributor's own box are kept
+    expect($set.selectedObjectsID[0]).toMatchObject({ comment: "tree", obstructs: false, mark: rect(100, 100, 80, 200) });
+  });
+
+  it("stores an initialState even when the browser sent none, and null for a record suggestion with no confidence", async () => {
+    const image = { ...RECORD, annotationList: [{ id: "c1", comment: "tree", mark: rect(100, 100, 80, 200) }] };
+    const { $set } = await submit({ image, body: { ...validBody, selectedObjectsID: [tampered({ initialState: undefined })] } });
+    expect($set.selectedObjectsID[0].confidence).toBeNull();
+    expect($set.selectedObjectsID[0].initialState).toEqual({ comment: "tree", mark: rect(100, 100, 80, 200) });
+  });
+
+  it("stores the record's modelVersion as servedModelVersion over a tampered one", async () => {
+    const { $set } = await submit({ body: { ...validBody, selectedObjectsID: [tampered()], servedModelVersion: "v9-fake" } });
+    expect($set.servedModelVersion).toBe("v1-xgboost");
+  });
+
+  it("stores v0-mapillary for a record with no modelVersion, as annotationGet serves it, whatever the body says", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- left out on purpose
+    const { modelVersion, ...unversioned } = RECORD;
+    const { $set } = await submit({ image: unversioned, body: { ...validBody, selectedObjectsID: [tampered()], servedModelVersion: "v9-fake" } });
+    expect($set.servedModelVersion).toBe("v0-mapillary");
+  });
+
+  it("stores the record's confidence and initialState for an annotator too, and no servedModelVersion", async () => {
+    const body = {
+      imageID: 42,
+      currentAnnotationCount: 1,
+      servedModelVersion: "v9-fake",
+      selectedObjectsID: [
+        tampered({ selected: true, isRejected: false }),
+        { id: "c2", editable: false, selected: true, isRejected: false, comment: "car", obstructs: true, confidence: 0.01, mark: rect(400, 300, 200, 120) },
+      ],
+      newObjects: [],
+    };
+    const { res, $set } = await submit({ role: "annotator", body });
+    expect(res._status).toBe(200);
+    expect($set.selectedObjectsID.map((b) => b.confidence)).toEqual([0.91, 0.64]);
+    expect($set.selectedObjectsID[0].initialState).toEqual({ comment: "tree", mark: rect(100, 100, 80, 200) });
+    expect($set.servedModelVersion).toBeNull();
+  });
+
+  it("stores a suggestion sent as editable as a suggestion, with the record's confidence", async () => {
+    const { $set } = await submit({ body: { ...validBody, selectedObjectsID: [tampered({ editable: true })] } });
+    expect($set.selectedObjectsID[0]).toMatchObject({ editable: false, confidence: 0.91 });
+  });
+
+  it("stores drawn boxes with a null confidence and no initialState", async () => {
+    const drawn = { id: "d1", editable: true, comment: "bollard", obstructs: false, confidence: 0.8, initialState: { comment: "tree", mark: rect(1, 1, 2, 2) }, mark: rect(50, 50, 30, 90) };
+    const { $set } = await submit({ body: { ...validBody, selectedObjectsID: [tampered()], newObjects: [drawn] } });
+    expect($set.newObjects[0].confidence).toBeNull();
+    expect($set.newObjects[0]).not.toHaveProperty("initialState");
+    expect($set.newObjects[0]).toMatchObject({ id: "d1", comment: "bollard", mark: rect(50, 50, 30, 90) });
+  });
+
+  it("returns 422 for a contributor's suggestion the record does not have, and writes nothing", async () => {
+    const { mocks, res } = await submit({ body: { ...validBody, selectedObjectsID: [tampered({ id: "made-up" })] } });
+    expect(res._status).toBe(422);
+    expect(res._json.message).toBe("A suggested box does not belong to this image.");
+    expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+    expect(logTelemetryEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs each suggestion's confidence from the record, the hidden ones' too, and drops ids the record does not have", async () => {
+    const telemetry = {
+      suggestionConfidences: [
+        { id: "c1", confidence: 0.99, disposition: "accepted", obstructs: false },
+        { id: "c3", confidence: 0.99, disposition: "hidden_below_tau", obstructs: null },
+        { id: "made-up", confidence: 0.5, disposition: "accepted", obstructs: true },
+      ],
+    };
+    await submit({ body: { ...validBody, selectedObjectsID: [tampered()], telemetry } });
+    expect(logTelemetryEvent.mock.calls[0][0].suggestionConfidences).toEqual([
+      { id: "c1", confidence: 0.91, disposition: "accepted", obstructs: false },
+      { id: "c3", confidence: 0.2, disposition: "hidden_below_tau", obstructs: null },
+    ]);
+  });
+});
+
 describe("POST /api/annotationSubmit email verification", () => {
   it("refuses a contributor whose address is not confirmed, before validating or writing anything", async () => {
     const mocks = setupMocks();

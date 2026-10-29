@@ -8,9 +8,12 @@ export const ANNOTATOR_SESSION_SIZES = [10, 25, 50];
  */
 export const REFERENCE_RATE = 8;
 
+/** The model behind images whose record names none: the original Mapillary detections. */
+export const DEFAULT_MODEL_VERSION = "v0-mapillary";
+
 export function ensureModelVersion(imgRecords) {
   for (const img of imgRecords) {
-    if (!img.modelVersion) img.modelVersion = "v0-mapillary";
+    if (!img.modelVersion) img.modelVersion = DEFAULT_MODEL_VERSION;
   }
 }
 

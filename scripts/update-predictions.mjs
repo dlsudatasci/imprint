@@ -20,16 +20,29 @@
  * served to contributors must be in the file, since the whole pool is
  * recomputed each cycle. If anything fails, nothing is written.
  *
+ * It never writes while any session is active (S5, 29 Oct 2026).
+ * annotationSubmit stores each contributor answer with the image record's
+ * modelVersion, so an image updated under an open session would label the
+ * answers given on the old model's proposals with the new model. With
+ * --apply it counts the sessions whose status is "active" just before
+ * writing, and if there are any it prints only their number, writes nothing
+ * and exits with code 1. There is no option to override it: wait for the
+ * sessions to end. Without --apply the same count is printed as a warning.
+ *
+ * Without --apply it only checks and reports, and writes nothing.
+ *
  * Options:
  *   --input <file>     Path to the predictions JSON (required)
- *   --dry-run          Check and report without writing
+ *   --apply            Write the update (refused while any session is active)
+ *   --dry-run          The default, check and report without writing (still
+ *                      accepted, so older command lines never write)
  *   --force            Write images already at this modelVersion too
  *   --allow-partial    Allow served images to be missing from the file (to
  *                      finish a run that was split on purpose)
  *
  * Usage:
- *   node --env-file=.env scripts/update-predictions.mjs --input predictions.json --dry-run
  *   node --env-file=.env scripts/update-predictions.mjs --input predictions.json
+ *   node --env-file=.env scripts/update-predictions.mjs --input predictions.json --apply
  */
 import { MongoClient } from "mongodb";
 import { parseArgs } from "node:util";
@@ -38,12 +51,13 @@ import {
   SERVED_POOL_STATUS,
   validatePredictionFile,
   planPredictionUpdate,
-  updateOperation,
+  runPredictionUpdate,
 } from "../src/util/validators/predictionUpdate.mjs";
 
 const { values } = parseArgs({
   options: {
     input: { type: "string" },
+    apply: { type: "boolean", default: false },
     "dry-run": { type: "boolean", default: false },
     force: { type: "boolean", default: false },
     "allow-partial": { type: "boolean", default: false },
@@ -55,6 +69,11 @@ const dbName = process.env.MONGODB_DB;
 
 if (!uri || !dbName) {
   console.error("MONGODB_URI and MONGODB_DB must be set. Try: node --env-file=.env scripts/update-predictions.mjs --input predictions.json");
+  process.exit(1);
+}
+
+if (values.apply && values["dry-run"]) {
+  console.error("--apply and --dry-run cannot be used together. Leave out --dry-run to write.");
   process.exit(1);
 }
 
@@ -108,36 +127,29 @@ try {
     for (const p of problems.slice(0, 30)) console.error(`  - ${p}`);
     if (problems.length > 30) console.error(`  ... and ${problems.length - 30} more`);
     process.exitCode = 1;
-  } else if (values["dry-run"]) {
-    console.log("  (dry run, nothing written)");
   } else {
-    const now = new Date();
-    let modified = 0;
-    if (updates.length > 0) {
-      const result = await imageColl.bulkWrite(updates.map((u) => updateOperation(u, modelVersion, now)), { ordered: false });
-      modified = result.modifiedCount;
-      console.log(`  ✓ ${modified} image(s) written`);
-      if (result.matchedCount < updates.length) {
-        // An image changed between the read and the write: left as it was
-        console.error(`  ✗ ${updates.length - result.matchedCount} image(s) changed while the update ran and were left alone. Run the same file again.`);
-        process.exitCode = 1;
+    // The active sessions are counted just before writing, and any refuses it
+    const run = await runPredictionUpdate(db, { data, updates, counts }, {
+      apply: values.apply,
+      partial: values["allow-partial"],
+    });
+    if (run.refused) {
+      console.error(`  ✗ ${run.message}`);
+      process.exitCode = 1;
+    } else {
+      if (run.message) console.warn(`  ! ${run.message}`);
+      if (!run.written) {
+        console.log("  (no --apply, nothing written)");
+      } else {
+        if (updates.length > 0) console.log(`  ✓ ${run.modified} image(s) written`);
+        if (run.unchanged > 0) {
+          // An image changed between the read and the write: left as it was
+          console.error(`  ✗ ${run.unchanged} image(s) changed while the update ran and were left alone. Run the same file again.`);
+          process.exitCode = 1;
+        }
+        console.log(run.logged ? "  ✓ Logged MODEL_PREDICTIONS_UPDATED to telemetry_logs" : "  Nothing to write, so no cycle was logged");
       }
     }
-
-    // A run that wrote nothing (every image already at this version) is not a cycle
-    if (modified > 0) await db.collection("telemetry_logs").insertOne({
-      event: "MODEL_PREDICTIONS_UPDATED",
-      modelVersion,
-      decisionThreshold,
-      predictionsInFile: counts.imagesInFile,
-      imagesUpdated: modified,
-      imagesSkippedSameVersion: counts.imagesSkippedSameVersion,
-      proposalsWritten: counts.proposalsWritten,
-      servedImagesNotInFile: counts.servedImagesNotInFile,
-      partial: values["allow-partial"],
-      timestamp: now,
-    });
-    console.log(modified > 0 ? "  ✓ Logged MODEL_PREDICTIONS_UPDATED to telemetry_logs" : "  Nothing to write, so no cycle was logged");
   }
 
   console.log("\n  Summary:");

@@ -8,6 +8,9 @@ import {
   validateAnnotatorBoxes,
   normalizeSubmittedMarks,
   hasEmptyBox,
+  applyRecordSuggestions,
+  clearDrawnModelFields,
+  withRecordConfidences,
 } from "./annotationSubmit.js";
 
 describe("validateSceneLevel", () => {
@@ -385,6 +388,108 @@ describe("hasEmptyBox", () => {
       { comment: "car", obstructs: false },
     ])).toBe(false);
     expect(hasEmptyBox("x")).toBe(false);
+  });
+});
+
+// The model's own values from the image record (S5, 29 Oct 2026)
+describe("applyRecordSuggestions", () => {
+  const mark = (x) => ({ type: "RECT", x, y: 10, width: 20, height: 30 });
+  const list = [
+    { id: "a", comment: "tree", confidence: 0.8, mark: mark(1) },
+    { id: 7, comment: "car", confidence: 0.3, mark: mark(2) },
+    { id: "c", comment: "bench", mark: mark(3) },
+    { id: "d", comment: "car", confidence: Number.NaN, mark: mark(4) },
+  ];
+
+  it("replaces each suggestion's confidence and initialState with the record's, keeping the answer", () => {
+    const result = applyRecordSuggestions(
+      [{ id: "a", comment: "bollard", obstructs: true, severity: 2, confidence: 1, initialState: { comment: "x", mark: mark(9) }, mark: mark(5) }],
+      list
+    );
+    expect(result).toEqual({
+      valid: true,
+      boxes: [{ id: "a", editable: false, comment: "bollard", obstructs: true, severity: 2, confidence: 0.8, initialState: { comment: "tree", mark: mark(1) }, mark: mark(5) }],
+    });
+  });
+
+  it("matches ids as strings, so a number id in the record matches", () => {
+    expect(applyRecordSuggestions([{ id: "7" }], list).boxes[0].confidence).toBe(0.3);
+  });
+
+  it("gives null for a record suggestion with no confidence or one that is not a number", () => {
+    const { boxes } = applyRecordSuggestions([{ id: "c" }, { id: "d" }], list);
+    expect(boxes.map((b) => b.confidence)).toEqual([null, null]);
+  });
+
+  it("copies the record's mark, so the record is not changed through the stored box", () => {
+    const { boxes } = applyRecordSuggestions([{ id: "a" }], list);
+    boxes[0].initialState.mark.x = 999;
+    expect(list[0].mark.x).toBe(1);
+  });
+
+  it("refuses a suggestion whose id the record does not have, or with no id", () => {
+    const refused = { valid: false, message: "A suggested box does not belong to this image." };
+    expect(applyRecordSuggestions([{ id: "a" }, { id: "zz" }], list)).toEqual(refused);
+    expect(applyRecordSuggestions([{ comment: "tree" }], list)).toEqual(refused);
+    expect(applyRecordSuggestions([null], list)).toEqual(refused);
+    expect(applyRecordSuggestions([{ id: "a" }], undefined)).toEqual(refused);
+  });
+
+  it("passes through no suggestions, and anything that is not a list", () => {
+    expect(applyRecordSuggestions([], list)).toEqual({ valid: true, boxes: [] });
+    expect(applyRecordSuggestions(undefined, list)).toEqual({ valid: true, boxes: undefined });
+  });
+});
+
+describe("clearDrawnModelFields", () => {
+  it("gives every drawn box a null confidence and no initialState, keeping the rest", () => {
+    const boxes = [{ id: "d1", comment: "tree", confidence: 0.7, initialState: { comment: "car" }, obstructs: true }, { id: "d2" }];
+    expect(clearDrawnModelFields(boxes)).toEqual([
+      { id: "d1", comment: "tree", confidence: null, obstructs: true },
+      { id: "d2", confidence: null },
+    ]);
+    expect(boxes[0].confidence).toBe(0.7);
+  });
+
+  it("leaves anything that is not a list, and entries that are not objects, alone", () => {
+    expect(clearDrawnModelFields(undefined)).toBeUndefined();
+    expect(clearDrawnModelFields([null, 3])).toEqual([null, 3]);
+  });
+});
+
+describe("withRecordConfidences", () => {
+  const list = [{ id: "a", confidence: 0.8 }, { id: 2, confidence: 0.1 }, { id: "c" }];
+
+  it("takes each entry's confidence from the record by id and drops ids it does not have", () => {
+    const telemetry = {
+      imageDurationMs: 4000,
+      suggestionConfidences: [
+        { id: "a", confidence: 0.99, disposition: "accepted" },
+        { id: "2", confidence: 0.99, disposition: "hidden_below_tau" },
+        { id: "c", confidence: 0.99, disposition: "removed" },
+        { id: "zz", confidence: 0.5, disposition: "accepted" },
+        null,
+      ],
+    };
+    expect(withRecordConfidences(telemetry, list)).toEqual({
+      imageDurationMs: 4000,
+      suggestionConfidences: [
+        { id: "a", confidence: 0.8, disposition: "accepted" },
+        { id: "2", confidence: 0.1, disposition: "hidden_below_tau" },
+        { id: "c", confidence: null, disposition: "removed" },
+      ],
+    });
+    expect(telemetry.suggestionConfidences[0].confidence).toBe(0.99);
+  });
+
+  it("drops every entry when the record has no suggestions", () => {
+    expect(withRecordConfidences({ suggestionConfidences: [{ id: "a", confidence: 1 }] }, undefined)).toEqual({ suggestionConfidences: [] });
+  });
+
+  it("leaves telemetry with no list of entries alone", () => {
+    expect(withRecordConfidences({ imageDurationMs: 1 }, list)).toEqual({ imageDurationMs: 1 });
+    expect(withRecordConfidences({ suggestionConfidences: "x" }, list)).toEqual({ suggestionConfidences: "x" });
+    expect(withRecordConfidences(undefined, list)).toBeUndefined();
   });
 });
 

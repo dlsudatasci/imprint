@@ -10,7 +10,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import handler from "./retraining.js";
 
-function setupAdminMocks({ cycles = [], versionDist = [], totalImages = 0, annotationCount = 0 } = {}) {
+function setupAdminMocks({ cycles = [], versionDist = [], totalImages = 0, annotationCount = 0, tauSetting = null } = {}) {
   getServerSession.mockResolvedValue(mockAuthSession({ role: "admin" }));
 
   const usersCol = createMockCollection({
@@ -36,11 +36,16 @@ function setupAdminMocks({ cycles = [], versionDist = [], totalImages = 0, annot
     countDocuments: vi.fn().mockResolvedValue(annotationCount),
   });
 
+  const settingsCol = createMockCollection({
+    findOne: vi.fn().mockResolvedValue(tauSetting),
+  });
+
   const db = createMockDb({
     users: usersCol,
     telemetry_logs: telemetryCol,
     Image: imageCol,
     annotations: annotationsCol,
+    settings: settingsCol,
   });
   connectToDatabase.mockResolvedValue({ db });
   return { db };
@@ -156,5 +161,21 @@ describe("GET /api/admin/retraining", () => {
 
     expect(res._json.nextRetrainingAt).toBe(2000);
     expect(res._json.annotationsUntilNext).toBe(2000);
+  });
+
+  // The suggestion threshold τ in use (S2, 29 Oct 2026)
+  it("returns the stored τ with its detector, precision and recall", async () => {
+    const chosenAt = new Date("2026-10-29T01:00:00Z");
+    setupAdminMocks({ tauSetting: { _id: "tau", value: 0.43, modelVersion: "det-v1-rfdetr-small", chosenAt, validationPrecision: 0.8, validationRecall: 0.71 } });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(res._json.tau).toEqual({ value: 0.43, isDefault: false, modelVersion: "det-v1-rfdetr-small", chosenAt, validationPrecision: 0.8, validationRecall: 0.71 });
+  });
+
+  it("returns the default τ when none is stored", async () => {
+    setupAdminMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(res._json.tau).toMatchObject({ value: 0.5, isDefault: true, modelVersion: null });
   });
 });

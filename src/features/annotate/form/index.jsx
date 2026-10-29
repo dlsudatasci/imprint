@@ -57,6 +57,8 @@ export default function AnnotateForm({
   allImages,
   isTutorial = false,
   isAnnotator = false,
+  // The batch's suggestion threshold from annotationGet (S2). The tutorial sends none.
+  tau,
   onAnnotatorStepChange,
   // The tutorial on a phone or tablet: shows the step's tour again (the top bar's ? button)
   onShowTour,
@@ -307,6 +309,7 @@ export default function AnnotateForm({
       imageID={data.imageID}
       city={data.city}
       servedModelVersion={data.modelVersion}
+      tau={tau}
       isReference={data.isReference ?? false}
       currentAnnotationCount={current}
       totalAnnotationCount={total}

@@ -7,6 +7,7 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import Page from "@/ui/page";
 import { Card, Container, Badge, Skeleton } from "@/ui";
 import AccountsTab from "@/features/admin/AccountsTab";
+import TauCard from "@/features/admin/TauCard";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -630,6 +631,8 @@ function RetrainingTab() {
           }
         />
       </div>
+
+      <TauCard tau={data.tau} />
 
       <h3 className="font-display text-lg font-bold text-ink">Model Version Distribution</h3>
       {data.versionDistribution.length > 0 ? (

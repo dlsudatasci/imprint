@@ -876,6 +876,71 @@ describe("POST /api/annotationSubmit stores the image record's model values", ()
   });
 });
 
+// The suggestion threshold τ is a setting (S2, 29 Oct 2026): the server
+// checks with the session's, never one the client sends
+describe("POST /api/annotationSubmit suggestion threshold", () => {
+  // A third suggestion at confidence 0.4: shown under τ 0.3, hidden under 0.5
+  const IMAGE = {
+    ...ANNOTATOR_IMAGE,
+    annotationList: [...ANNOTATOR_IMAGE.annotationList, { id: "p3", comment: "bench", confidence: 0.4, mark: rect(800, 100, 60, 60) }],
+  };
+  const MISSING = "Every suggested box must be kept or marked not an object.";
+
+  async function submit({ sessionTau, storedTau, body = annotatorBody() } = {}) {
+    const mocks = setupMocks({ userRole: "annotator" });
+    mocks.imageCol.findOne.mockResolvedValue(IMAGE);
+    mocks.sessionsCol.findOne.mockResolvedValue({
+      userId: MOCK_USER_ID, status: "active", imageIDs: [],
+      ...(sessionTau === undefined ? {} : { tau: sessionTau }),
+    });
+    const settings = createMockCollection({
+      findOne: vi.fn().mockResolvedValue(storedTau === undefined ? null : { _id: "tau", value: storedTau }),
+    });
+    const others = mocks.db.collection.getMockImplementation();
+    mocks.db.collection.mockImplementation((name) => (name === "settings" ? settings : others(name)));
+    const res = createMockRes();
+    await handler(createMockReq({ body }), res);
+    return { mocks, res, settings };
+  }
+
+  it("requires the suggestions at or above the session's τ", async () => {
+    const { res, mocks } = await submit({ sessionTau: 0.3 });
+    expect(res._status).toBe(422);
+    expect(res._json.message).toBe(MISSING);
+    expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+  });
+
+  it("lets the suggestions below the session's τ be missing", async () => {
+    const { res } = await submit({ sessionTau: 0.5, storedTau: 0.3 });
+    expect(res._status).toBe(200);
+  });
+
+  it("uses the session's τ even when the client sends another", async () => {
+    const body = { ...annotatorBody(), tau: 0.9, tauThreshold: 0.9, telemetry: { tauThreshold: 0.9 } };
+    const { res } = await submit({ sessionTau: 0.3, body });
+    expect(res._status).toBe(422);
+    expect(res._json.message).toBe(MISSING);
+  });
+
+  it("uses the stored τ for a session from before S2, and 0.5 when none is stored", async () => {
+    expect((await submit({ storedTau: 0.3 })).res._status).toBe(422);
+    vi.clearAllMocks();
+    expect((await submit({})).res._status).toBe(200);
+  });
+
+  it("logs the server's τ as tauThreshold, over the client's", async () => {
+    await submit({ sessionTau: 0.5, body: { ...annotatorBody(), telemetry: { tauThreshold: 0.1, imageDurationMs: 4000 } } });
+    expect(logTelemetryEvent.mock.calls[0][0]).toMatchObject({ event: "IMAGE_SUBMITTED", tauThreshold: 0.5, imageDurationMs: 4000 });
+  });
+
+  it("logs the contributor's session τ too", async () => {
+    const mocks = setupMocks();
+    mocks.sessionsCol.findOne.mockResolvedValue({ userId: MOCK_USER_ID, status: "active", imageIDs: [], tau: 0.38 });
+    await handler(createMockReq({ body: { ...validBody, telemetry: { tauThreshold: 0.5 } } }), createMockRes());
+    expect(logTelemetryEvent.mock.calls[0][0].tauThreshold).toBe(0.38);
+  });
+});
+
 describe("POST /api/annotationSubmit email verification", () => {
   it("refuses a contributor whose address is not confirmed, before validating or writing anything", async () => {
     const mocks = setupMocks();

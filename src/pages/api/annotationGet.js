@@ -20,6 +20,7 @@ import {
 } from "@/util/validators/annotationGet";
 import { SCENE_SCALE, toCurrentScale } from "@/util/validators/sceneScale.mjs";
 import { needsEmailVerification, EMAIL_NOT_VERIFIED_RESPONSE } from "@/util/validators/emailVerification.mjs";
+import { readTau, sessionTau } from "@/util/validators/tauSetting.mjs";
 
 /**
  * POST /api/annotationGet — gives the annotate page a batch of images to work
@@ -236,11 +237,14 @@ const handler = async (req, res) => {
 
       // referenceGroundTruth (other annotators' answers, the contributors'
       // answer key) never leaves the server (6 Oct 2026, both roles)
+      // The suggestion threshold the session started with (S2), or the
+      // stored one for a session from before 29 Oct 2026
       return res.json({
         imgRecords: sortedImgRecords.map(toClientImage),
         isExistingSession: true,
         currentCount: currentCount,
         isAnnotator,
+        tau: await sessionTau(db, existingSession),
       });
     }
 
@@ -442,6 +446,10 @@ const handler = async (req, res) => {
     ensureModelVersion(imgRecords);
     await mergeUserAnnotations(db, userId, imgRecords);
 
+    // The stored suggestion threshold (S2), kept on the session so the whole
+    // batch shows the same suggestions and annotationSubmit checks the same
+    const tau = await readTau(db);
+
     // Pinning the image list now is what lets the session resume: the same
     // batch comes back on reload instead of a fresh random draw.
     await db.collection("sessions").insertOne({
@@ -451,6 +459,7 @@ const handler = async (req, res) => {
       totalCount: annotationTotalCount,
       status: "active",
       createdAt: new Date(),
+      tau,
     });
 
     const cumulativeSessionsToDate = await db
@@ -490,6 +499,7 @@ const handler = async (req, res) => {
       imgRecords: imgRecords.map(toClientImage),
       isExistingSession: false,
       isAnnotator,
+      tau,
     });
   } catch (error) {
     console.error("Database Error:", error);

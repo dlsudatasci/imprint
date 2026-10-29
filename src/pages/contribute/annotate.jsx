@@ -251,6 +251,7 @@ export default function AnnotatePage() {
           total={state.annotationTotalCount}
           allImages={data.imgRecords}
           isAnnotator={data.isAnnotator === true}
+          tau={data.tau}
         />
       );
     }

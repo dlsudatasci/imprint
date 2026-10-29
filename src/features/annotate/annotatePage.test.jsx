@@ -9,7 +9,9 @@ vi.mock("next/router", () => ({ default: { reload: vi.fn() } }));
 vi.mock("@/ui/page", () => ({ default: ({ children }) => <div>{children}</div> }));
 vi.mock("@/features/layout/contentSkeleton", () => ({ default: () => <p>loading</p> }));
 vi.mock("@/features/annotate/selection", () => ({ default: () => <p>picker</p> }));
-vi.mock("@/features/annotate/form", () => ({ default: ({ data, current }) => <p>photo {data?._id} ({current})</p> }));
+vi.mock("@/features/annotate/form", () => ({
+  default: ({ data, current, tau }) => <p>photo {data?._id} ({current}){tau === undefined ? "" : ` tau ${tau}`}</p>,
+}));
 vi.mock("@/features/annotate/done", () => ({ default: () => <p>done</p> }));
 
 import Router from "next/router";
@@ -114,5 +116,20 @@ describe("the tutorial's practice photos", () => {
     expect(el.textContent).toBe("picker");
     expect(readTutorialFlag()).toBe(true);
     expect(readSessionData()).not.toBeNull();
+  });
+});
+
+// The suggestion threshold τ comes with the batch (S2, 29 Oct 2026)
+describe("the batch's suggestion threshold", () => {
+  it("is passed to the form from the saved batch", async () => {
+    writeSession({ total: 2, current: 1, data: { ...batch("a", "b"), tau: 0.38 } });
+    const el = await open({ server: { isExistingSession: true, currentCount: 1, ...batch("a", "b"), tau: 0.38 }, navigating: true });
+    expect(el.textContent).toBe("photo a (1) tau 0.38");
+  });
+
+  it("is kept in the saved copy when a session is restored from the server", async () => {
+    const el = await open({ server: { isExistingSession: true, currentCount: 1, ...batch("a"), tau: 0.43 } });
+    expect(readSessionData().tau).toBe(0.43);
+    expect(el.textContent).toBe("photo a (1) tau 0.43");
   });
 });

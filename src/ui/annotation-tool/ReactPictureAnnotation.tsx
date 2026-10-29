@@ -264,6 +264,9 @@ interface IReactPictureAnnotationProps {
   imageID: string;
   city: string;
   servedModelVersion?: string;
+  // The batch's suggestion threshold from annotationGet (S2). Without one,
+  // as in the tutorial, TAU_THRESHOLD.
+  tau?: number;
   isReference?: boolean;
   currentAnnotationCount: number;
   inputElement: (
@@ -600,6 +603,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   // Annotators give no severity and answer no scene-level questions (decided
   // 3 Oct 2026). Every role-dependent part of the tool reads these getters.
+  /** The suggestion threshold: the batch's, else TAU_THRESHOLD (S2). */
+  private get tau() {
+    const { tau } = this.props;
+    return typeof tau === "number" && Number.isFinite(tau) && tau >= 0 && tau <= 1 ? tau : TAU_THRESHOLD;
+  }
+
   private get askSeverity() {
     return !this.props.isAnnotator;
   }
@@ -4057,7 +4066,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       imagePositionInSession: this.props.currentAnnotationCount,
       isReferenceImage: this.props.isReference ?? false,
       ...counts,
-      tauThreshold: TAU_THRESHOLD,
+      tauThreshold: this.tau,
       hiddenSuggestionCount: this.hiddenSuggestions.length,
       suggestionConfidences: [...suggestionConfidences, ...hiddenConfidences],
       geometryChanges,
@@ -4409,7 +4418,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    */
   private syncAnnotationData = () => {
     const { annotationData } = this.props;
-    const { visible, hidden } = filterAnnotationsByTau(annotationData, TAU_THRESHOLD);
+    const { visible, hidden } = filterAnnotationsByTau(annotationData, this.tau);
     this.hiddenSuggestions = hidden;
 
     const refreshShapesWithAnnotationData = () => {

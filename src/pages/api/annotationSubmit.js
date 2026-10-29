@@ -18,7 +18,8 @@ import {
   withRecordConfidences,
 } from "@/util/validators/annotationSubmit";
 import { DEFAULT_MODEL_VERSION } from "@/util/validators/annotationGet";
-import { filterAnnotationsByTau, TAU_THRESHOLD } from "@/util/validators/telemetryPayload";
+import { filterAnnotationsByTau } from "@/util/validators/telemetryPayload";
+import { sessionTau } from "@/util/validators/tauSetting.mjs";
 import { sanitizeDeviceTelemetry, sanitizeQcTelemetry, classifyBrowser } from "@/util/validators/deviceTelemetry";
 import {
   requiresSidewalkMask,
@@ -161,12 +162,16 @@ const handler = async (req, res) => {
       selectedObjectsID = matched.boxes;
       newObjects = clearDrawnModelFields(newObjects);
 
+      // The suggestion threshold the session was shown with (S2), never one
+      // the client sends
+      const tau = await sessionTau(db, activeSession);
+
       // Annotators: every suggestion the tool shows must be decided.
       // Suggestions hidden by the confidence threshold are never shown, so
       // they may be missing.
       if (isAnnotator) {
         const submittedIds = new Set(selectedObjectsID.map((b) => String(b.id)));
-        const { visible } = filterAnnotationsByTau(suggestions, TAU_THRESHOLD);
+        const { visible } = filterAnnotationsByTau(suggestions, tau);
         if (visible.some((a) => !submittedIds.has(String(a.id)))) {
           return res.status(422).json({ message: "Every suggested box must be kept or marked not an object." });
         }
@@ -267,6 +272,8 @@ const handler = async (req, res) => {
           username,
           imageID,
           browserFamily: classifyBrowser(req.headers?.["user-agent"]),
+          // The threshold the server checked with (S2), over the client's
+          tauThreshold: tau,
           cumulativeAnnotationsToDate,
         });
       }

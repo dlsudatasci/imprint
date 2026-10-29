@@ -127,9 +127,10 @@ type MountOptions = {
   focus?: boolean;
   onEnterFocus?: () => void;
   onExitFocus?: () => void;
+  tau?: number;
 };
 
-function element({ isAnnotator = false, current = 1, layout = "desktop", askSidewalk, focus, onEnterFocus, onExitFocus }: MountOptions = {}) {
+function element({ isAnnotator = false, current = 1, layout = "desktop", askSidewalk, focus, onEnterFocus, onExitFocus, tau }: MountOptions = {}) {
   const data = readSessionData();
   const rec = data.imgRecords[current - 1];
   return (
@@ -152,6 +153,7 @@ function element({ isAnnotator = false, current = 1, layout = "desktop", askSide
       focus={focus}
       onEnterFocus={onEnterFocus}
       onExitFocus={onExitFocus}
+      tau={tau}
     />
   );
 }
@@ -803,6 +805,58 @@ describe("what was done to each suggestion, in the manuscript's names (S6, 29 Oc
     expect(entries.get("c-tree")).toMatchObject({ disposition: "accepted", obstructs: true });
     expect(entries.get("a-car")).toMatchObject({ disposition: "accepted", obstructs: false });
     expect(entries.get("b-pole")).toMatchObject({ disposition: "accepted", obstructs: false });
+  });
+});
+
+describe("the batch's suggestion threshold (S2, 29 Oct 2026)", () => {
+  // Confidences 0.9, 0.4 and 0.2: the pole shows under τ 0.3, not under 0.5
+  function writeConfidences() {
+    const rec = record();
+    const confidences: Record<string, number> = { "a-car": 0.9, "b-pole": 0.4, "c-tree": 0.2 };
+    for (const box of rec.annotationList) Object.assign(box, { confidence: confidences[box.id] });
+    writeSession({ total: 1, current: 1, data: { imgRecords: [rec], isAnnotator: false } });
+  }
+  const shownIds = (tool: Tool) => tool.shapes.map((shape) => shape.getAnnotationData().id).sort();
+
+  async function sentTelemetry(tool: Tool, answer: string[]) {
+    act(() => {
+      for (const id of answer) {
+        tool.selectBoxById(id);
+        tool.onUnselectObstruction();
+      }
+      tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+    });
+    const fetchMock = vi.fn(async () => ({ status: 200, ok: true, json: async () => ({}) }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await act(async () => {
+      await tool.submit();
+    });
+    const calls = fetchMock.mock.calls as unknown as Array<[string, { body: string }]>;
+    return JSON.parse(calls.find(([url]) => url === "/api/annotationSubmit")![1].body).telemetry;
+  }
+
+  it("shows the suggestions at or above the batch's τ and logs it as tauThreshold", async () => {
+    writeConfidences();
+    const tool = mount({ tau: 0.3 });
+    expect(shownIds(tool)).toEqual(["a-car", "b-pole"]);
+    const telemetry = await sentTelemetry(tool, ["a-car", "b-pole"]);
+    expect(telemetry.tauThreshold).toBe(0.3);
+    expect(telemetry.hiddenSuggestionCount).toBe(1);
+  });
+
+  it("uses 0.5 when the batch has no τ, as the tutorial does", async () => {
+    writeConfidences();
+    const tool = mount();
+    expect(shownIds(tool)).toEqual(["a-car"]);
+    const telemetry = await sentTelemetry(tool, ["a-car"]);
+    expect(telemetry.tauThreshold).toBe(0.5);
+    expect(telemetry.hiddenSuggestionCount).toBe(2);
+  });
+
+  it("uses 0.5 for a τ that is not a number from 0 to 1", () => {
+    writeConfidences();
+    const tool = mount({ tau: 7 });
+    expect(shownIds(tool)).toEqual(["a-car"]);
   });
 });
 

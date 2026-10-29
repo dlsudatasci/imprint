@@ -1,8 +1,11 @@
 import { isNotAnObject } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
+import { DEFAULT_TAU } from "@/util/validators/tauSetting.mjs";
 
 const GEOMETRY_TOLERANCE_PX = 3;
-const TAU_THRESHOLD = 0.5;
+// The suggestion threshold when none is given. The one in use is a setting
+// (S2, validators/tauSetting.mjs), sent with each batch by annotationGet.
+const TAU_THRESHOLD = DEFAULT_TAU;
 
 function filterAnnotationsByTau(annotations, tau) {
   const visible = [];

@@ -3,9 +3,11 @@
  *
  * Returns past retraining cycles (from MODEL_PREDICTIONS_UPDATED telemetry),
  * model version distribution across Image documents, and annotation milestone
- * tracking (next cycle triggers at ~2000-judgment increments).
+ * tracking (next cycle triggers at ~2000-judgment increments), and the
+ * suggestion threshold τ in use with the detector it was chosen for (S2).
  */
 import { requireAdmin } from "@/util/adminAuth";
+import { readTauSetting, tauSummary } from "@/util/validators/tauSetting.mjs";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -17,7 +19,7 @@ export default async function handler(req, res) {
   if (!auth) return;
   const { db } = auth;
 
-  const [cycles, versionDist, totalImages, annotationMilestone] = await Promise.all([
+  const [cycles, versionDist, totalImages, annotationMilestone, tauSetting] = await Promise.all([
     db.collection("telemetry_logs")
       .find({ event: "MODEL_PREDICTIONS_UPDATED" })
       .sort({ timestamp: -1 })
@@ -36,6 +38,8 @@ export default async function handler(req, res) {
     db.collection("Image").countDocuments(),
 
     db.collection("annotations").countDocuments({ status: "completed" }),
+
+    readTauSetting(db),
   ]);
 
   // From 16 Oct 2026 update-predictions.mjs writes only the classifier's
@@ -71,5 +75,6 @@ export default async function handler(req, res) {
     totalCompletedAnnotations: annotationMilestone,
     nextRetrainingAt: nextCycleAt,
     annotationsUntilNext: Math.max(0, nextCycleAt - annotationMilestone),
+    tau: tauSummary(tauSetting),
   });
 }

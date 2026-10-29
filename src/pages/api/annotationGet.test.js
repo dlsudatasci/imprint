@@ -758,6 +758,83 @@ describe("POST /api/annotationGet", () => {
 });
 
 // Email verification before annotation (S9, decided 21 Oct 2026)
+// The suggestion threshold τ is a setting (S2, 29 Oct 2026)
+describe("POST /api/annotationGet suggestion threshold", () => {
+  function storeTau(mocks, value) {
+    const settings = createMockCollection({
+      findOne: vi.fn().mockResolvedValue(value === undefined ? null : { _id: "tau", value, modelVersion: "det-v1-rfdetr-small" }),
+    });
+    const others = mocks.db.collection.getMockImplementation();
+    mocks.db.collection.mockImplementation((name) => (name === "settings" ? settings : others(name)));
+    return settings;
+  }
+  function servePool(mocks) {
+    mocks.imageCol.aggregate.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: "dep-0", imageID: 500, city: "makati", isReference: false, poolStatus: "served", annotationList: [] }]),
+    });
+  }
+  async function newSession(value) {
+    const mocks = setupMocks({ userRole: "user" });
+    const settings = storeTau(mocks, value);
+    servePool(mocks);
+    const res = createMockRes();
+    await handler(createMockReq({ body: { annotationTotalCount: 5 } }), res);
+    return { mocks, settings, res };
+  }
+
+  it("returns the stored τ with a new batch and keeps it on the session", async () => {
+    const { mocks, settings, res } = await newSession(0.43);
+    expect(settings.findOne).toHaveBeenCalledWith({ _id: "tau" });
+    expect(res._json.tau).toBe(0.43);
+    expect(mocks.sessionsCol.insertOne.mock.calls[0][0]).toMatchObject({ status: "active", tau: 0.43 });
+  });
+
+  it("falls back to 0.5 when no τ is stored", async () => {
+    const { mocks, res } = await newSession(undefined);
+    expect(res._json.tau).toBe(0.5);
+    expect(mocks.sessionsCol.insertOne.mock.calls[0][0].tau).toBe(0.5);
+  });
+
+  it("gives a new session the new value once the stored τ changes, with no deploy", async () => {
+    const first = await newSession(0.5);
+    vi.clearAllMocks();
+    const second = await newSession(0.38);
+    expect(first.res._json.tau).toBe(0.5);
+    expect(second.res._json.tau).toBe(0.38);
+  });
+
+  it("returns the τ an open session started with, even after the stored one changed", async () => {
+    const mocks = setupMocks({
+      activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: [], completedImageIDs: [], totalCount: 10, tau: 0.5 },
+    });
+    storeTau(mocks, 0.38);
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._json.isExistingSession).toBe(true);
+    expect(res._json.tau).toBe(0.5);
+  });
+
+  it("returns the stored τ for an open session from before S2", async () => {
+    const mocks = setupMocks({
+      activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: [], completedImageIDs: [], totalCount: 10 },
+    });
+    storeTau(mocks, 0.38);
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._json.tau).toBe(0.38);
+  });
+
+  it("ignores a τ in the request", async () => {
+    const mocks = setupMocks({ userRole: "user" });
+    storeTau(mocks, 0.43);
+    servePool(mocks);
+    const res = createMockRes();
+    await handler(createMockReq({ body: { annotationTotalCount: 5, tau: 0.1 } }), res);
+    expect(res._json.tau).toBe(0.43);
+    expect(mocks.sessionsCol.insertOne.mock.calls[0][0].tau).toBe(0.43);
+  });
+});
+
 describe("POST /api/annotationGet email verification", () => {
   it("refuses a contributor whose address is not confirmed, for the check and for a new session", async () => {
     for (const body of [{}, { annotationTotalCount: 10 }]) {

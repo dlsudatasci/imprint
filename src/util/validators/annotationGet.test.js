@@ -214,6 +214,15 @@ describe("toClientImage", () => {
     expect(out).toEqual({ _id: "i1", imageID: 7, url: "/corpus-images/a.jpg", isReference: true, annotationList: [{ id: "p1" }] });
   });
 
+  it("removes step3AnnotationList, the Step 3 suggestions S1 keeps on record (30 Oct 2026)", () => {
+    const step3 = { ...image, step3AnnotationList: [{ id: "mly-0", comment: "car" }], detectorVersion: "det-v1-rfdetr-medium" };
+    const out = toClientImage(step3);
+    expect(out).not.toHaveProperty("step3AnnotationList");
+    expect(out).not.toHaveProperty("referenceGroundTruth");
+    expect(out).toEqual({ _id: "i1", imageID: 7, url: "/corpus-images/a.jpg", isReference: true, annotationList: [{ id: "p1" }], detectorVersion: "det-v1-rfdetr-medium" });
+    expect(step3).toHaveProperty("step3AnnotationList");
+  });
+
   it("does not mutate its input", () => {
     const original = structuredClone(image);
     toClientImage(image);

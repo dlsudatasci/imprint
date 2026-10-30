@@ -69,11 +69,15 @@ export function canServeImage(img, isAnnotator) {
  * image, with their user ids: an annotator must not see the others' work, and
  * a contributor must not see the answer key they are scored against. The admin
  * quality routes read it from the database, so nothing in the browser needs it.
+ *
+ * step3AnnotationList (S1, 30 Oct 2026) holds the Step 3 suggestions an image
+ * had before write-detector-boxes.mjs replaced them with the detector's. It
+ * is kept on record only, so it stays on the server too.
  */
 export function toClientImage(image) {
   if (!image || typeof image !== "object") return image;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
-  const { referenceGroundTruth, ...rest } = image;
+  const { referenceGroundTruth, step3AnnotationList, ...rest } = image;
   return rest;
 }
 

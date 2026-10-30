@@ -236,7 +236,8 @@ const handler = async (req, res) => {
         || Math.min(completedCount + 1, existingSession.totalCount);
 
       // referenceGroundTruth (other annotators' answers, the contributors'
-      // answer key) never leaves the server (6 Oct 2026, both roles)
+      // answer key) never leaves the server (6 Oct 2026, both roles), nor
+      // step3AnnotationList (S1)
       // The suggestion threshold the session started with (S2), or the
       // stored one for a session from before 29 Oct 2026
       return res.json({

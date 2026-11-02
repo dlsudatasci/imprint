@@ -82,10 +82,13 @@ type Tool = {
   onSetSeverity(severity: number): void;
   onInputCommentChange(comment: string): void;
   onSetObstructs(obstructs: boolean): void;
+  onSetOnSidewalk(onSidewalk: boolean): void;
+  onClearOnSidewalk(): void;
   onDelete(): void;
   toggleBoxHidden(id: string): void;
   showAllBoxes(): void;
   isBoxHidden(id: string): boolean;
+  isOffPhoto(id: string): boolean;
   enterObstructionStep(): void;
   onMouseDown(event: { nativeEvent: { offsetX: number; offsetY: number } }): void;
   onMouseMove(event: { nativeEvent: { offsetX: number; offsetY: number } }): void;
@@ -194,6 +197,7 @@ describe("saving unsubmitted edits (8 Oct 2026)", () => {
     const tool = mount();
     act(() => {
       tool.selectBoxById("c-tree");
+      tool.onSetOnSidewalk(true);
       tool.onSelectObstruction();
     });
     act(() => tool.onSetSeverity(4));
@@ -238,6 +242,7 @@ describe("saving unsubmitted edits (8 Oct 2026)", () => {
     const tool = mount();
     act(() => {
       tool.selectBoxById("a-car");
+      tool.onSetOnSidewalk(true);
       tool.onUnselectObstruction();
     });
     expect(box("a-car").isRejected).toBe(false);
@@ -259,6 +264,7 @@ describe("saving unsubmitted edits (8 Oct 2026)", () => {
     const tool = mount();
     act(() => {
       tool.selectBoxById("a-car");
+      tool.onSetOnSidewalk(true);
       tool.onUnselectObstruction();
     });
     window.localStorage.clear();
@@ -334,6 +340,182 @@ describe("hiding boxes on the photo (8 Oct 2026)", () => {
     expect(tool.state.annotatorStep).toBe("obstructions");
     expect(tool.state.hiddenBoxIds).toEqual([]);
     expect(tool.isBoxHidden("a-car")).toBe(false);
+  });
+});
+
+// S12 (2 Nov 2026): a contributor first says whether each object is on the
+// sidewalk or the path people walk on. No takes the box off the photo and
+// lists it under Not obstructions, as a real object that does not obstruct.
+describe("the sidewalk question (S12, 2 Nov 2026)", () => {
+  type Data = Record<string, unknown>;
+  const data = (tool: Tool, id: string) => tool.shapes.find((sh) => sh.getAnnotationData().id === id)!.getAnnotationData() as unknown as Data;
+  const sidewalkNo = (tool: Tool, id: string) => act(() => {
+    tool.selectBoxById(id);
+    tool.onSetOnSidewalk(false);
+  });
+  const noList = () => host.querySelector("#object-tray-not-obstructions")!;
+  const chipOf = (label: string) =>
+    Array.from(noList().querySelectorAll('[data-tray="notObstructions"]')).find((b) => b.textContent?.includes(label)) as HTMLButtonElement | undefined;
+  const panelText = () => host.querySelector(".rp-selected-input")?.textContent ?? "";
+  const QUESTION = "Is it on the sidewalk or the path people walk on?";
+
+  it("No records a suggestion as a real object that does not obstruct, closes its panel and takes it off the photo, without hiding it", () => {
+    const tool = mount();
+    act(() => tool.selectBoxById("a-car"));
+    expect(panelText()).toContain(QUESTION);
+    expect(panelText()).not.toContain("obstruct the sidewalk?");
+    act(() => tool.onSetOnSidewalk(false));
+    expect(tool.selectedId).toBeNull();
+    expect(data(tool, "a-car")).toMatchObject({ comment: "car", onSidewalk: false, obstructs: false, severity: null, selected: false, isRejected: true });
+    expect(tool.isOffPhoto("a-car")).toBe(true);
+    expect(tool.isBoxHidden("a-car")).toBe(false);
+    expect(tool.state.hiddenBoxIds).toEqual([]);
+    expect(noList().textContent).toContain("Car #1");
+    expect(host.querySelector("#object-tray-off-sidewalk")).toBeNull();
+    expect(host.textContent).not.toContain("walking path");
+    // Its chip has no eye: the box is off the photo already
+    expect(chipOf("Car #1")!.parentElement!.querySelector("[data-eye]")).toBeNull();
+  });
+
+  it("a press where it was does not pick it, and Show all does not bring it back", () => {
+    const tool = mount();
+    sidewalkNo(tool, "a-car");
+    // Inside the car, away from the pole
+    act(() => {
+      tool.currentAnnotationState.onMouseDown(250, 150);
+      tool.currentAnnotationState.onMouseUp();
+    });
+    expect(tool.selectedId).not.toBe("a-car");
+    act(() => tool.showAllBoxes());
+    expect(tool.isOffPhoto("a-car")).toBe(true);
+  });
+
+  it("its chip opens it, the box shows while the panel is open, and Yes moves on to the obstruction question", () => {
+    const tool = mount();
+    sidewalkNo(tool, "a-car");
+    act(() => chipOf("Car #1")!.click());
+    expect(tool.selectedId).toBe("a-car");
+    expect(tool.isOffPhoto("a-car")).toBe(false);
+    expect(panelText()).toContain(QUESTION);
+    act(() => tool.onSetOnSidewalk(true));
+    expect(tool.selectedId).toBe("a-car");
+    expect(data(tool, "a-car")).toMatchObject({ onSidewalk: true, selected: false, isRejected: false, severity: null });
+    expect(data(tool, "a-car").obstructs).toBeUndefined();
+    expect(panelText()).toContain("Does Car obstruct the sidewalk?");
+    // Closed, it is back on the photo, still to decide
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    expect(tool.isOffPhoto("a-car")).toBe(false);
+    expect(noList().textContent).not.toContain("Car #1");
+  });
+
+  it("Go back on the obstruction question returns to the sidewalk question with neither answer", () => {
+    const tool = mount();
+    act(() => {
+      tool.selectBoxById("a-car");
+      tool.onSetOnSidewalk(true);
+      tool.onUnselectObstruction();
+    });
+    act(() => tool.selectBoxById("a-car"));
+    expect(panelText()).toContain("obstruct the sidewalk?");
+    act(() => (host.querySelector('.rp-selected-input [data-control="back"]') as HTMLButtonElement).click());
+    const car = data(tool, "a-car");
+    expect(car).not.toHaveProperty("onSidewalk");
+    expect(car.obstructs).toBeUndefined();
+    expect(car).toMatchObject({ selected: false, isRejected: false, severity: null });
+    expect(tool.selectedId).toBe("a-car");
+    expect(panelText()).toContain(QUESTION);
+  });
+
+  it("Not an object leaves no sidewalk answer on the box", () => {
+    const tool = mount();
+    act(() => {
+      tool.selectBoxById("a-car");
+      tool.onSetOnSidewalk(true);
+      tool.onMarkNotAnObject();
+    });
+    expect(data(tool, "a-car")).toMatchObject({ comment: "not_an_object", obstructs: false });
+    expect(data(tool, "a-car")).not.toHaveProperty("onSidewalk");
+  });
+
+  it("a drawn box answered No leaves the photo too, with obstructs false", () => {
+    const tool = mount();
+    // Away from every suggestion
+    act(() => {
+      tool.currentAnnotationState.onMouseDown(700, 400);
+      tool.currentAnnotationState.onMouseMove(760, 480);
+      tool.currentAnnotationState.onMouseUp();
+    });
+    const drawn = tool.shapes.find((sh) => sh.getAnnotationData().editable)!.getAnnotationData().id;
+    act(() => {
+      tool.selectBoxById(drawn);
+      tool.onInputCommentChange("bench");
+      tool.onSetOnSidewalk(false);
+    });
+    expect(data(tool, drawn)).toMatchObject({ editable: true, onSidewalk: false, obstructs: false, severity: null });
+    expect(tool.isOffPhoto(drawn)).toBe(true);
+    expect(noList().textContent).toContain("Bench #1");
+  });
+
+  it("a box answered No is saved, and comes back off the photo when the session is resumed", () => {
+    const tool = mount();
+    sidewalkNo(tool, "a-car");
+    act(() => vi.advanceTimersByTime(500));
+    expect(box("a-car")).toMatchObject({ onSidewalk: false, obstructs: false, isRejected: true });
+    unmount();
+    const again = mount();
+    expect(data(again, "a-car")).toMatchObject({ onSidewalk: false, obstructs: false });
+    expect(again.isOffPhoto("a-car")).toBe(true);
+    expect(noList().textContent).toContain("Car #1");
+  });
+
+  it("sends onSidewalk on every real box, and logs a suggestion off the walking path as off_sidewalk at the time of its No", async () => {
+    vi.setSystemTime(new Date("2026-11-02T09:00:00Z"));
+    const fetchMock = vi.fn(async () => ({ status: 200, ok: true, json: async () => ({}) }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const tool = mount();
+    act(() => tool.onPhotoShown());
+    act(() => vi.advanceTimersByTime(1500));
+    sidewalkNo(tool, "a-car");
+    act(() => {
+      tool.selectBoxById("b-pole");
+      tool.onSetOnSidewalk(true);
+    });
+    // The time to answer runs on to the obstruction answer
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => tool.onUnselectObstruction());
+    act(() => {
+      tool.selectBoxById("c-tree");
+      tool.onMarkNotAnObject();
+    });
+    act(() => tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } }));
+    await act(async () => {
+      await tool.submit();
+    });
+    expect(tool.state.error).toBeNull();
+    const call = fetchMock.mock.calls.find((c) => (c as unknown as [string])[0] === "/api/annotationSubmit") as unknown as [string, { body: string }];
+    const body = JSON.parse(call[1].body);
+    const sent = (id: string) => body.selectedObjectsID.find((b: { id: string }) => b.id === id);
+    expect(sent("a-car")).toMatchObject({ comment: "car", onSidewalk: false, obstructs: false, isRejected: true });
+    expect(sent("b-pole")).toMatchObject({ onSidewalk: true, obstructs: false, isRejected: true });
+    expect(sent("c-tree")).not.toHaveProperty("onSidewalk");
+    const entry = (id: string) => body.telemetry.suggestionConfidences.find((e: { id: string }) => e.id === id);
+    expect(entry("a-car")).toMatchObject({ disposition: "off_sidewalk", obstructs: false, msToAnswer: 1500 });
+    expect(entry("b-pole")).toMatchObject({ disposition: "accepted", obstructs: false, msToAnswer: 2500 });
+    expect(entry("c-tree")).toMatchObject({ disposition: "removed" });
+    expect(body.telemetry).toMatchObject({ offSidewalkSuggestionCount: 1, removedSuggestionCount: 1, totalBoxesSubmitted: 2, nonObstructionCount: 2 });
+  });
+
+  it("is never asked of annotators", () => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+    const tool = mount({ isAnnotator: true });
+    act(() => {
+      tool.selectBoxById("a-car");
+      tool.onSetOnSidewalk(false);
+    });
+    expect(data(tool, "a-car")).not.toHaveProperty("onSidewalk");
+    expect(tool.isOffPhoto("a-car")).toBe(false);
+    expect(panelText()).not.toContain(QUESTION);
   });
 });
 
@@ -421,6 +603,7 @@ describe("moving on from an image (8 Oct 2026)", () => {
     act(() => {
       for (const id of ["a-car", "b-pole", "c-tree"]) {
         tool.selectBoxById(id);
+        tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
       tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
@@ -489,6 +672,7 @@ describe("moving on from an image (8 Oct 2026)", () => {
     const drawnId = tool.selectedId as string;
     act(() => {
       tool.onInputCommentChange("bollard");
+      tool.onSetOnSidewalk(true);
       tool.onSetObstructs(false);
     });
     act(() => vi.advanceTimersByTime(500));
@@ -619,6 +803,7 @@ describe("the timing two quality checks need (S10, 28 Oct 2026)", () => {
   };
   const answerNo = (tool: Tool, id: string) => act(() => {
     tool.selectBoxById(id);
+    tool.onSetOnSidewalk(true);
     tool.onUnselectObstruction();
   });
   const noSidewalk = (tool: Tool) => act(() => {
@@ -668,6 +853,7 @@ describe("the timing two quality checks need (S10, 28 Oct 2026)", () => {
   it("sends null under 10 minutes idle, and for an answer restored after a refresh", async () => {
     const restored = record();
     Object.assign(restored.annotationList[0], {
+      onSidewalk: true,
       isRejected: true,
       obstructs: false,
       initialState: { comment: "car", mark: mark(100, 100, 200, 120) },
@@ -760,8 +946,10 @@ describe("what was done to each suggestion, in the manuscript's names (S6, 29 Oc
     const tool = mount();
     act(() => {
       tool.selectBoxById("a-car");
+      tool.onSetOnSidewalk(true);
       tool.onUnselectObstruction();
       tool.selectBoxById("b-pole");
+      tool.onSetOnSidewalk(true);
       tool.onSelectObstruction();
     });
     act(() => tool.onSetSeverity(3));
@@ -822,6 +1010,7 @@ describe("the batch's suggestion threshold (S2, 29 Oct 2026)", () => {
     act(() => {
       for (const id of answer) {
         tool.selectBoxById(id);
+        tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
       tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
@@ -885,7 +1074,7 @@ describe("selecting and closing by id, not by a simulated click (8 Oct 2026)", (
     act(() => tool.selectBoxById("z-corner"));
     expect(tool.selectedId).toBe("z-corner");
     // No closes the panel
-    act(() => tool.onUnselectObstruction());
+    act(() => { tool.onSetOnSidewalk(true); tool.onUnselectObstruction(); });
     expect(tool.selectedId).toBeNull();
     expect(tool.currentTransformer).toBeNull();
   });
@@ -1020,6 +1209,7 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
     act(() => {
       for (const id of ["a-car", "b-pole", "c-tree"]) {
         tool.selectBoxById(id);
+        tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
       tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
@@ -1038,6 +1228,7 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
     act(() => {
       for (const id of ["a-car", "b-pole", "c-tree"]) {
         tool.selectBoxById(id);
+        tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
       tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
@@ -1227,7 +1418,8 @@ describe("touch on the photo (9 Oct 2026)", () => {
     const tool = onPhone();
     act(() => tool.selectBoxById("a-car"));
     expect(host.querySelector(".rp-selected-input")).toBeNull();
-    expect(host.querySelector("#answer-sheet")!.textContent).toContain("obstruct the sidewalk?");
+    // The sidewalk question first (S12)
+    expect(host.querySelector("#answer-sheet")!.textContent).toContain("Is it on the sidewalk or the path people walk on?");
   });
 
   it("keeps every box and the selection when the layout switches to desktop", () => {
@@ -1238,7 +1430,7 @@ describe("touch on the photo (9 Oct 2026)", () => {
     expect(toolRef.current).toBe(tool);
     expect(tool.shapes).toHaveLength(count);
     expect(tool.selectedId).toBe("a-car");
-    expect(host.querySelector(".rp-selected-input")!.textContent).toContain("obstruct the sidewalk?");
+    expect(host.querySelector(".rp-selected-input")!.textContent).toContain("Is it on the sidewalk or the path people walk on?");
     expect(host.querySelector("#answer-sheet")).toBeNull();
   });
 });
@@ -1734,6 +1926,7 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     act(() => {
       for (const id of ["a-car", "b-pole", "c-tree"]) {
         tool.selectBoxById(id);
+        tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
     });
@@ -1789,6 +1982,7 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
       act(() => {
         for (const id of ["a-car", "b-pole", "c-tree"]) {
           tool.selectBoxById(id);
+          tool.onSetOnSidewalk(true);
           tool.onUnselectObstruction();
         }
       });
@@ -1875,6 +2069,7 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
     act(() => {
       for (const id of ["a-car", "b-pole", "c-tree"]) {
         tool.selectBoxById(id);
+        tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
       tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
@@ -2237,7 +2432,7 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
     HTMLCanvasElement.prototype.getBoundingClientRect = realRect;
   });
 
-  type Box = { selected?: boolean; isRejected?: boolean; obstructs?: boolean | null; severity?: number | null; comment?: string };
+  type Box = { onSidewalk?: boolean; selected?: boolean; isRejected?: boolean; obstructs?: boolean | null; severity?: number | null; comment?: string };
   type SheetTool = Tool & { state: Tool["state"] & { sheetSnap: string; showInput: boolean } };
   const data = (tool: Tool, id: string) => tool.shapes.find((sh) => sh.getAnnotationData().id === id)!.getAnnotationData() as unknown as Box;
   const set = (tool: Tool, changes: Record<string, Box>) =>
@@ -2298,12 +2493,18 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
 
   it("contributors, desktop: Next Image opens the first unanswered object, then a Yes with no severity, and nothing for Step 2", async () => {
     const tool = open("contributor");
-    set(tool, { "a-car": { selected: true, obstructs: true, severity: 3 } });
+    set(tool, { "a-car": { onSidewalk: true, selected: true, obstructs: true, severity: 3 } });
     act(() => tool.setState({ sceneLevel: SCENE }));
+    await submitNow(tool);
+    // The sidewalk question comes first (S12)
+    expect(tool.state.error).toBe("Please say whether each object is on the sidewalk or the path people walk on.");
+    expect(tool.selectedId).toBe("b-pole");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    act(() => (tool as unknown as { onClose(): void }).onClose());
+    set(tool, { "b-pole": { onSidewalk: true }, "c-tree": { onSidewalk: true } });
     await submitNow(tool);
     expect(tool.state.error).toContain("Yes or No");
     expect(tool.selectedId).toBe("b-pole");
-    expect(globalThis.fetch).not.toHaveBeenCalled();
     act(() => (tool as unknown as { onClose(): void }).onClose());
     set(tool, { "b-pole": { isRejected: true, obstructs: false }, "c-tree": { selected: true, obstructs: true, severity: null } });
     await submitNow(tool);
@@ -2355,7 +2556,7 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
   it("contributors, phone: one row of every object at the top of the sheet, what is left first, with the lists still pulled up", () => {
     coarse = true;
     const tool = open("contributor", { layout: "sheet" });
-    set(tool, { "a-car": { selected: true, obstructs: true, severity: 3 }, "c-tree": { selected: true, obstructs: true, severity: null } });
+    set(tool, { "a-car": { onSidewalk: true, selected: true, obstructs: true, severity: 3 }, "c-tree": { onSidewalk: true, selected: true, obstructs: true, severity: null } });
     const peek = host.querySelector("#box-review-section-peek")!;
     const chips = Array.from(peek.querySelectorAll("#box-review-chips-peek li")).map((li) => li.textContent);
     expect(chips).toEqual(["Utility Post #1To decide", "Tree #1No severity", "Car #1Obstruction"]);
@@ -2442,7 +2643,7 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
   it("contributors, full screen: the chip on the photo counts a Yes with no severity as left", () => {
     coarse = true;
     const tool = open("contributor", { layout: "sheet", focus: true });
-    set(tool, { "a-car": { selected: true, obstructs: true, severity: null }, "b-pole": { isRejected: true, obstructs: false } });
+    set(tool, { "a-car": { onSidewalk: true, selected: true, obstructs: true, severity: null }, "b-pole": { onSidewalk: true, isRejected: true, obstructs: false } });
     expect(host.querySelector("[data-focus-chip] span")!.textContent).toBe("2 still to decide");
   });
 });

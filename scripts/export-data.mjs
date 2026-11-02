@@ -26,6 +26,13 @@
  * images also carry sidewalkMask ({ noSidewalk, polygons }), null on reference
  * images. Contributor rows have no sidewalkMask.
  *
+ * From 2 Nov 2026 (S12) every real contributor box carries onSidewalk, the
+ * contributor's answer to "Is it on the sidewalk or the path people walk on?".
+ * A box answered No has obstructs: false and stays in every mode (--full
+ * exports the boxes as stored, --quality and --retraining add an onSidewalk
+ * field and column next to obstructs). Annotator boxes and Not an object boxes
+ * have none.
+ *
  * Scene answers are exported on the scale where higher is better, in every
  * mode (22 Oct 2026, src/util/validators/sceneScale.mjs): surfaceCondition 1
  * Difficult or dangerous to 3 Easy to traverse, walkability 1 Uncomfortable to
@@ -237,6 +244,8 @@ try {
         contributorBoxes: realBoxes.map((box) => ({
           category: box.comment || box.label || "",
           obstructs: box.obstructs ?? null,
+          // Contributors only (S12, 2 Nov 2026), null for annotators
+          onSidewalk: typeof box.onSidewalk === "boolean" ? box.onSidewalk : null,
           severity: box.severity ?? null,
           x: box.mark?.x ?? null,
           y: box.mark?.y ?? null,

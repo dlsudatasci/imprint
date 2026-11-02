@@ -9,7 +9,7 @@ import { boxLabelColors, boxLineStyle, boxStrokeColor, defaultShapeStyle } from 
 import { panelPosition } from "@/ui/annotation-tool/panelPosition";
 import { buildTrays } from "@/features/annotate/objectTrays";
 import { buildDisplayLabels, formatLabel } from "@/util/buildDisplayLabels";
-import { getSuggestionPanelMode } from "@/util/suggestionJudgment";
+import { getSuggestionPanelMode, isOffSidewalk } from "@/util/suggestionJudgment";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 import { DEMO_IMAGES, DEMO_IMAGE_SIZE, TICKS, demoFrame, tickOf } from "./demoScript";
 
@@ -84,7 +84,7 @@ export function findTarget(root, target, boxes) {
   if (target.kind === "image") return root.querySelector("[data-demo-photo]");
   if (target.kind === "box") return boxes.some((b) => b.id === target.id) ? root.querySelector("[data-demo-photo]") : null;
   if (target.kind !== "ui") return null;
-  const control = { yes: "yes", no: "no", confirm: "confirm", category: "category", slider: "severity" }[target.name];
+  const control = { "sidewalk-yes": "on-sidewalk-yes", "sidewalk-no": "on-sidewalk-no", yes: "yes", no: "no", confirm: "confirm", category: "category", slider: "severity" }[target.name];
   if (control) return root.querySelector(`[data-demo-panel] [data-control="${control}"]`);
   if (target.name === "option") return root.querySelector(`[data-demo-option="${target.value}"]`);
   if (target.name === "scene") return root.querySelector(`[data-scene-option="${target.field}:${target.value}"]`);
@@ -200,6 +200,7 @@ function DemoPanel({ box, picker, dropdown, scale }) {
     obstructs: box.obstructs,
     severity: box.severity,
     comment: box.comment || "",
+    onSidewalk: box.onSidewalk,
   });
   // Where the tool opens it (panelPosition, as syncPanel)
   const { left, top } = panelPosition(
@@ -232,6 +233,7 @@ function DemoPanel({ box, picker, dropdown, scale }) {
           isRejected={Boolean(box.isRejected)}
           obstructs={box.obstructs}
           severity={box.severity}
+          onSidewalk={box.onSidewalk}
         />
       )}
       {dropdown && <DemoCategoryList highlighted={dropdown.highlighted} />}
@@ -258,7 +260,8 @@ const Screen = memo(function Screen({ view, photoWidth }) {
                 {/* eslint-disable-next-line @next/next/no-img-element -- a static tutorial photo, drawn at a fixed size */}
                 <img src={image.url} alt="" className="absolute inset-0 w-full h-full" draggable={false} />
                 <svg className="absolute inset-0 overflow-visible" width={photoWidth} height={DEMO_IMAGE_SIZE.height * scale}>
-                  {boxes.map((b) => (
+                  {/* A box answered not on the path is off the photo, as in the tool (S12) */}
+                  {boxes.filter((b) => !isOffSidewalk(b) || b.id === selectedId).map((b) => (
                     <DemoBox key={b.id} box={b} label={labels.get(b.id)} scale={scale} isOpen={b.id === selectedId} />
                   ))}
                   {draft && (

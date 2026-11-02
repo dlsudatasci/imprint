@@ -1,5 +1,6 @@
 import TUTORIAL_IMAGES from "@/data/tutorialImages";
 import { normalizeMark } from "@/util/boxGeometry";
+import { offSidewalkPatch, onSidewalkPatch } from "@/util/suggestionJudgment";
 
 /**
  * The landing page's preview of the contributor task (HowItWorks).
@@ -14,11 +15,15 @@ import { normalizeMark } from "@/util/boxGeometry";
  * fields change as when a contributor clicks, see ReactPictureAnnotation's
  * onSelectObstruction, onUnselectObstruction, onSetObstructs and
  * onSetSeverity), but which object gets which answer is only for show:
- * Tree #1 first, Yes with severity 1, then Car, Motorcycle and Lamp Post #1
- * No, the drawn Lamp Post #2 Yes with severity 4, and Step 2 Moderate, Easy
+ * Tree #1 first, Yes with severity 1, then Car and Lamp Post #1 not on the
+ * path, Motorcycle #1 on it but No, the drawn Lamp Post #2 Yes with severity 4, and Step 2 Moderate, Easy
  * to traverse, Comfortable and Easily accessible (Rans, 15 Oct 2026). Those
  * are 3, 3 and 5, the last answer of each, now the answers run worst to best
- * (22 Oct 2026, validators/sceneScale.mjs).
+ * (22 Oct 2026, validators/sceneScale.mjs). Every object is first answered
+ * on the sidewalk question, as the tool asks it before the obstruction
+ * question (S12, 2 Nov 2026). Car #1 and Lamp Post #1 get No there, so their
+ * boxes leave the photo and they are listed under Not obstructions (Rans,
+ * 2 Nov 2026), and the rest Yes.
  *
  * Time is in ticks, 0 to 1000, across the whole scroll, the first ENTRANCE_END
  * of them while the preview slides into view (HowItWorks). The script is one
@@ -71,6 +76,23 @@ export function close(s) {
   s.selectedId = null;
   s.picker = null;
   s.dropdown = null;
+}
+
+/** Yes to the sidewalk question (onSetOnSidewalk(true)): the panel moves on to the obstruction question */
+export function sidewalkYes(id) {
+  return (s) => {
+    const target = find(s, id);
+    Object.assign(target, onSidewalkPatch(target));
+  };
+}
+
+/** No to the sidewalk question (onSetOnSidewalk(false)): the box leaves the photo and the panel closes */
+export function sidewalkNo(id) {
+  return (s) => {
+    const target = find(s, id);
+    Object.assign(target, offSidewalkPatch(target));
+    close(s);
+  };
 }
 
 /** No on a suggestion (onUnselectObstruction) */
@@ -163,12 +185,26 @@ export const wait = (beats) => ({ beats });
 export const until = (tick) => ({ until: tick });
 /** A move, press, drag or hold, named so tests and the stills can find it */
 export const step = (name, type, beats, more = {}) => ({ name, type, beats, ...more });
-/** No on a suggestion: open it, then No */
+/** The sidewalk question for the object `name` (S12): Yes, or "no" */
+export const answerOnSidewalk = (name, then, answer = "yes") => [
+  step(`${name}-to-sidewalk`, "move", 3, { to: ui(`sidewalk-${answer}`) }),
+  step(`${name}-sidewalk`, "press", 1.5, { then }),
+];
+/** No on a suggestion: open it, Yes to the sidewalk question, then No */
 const answerNo = (key) => [
   step(`to-${key}`, "move", 4, { to: box(ids[key]) }),
   step(`${key}-open`, "press", 1.5, { then: select(ids[key]) }),
+  ...answerOnSidewalk(key, sidewalkYes(ids[key])),
   step(`${key}-to-no`, "move", 3, { to: ui("no") }),
   step(`${key}-no`, "press", 1.5, { then: suggestionNo(ids[key]) }),
+];
+/** A suggestion not on the path: open it, then No to the sidewalk question, and its box leaves the photo */
+const answerOffPath = (key) => [
+  step(`to-${key}`, "move", 4, { to: box(ids[key]) }),
+  step(`${key}-open`, "press", 1.5, { then: select(ids[key]) }),
+  ...answerOnSidewalk(key, sidewalkNo(ids[key]), "no"),
+  // A moment to see the box gone from the photo and listed under Not obstructions
+  wait(1.5),
 ];
 /** A Step 2 answer: move to the option, then click it */
 const sceneAnswer = (field, value) => [
@@ -197,6 +233,7 @@ const TIMELINE = [
   wait(3),
   step("to-tree", "move", 11, { to: box(ids.tree) }),
   step("tree-open", "press", 2, { then: select(ids.tree) }),
+  ...answerOnSidewalk("tree", sidewalkYes(ids.tree)),
   step("tree-to-yes", "move", 6, { to: ui("yes") }),
   step("tree-yes", "press", 2, { then: suggestionYes(ids.tree) }),
   step("tree-to-slider", "move", 5, { to: ui("slider", { value: 3 }) }),
@@ -207,9 +244,9 @@ const TIMELINE = [
   { chapter: "answer" },
   // Car #1's panel opens over the step card's corner, and DemoStage fades the
   // card for it (the overlap depends on the screen). Motorcycle #1's does not
-  ...answerNo("car"),
+  ...answerOffPath("car"),
   ...answerNo("moto"),
-  ...answerNo("lamp"),
+  ...answerOffPath("lamp"),
   { chapter: "draw" },
   step("to-draw", "move", 6, { to: img(DRAW_FROM) }),
   step("draw", "drag", 10, {
@@ -234,6 +271,7 @@ const TIMELINE = [
     during: (s, t) => { if (t > 0.6) s.dropdown = { highlighted: "lamp_post" }; },
   }),
   step("category-pick", "press", 2, { then: chooseCategory("lamp_post") }),
+  ...answerOnSidewalk("drawn", sidewalkYes(DRAWN_ID)),
   step("drawn-to-yes", "move", 5, { to: ui("yes") }),
   step("drawn-yes", "press", 2, { then: drawnYes(DRAWN_ID) }),
   step("drawn-to-slider", "move", 4, { to: ui("slider", { value: 3 }) }),

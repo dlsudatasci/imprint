@@ -46,8 +46,9 @@ export class DefaultAnnotationState implements IAnnotationState {
     // inside a wide "cracked pavement" region. Collect everything under the
     // cursor rather than taking the first hit.
     // A box hidden on the photo (Step 1, 8 Oct 2026) cannot be clicked, so a
-    // box can be drawn or fitted underneath it
-    const hidden = (i: number) => this.context.isBoxHidden(shapes[i].getAnnotationData().id);
+    // box can be drawn or fitted underneath it. Nor can a contributor's box
+    // answered not on the sidewalk (S12), unless its panel is open.
+    const hidden = (i: number) => this.context.isOffPhoto(shapes[i].getAnnotationData().id);
     const intersectingShapes = [];
     for (let i = shapes.length - 1; i >= 0; i--) {
       if (hidden(i)) continue;

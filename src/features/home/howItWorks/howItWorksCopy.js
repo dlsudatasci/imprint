@@ -4,7 +4,10 @@
  * One caption per chapter of demoScript.js, in the same order, and one per
  * chapter of touchScript.js for phones and tablets (touchChapters). Not an object
  * is offered for the model's boxes only (a box you drew is deleted instead,
- * annotationSubmit refuses it otherwise), so it is in chapter 2, not 3.
+ * annotationSubmit refuses it otherwise), so it is in chapter 2, not 3. From
+ * 2 Nov 2026 (S12) the first three chapters, laptop and phone alike, name the
+ * two questions on every box: on the sidewalk or the path people walk on,
+ * then in your way.
  */
 export const HOW_IT_WORKS_COPY = Object.freeze({
   eyebrow: "How contributing works",
@@ -16,15 +19,15 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
   chapters: Object.freeze([
     Object.freeze({
       title: "Say what blocks your way",
-      text: "Our model has already boxed the objects it found. Open a box and say whether it is an obstruction in your path on the sidewalk. If it is, rate its severity from 1 to 5.",
+      text: "Our model has already boxed the objects it found. Open a box and say if it is on the sidewalk or the path people walk on, then if it obstructs your path. If it does, rate its severity from 1 to 5.",
     }),
     Object.freeze({
       title: "Answer every suggestion",
-      text: "Go through the rest the same way. If an object doesn't obstruct your way, click No. If a box has nothing real in it, mark it Not an object.",
+      text: "Go through the rest the same way. If an object is off the path or not in your way, click No. If a box has nothing real in it, mark it Not an object.",
     }),
     Object.freeze({
       title: "Draw what the model missed",
-      text: "Drag a box around anything the model missed, pick its category, and answer the same question.",
+      text: "Drag a box around anything the model missed, pick its category, and answer both questions.",
     }),
     Object.freeze({
       title: "Rate the sidewalk",
@@ -39,7 +42,9 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
    * The same chapters on phones and tablets (22 Oct 2026), where the preview
    * plays the tool's phone layout (touchScript.js): the same titles, shorter
    * text in the tool's words for a finger (tap, Next, Add box, the Step 2
-   * line), at most two lines on a phone.
+   * line), at most two lines on a phone. From 2 Nov 2026 (S12) the second and
+   * third name the two questions on every box: on the walking path, then in
+   * your way.
    */
   touchChapters: Object.freeze([
     Object.freeze({
@@ -48,11 +53,11 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
     }),
     Object.freeze({
       title: "Answer every suggestion",
-      text: "Tap Next for the next box. If the object doesn't obstruct the sidewalk, tap No. If there's nothing real in it, tap Not an object.",
+      text: "Tap Next. Is it on the walking path? In your way? Or tap Not an object.",
     }),
     Object.freeze({
       title: "Draw what the model missed",
-      text: "Tap Add box, drag its corners to fit the object, pick its category, and answer the same question.",
+      text: "Tap Add box, fit it, pick its category, and answer both questions.",
     }),
     Object.freeze({
       title: "Rate the sidewalk",

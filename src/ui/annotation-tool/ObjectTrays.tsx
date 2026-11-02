@@ -27,6 +27,11 @@ import { EyeIcon, EyeOffIcon } from "../icons";
  * sit in the answers sheet, stacked in one column, and ObjectTraysPeek shows
  * them at a glance in the sheet's top part, which is always in view.
  *
+ * From 2 Nov 2026 (S12) a box answered not on the sidewalk is listed under
+ * Not obstructions. Its box is off the photo, so its chip has no eye and is
+ * never shown as hidden. The chip still opens the box's panel, which shows
+ * the box again, so the answer can be changed.
+ *
  * Presentational: ReactPictureAnnotation passes the lists from buildTrays.
  * Keeps the box-review-section id, which the tutorial points at.
  */
@@ -111,8 +116,10 @@ const stopPress = (e: React.SyntheticEvent) => e.stopPropagation();
  * crossed out.
  */
 function Chip({ item, tone, actions }: { item: TrayItem; tone: Tone; actions: ChipActions }) {
-  const { selectedId, onOpen, onToggleHidden, hidden } = actions;
-  const isHidden = hidden.has(item.id);
+  const { selectedId, onOpen, hidden } = actions;
+  // Off the photo already (S12), so nothing to hide or show
+  const onToggleHidden = item.offSidewalk ? undefined : actions.onToggleHidden;
+  const isHidden = !item.offSidewalk && hidden.has(item.id);
   const eyeLabel = isHidden ? BOX_VISIBILITY_COPY.show(item.label) : BOX_VISIBILITY_COPY.hide(item.label);
   return (
     <li
@@ -223,8 +230,8 @@ export default function ObjectTrays({ trays, selectedId, hiddenIds = [], onOpen,
   const { toDecide, notObstructions, obstructions, removed, total } = trays;
   const hidden = new Set(hiddenIds);
   const actions: ChipActions = { selectedId, onOpen, onToggleHidden, hidden };
-  // Only boxes still in the image count as hidden
-  const everyItem = [...toDecide, ...notObstructions, ...obstructions, ...removed];
+  // Only boxes that can be on the photo count as hidden (not one off the sidewalk, S12)
+  const everyItem = [...toDecide, ...notObstructions, ...obstructions, ...removed].filter((item) => !item.offSidewalk);
   const hiddenCount = everyItem.filter((item) => hidden.has(item.id)).length;
   const showHideAll = Boolean(onHideAll) && hiddenCount < everyItem.length;
 
@@ -434,7 +441,7 @@ function PeekChips({ peek, selectedId, onOpen }: { peek: Peek; selectedId: strin
  */
 export function ObjectTraysPeek({ trays, peek, selectedId, onOpen, onNext, sceneLine, onShowScene, hiddenIds = [], onShowAll, onHideAll }: ObjectTraysPeekProps) {
   const { toDecide, total, removed } = trays;
-  const everyItem = [...toDecide, ...trays.notObstructions, ...trays.obstructions, ...removed];
+  const everyItem = [...toDecide, ...trays.notObstructions, ...trays.obstructions, ...removed].filter((item) => !item.offSidewalk);
   const hidden = new Set(hiddenIds);
   return (
     <div id="box-review-section-peek" className="px-4 pb-2">

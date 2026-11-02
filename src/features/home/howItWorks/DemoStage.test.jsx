@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import DemoStage, { cameraFor, cardCovers, keepBelow, captionPlace, findTarget, workShot, showsBelow, showsAbove } from "./DemoStage";
 import { demoFrame, DEMO_IMAGES, STEPS, TICKS, tickOf } from "./demoScript";
+import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 import { defaultShapeStyle } from "@/ui/annotation-tool/Shape";
 
 /**
@@ -41,12 +42,30 @@ describe("DemoStage", () => {
     expect(el.querySelector("[data-demo-panel]")).toBeNull();
   });
 
-  it("opens the real question panel on the selected suggestion, Lamp Post #1", () => {
-    const el = show(tickOf("lamp-to-no", "end"));
-    const panel = el.querySelector("[data-demo-panel]");
-    expect(panel).not.toBeNull();
-    expect(panel.textContent).toContain("Does Lamp Post obstruct the sidewalk?");
+  it("opens the real question panel on the selected suggestion, Motorcycle #1, the path question first", () => {
+    const first = show(tickOf("moto-to-sidewalk", "end")).querySelector("[data-demo-panel]");
+    expect(first.textContent).toContain(SIDEWALK_QUESTION_COPY.question);
+    expect(first.textContent).toContain("Not an object");
+    act(() => root.unmount());
+    host.remove();
+    const panel = show(tickOf("moto-to-no", "end")).querySelector("[data-demo-panel]");
+    expect(panel.textContent).toContain("Does Motorcycle obstruct the sidewalk?");
     expect(panel.textContent).toContain("Not an object");
+  });
+
+  // S12 (Rans, 2 Nov 2026): Car and Lamp Post #1 are not on the path
+  it("takes Car and Lamp Post #1 off the photo after their No to the path question, and lists them under Not obstructions", () => {
+    const boxesOnPhoto = (el) => el.querySelectorAll("[data-demo-photo] svg > g").length;
+    const labels = (el) => Array.from(el.querySelectorAll("[data-demo-photo] foreignObject")).map((f) => f.textContent);
+    const el = show(tickOf("lamp-sidewalk", "end"));
+    expect(boxesOnPhoto(el)).toBe(2);
+    expect(labels(el).sort()).toEqual(["Motorcycle #1", "Tree #1"]);
+    const notObstructions = el.querySelector("#object-tray-not-obstructions").textContent;
+    for (const name of ["Car #1", "Lamp Post #1", "Motorcycle #1"]) expect(notObstructions).toContain(name);
+    // While its panel is open, Lamp Post #1's box is on the photo (Car #1 is not)
+    act(() => root.unmount());
+    host.remove();
+    expect(boxesOnPhoto(show(tickOf("lamp-to-sidewalk", "end")))).toBe(3);
   });
 
   it("shows the severity picker at the dragged value: 1 for Tree #1, 4 for the drawn box", () => {
@@ -132,7 +151,7 @@ describe("DemoStage", () => {
   });
 
   it("has no links, and no buttons of its own beyond the real components' (it is shown inert)", () => {
-    const el = show(tickOf("lamp-to-no", "end"));
+    const el = show(tickOf("lamp-to-sidewalk", "end"));
     expect(el.querySelector("a[href]")).toBeNull();
   });
 });

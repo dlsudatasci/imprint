@@ -30,6 +30,25 @@ describe("landing page copy", () => {
     }
   });
 
+  // S12 (2 Nov 2026): the two questions on every box, path first
+  it("names both questions in the laptop chapters about the boxes, about as long as before", () => {
+    const [first, answer, draw] = HOW_IT_WORKS_COPY.chapters;
+    expect(first.title).toBe("Say what blocks your way");
+    expect(first.text).toContain("on the sidewalk or the path people walk on");
+    expect(first.text).toContain("obstructs your path");
+    expect(first.text).toContain("rate its severity from 1 to 5");
+    expect(first.text.indexOf("path people walk on")).toBeLessThan(first.text.indexOf("obstructs your path"));
+    expect(answer.text).toContain("off the path or not in your way, click No");
+    expect(draw.text).toContain("answer both questions");
+    expect(draw.text).not.toContain("the same question.");
+    // About as long as the texts they replaced (167, 139 and 94 characters)
+    expect(first.text.length).toBeLessThanOrEqual(200);
+    expect(answer.text.length).toBeLessThanOrEqual(155);
+    expect(draw.text.length).toBeLessThanOrEqual(100);
+    // Rate the sidewalk is left for S15
+    expect(HOW_IT_WORKS_COPY.chapters[3].text).toBe("Four quick questions about the sidewalk as a whole: how wide it is, its surface, how comfortable it looks, and whether you could get through.");
+  });
+
   it("offers Not an object only where it is offered: the model's boxes, never a drawn one", () => {
     const [, answer, draw] = HOW_IT_WORKS_COPY.chapters;
     expect(answer.text).toContain("Not an object");
@@ -53,6 +72,13 @@ describe("landing page copy", () => {
     expect(draw.text).not.toContain("Not an object");
     // Short enough for three lines on a 320 px phone (the band keeps room for three, 23 Oct 2026)
     for (const c of HOW_IT_WORKS_COPY.touchChapters) expect(c.text.length).toBeLessThanOrEqual(130);
+    // The two about each box's questions (S12, 2 Nov 2026): at most two lines on
+    // a 320 px phone, measured in Chrome at 71 and 66 characters
+    expect(answer.text.length).toBeLessThanOrEqual(72);
+    expect(draw.text.length).toBeLessThanOrEqual(72);
+    expect(answer.text).toContain("walking path");
+    expect(answer.text).toContain("In your way");
+    expect(draw.text).toContain("both questions");
     expect(TOUCH_STILL_TICKS).toHaveLength(TOUCH_CHAPTERS.length);
     TOUCH_STILL_TICKS.forEach((tick) => {
       expect(tick).toBeGreaterThanOrEqual(0);

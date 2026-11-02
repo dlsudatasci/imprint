@@ -193,6 +193,7 @@ describe("buildSuggestionConfidences", () => {
       car(), car({ comment: "tree" }), car({ comment: "kiosk" }), car({ mark: { ...baseMark, x: 50 } }),
       car({ comment: "tree", mark: { ...baseMark, x: 50 } }), car({ comment: "kiosk", mark: { ...baseMark, x: 50 } }),
       car({ isRejected: true, selected: false, comment: "not_an_object" }),
+      car({ isRejected: true, selected: false, onSidewalk: false, obstructs: false }),
     ];
     const used = buildSuggestionConfidences(boxes).map((entry) => entry.disposition);
     expect(new Set(used)).toEqual(new Set(SUGGESTION_DISPOSITIONS));
@@ -244,6 +245,47 @@ describe("buildSuggestionConfidences", () => {
 
 // The quality-check timing (S10, 28 Oct 2026), with fake timers
 const MINUTE = 60 * 1000;
+
+// S12 (2 Nov 2026): a suggestion answered not on the sidewalk or the path people walk on
+describe("a suggestion off the walking path", () => {
+  const off = (overrides = {}) => makeSuggestion({
+    comment: "car",
+    initialState: { comment: "car", mark: { ...baseMark } },
+    selected: false,
+    isRejected: true,
+    onSidewalk: false,
+    obstructs: false,
+    severity: null,
+    ...overrides,
+  });
+
+  it("is logged as off_sidewalk with obstructs false, never removed", () => {
+    const [entry] = buildSuggestionConfidences([off()]);
+    expect(entry).toMatchObject({ disposition: "off_sidewalk", obstructs: false });
+    expect(SUGGESTION_DISPOSITIONS).toContain("off_sidewalk");
+    // Relabelled or moved, it is still off_sidewalk
+    expect(buildSuggestionConfidences([off({ comment: "tree", mark: { ...baseMark, x: 90 } })])[0].disposition).toBe("off_sidewalk");
+  });
+
+  it("takes the time of its sidewalk No as its time to answer", () => {
+    const [entry] = buildSuggestionConfidences([off({ id: "s9" })], { msToAnswer: (id) => (id === "s9" ? 1200 : null) });
+    expect(entry.msToAnswer).toBe(1200);
+  });
+
+  it("is counted under offSidewalkSuggestionCount, as a real object that does not obstruct", () => {
+    const counts = buildSubmissionCounts([off({ id: "a" }), makeSuggestion({ id: "b", obstructs: true, severity: 2 })]);
+    expect(counts.offSidewalkSuggestionCount).toBe(1);
+    expect(counts.removedSuggestionCount).toBe(0);
+    expect(counts.totalBoxesSubmitted).toBe(2);
+    expect(counts.nonObstructionCount).toBe(1);
+    expect(counts.obstructionCount).toBe(1);
+  });
+
+  it("is counted the same way for a drawn box, under manualBoxCount", () => {
+    const counts = buildSubmissionCounts([{ id: "d", editable: true, onSidewalk: false, obstructs: false, severity: null }]);
+    expect(counts).toMatchObject({ manualBoxCount: 1, totalBoxesSubmitted: 1, nonObstructionCount: 1, offSidewalkSuggestionCount: 0 });
+  });
+});
 
 describe("createIdleClock", () => {
   beforeEach(() => {
@@ -602,6 +644,7 @@ describe("buildSubmissionCounts", () => {
       modifiedSuggestionCount: 0,
       relabeledAndModifiedSuggestionCount: 0,
       customCategoryAndModifiedSuggestionCount: 0,
+      offSidewalkSuggestionCount: 0,
       totalBoxesSubmitted: 0,
       obstructionCount: 0,
       nonObstructionCount: 0,
@@ -646,6 +689,7 @@ describe("buildSubmissionCounts", () => {
       makeSuggestion({ id: "e", comment: "tree", ...moved }),
       makeSuggestion({ id: "f", comment: "kiosk", ...moved }),
       makeSuggestion({ id: "g", isRejected: true, selected: false, comment: "not_an_object" }),
+      makeSuggestion({ id: "h", isRejected: true, selected: false, onSidewalk: false, obstructs: false }),
     ]);
     for (const field of Object.values(DISPOSITION_COUNT_FIELDS)) expect(result[field]).toBe(1);
   });

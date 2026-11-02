@@ -140,8 +140,8 @@ describe("validateSceneLevel", () => {
 
 describe("validateBoxes", () => {
   it("accepts valid boxes", () => {
-    const selected = [{ obstructs: true, severity: 3 }];
-    const newOnes = [{ obstructs: false }];
+    const selected = [{ onSidewalk: true, obstructs: true, severity: 3 }];
+    const newOnes = [{ onSidewalk: true, obstructs: false }];
     expect(validateBoxes(selected, newOnes)).toEqual({ valid: true });
   });
 
@@ -158,37 +158,76 @@ describe("validateBoxes", () => {
   });
 
   it("rejects when total boxes exceed MAX_BOXES_PER_IMAGE", () => {
-    const many = Array.from({ length: 301 }, () => ({ obstructs: false }));
+    const many = Array.from({ length: 301 }, () => ({ onSidewalk: true, obstructs: false }));
     expect(validateBoxes(many, []).valid).toBe(false);
   });
 
   it("accepts exactly MAX_BOXES_PER_IMAGE boxes", () => {
-    const exact = Array.from({ length: MAX_BOXES_PER_IMAGE }, () => ({ obstructs: false }));
+    const exact = Array.from({ length: MAX_BOXES_PER_IMAGE }, () => ({ onSidewalk: true, obstructs: false }));
     expect(validateBoxes(exact, []).valid).toBe(true);
   });
 
   it("rejects box missing obstructs field", () => {
-    expect(validateBoxes([{ severity: 3 }], []).valid).toBe(false);
+    expect(validateBoxes([{ onSidewalk: true, severity: 3 }], []).valid).toBe(false);
+  });
+
+  // S12 (2 Nov 2026): every real contributor box says whether it is on the sidewalk
+  describe("the sidewalk answer", () => {
+    const NO_ANSWER = "Every object must say whether it is on the sidewalk (onSidewalk: true/false).";
+    const OFF_SIDEWALK = "An object not on the sidewalk must have obstructs: false and no severity.";
+
+    it("requires onSidewalk true or false on every real box, suggestion or drawn", () => {
+      for (const onSidewalk of [undefined, null, "yes", 1]) {
+        expect(validateBoxes([{ obstructs: false, onSidewalk }], [])).toEqual({ valid: false, message: NO_ANSWER });
+        expect(validateBoxes([], [{ obstructs: false, onSidewalk }])).toEqual({ valid: false, message: NO_ANSWER });
+      }
+    });
+
+    it("accepts a box off the walking path with obstructs false and no severity", () => {
+      const off = { onSidewalk: false, obstructs: false, severity: null, selected: false, isRejected: true };
+      expect(validateBoxes([off], [{ onSidewalk: false, obstructs: false }])).toEqual({ valid: true });
+    });
+
+    it("refuses a box off the walking path that obstructs, has no answer, or has a severity", () => {
+      expect(validateBoxes([{ onSidewalk: false, obstructs: true, severity: 3 }], [])).toEqual({ valid: false, message: OFF_SIDEWALK });
+      expect(validateBoxes([], [{ onSidewalk: false }])).toEqual({ valid: false, message: OFF_SIDEWALK });
+      expect(validateBoxes([], [{ onSidewalk: false, obstructs: false, severity: 2 }])).toEqual({ valid: false, message: OFF_SIDEWALK });
+    });
+
+    it("lets only a box on the walking path obstruct", () => {
+      expect(validateBoxes([{ onSidewalk: true, obstructs: true, severity: 2 }], []).valid).toBe(true);
+      expect(validateBoxes([{ onSidewalk: true, obstructs: false }], []).valid).toBe(true);
+    });
+
+    it("keeps Not an object boxes as they are, with no sidewalk answer", () => {
+      expect(validateBoxes([{ comment: "not_an_object", obstructs: false, severity: null }], [])).toEqual({ valid: true });
+      for (const onSidewalk of [true, false, null]) {
+        expect(validateBoxes([{ comment: "not_an_object", obstructs: false, onSidewalk }], [])).toEqual({
+          valid: false,
+          message: "A box marked as not an object has no sidewalk answer.",
+        });
+      }
+    });
   });
 
   it("rejects box with non-boolean obstructs", () => {
-    expect(validateBoxes([{ obstructs: "yes" }], []).valid).toBe(false);
+    expect(validateBoxes([{ onSidewalk: true, obstructs: "yes" }], []).valid).toBe(false);
   });
 
   it("rejects obstructing box without severity", () => {
-    expect(validateBoxes([{ obstructs: true }], []).valid).toBe(false);
+    expect(validateBoxes([{ onSidewalk: true, obstructs: true }], []).valid).toBe(false);
   });
 
   it("rejects obstructing box with severity out of range (0)", () => {
-    expect(validateBoxes([{ obstructs: true, severity: 0 }], []).valid).toBe(false);
+    expect(validateBoxes([{ onSidewalk: true, obstructs: true, severity: 0 }], []).valid).toBe(false);
   });
 
   it("rejects obstructing box with severity out of range (6)", () => {
-    expect(validateBoxes([{ obstructs: true, severity: 6 }], []).valid).toBe(false);
+    expect(validateBoxes([{ onSidewalk: true, obstructs: true, severity: 6 }], []).valid).toBe(false);
   });
 
   it("does not require severity when obstructs is false", () => {
-    expect(validateBoxes([{ obstructs: false }], []).valid).toBe(true);
+    expect(validateBoxes([{ onSidewalk: true, obstructs: false }], []).valid).toBe(true);
   });
 
   it("accepts a not-an-object suggestion with obstructs false", () => {
@@ -213,25 +252,25 @@ describe("validateBoxes with requireSeverity false", () => {
   const noSeverity = { requireSeverity: false };
 
   it("accepts an obstructing box without severity", () => {
-    expect(validateBoxes([{ obstructs: true }], [{ obstructs: true, severity: null }], noSeverity)).toEqual({ valid: true });
+    expect(validateBoxes([{ onSidewalk: true, obstructs: true }], [{ onSidewalk: true, obstructs: true, severity: null }], noSeverity)).toEqual({ valid: true });
   });
 
   it("still rejects a non-boolean obstructs", () => {
-    expect(validateBoxes([{ obstructs: "yes" }], [], noSeverity).valid).toBe(false);
+    expect(validateBoxes([{ onSidewalk: true, obstructs: "yes" }], [], noSeverity).valid).toBe(false);
     expect(validateBoxes([], [{ severity: null }], noSeverity).valid).toBe(false);
   });
 
   it("keeps the array, box limit and not-an-object rules", () => {
     expect(validateBoxes("not-array", [], noSeverity).valid).toBe(false);
-    const many = Array.from({ length: MAX_BOXES_PER_IMAGE + 1 }, () => ({ obstructs: false }));
+    const many = Array.from({ length: MAX_BOXES_PER_IMAGE + 1 }, () => ({ onSidewalk: true, obstructs: false }));
     expect(validateBoxes(many, [], noSeverity).valid).toBe(false);
     expect(validateBoxes([{ comment: "not_an_object", obstructs: true }], [], noSeverity).valid).toBe(false);
     expect(validateBoxes([], [{ comment: "not_an_object", obstructs: false }], noSeverity).valid).toBe(false);
   });
 
   it("requires severity by default", () => {
-    expect(validateBoxes([{ obstructs: true }], []).valid).toBe(false);
-    expect(validateBoxes([{ obstructs: true }], [], {}).valid).toBe(false);
+    expect(validateBoxes([{ onSidewalk: true, obstructs: true }], []).valid).toBe(false);
+    expect(validateBoxes([{ onSidewalk: true, obstructs: true }], [], {}).valid).toBe(false);
   });
 });
 

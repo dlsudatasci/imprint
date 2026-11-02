@@ -1,4 +1,5 @@
-import { isDecidedForObjects } from "@/util/suggestionJudgment";
+import { isDecidedForObjects, isNotAnObject } from "@/util/suggestionJudgment";
+import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 import { isTaxonomyCategory } from "@/util/taxonomy";
 import { realObjects } from "@/features/annotate/obstructionStep";
 import { validateSidewalkMask } from "@/util/validators/sidewalkMask";
@@ -97,9 +98,17 @@ export function validateAnnotationForSubmit({
     return validateObstructionStep({ annotations: existingAnnotations, confirmed: obstructionsConfirmed });
   }
 
-  const unconfirmed = (existingAnnotations || []).filter(
-    (el) => !el.editable && !el.selected && !el.isRejected
-  );
+  // Contributors (S12, 2 Nov 2026): every real box is first answered on the
+  // sidewalk or not, and only one on the sidewalk is asked whether it
+  // obstructs. A box not on the sidewalk is answered (obstructs false).
+  const noSidewalkAnswer = (el) => !isNotAnObject(el) && typeof el.onSidewalk !== "boolean";
+  const suggestions = (existingAnnotations || []).filter((el) => !el.editable);
+  const suggestionsWithoutSidewalk = suggestions.filter(noSidewalkAnswer);
+  if (suggestionsWithoutSidewalk.length > 0) {
+    return { valid: false, section: "objects", error: SIDEWALK_QUESTION_COPY.incomplete, boxIds: idsOf(suggestionsWithoutSidewalk) };
+  }
+
+  const unconfirmed = suggestions.filter((el) => !el.selected && !el.isRejected);
 
   if (unconfirmed.length > 0) {
     return { valid: false, section: "objects", error: "Please answer Yes or No for every object before submitting.", boxIds: idsOf(unconfirmed) };
@@ -114,6 +123,12 @@ export function validateAnnotationForSubmit({
       error: "You have an unlabeled object. Please select a label for all the boxes.",
       boxIds: idsOf(unlabeled),
     };
+  }
+
+  // Drawn boxes after their category, as their panel asks
+  const drawnWithoutSidewalk = (newObjects || []).filter(noSidewalkAnswer);
+  if (drawnWithoutSidewalk.length > 0) {
+    return { valid: false, section: "objects", error: SIDEWALK_QUESTION_COPY.incomplete, boxIds: idsOf(drawnWithoutSidewalk) };
   }
 
   const confirmedExisting = (existingAnnotations || []).filter(

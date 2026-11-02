@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { TRAYS, TRAY_COPY, trayOf, buildTrays, ghostSlotCount, sceneProgress, sceneProgressLine } from "./objectTrays";
+import { TRAYS, TRAY_COPY, PEEK_STATUS, PEEK_TAG, trayOf, buildTrays, buildPeekChips, peekStatus, ghostSlotCount, sceneProgress, sceneProgressLine } from "./objectTrays";
 
 // Contributor Step 1: lists of answers under the photo (7 Oct 2026)
 const mark = { x: 0, y: 0, width: 50, height: 50, type: "RECT" };
-const suggestion = (id, extra = {}) => ({ id, mark, comment: "tree", editable: false, selected: false, initialState: { comment: "tree", mark }, ...extra });
-const drawn = (id, extra = {}) => ({ id, mark, comment: "bollard", editable: true, selected: false, ...extra });
+// Answered on the sidewalk (S12) unless a test says otherwise, so the
+// obstruction answer decides the list
+const suggestion = (id, extra = {}) => ({ id, mark, comment: "tree", editable: false, selected: false, onSidewalk: true, initialState: { comment: "tree", mark }, ...extra });
+const drawn = (id, extra = {}) => ({ id, mark, comment: "bollard", editable: true, selected: false, onSidewalk: true, ...extra });
 
 describe("trayOf", () => {
   it("places suggestions by their answer", () => {
@@ -72,10 +74,10 @@ describe("buildTrays", () => {
     expect(bare.removed[0].label).toBe("Not an object");
   });
 
-  it("marks drawn boxes, and gives each item only its id, label and drawn flag", () => {
+  it("marks drawn boxes, and gives each item only its id, label, drawn flag and off-sidewalk flag", () => {
     const t = buildTrays(boxes, { labels });
     expect(t.obstructions.map((i) => i.drawn)).toEqual([false, true, false]);
-    expect(Object.keys(t.obstructions[0]).sort()).toEqual(["drawn", "id", "label"]);
+    expect(Object.keys(t.obstructions[0]).sort()).toEqual(["drawn", "id", "label", "offSidewalk"]);
   });
 
   it("does not mutate the boxes", () => {
@@ -87,6 +89,70 @@ describe("buildTrays", () => {
   it("gives empty lists for no boxes", () => {
     expect(buildTrays([])).toEqual({ toDecide: [], notObstructions: [], obstructions: [], removed: [], total: 0, answered: 0 });
     expect(buildTrays(null).total).toBe(0);
+  });
+});
+
+// S12 (2 Nov 2026, changed the same day by Rans): a box not on the sidewalk or
+// the path people walk on is not an obstruction, so it is listed under Not
+// obstructions with the other No answers
+describe("a box off the walking path", () => {
+  const off = (box) => ({ ...box, onSidewalk: false, obstructs: false, severity: null });
+
+  it("is a Not obstruction, suggestion or drawn", () => {
+    expect(trayOf(off(suggestion("a", { selected: false, isRejected: true })))).toBe(TRAYS.notObstructions);
+    expect(trayOf(off(drawn("d")))).toBe(TRAYS.notObstructions);
+    expect(TRAYS).not.toHaveProperty("offSidewalk");
+    expect(TRAY_COPY).not.toHaveProperty("offSidewalk");
+  });
+
+  it("leaves a box with no sidewalk answer still to decide, whatever its obstruction answer", () => {
+    for (const onSidewalk of [undefined, null]) {
+      expect(trayOf(suggestion("a", { onSidewalk }))).toBe(TRAYS.toDecide);
+      expect(trayOf(suggestion("a", { onSidewalk, selected: true, obstructs: true, severity: 2 }))).toBe(TRAYS.toDecide);
+      expect(trayOf(suggestion("a", { onSidewalk, isRejected: true, obstructs: false }))).toBe(TRAYS.toDecide);
+      expect(trayOf(drawn("d", { onSidewalk, obstructs: false }))).toBe(TRAYS.toDecide);
+    }
+  });
+
+  it("leaves a box on the sidewalk with no obstruction answer still to decide", () => {
+    expect(trayOf(suggestion("a"))).toBe(TRAYS.toDecide);
+    expect(trayOf(drawn("d"))).toBe(TRAYS.toDecide);
+  });
+
+  it("keeps Not an object first", () => {
+    expect(trayOf(suggestion("a", { onSidewalk: undefined, comment: "not_an_object", isRejected: true, obstructs: false }))).toBe(TRAYS.removed);
+  });
+
+  it("is listed in order with the other No answers, marked off the sidewalk, and counted as answered", () => {
+    const boxes = [
+      off(suggestion("a", { isRejected: true })),
+      suggestion("b"),
+      suggestion("c", { isRejected: true, obstructs: false }),
+      off(drawn("d")),
+      suggestion("e", { comment: "not_an_object", onSidewalk: undefined, isRejected: true, obstructs: false }),
+    ];
+    const t = buildTrays(boxes);
+    expect(t.notObstructions).toEqual([
+      { id: "a", label: "Tree", drawn: false, offSidewalk: true },
+      { id: "c", label: "Tree", drawn: false, offSidewalk: false },
+      { id: "d", label: "Bollard", drawn: true, offSidewalk: true },
+    ]);
+    expect(t.toDecide.map((i) => i.id)).toEqual(["b"]);
+    expect(t.removed.map((i) => i.id)).toEqual(["e"]);
+    expect(t.removed[0].offSidewalk).toBe(false);
+    expect(t.answered).toBe(3);
+    expect(t.total).toBe(4);
+  });
+
+  it("gets the Not an obstruction tag at the top of the sheet, after what is left", () => {
+    const boxes = [off(suggestion("a", { isRejected: true })), suggestion("b", { onSidewalk: undefined })];
+    expect(peekStatus(boxes[0])).toBe(PEEK_STATUS.notObstruction);
+    expect(PEEK_STATUS).not.toHaveProperty("offSidewalk");
+    const peek = buildPeekChips(boxes);
+    expect(peek.chips.map((c) => [c.id, c.status])).toEqual([["b", PEEK_STATUS.toDecide], ["a", PEEK_STATUS.notObstruction]]);
+    expect(peek.left).toBe(1);
+    expect(peek.nextId).toBe("b");
+    expect(PEEK_TAG.notObstruction).toBe("Not an obstruction");
   });
 });
 

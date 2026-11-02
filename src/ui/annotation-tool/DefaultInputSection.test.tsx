@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import DefaultInputSection, { type IDefaultInputSection } from "./DefaultInputSection";
 
 // Contributor box panel (7 Oct 2026): one question for every box, No closes,
-// Yes goes to the severity picker, Not an object and Delete are buttons
+// Yes goes to the severity picker, Not an object and Delete are buttons. From
+// 2 Nov 2026 (S12) the sidewalk question comes first: render() gives a box
+// already answered on the sidewalk, so the obstruction question shows.
 const noop = () => undefined;
 function render(props: Partial<IDefaultInputSection>) {
   return renderToStaticMarkup(
@@ -25,6 +27,7 @@ function render(props: Partial<IDefaultInputSection>) {
       obstructs={undefined}
       severity={null}
       askSeverity
+      onSidewalk
       {...props}
     />
   );
@@ -144,6 +147,77 @@ describe("DefaultInputSection", () => {
     expect(floating).not.toContain("text-base");
   });
 
+  // S12 (2 Nov 2026): whether the object is on the sidewalk, before whether it obstructs
+  describe("the sidewalk question", () => {
+    const sidewalkButton = (html: string, answer: "yes" | "no") =>
+      new RegExp(`<button data-control="on-sidewalk-${answer}"[^>]*>${answer === "yes" ? "Yes" : "No"}<`).test(html);
+
+    it("asks a suggestion with no sidewalk answer first, in the copy module's words, with Not an object as today", () => {
+      const html = render({ onSidewalk: undefined });
+      expect(html).toContain(">Is it on the sidewalk or the path people walk on?<");
+      expect(html).not.toContain("obstruct the sidewalk?");
+      expect(sidewalkButton(html, "yes")).toBe(true);
+      expect(sidewalkButton(html, "no")).toBe(true);
+      expect(pressed(html, "Yes")).toBe(false);
+      expect(pressed(html, "No")).toBe(false);
+      expect(html).toMatch(/<button[^>]*>Not an object<\/button>/);
+      expect(html).not.toContain('aria-label="Close"');
+      expect(html).not.toContain(">Go back<");
+    });
+
+    it("asks a drawn box after its category, with Delete box", () => {
+      const noCategory = render({ onSidewalk: undefined, editable: true, value: "---" });
+      expect(noCategory).toContain("Select a category");
+      expect(noCategory).toContain("Is it on the sidewalk or the path people walk on?");
+      expect(disabledButton(noCategory, "Yes")).toBe(true);
+      expect(disabledButton(noCategory, "No")).toBe(true);
+      expect(noCategory).toContain("Delete box");
+      const withCategory = render({ onSidewalk: undefined, editable: true, value: "bollard" });
+      expect(disabledButton(withCategory, "Yes")).toBe(false);
+      expect(disabledButton(withCategory, "No")).toBe(false);
+    });
+
+    it("asks it again, with No chosen and a close button, of a box reopened from Not on the walking path", () => {
+      for (const html of [
+        render({ onSidewalk: false, isRejected: true, obstructs: false }),
+        render({ onSidewalk: false, editable: true, value: "bollard", obstructs: false }),
+      ]) {
+        expect(html).toContain("Is it on the sidewalk or the path people walk on?");
+        expect(pressed(html, "No")).toBe(true);
+        expect(pressed(html, "Yes")).toBe(false);
+        expect(html).toContain('aria-label="Close"');
+      }
+    });
+
+    it("asks it of a box answered Yes or No before the question existed", () => {
+      expect(render({ onSidewalk: undefined, selected: true, obstructs: true, severity: 3 })).toContain("Is it on the sidewalk");
+    });
+
+    it("gives the obstruction question a Go back to the sidewalk question", () => {
+      for (const html of [render({}), render({ editable: true, value: "bollard" }), render({ selected: true, obstructs: true, severity: 2 })]) {
+        expect(html).toContain("obstruct the sidewalk?");
+        expect(html).toMatch(/<button data-control="back"[^>]*>Go back<\/button>/);
+      }
+      expect(render({ askOnSidewalk: false, onSidewalk: undefined })).not.toContain(">Go back<");
+    });
+
+    it("never asks it of a box marked Not an object", () => {
+      const html = render({ onSidewalk: undefined, value: "not_an_object", isRejected: true, obstructs: false });
+      expect(html).not.toContain("Is it on the sidewalk");
+      expect(html).toMatch(/<button[^>]*>Restore<\/button>/);
+    });
+
+    it("uses the same buttons as the obstruction question, 44 px tall in the sheet", () => {
+      const sheet = render({ variant: "sheet", onSidewalk: undefined });
+      expect(sheet).toMatch(/<button data-control="on-sidewalk-yes"[^>]*class="py-2 min-h-\[44px\] rounded-control/);
+      const floating = render({ onSidewalk: undefined });
+      const obstruction = render({});
+      const classOf = (html: string, control: string) => html.match(new RegExp(`data-control="${control}" class="([^"]*)"`))?.[1];
+      expect(classOf(floating, "on-sidewalk-yes")).toBe(classOf(obstruction, "yes"));
+      expect(classOf(floating, "on-sidewalk-no")).toBe(classOf(obstruction, "no"));
+    });
+  });
+
   // 10 Oct 2026: the open box can be hidden from its panel
   it("offers a Hide button when the box can be hidden, and none otherwise", () => {
     const hideButton = /<button[^>]*aria-label="Hide this box on the photo"/;
@@ -156,6 +230,9 @@ describe("DefaultInputSection", () => {
 
   it("has no em dash or semicolon in its copy", () => {
     const states = [
+      render({ onSidewalk: undefined }),
+      render({ onSidewalk: false, isRejected: true, obstructs: false }),
+      render({ onSidewalk: undefined, editable: true, value: "---" }),
       render({ editable: true, value: "---" }),
       render({}),
       render({ selected: true, obstructs: true, severity: 5 }),

@@ -7,8 +7,11 @@ import { buildDisplayLabels } from "@/util/buildDisplayLabels";
 // Contributor Step 1: lists of answers under the photo (7 Oct 2026)
 type Box = { id: string; comment?: string } & Record<string, unknown>;
 const mark = { x: 10, y: 10, width: 60, height: 60, type: "RECT" };
-const suggestion = (id: string, comment: string, extra = {}): Box => ({ id, mark, comment, editable: false, selected: false, initialState: { comment, mark }, ...extra });
-const drawn = (id: string, comment: string, extra = {}): Box => ({ id, mark, comment, editable: true, selected: false, ...extra });
+// Answered on the sidewalk (S12) unless a test says otherwise, so the
+// obstruction answer decides the list. Not an object boxes carry no answer.
+const onSidewalkFor = (comment?: string) => (comment === "not_an_object" ? {} : { onSidewalk: true });
+const suggestion = (id: string, comment: string, extra: Record<string, unknown> = {}): Box => ({ id, mark, comment, editable: false, selected: false, initialState: { comment, mark }, ...onSidewalkFor((extra.comment as string) ?? comment), ...extra });
+const drawn = (id: string, comment: string, extra = {}): Box => ({ id, mark, comment, editable: true, selected: false, onSidewalk: true, ...extra });
 
 function render(boxes: Box[], selectedId: string | null = null) {
   const trays = buildTrays(boxes, { labels: buildDisplayLabels(boxes) });
@@ -268,9 +271,67 @@ describe("ObjectTraysPeek's first row", () => {
   });
 });
 
+// S12 (2 Nov 2026, changed the same day by Rans): a box answered not on the
+// sidewalk or the path people walk on is listed under Not obstructions
+describe("boxes off the walking path", () => {
+  const off = (box: Box): Box => ({ ...box, onSidewalk: false, obstructs: false, severity: null });
+  const boxes = [
+    off(suggestion("a", "car", { isRejected: true })),
+    suggestion("b", "tree", { isRejected: true, obstructs: false }),
+    off(drawn("c", "planter")),
+    suggestion("d", "bench", { onSidewalk: undefined }),
+  ];
+  const renderWith = (hiddenIds: string[] = []) =>
+    renderToStaticMarkup(
+      <ObjectTrays
+        trays={buildTrays(boxes, { labels: buildDisplayLabels(boxes) })}
+        selectedId={null}
+        hiddenIds={hiddenIds}
+        onOpen={() => undefined}
+        onToggleHidden={() => undefined}
+        onShowAll={() => undefined}
+        onHideAll={() => undefined}
+      />
+    );
+
+  it("lists them under Not obstructions with the other No answers, in two lists only", () => {
+    const html = renderWith();
+    const no = list(html, "object-tray-not-obstructions");
+    expect(no).toMatch(/>Car #1</);
+    expect(no).toMatch(/>Tree #1</);
+    expect(no).toMatch(/<svg data-drawn="true"[\s\S]*?<\/svg>Planter #1/);
+    expect(count(no, 'data-tray="notObstructions"')).toBe(3);
+    expect(html).not.toContain("object-tray-off-sidewalk");
+    expect(html).not.toContain("walking path");
+    expect(html).toContain("grid-cols-2");
+    expect(html).not.toContain("grid-cols-3");
+    expect(html).toMatch(/Still to decide <span[^>]*>1<\/span>/);
+  });
+
+  it("gives their chips no eye, since the boxes are off the photo, and never shows them as hidden", () => {
+    const html = renderWith(["a", "b", "c"]);
+    expect(chip(html, "Car #1")).not.toContain("data-eye");
+    expect(chip(html, "Car #1")).not.toContain("opacity-60");
+    expect(chip(html, "Planter #1")).not.toContain("data-eye");
+    expect(chip(html, "Tree #1")).toContain("data-eye");
+    // The hidden count counts only boxes that can be on the photo
+    expect(html).toContain("1 box hidden");
+  });
+
+  it("tags their chips Not an obstruction at the top of the sheet, after what is left", () => {
+    const html = renderToStaticMarkup(
+      <ObjectTraysPeek trays={buildTrays(boxes)} peek={buildPeekChips(boxes)} selectedId={null} onOpen={() => undefined} onNext={() => undefined} sceneLine="Step 2" onShowScene={() => undefined} />
+    );
+    const texts = Array.from(html.matchAll(/<li[^>]*>(.*?)<\/li>/g)).map((m) => m[1].replace(/<[^>]+>/g, ""));
+    expect(texts[0]).toBe("BenchTo decide");
+    expect(texts).toContain("CarNot an obstruction");
+    expect(texts).toContain("Planter, drawn by youNot an obstruction");
+  });
+});
+
 // 21 Oct 2026: every object in one row at the top of the contributors' sheet, what is left first
 describe("ObjectTraysPeek's chip row", () => {
-  const drawn = (id: string, extra = {}): Box => ({ id, mark, comment: "bench", editable: true, selected: false, ...extra });
+  const drawn = (id: string, extra = {}): Box => ({ id, mark, comment: "bench", editable: true, selected: false, onSidewalk: true, ...extra });
   const boxes = [
     suggestion("a", "car", { selected: true, obstructs: true, severity: 3 }),
     suggestion("b", "tree"),

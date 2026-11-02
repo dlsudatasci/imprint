@@ -64,10 +64,24 @@ export function validateBoxes(selectedObjectsID, newObjects, { requireSeverity =
     if (box.comment === NOT_AN_OBJECT && box.obstructs !== false) {
       return { valid: false, message: "A box marked as not an object cannot be an obstruction." };
     }
+    if (box.comment === NOT_AN_OBJECT && box.onSidewalk !== undefined) {
+      return { valid: false, message: "A box marked as not an object has no sidewalk answer." };
+    }
   }
 
   const allBoxes = [...selectedObjectsID, ...newObjects];
   for (const box of allBoxes) {
+    // Contributors (S12, 2 Nov 2026): every real box says whether it is on the
+    // sidewalk or the path people walk on. One that is not is stored as a
+    // real object that does not obstruct, with no severity.
+    if (box.comment !== NOT_AN_OBJECT) {
+      if (typeof box.onSidewalk !== "boolean") {
+        return { valid: false, message: "Every object must say whether it is on the sidewalk (onSidewalk: true/false)." };
+      }
+      if (box.onSidewalk === false && (box.obstructs !== false || box.severity != null)) {
+        return { valid: false, message: "An object not on the sidewalk must have obstructs: false and no severity." };
+      }
+    }
     if (typeof box.obstructs !== "boolean") {
       return { valid: false, message: "Every object must have an obstruction judgment (obstructs: true/false)." };
     }

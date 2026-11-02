@@ -25,7 +25,7 @@ import { buildDisplayLabelsInOrder, orderOfAppearance } from "@/util/buildDispla
  */
 const at = (tick) => touchFrame(tick / TICKS);
 const answers = (frame) =>
-  frame.boxes.map((b) => ({ id: b.id, comment: b.comment, selected: b.selected, isRejected: b.isRejected, obstructs: b.obstructs, severity: b.severity }));
+  frame.boxes.map((b) => ({ id: b.id, comment: b.comment, onSidewalk: b.onSidewalk, selected: b.selected, isRejected: b.isRejected, obstructs: b.obstructs, severity: b.severity }));
 // The narrowest the preview ever draws the photo (TouchStage: MIN_SCREEN_W) and a wide tablet
 const PHOTO_WIDTHS = [320, 348, 390, 430, 770, 1180, 1400];
 
@@ -50,6 +50,18 @@ describe("touchScript", () => {
     });
     expect(opened).toEqual(["tut1-box1", "tut1-box3", "tut1-box4"]);
     for (const key of ["lamp", "car", "moto"]) expect(TOUCH_STEPS.find((s) => s.name === `${key}-to-next`).to).toEqual({ kind: "ui", name: "peek-next" });
+  });
+
+  // S12 (Rans, 2 Nov 2026)
+  it("answers Lamp Post #1 and Car #1 No to the path question, each closing its panel, and Motorcycle #1 Yes then No", () => {
+    for (const [key, id] of [["lamp", "tut1-box1"], ["car", "tut1-box3"]]) {
+      expect(TOUCH_STEPS.find((s) => s.name === `${key}-to-sidewalk`).to).toEqual({ kind: "ui", name: "sidewalk-no" });
+      const after = at(touchTickOf(`${key}-sidewalk`, "end"));
+      expect(after.selectedId).toBeNull();
+      expect(after.boxes.find((b) => b.id === id)).toMatchObject({ onSidewalk: false, obstructs: false, isRejected: true });
+    }
+    const moto = at(touchTickOf("moto-no", "end")).boxes.find((b) => b.id === "tut1-box4");
+    expect(moto).toMatchObject({ onSidewalk: true, obstructs: false, isRejected: true });
   });
 
   it("adds the box where the tool's Add box puts it on the whole photo, at every width the preview draws the photo", () => {

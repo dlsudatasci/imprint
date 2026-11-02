@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { NOT_AN_OBJECT, getSuggestionPanelMode } from "@/util/suggestionJudgment";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 import { BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
+import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 import { EyeOffIcon } from "../icons";
 
 /**
@@ -14,6 +15,11 @@ import { EyeOffIcon } from "../icons";
  * marked Not an object, each from a button at the foot of the panel. The panel
  * offers a close button only once the box is fully answered, so a new box is
  * never left half done by accident.
+ *
+ * From 2 Nov 2026 (S12) the panel first asks whether the object is on the
+ * sidewalk or the path people walk on, with the same Yes and No buttons. No
+ * closes the panel and the box leaves the photo. Yes moves on to the
+ * obstruction question, which has a Go back to the first question.
  *
  * Two variants (9 Oct 2026): "floating", the card beside the box on the
  * desktop photo, and "sheet", the same panel in the answers sheet on a phone
@@ -61,6 +67,14 @@ export interface IDefaultInputSection {
   variant?: PanelVariant;
   /** Hides this box on the photo, which closes the panel (10 Oct 2026). No button without it. */
   onHide?: () => void;
+  /** The sidewalk answer (S12): true, false, or none yet */
+  onSidewalk?: boolean | null;
+  /** Answers the sidewalk question. No also closes the panel. */
+  onSetOnSidewalk?: (onSidewalk: boolean) => void;
+  /** Go back from the obstruction question to the sidewalk question, clearing both answers */
+  onClearOnSidewalk?: () => void;
+  /** False only where no sidewalk question is asked */
+  askOnSidewalk?: boolean;
 }
 
 export type PanelVariant = "floating" | "sheet";
@@ -291,6 +305,10 @@ const DefaultInputSection = ({
   askSeverity = true,
   variant = "floating",
   onHide,
+  onSidewalk,
+  onSetOnSidewalk = () => undefined,
+  onClearOnSidewalk = () => undefined,
+  askOnSidewalk = true,
 }: IDefaultInputSection) => {
   // A typed-in label opens as the "Other..." field straight away
   const [isCustom, setIsCustom] = useState(() => isCustomLabel(value));
@@ -326,7 +344,7 @@ const DefaultInputSection = ({
     }
   }, [value, onChange]);
 
-  const mode = getSuggestionPanelMode({ editable, selected, obstructs, severity, comment: value, askSeverity });
+  const mode = getSuggestionPanelMode({ editable, selected, obstructs, severity, comment: value, onSidewalk: onSidewalk ?? undefined, askSeverity, askOnSidewalk });
 
   if (mode === "severity") {
     // A first Yes: Go back takes the Yes back, so nothing is recorded
@@ -370,11 +388,34 @@ const DefaultInputSection = ({
     );
   }
 
-  // "judge", "confirmed" or "drawn": the question
+  const hasCategory = Boolean(value) && value !== "---";
+  const label = hasCategory ? translateValue(value) : "this object";
+
+  // "sidewalk": the first question (S12). Answered No, the box is reopened
+  // from its chip under Not obstructions, so No shows chosen and the panel can close.
+  if (mode === "sidewalk") {
+    const answer = onSidewalk === false ? "no" : null;
+    return (
+      <QuestionPanel
+        variant={variant}
+        header={<CategoryField value={value} isCustom={isCustom} setIsCustom={setIsCustom} onChange={onChange} variant={variant} />}
+        onHide={onHide}
+        onClose={answer ? onClose : undefined}
+        question={SIDEWALK_QUESTION_COPY.question}
+        answer={answer}
+        disabled={!hasCategory}
+        onYes={() => onSetOnSidewalk(true)}
+        onNo={() => onSetOnSidewalk(false)}
+        control="on-sidewalk"
+        footer={<PanelFooter editable={editable} variant={variant} onDelete={onDelete} onMarkNotAnObject={onMarkNotAnObject} />}
+      />
+    );
+  }
+
+  // "judge", "confirmed" or "drawn": the obstruction question
   const answer = editable
     ? obstructs === true ? "yes" : obstructs === false ? "no" : null
     : selected ? "yes" : isRejected ? "no" : null;
-  const hasCategory = Boolean(value) && value !== "---";
   const answered = answer === "no" || (answer === "yes" && (!askSeverity || severity != null));
 
   const onYes = () => {
@@ -397,21 +438,20 @@ const DefaultInputSection = ({
   };
 
   return (
-    <div className={panelClass(variant)} onMouseDown={stop} onMouseUp={stop}>
-      <div className="flex items-center gap-2">
-        <CategoryField value={value} isCustom={isCustom} setIsCustom={setIsCustom} onChange={onChange} variant={variant} />
-        {onHide && <HideButton onHide={onHide} variant={variant} />}
-        {answered && <CloseButton onClose={onClose} variant={variant} />}
-      </div>
-
-      <p className="text-sm text-body mt-3 mb-2">
-        Does <span className="font-semibold text-ink">{hasCategory ? translateValue(value) : "this object"}</span> obstruct the sidewalk?
-      </p>
-      <div className="grid grid-cols-2 gap-2">
-        <AnswerButton active={answer === "yes"} disabled={!hasCategory} onClick={onYes} variant={variant} control="yes">Yes</AnswerButton>
-        <AnswerButton active={answer === "no"} disabled={!hasCategory} onClick={onNo} variant={variant} control="no">No</AnswerButton>
-      </div>
-
+    <QuestionPanel
+      variant={variant}
+      header={<CategoryField value={value} isCustom={isCustom} setIsCustom={setIsCustom} onChange={onChange} variant={variant} />}
+      onHide={onHide}
+      onClose={answered ? onClose : undefined}
+      question={<>Does <span className="font-semibold text-ink">{label}</span> obstruct the sidewalk?</>}
+      answer={answer}
+      disabled={!hasCategory}
+      onYes={onYes}
+      onNo={onNo}
+      // Back to the sidewalk question, with the same Go back as the severity picker
+      onBack={askOnSidewalk ? onClearOnSidewalk : undefined}
+      footer={<PanelFooter editable={editable} variant={variant} onDelete={onDelete} onMarkNotAnObject={onMarkNotAnObject} />}
+    >
       {/* The severity number only, styled like "Drawn by you". Its wording is on
           the picker. */}
       {answer === "yes" && askSeverity && severity != null && (
@@ -422,27 +462,89 @@ const DefaultInputSection = ({
           </button>
         </div>
       )}
+    </QuestionPanel>
+  );
+};
+
+/**
+ * A Yes or No question about the box: the category with the eye and the close
+ * button, the question, Yes and No, and the footer. The sidewalk question and
+ * the obstruction question share it (S12), so both look the same. The buttons'
+ * data-control is `control` with -yes and -no, or yes and no without it, which
+ * the landing page's preview finds them by.
+ */
+function QuestionPanel({ variant, header, onHide, onClose, question, answer, disabled, onYes, onNo, onBack, control, footer, children }: {
+  variant: PanelVariant;
+  header: React.ReactNode;
+  onHide?: () => void;
+  /** No close button without it */
+  onClose?: () => void;
+  question: React.ReactNode;
+  answer: "yes" | "no" | null;
+  disabled: boolean;
+  onYes: () => void;
+  onNo: () => void;
+  onBack?: () => void;
+  control?: string;
+  footer: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  const sheet = variant === "sheet";
+  return (
+    <div className={panelClass(variant)} onMouseDown={stop} onMouseUp={stop}>
+      <div className="flex items-center gap-2">
+        {header}
+        {onHide && <HideButton onHide={onHide} variant={variant} />}
+        {onClose && <CloseButton onClose={onClose} variant={variant} />}
+      </div>
+
+      <p className="text-sm text-body mt-3 mb-2">{question}</p>
+      <div className="grid grid-cols-2 gap-2">
+        <AnswerButton active={answer === "yes"} disabled={disabled} onClick={onYes} variant={variant} control={control ? `${control}-yes` : "yes"}>Yes</AnswerButton>
+        <AnswerButton active={answer === "no"} disabled={disabled} onClick={onNo} variant={variant} control={control ? `${control}-no` : "no"}>No</AnswerButton>
+      </div>
+      {onBack && (
+        <button
+          data-control="back"
+          className={`w-full mt-1 py-1.5 rounded-control text-xs font-medium text-muted hover:text-body transition-colors${sheet ? ` ${TOUCH_TARGET}` : ""}`}
+          onClick={onBack}
+        >
+          Go back
+        </button>
+      )}
+
+      {children}
 
       <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-2">
-        {editable ? (
-          <>
-            <span className="text-xs text-muted">Drawn by you</span>
-            <button className={`${secondaryButton(variant)} hover:text-danger`} onClick={() => onDelete()}>
-              Delete box
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="text-xs text-muted">No real object in this box?</span>
-            <button className={secondaryButton(variant)} onClick={() => onMarkNotAnObject()}>
-              Not an object
-            </button>
-          </>
-        )}
+        {footer}
       </div>
     </div>
   );
-};
+}
+
+/** Delete box for a drawn box, Not an object for a suggestion */
+function PanelFooter({ editable, variant, onDelete, onMarkNotAnObject }: {
+  editable: boolean;
+  variant: PanelVariant;
+  onDelete: () => void;
+  onMarkNotAnObject: () => void;
+}) {
+  return editable ? (
+    <>
+      <span className="text-xs text-muted">Drawn by you</span>
+      <button className={`${secondaryButton(variant)} hover:text-danger`} onClick={() => onDelete()}>
+        Delete box
+      </button>
+    </>
+  ) : (
+    <>
+      <span className="text-xs text-muted">No real object in this box?</span>
+      <button className={secondaryButton(variant)} onClick={() => onMarkNotAnObject()}>
+        Not an object
+      </button>
+    </>
+  );
+}
 
 /** A label typed in with "Other...": not empty, not Not an object, and not one of the categories. */
 function isCustomLabel(value: string) {

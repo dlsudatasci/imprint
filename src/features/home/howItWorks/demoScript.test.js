@@ -82,7 +82,7 @@ describe("the preview script", () => {
   it("fades the step card as Lamp Post #2's panel opens, and keeps it faded through its steps", () => {
     // Never for the suggestions: Car #1's panel is faded for by DemoStage, at
     // the screen sizes where it overlaps, and Motorcycle #1's does not overlap
-    for (const name of ["tree-open", "tree-severity", "tree-confirm", "car-open", "car-no", "moto-open", "moto-no", "lamp-open", "lamp-no"]) {
+    for (const name of ["tree-open", "tree-severity", "tree-confirm", "car-open", "car-sidewalk", "moto-open", "moto-no", "lamp-open", "lamp-sidewalk"]) {
       expect(cardFadedAt(tickOf(name, "end") - 0.1)).toBe(false);
     }
     // Lamp Post #2: full strength while the box is drawn, faded from the moment its panel appears through its severity
@@ -114,12 +114,20 @@ describe("the preview script", () => {
     expect(trayIds(done).obstructions).toEqual(["tut1-box2"]);
   });
 
-  it("answers Car, Motorcycle and Lamp Post #1 No, each closing its panel and landing under Not obstructions", () => {
-    expect(at(mid("car-to-no")).selectedId).toBe("tut1-box3");
-    const f = at(tickOf("car-no", "end"));
+  // S12 (Rans, 2 Nov 2026): Car and Lamp Post #1 are not on the path, Motorcycle #1 is but does not obstruct
+  it("answers Car and Lamp Post #1 No to the path question and Motorcycle #1 Yes then No, each closing its panel and landing under Not obstructions", () => {
+    expect(at(mid("car-to-sidewalk")).selectedId).toBe("tut1-box3");
+    expect(at(mid("car-to-sidewalk")).cursor.to).toEqual({ kind: "ui", name: "sidewalk-no" });
+    const f = at(tickOf("car-sidewalk", "end"));
     expect(f.selectedId).toBeNull();
-    expect(f.boxes.find((b) => b.id === "tut1-box3")).toMatchObject({ selected: false, isRejected: true, obstructs: false, severity: null });
+    expect(f.boxes.find((b) => b.id === "tut1-box3")).toMatchObject({ onSidewalk: false, selected: false, isRejected: true, obstructs: false, severity: null });
     expect(trayIds(f).notObstructions).toEqual(["tut1-box3"]);
+    // Car #1 and Lamp Post #1 are asked nothing more
+    for (const name of ["car-to-no", "car-no", "lamp-to-no", "lamp-no"]) expect(STEPS.some((st) => st.name === name)).toBe(false);
+    const moto = at(tickOf("moto-no", "end")).boxes.find((b) => b.id === "tut1-box4");
+    expect(moto).toMatchObject({ onSidewalk: true, isRejected: true, obstructs: false });
+    const lamp = at(tickOf("lamp-sidewalk", "end")).boxes.find((b) => b.id === "tut1-box1");
+    expect(lamp).toMatchObject({ onSidewalk: false, obstructs: false });
     const all = at(tickOf("to-draw"));
     expect(trayIds(all).toDecide).toEqual([]);
     expect(trayIds(all).obstructions).toEqual(["tut1-box2"]);
@@ -237,13 +245,54 @@ describe("the preview script", () => {
 describe("replay (shared with the phone and tablet script, 22 Oct 2026)", () => {
   it("is how demoFrame plays the steps: the same screen and cursor at every tick", () => {
     for (let tick = 0; tick <= TICKS; tick += 7.5) {
-      const state = initialState();
-      const cursor = replay(STEPS, tick, state);
+      // At the frame's own tick: tick / TICKS * TICKS can land a hair off tick
       const frame = demoFrame(tick / TICKS);
+      const state = initialState();
+      const cursor = replay(STEPS, frame.tick, state);
       expect(cursor).toEqual(frame.cursor);
       expect(state.boxes).toEqual(frame.boxes);
       expect(state.scene).toEqual(frame.scene);
       expect(state.selectedId).toBe(frame.selectedId);
     }
+  });
+});
+
+// S12 (2 Nov 2026): the tool asks whether each object is on the sidewalk first
+describe("the sidewalk question in the preview", () => {
+  it("asks it of every object, laptop and phone alike: No for Car and Lamp Post #1, Yes before the obstruction answer for the rest", async () => {
+    const { TOUCH_STEPS } = await import("./touchScript");
+    for (const steps of [STEPS, TOUCH_STEPS]) {
+      const names = steps.map((s) => s.name);
+      for (const key of ["tree", "car", "moto", "lamp", "drawn"]) {
+        const sidewalk = names.indexOf(`${key}-sidewalk`);
+        const offPath = key === "car" || key === "lamp";
+        // A drawn box is asked once it has its category
+        expect(sidewalk).toBeGreaterThan(names.indexOf(key === "drawn" ? "category-pick" : `${key}-open`));
+        expect(steps[sidewalk].type).toBe("press");
+        expect(steps[sidewalk - 1].to).toEqual({ kind: "ui", name: offPath ? "sidewalk-no" : "sidewalk-yes" });
+        const answer = names.findIndex((n) => n === `${key}-yes` || n === `${key}-no`);
+        if (offPath) expect(answer).toBe(-1);
+        else expect(sidewalk).toBeLessThan(answer);
+      }
+    }
+  });
+
+  it("shows the sidewalk question as a box opens, and the obstruction question after its Yes", () => {
+    const tree = (frame) => frame.boxes.find((b) => b.id === frame.selectedId);
+    const opened = tree(at(tickOf("tree-open", "end")));
+    expect(getSuggestionPanelMode({ ...opened, comment: opened.comment })).toBe("sidewalk");
+    const onSidewalk = tree(at(tickOf("tree-sidewalk", "end")));
+    expect(onSidewalk.onSidewalk).toBe(true);
+    expect(getSuggestionPanelMode({ ...onSidewalk, comment: onSidewalk.comment })).toBe("judge");
+  });
+
+  it("ends the first photo with Car and Lamp Post #1 off the path, listed under Not obstructions with Motorcycle #1", () => {
+    const frame = at(tickOf("drawn-confirm", "end"));
+    const offPath = frame.boxes.filter((b) => b.onSidewalk === false).map((b) => b.id).sort();
+    expect(offPath).toEqual(["tut1-box1", "tut1-box3"]);
+    expect(frame.boxes.filter((b) => b.onSidewalk !== false).every((b) => b.onSidewalk === true)).toBe(true);
+    const trays = buildTrays(frame.boxes);
+    expect(trays.notObstructions.map((i) => i.id).sort()).toEqual(["tut1-box1", "tut1-box3", "tut1-box4"]);
+    expect(trays.notObstructions.filter((i) => i.offSidewalk).map((i) => i.id).sort()).toEqual(["tut1-box1", "tut1-box3"]);
   });
 });

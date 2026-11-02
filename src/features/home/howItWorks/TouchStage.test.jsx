@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import TouchStage, { MIN_SCREEN_H, MIN_SCREEN_W, TOOL_COPY, findTouchTarget, listScroll, screenScale } from "./TouchStage";
 import { TOUCH_STEPS, touchFrame, touchTickOf } from "./touchScript";
 import { TICKS } from "./demoScript";
+import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 import BottomSheet from "@/ui/BottomSheet";
 import { ADD_BOX_COPY, FOCUS_COPY } from "@/ui/annotation-tool/ReactPictureAnnotation";
 
@@ -60,7 +61,9 @@ describe("TouchStage", () => {
   it("opens Tree #1's panel in the sheet, under its name and Hide on photo, with only Tree #1 on the photo", () => {
     const el = show(touchTickOf("tree-open", "end"));
     const panel = sheet(el).querySelector("[data-demo-panel]");
-    expect(panel.textContent).toContain("Does Tree obstruct the sidewalk?");
+    // The sidewalk question first (S12), then, after its Yes, the obstruction question
+    expect(panel.textContent).toContain(SIDEWALK_QUESTION_COPY.question);
+    expect(panel.textContent).not.toContain("obstruct the sidewalk?");
     expect(panel.textContent).toContain("Not an object");
     expect(sheet(el).textContent).toContain("Tree #1");
     expect(sheet(el).textContent).toContain("Hide on photo");
@@ -68,6 +71,9 @@ describe("TouchStage", () => {
     expect(photoBoxes(el)).toHaveLength(1);
     expect(el.querySelectorAll("[data-demo-photo] circle")).toHaveLength(4);
     expect(el.querySelectorAll("[data-label]")).toHaveLength(0);
+    // Mounted last: show() unmounts the screen above
+    const after = sheet(show(touchTickOf("tree-sidewalk", "end"))).querySelector("[data-demo-panel]");
+    expect(after.textContent).toContain("Does Tree obstruct the sidewalk?");
   });
 
   it("shows the sheet's severity picker at the dragged value: 1 for Tree #1, 4 for the drawn box", () => {
@@ -93,10 +99,12 @@ describe("TouchStage", () => {
     expect(sheet(picked).textContent).toContain("Lamp Post #2");
   });
 
-  it("names every box on the photo again once the panel closes, the drawn one too", () => {
+  it("names every box on the photo again once the panel closes, the drawn one too, but not the two off the path", () => {
     const el = show(touchTickOf("drawn-confirm", "end"));
     const names = Array.from(el.querySelectorAll("[data-label]")).map((s) => s.textContent);
-    expect(names).toEqual(["Lamp Post #1", "Tree #1", "Car #1", "Motorcycle #1", "Lamp Post #2"]);
+    // Lamp Post #1 and Car #1 were answered not on the path (S12), so their boxes are off the photo
+    expect(names).toEqual(["Tree #1", "Motorcycle #1", "Lamp Post #2"]);
+    expect(photoBoxes(el)).toHaveLength(3);
     expect(sheet(el).textContent).toContain("Every object is answered.");
   });
 
@@ -115,7 +123,7 @@ describe("TouchStage", () => {
   });
 
   it("has no links", () => {
-    expect(show(touchTickOf("lamp-to-no", "end")).querySelector("a[href]")).toBeNull();
+    expect(show(touchTickOf("lamp-to-sidewalk", "end")).querySelector("a[href]")).toBeNull();
   });
 });
 

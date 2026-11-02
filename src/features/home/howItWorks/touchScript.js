@@ -23,7 +23,10 @@ import {
   initialState,
   layOut,
   replay,
+  answerOnSidewalk,
   select,
+  sidewalkNo,
+  sidewalkYes,
   step,
   stepTick,
   suggestionNo,
@@ -42,9 +45,10 @@ import {
  * 1024 px, and on every touch device.
  *
  * The same answers as on a laptop, given the way a phone gives them: Tree #1
- * is tapped on the photo, Yes, severity 1. Next at the top of the sheet opens
- * the rest in the tool's own order (Lamp Post #1, Car #1, Motorcycle #1), each
- * No. Add box puts a box in the middle of the photo, its corners are dragged
+ * is tapped on the photo, Yes to the sidewalk question, Yes, severity 1. Every
+ * object is answered Yes to the sidewalk question first (S12, 2 Nov 2026). Next at the top of the sheet opens
+ * the rest in the tool's own order (Lamp Post #1 and Car #1 not on the path,
+ * so their boxes leave the photo, then Motorcycle #1 on it but No). Add box puts a box in the middle of the photo, its corners are dragged
  * onto the white post on the sidewalk, Lamp Post, Yes, severity 4. The Step 2
  * line pulls the sheet up to Step 2: Moderate, Easy to traverse, Comfortable,
  * Easily accessible. Then Next Image.
@@ -83,6 +87,16 @@ const lerp = (a, b, t) => a + (b - a) * t;
 function openNext(s) {
   const { nextId } = buildPeekChips(orderOfAppearance(s.boxes), { labels: buildDisplayLabelsInOrder(s.boxes) });
   if (nextId) select(nextId)(s);
+}
+
+/** Yes to the sidewalk question on whichever suggestion is open */
+function sidewalkYesOnOpen(s) {
+  if (s.selectedId) sidewalkYes(s.selectedId)(s);
+}
+
+/** No to the sidewalk question on whichever suggestion is open */
+function sidewalkNoOnOpen(s) {
+  if (s.selectedId) sidewalkNo(s.selectedId)(s);
 }
 
 /** No on whichever suggestion is open */
@@ -139,12 +153,22 @@ function nextImage(s) {
 
 // ---- The script ----
 
-/** No on the next object: Next, then No */
+/** No on the next object: Next, Yes to the sidewalk question, then No */
 const nextNo = (key) => [
   step(`${key}-to-next`, "move", 4, { to: ui("peek-next") }),
   step(`${key}-open`, "press", 1.5, { then: openNext }),
+  ...answerOnSidewalk(key, sidewalkYesOnOpen),
   step(`${key}-to-no`, "move", 3.5, { to: ui("no") }),
   step(`${key}-no`, "press", 1.5, { then: noOnOpen }),
+];
+
+/** The next object not on the path: Next, then No to the sidewalk question */
+const nextOffPath = (key) => [
+  step(`${key}-to-next`, "move", 4, { to: ui("peek-next") }),
+  step(`${key}-open`, "press", 1.5, { then: openNext }),
+  ...answerOnSidewalk(key, sidewalkNoOnOpen, "no"),
+  // A moment to see the box gone from the photo
+  wait(1.5),
 ];
 
 /** A Step 2 answer: the sheet scrolls to it as the finger goes there, then a tap */
@@ -173,6 +197,7 @@ const TOUCH_TIMELINE = [
   step("tree-open", "press", 2, { then: select(ids.tree) }),
   // The sheet comes up with its panel and the photo moves the tree clear of it
   wait(2),
+  ...answerOnSidewalk("tree", sidewalkYes(ids.tree)),
   step("tree-to-yes", "move", 5, { to: ui("yes") }),
   step("tree-yes", "press", 2, { then: suggestionYes(ids.tree) }),
   step("tree-to-slider", "move", 4, { to: ui("slider", { value: 3 }) }),
@@ -181,8 +206,8 @@ const TOUCH_TIMELINE = [
   step("tree-confirm", "press", 2, { then: confirmSeverity(ids.tree) }),
   { chapter: "answer" },
   // Next opens them in the lists' order (test: lamp, car, moto)
-  ...nextNo("lamp"),
-  ...nextNo("car"),
+  ...nextOffPath("lamp"),
+  ...nextOffPath("car"),
   ...nextNo("moto"),
   { chapter: "draw" },
   step("to-add", "move", 5, { to: ui("addbox") }),
@@ -199,6 +224,7 @@ const TOUCH_TIMELINE = [
     during: (s, t) => { if (t > 0.6) s.dropdown = { highlighted: "lamp_post" }; },
   }),
   step("category-pick", "press", 2, { then: chooseCategory("lamp_post") }),
+  ...answerOnSidewalk("drawn", sidewalkYes(DRAWN_ID)),
   step("drawn-to-yes", "move", 4, { to: ui("yes") }),
   step("drawn-yes", "press", 2, { then: drawnYes(DRAWN_ID) }),
   step("drawn-to-slider", "move", 4, { to: ui("slider", { value: 3 }) }),

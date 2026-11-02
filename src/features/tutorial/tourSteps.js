@@ -20,7 +20,11 @@
  * Image).
  * Contributors have one tour of five steps. From 7 Oct 2026 its second step,
  * "Your Answers", points at the lists under the photo (Not obstructions and
- * Obstructions), where every answered object is listed.
+ * Obstructions), where every answered object is listed. From 2 Nov 2026 (S12)
+ * the canvas step names the two questions in order, the sidewalk question
+ * first, and the answers step says a No to it takes the box off the photo and
+ * lists it under Not obstructions. The question's wording comes from
+ * sidewalkQuestionCopy.js, the one place it is spelled out.
  *
  * tourTargets(), tourStepCount() and tourBeaconPlacements() take the role and
  * the annotator step, so the beacons and the "Step n of N" counter match the
@@ -44,6 +48,13 @@
  * every pointer tour reads as before, apart from the last steps of two tours,
  * which named the button Submit where it reads Next Image.
  */
+import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
+
+// Contributors (S12, 2 Nov 2026): the two questions on every box, in order
+const OFF_PATH = "A No to the path question takes the box off the photo and lists it under Not obstructions.";
+const TWO_QUESTIONS = `Then answer two questions. First, “${SIDEWALK_QUESTION_COPY.question}” No takes the box off the photo and lists it under Not obstructions. Yes asks whether the object obstructs the sidewalk. ${SIDEWALK_QUESTION_COPY.tutorial}`;
+const JUST_AS_USEFUL = "Answering No is just as valuable as answering Yes. An object on the sidewalk that does not get in the way is just as useful to record as one that does.";
+
 // The severity step points at the photo (8 Oct 2026): the severity scale opens
 // on the photo beside the box after a Yes, not in the lists under it
 const CONTRIBUTOR_TARGETS = Object.freeze([
@@ -105,13 +116,13 @@ const ANNOTATOR_SUBMIT_STEP = {
 const CONTRIBUTOR = [
   {
     title: "Annotation Canvas",
-    content: "Dashed yellow boxes are model suggestions. Click each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, click Not an object. You can also draw your own boxes by clicking and dragging to label objects the model missed.",
-    touchContent: "Dashed yellow boxes are model suggestions. Tap each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, tap Not an object. To label an object the model missed, tap Add box at the bottom left of the photo and drag the new box's corners to fit it. Pinch to zoom in on small objects.",
+    content: `Dashed yellow boxes are model suggestions. Click each one and check that its label is right (change it from the list if it is not). ${TWO_QUESTIONS} If a box does not mark a real object, click Not an object. You can also draw your own boxes by clicking and dragging to label objects the model missed.`,
+    touchContent: `Dashed yellow boxes are model suggestions. Tap each one and check that its label is right (change it from the list if it is not). ${TWO_QUESTIONS} If a box does not mark a real object, tap Not an object. To label an object the model missed, tap Add box at the bottom left of the photo and drag the new box's corners to fit it. Pinch to zoom in on small objects.`,
   },
   {
     title: "Your Answers",
-    content: "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you draw are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Click any object to change its answer. Click the eye beside an object to hide its box on the photo while you work on boxes around it.",
-    touchContent: "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. It tells us the object is there but does not get in the way. Tap any object to change its answer. Tap the eye beside an object to hide its box on the photo while you work on boxes around it. To show a hidden box again, double-tap where it was.",
+    content: `Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you draw are listed there too. ${OFF_PATH} ${JUST_AS_USEFUL} Click any object to change its answer. A box off the photo shows again while it is open. Click the eye beside an object to hide its box on the photo while you work on boxes around it.`,
+    touchContent: `Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you add are listed there too. ${OFF_PATH} ${JUST_AS_USEFUL} Tap any object to change its answer. A box off the photo shows again while it is open. Tap the eye beside an object to hide its box on the photo while you work on boxes around it. To show a hidden box again, double-tap where it was.`,
   },
   SEVERITY_STEP,
   SCENE_STEP,
@@ -240,7 +251,7 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
   copy: [
     {
       title: "Annotation Canvas",
-      content: "Dashed yellow boxes are model suggestions. Tap each one, check that its label is right (change it from the list if it is not), then decide whether the object obstructs the sidewalk. If a box does not mark a real object, tap Not an object. While a box is open it is the only box on the photo, and the others come back when you close it. Pinch to zoom in on small objects.",
+      content: `Dashed yellow boxes are model suggestions. Tap each one and check that its label is right (change it from the list if it is not). ${TWO_QUESTIONS} If a box does not mark a real object, tap Not an object. While a box is open it is the only box on the photo, and the others come back when you close it. Pinch to zoom in on small objects.`,
     },
     {
       title: "Add a Box",
@@ -248,7 +259,7 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
     },
     {
       title: "Your Answers",
-      content: "Every object is listed at the bottom of the screen, with what is left first and what you answered for each. Boxes you add are listed there too. Answering No is just as valuable as answering Yes. Pull the list up for your answers in Not obstructions and Obstructions, and tap any object to change its answer. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye beside an object in the list pulled up hides one. To show a hidden box again, double-tap where it was.",
+      content: `Every object is listed at the bottom of the screen, with what is left first and what you answered for each. Boxes you add are listed there too. ${OFF_PATH} ${JUST_AS_USEFUL} Pull the list up for your answers in Not obstructions and Obstructions, and tap any object to change its answer. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye beside an object in the list pulled up hides one. To show a hidden box again, double-tap where it was.`,
     },
     {
       title: "Severity",

@@ -1,4 +1,4 @@
-import { isNotAnObject } from "@/util/suggestionJudgment";
+import { isNotAnObject, isOffSidewalk } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
 import { DEFAULT_TAU } from "@/util/validators/tauSetting.mjs";
 
@@ -134,6 +134,9 @@ function createAnswerClock() {
  *   - custom_category: the category changed to free text
  *   - modified: the box moved or resized beyond the tolerance
  *   - relabeled_and_modified, custom_category_and_modified: both changes
+ *   - off_sidewalk: answered not on the sidewalk or the path people walk on
+ *     (contributors, S12, 2 Nov 2026), a real object that does not obstruct,
+ *     never removed
  * Categories are compared without case, with spaces and underscores alike.
  */
 const SUGGESTION_DISPOSITIONS = Object.freeze([
@@ -144,6 +147,7 @@ const SUGGESTION_DISPOSITIONS = Object.freeze([
   "modified",
   "relabeled_and_modified",
   "custom_category_and_modified",
+  "off_sidewalk",
 ]);
 
 function categoryKey(comment) {
@@ -152,6 +156,7 @@ function categoryKey(comment) {
 
 function suggestionDisposition(obj) {
   if (isNotAnObject(obj)) return "removed";
+  if (isOffSidewalk(obj)) return "off_sidewalk";
   const init = obj.initialState;
   if (!init) return "accepted";
   const category = categoryKey(obj.comment);
@@ -250,13 +255,16 @@ const DISPOSITION_COUNT_FIELDS = Object.freeze({
   modified: "modifiedSuggestionCount",
   relabeled_and_modified: "relabeledAndModifiedSuggestionCount",
   custom_category_and_modified: "customCategoryAndModifiedSuggestionCount",
+  off_sidewalk: "offSidewalkSuggestionCount",
 });
 
 /**
  * The image's counts. Every answered suggestion is counted once, under the
  * disposition its suggestionConfidences entry gets (suggestionDisposition), so
  * the counts and the entries never disagree (S6, 29 Oct 2026). A No counts
- * under its disposition, usually accepted, and Not an object under removed.
+ * under its disposition, usually accepted, Not an object under removed, and
+ * a suggestion not on the sidewalk under off_sidewalk, as a real object that
+ * does not obstruct (S12).
  *
  * totalBoxesSubmitted counts every real object: drawn boxes and every answered
  * suggestion that is not Not an object, Yes or No alike. obstructionCount and

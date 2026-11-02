@@ -22,6 +22,10 @@ import {
   keepObjectPatch,
   getObjectPanelMode,
   isDecidedForObjects,
+  isOffSidewalk,
+  offSidewalkPatch,
+  onSidewalkPatch,
+  clearSidewalkPatch,
 } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
 import { isBelowMinimumSize, clampPointToImage, keepMarkInside, markArea, normalizeMark, pickNearSmallBox } from "@/util/boxGeometry";
@@ -291,6 +295,9 @@ interface IReactPictureAnnotationProps {
     originalComment: string,
     variant?: PanelVariant,
     onHide?: () => void,
+    onSidewalk?: boolean,
+    onSetOnSidewalk?: (onSidewalk: boolean) => void,
+    onClearOnSidewalk?: () => void,
   ) => React.ReactElement;
   totalAnnotationCount?: number;
   // Annotators give no severity and answer no scene-level questions (decided
@@ -385,6 +392,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       originalComment: string,
       variant: PanelVariant = "floating",
       onHide?: () => void,
+      onSidewalk?: boolean,
+      onSetOnSidewalk?: (onSidewalk: boolean) => void,
+      onClearOnSidewalk?: () => void,
     ) => (
       <DefaultInputSection
         key={id}
@@ -408,6 +418,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         originalComment={originalComment}
         variant={variant}
         onHide={onHide}
+        onSidewalk={onSidewalk}
+        onSetOnSidewalk={onSetOnSidewalk}
+        onClearOnSidewalk={onClearOnSidewalk}
       />
     ),
     isAnnotator: false,
@@ -441,6 +454,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     isRejected: false,
     obstructs: undefined as boolean | undefined,
     severity: undefined as number | null | undefined,
+    // Contributors (S12): the open box's answer to the sidewalk question
+    onSidewalk: undefined as boolean | undefined,
     canvasScale: 1,
     // Annotators only (4 Oct 2026): Objects, then Obstructions
     annotatorStep: "objects" as AnnotatorStep,
@@ -652,6 +667,21 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const focused = this.focusedBoxId;
     return focused !== null && id !== focused;
   };
+
+  /**
+   * Contributors (S12, 2 Nov 2026): a box answered not on the sidewalk is off
+   * the photo, neither drawn nor picked by a click or a tap, except while its
+   * panel is open (from its chip under Not obstructions), so its answer
+   * can be changed. Not hidden: hiddenBoxIds and Show all never bring it back.
+   */
+  private isOffSidewalkClosed(id: string) {
+    if (this.annotatorObjectStep || id === this.selectedId) return false;
+    const shape = this.shapes.find((item) => item.getAnnotationData().id === id);
+    return Boolean(shape) && isOffSidewalk(shape!.getAnnotationData());
+  }
+
+  /** Not on the photo: hidden by the contributor or annotator, or off the sidewalk and closed. */
+  public isOffPhoto = (id: string) => this.isBoxHidden(id) || this.isOffSidewalkClosed(id);
 
   /**
    * Phones and tablets, Step 1, both roles (14 Oct 2026): the open box, a
@@ -1158,6 +1188,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.state.originalComment,
       variant,
       this.inBoxStep && variant !== "sheet" ? this.hideOpenBox : undefined,
+      this.state.onSidewalk,
+      this.onSetOnSidewalk,
+      this.onClearOnSidewalk,
     );
 
     // The canvas, the same in every layout
@@ -2421,7 +2454,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * Hidden boxes are skipped.
    */
   private touchBoxAt(point: Point): string | null {
-    return this.boxAtAmong(point, (id) => !this.isBoxHidden(id));
+    return this.boxAtAmong(point, (id) => !this.isOffPhoto(id));
   }
 
   /** The box hidden by the annotator under a finger at this point (image px), as touchBoxAt picks. */
@@ -4233,7 +4266,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const named = this.shapes
       .filter((shape) => {
         const data = shape.getAnnotationData();
-        if (this.isBoxHidden(data.id) || !data.comment) return false;
+        if (this.isOffPhoto(data.id) || !data.comment) return false;
         return !(variant === "obstructions" && data.comment === "not_an_object");
       })
       .sort((a, b) => (rank.get(a.getAnnotationData().id) ?? Infinity) - (rank.get(b.getAnnotationData().id) ?? Infinity));
@@ -4257,7 +4290,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const spots = this.labelSpots(labels, variant);
     for (const item of this.shapes) {
       if (!this.paintsBoxes) break;
-      if (this.isBoxHidden(item.getAnnotationData().id)) continue;
+      if (this.isOffPhoto(item.getAnnotationData().id)) continue;
       const isSelected = variant === "default" && item.getAnnotationData().id === data.id;
       item.paint(
         this.canvas2D,
@@ -4315,7 +4348,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       const spots = this.labelSpots(labels, variant);
       for (const item of this.shapes) {
         if (!this.paintsBoxes) break;
-        if (this.isBoxHidden(item.getAnnotationData().id)) continue;
+        if (this.isOffPhoto(item.getAnnotationData().id)) continue;
         const isSelected = variant === "default" && item.getAnnotationData().id === this.selectedId;
         item.paint(
           this.canvas2D,
@@ -4387,6 +4420,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       isRejected: data.isRejected || false,
       obstructs: data.obstructs,
       severity: data.severity,
+      onSidewalk: data.onSidewalk,
     });
   }
 
@@ -4559,7 +4593,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       // Annotators give no obstruction answer, so their Not an object box keeps obstructs null
       const patch = this.annotatorObjectStep ? annotatorNotAnObjectPatch() : notAnObjectPatch();
       Object.assign(data, patch);
-      this.setState({ selected: false, isRejected: true, obstructs: patch.obstructs, severity: null, inputComment: NOT_AN_OBJECT });
+      // Not an object boxes carry no sidewalk answer (S12)
+      delete data.onSidewalk;
+      this.setState({ selected: false, isRejected: true, obstructs: patch.obstructs, severity: null, onSidewalk: undefined, inputComment: NOT_AN_OBJECT });
       this.onShapeChange();
     }
 
@@ -4662,6 +4698,51 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   /**
+   * Contributors (S12, 2 Nov 2026): the first question, whether the object is
+   * on the sidewalk or the path people walk on. No records a real object that
+   * does not obstruct, closes the panel, takes the box off the photo and lists
+   * it under Not obstructions. It is the suggestion's final answer, so its time
+   * to answer stops there. Yes clears any earlier answer and leaves the panel
+   * open on the obstruction question, which gives the time to answer.
+   */
+  private onSetOnSidewalk = (onSidewalk: boolean) => {
+    if (this.annotatorObjectStep) return;
+    const target = this.shapes.find((shape) => shape.getAnnotationData().id === this.selectedId);
+    if (!target) return;
+    const data = target.getAnnotationData();
+    if (data.comment === NOT_AN_OBJECT) return;
+    if (onSidewalk && data.onSidewalk === true) return;
+    const patch = onSidewalk ? onSidewalkPatch(data) : offSidewalkPatch(data);
+    Object.assign(data, patch);
+    if (!onSidewalk && !data.editable) this.answerClock.answered(data.id);
+    this.setState({
+      onSidewalk: data.onSidewalk,
+      obstructs: data.obstructs,
+      severity: null,
+      selected: data.selected || false,
+      isRejected: data.isRejected || false,
+    });
+    this.onShapeChange();
+    if (!onSidewalk) this.closePanel();
+  };
+
+  /**
+   * Contributors (S12): Go back on the obstruction question. Back to the
+   * sidewalk question with no answer to either, as onClearObstruction takes
+   * back a Yes.
+   */
+  private onClearOnSidewalk = () => {
+    if (this.annotatorObjectStep) return;
+    const target = this.shapes.find((shape) => shape.getAnnotationData().id === this.selectedId);
+    if (!target) return;
+    const data = target.getAnnotationData();
+    Object.assign(data, clearSidewalkPatch(data));
+    delete data.onSidewalk;
+    this.setState({ onSidewalk: undefined, obstructs: undefined, severity: null, selected: data.selected || false, isRejected: data.isRejected || false });
+    this.onShapeChange();
+  };
+
+  /**
    * Contributors: Undo on a suggestion marked Not an object. It gets the
    * model's category back and no answer, so it is still to decide (7 Oct 2026).
    */
@@ -4678,7 +4759,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     data.isRejected = false;
     data.obstructs = undefined;
     data.severity = null;
-    this.setState({ inputComment: comment, selected: false, isRejected: false, obstructs: undefined, severity: null });
+    delete data.onSidewalk;
+    this.setState({ inputComment: comment, selected: false, isRejected: false, obstructs: undefined, severity: null, onSidewalk: undefined });
     this.onShapeChange();
   };
 

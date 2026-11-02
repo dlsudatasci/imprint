@@ -1,4 +1,5 @@
 import { SESSION_SIZES_TEXT } from "./taskFacts";
+import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 
 /**
  * Every string the annotation guide shows (16 Oct 2026), so tests can check
@@ -21,6 +22,9 @@ import { SESSION_SIZES_TEXT } from "./taskFacts";
  * pictures are the phone layout's, so the text names where things are on
  * both: the lists in the answers sheet, and the Step 2 line that brings
  * Step 2 up.
+ *
+ * From 2 Nov 2026 (S12) the box panel asks first whether the object is on the
+ * sidewalk or the path people walk on, in sidewalkQuestionCopy.js's words.
  *
  * Nothing here names the study's hypotheses or the reference images.
  */
@@ -46,7 +50,8 @@ export const GUIDE_COPY = Object.freeze({
       still: 0,
       paragraphs: Object.freeze([
         "Dashed boxes are the model's suggestions. Click one, or tap it on a phone, to open its panel.",
-        "Check the category, then answer the question “Does it obstruct the sidewalk?” with Yes or No. Answer for yourself, as you normally travel. If you choose Yes, rate how much from 1, a minor inconvenience, to 5, impassable.",
+        `Check the category, then answer the question “${SIDEWALK_QUESTION_COPY.question}” with Yes or No. ${SIDEWALK_QUESTION_COPY.tutorial}`,
+        "If you choose Yes, answer “Does it obstruct the sidewalk?” with Yes or No. Answer for yourself, as you normally travel. If you choose Yes again, rate how much from 1, a minor inconvenience, to 5, impassable.",
       ]),
     }),
     Object.freeze({
@@ -56,7 +61,7 @@ export const GUIDE_COPY = Object.freeze({
       paragraphs: Object.freeze([
         "If a box does not obstruct the sidewalk, choose No.",
         "If a box has nothing real in it, choose Not an object at the foot of its panel.",
-        "Every answer sorts the object into a list, Not obstructions or Obstructions, under the photo on a laptop and in the answers sheet on a phone or tablet. Click or tap a name in a list to open its panel and change the answer.",
+        "Every answer sorts the object into a list, Not obstructions or Obstructions, under the photo on a laptop and in the answers sheet on a phone or tablet. A No to the path question takes the box off the photo and lists it under Not obstructions. Click or tap a name in a list to open its panel and change the answer.",
       ]),
     }),
     Object.freeze({
@@ -65,7 +70,7 @@ export const GUIDE_COPY = Object.freeze({
       still: 2,
       paragraphs: Object.freeze([
         "With a mouse, drag a box around the object. On a phone or tablet, tap Add box and drag its corners to fit.",
-        "Pick its category, or choose Other... to type one, and answer the same question. To remove a box you drew, choose Delete box.",
+        "Pick its category, or choose Other... to type one, and answer the same questions. To remove a box you drew, choose Delete box.",
       ]),
     }),
     Object.freeze({

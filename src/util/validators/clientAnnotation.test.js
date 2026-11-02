@@ -5,6 +5,7 @@ import {
   validateObstructionStep,
   validateSidewalkStep,
 } from "./clientAnnotation.js";
+import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 
 const validSceneLevel = {
   sidewalkWidth: "two_people",
@@ -16,8 +17,8 @@ const validSceneLevel = {
 function makeInput(overrides = {}) {
   return {
     existingAnnotations: [],
-    newObjects: [{ comment: "pole", obstructs: true, severity: 3 }],
-    selectedObjects: [{ comment: "tree", obstructs: false }],
+    newObjects: [{ onSidewalk: true, comment: "pole", obstructs: true, severity: 3 }],
+    selectedObjects: [{ onSidewalk: true, comment: "tree", obstructs: false }],
     sceneLevel: { ...validSceneLevel },
     ...overrides,
   };
@@ -32,7 +33,7 @@ describe("validateAnnotationForSubmit", () => {
   it("fails when an existing annotation is unconfirmed", () => {
     const result = validateAnnotationForSubmit(
       makeInput({
-        existingAnnotations: [{ editable: false, selected: false, isRejected: false }],
+        existingAnnotations: [{ onSidewalk: true, editable: false, selected: false, isRejected: false }],
       })
     );
     expect(result.valid).toBe(false);
@@ -42,7 +43,7 @@ describe("validateAnnotationForSubmit", () => {
   it("passes when existing annotation is selected (confirmed)", () => {
     const result = validateAnnotationForSubmit(
       makeInput({
-        existingAnnotations: [{ editable: false, selected: true, isRejected: false, obstructs: true, severity: 2 }],
+        existingAnnotations: [{ onSidewalk: true, editable: false, selected: true, isRejected: false, obstructs: true, severity: 2 }],
       })
     );
     expect(result.valid).toBe(true);
@@ -51,7 +52,7 @@ describe("validateAnnotationForSubmit", () => {
   it("passes when existing annotation is rejected", () => {
     const result = validateAnnotationForSubmit(
       makeInput({
-        existingAnnotations: [{ editable: false, selected: false, isRejected: true }],
+        existingAnnotations: [{ onSidewalk: true, editable: false, selected: false, isRejected: true }],
       })
     );
     expect(result.valid).toBe(true);
@@ -59,7 +60,7 @@ describe("validateAnnotationForSubmit", () => {
 
   it("fails when a new object has no label", () => {
     const result = validateAnnotationForSubmit(
-      makeInput({ newObjects: [{ comment: "", obstructs: false }] })
+      makeInput({ newObjects: [{ onSidewalk: true, comment: "", obstructs: false }] })
     );
     expect(result.valid).toBe(false);
     expect(result.error).toContain("unlabeled");
@@ -67,7 +68,7 @@ describe("validateAnnotationForSubmit", () => {
 
   it("fails when a selected object has placeholder label '---'", () => {
     const result = validateAnnotationForSubmit(
-      makeInput({ selectedObjects: [{ comment: "---", obstructs: false }] })
+      makeInput({ selectedObjects: [{ onSidewalk: true, comment: "---", obstructs: false }] })
     );
     expect(result.valid).toBe(false);
     expect(result.error).toContain("unlabeled");
@@ -75,7 +76,7 @@ describe("validateAnnotationForSubmit", () => {
 
   it("fails when a box is missing obstruction judgment", () => {
     const result = validateAnnotationForSubmit(
-      makeInput({ newObjects: [{ comment: "pole", obstructs: undefined }] })
+      makeInput({ newObjects: [{ onSidewalk: true, comment: "pole", obstructs: undefined }] })
     );
     expect(result.valid).toBe(false);
     expect(result.error).toContain("obstructs");
@@ -83,7 +84,7 @@ describe("validateAnnotationForSubmit", () => {
 
   it("fails when an obstructing box has no severity", () => {
     const result = validateAnnotationForSubmit(
-      makeInput({ newObjects: [{ comment: "pole", obstructs: true, severity: null }] })
+      makeInput({ newObjects: [{ onSidewalk: true, comment: "pole", obstructs: true, severity: null }] })
     );
     expect(result.valid).toBe(false);
     expect(result.error).toContain("severity");
@@ -91,7 +92,7 @@ describe("validateAnnotationForSubmit", () => {
 
   it("passes when non-obstructing box has no severity", () => {
     const result = validateAnnotationForSubmit(
-      makeInput({ newObjects: [{ comment: "bench", obstructs: false }] })
+      makeInput({ newObjects: [{ onSidewalk: true, comment: "bench", obstructs: false }] })
     );
     expect(result.valid).toBe(true);
   });
@@ -159,9 +160,9 @@ describe("validateAnnotationForSubmit", () => {
     const result = validateAnnotationForSubmit(
       makeInput({
         existingAnnotations: [
-          { editable: false, selected: false, isRejected: true, comment: "" },
+          { onSidewalk: true, editable: false, selected: false, isRejected: true, comment: "" },
         ],
-        selectedObjects: [{ comment: "", obstructs: false }],
+        selectedObjects: [{ onSidewalk: true, comment: "", obstructs: false }],
       })
     );
     expect(result.valid).toBe(false);
@@ -172,7 +173,7 @@ describe("validateAnnotationForSubmit", () => {
   // screen to show, and the message reads right on touch
   it("asks for a Yes or No on every object without saying click", () => {
     const result = validateAnnotationForSubmit(
-      makeInput({ existingAnnotations: [{ editable: false, selected: false, isRejected: false, comment: "car" }] })
+      makeInput({ existingAnnotations: [{ onSidewalk: true, editable: false, selected: false, isRejected: false, comment: "car" }] })
     );
     expect(result.error).toBe("Please answer Yes or No for every object before submitting.");
     expect(result.error.toLowerCase()).not.toContain("click");
@@ -180,10 +181,10 @@ describe("validateAnnotationForSubmit", () => {
 
   it("names the objects section for a failure about a box", () => {
     const failures = [
-      makeInput({ existingAnnotations: [{ editable: false, selected: false, isRejected: false, comment: "car" }] }),
-      makeInput({ newObjects: [{ comment: "---", obstructs: false }] }),
-      makeInput({ newObjects: [{ comment: "pole" }] }),
-      makeInput({ newObjects: [{ comment: "pole", obstructs: true, severity: null }] }),
+      makeInput({ existingAnnotations: [{ onSidewalk: true, editable: false, selected: false, isRejected: false, comment: "car" }] }),
+      makeInput({ newObjects: [{ onSidewalk: true, comment: "---", obstructs: false }] }),
+      makeInput({ newObjects: [{ onSidewalk: true, comment: "pole" }] }),
+      makeInput({ newObjects: [{ onSidewalk: true, comment: "pole", obstructs: true, severity: null }] }),
     ];
     for (const input of failures) expect(validateAnnotationForSubmit(input).section).toBe("objects");
   });
@@ -320,7 +321,7 @@ describe("validateObstructionStep", () => {
 describe("validateAnnotationForSubmit for drawn boxes (both roles)", () => {
   it("refuses a contributor's drawn box with no Yes or No", () => {
     const result = validateAnnotationForSubmit(
-      makeInput({ newObjects: [{ editable: true, comment: "pole" }] })
+      makeInput({ newObjects: [{ onSidewalk: true, editable: true, comment: "pole" }] })
     );
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Please indicate whether each object obstructs the sidewalk.");
@@ -328,14 +329,14 @@ describe("validateAnnotationForSubmit for drawn boxes (both roles)", () => {
 
   it("accepts a contributor's drawn box answered No without severity", () => {
     const result = validateAnnotationForSubmit(
-      makeInput({ newObjects: [{ editable: true, comment: "car", obstructs: false }] })
+      makeInput({ newObjects: [{ onSidewalk: true, editable: true, comment: "car", obstructs: false }] })
     );
     expect(result).toEqual({ valid: true });
   });
 
   it("still asks a contributor to rate a drawn box answered Yes", () => {
     const result = validateAnnotationForSubmit(
-      makeInput({ newObjects: [{ editable: true, comment: "pole", obstructs: true }] })
+      makeInput({ newObjects: [{ onSidewalk: true, editable: true, comment: "pole", obstructs: true }] })
     );
     expect(result.valid).toBe(false);
     expect(result.error).toContain("severity");
@@ -345,6 +346,62 @@ describe("validateAnnotationForSubmit for drawn boxes (both roles)", () => {
     const result = validateAnnotationForSubmit(makeInput({ sceneLevel: null }));
     expect(result.valid).toBe(false);
     expect(result.error).toContain("sidewalk width");
+  });
+});
+
+// S12 (2 Nov 2026): contributors say whether each object is on the sidewalk
+// or the path people walk on, then, when it is, whether it obstructs
+describe("validateAnnotationForSubmit, the sidewalk question", () => {
+  const box = (id, extra) => ({ id, comment: "tree", mark: { x: 0, y: 0, width: 10, height: 10 }, ...extra });
+  const contributor = (existing) => ({
+    existingAnnotations: existing,
+    newObjects: existing.filter((b) => b.editable),
+    selectedObjects: existing.filter((b) => !b.editable && (b.selected || b.isRejected)),
+    sceneLevel: { ...validSceneLevel },
+  });
+  const offSuggestion = box("s1", { editable: false, onSidewalk: false, obstructs: false, severity: null, selected: false, isRejected: true });
+  const offDrawn = box("d1", { editable: true, onSidewalk: false, obstructs: false, severity: null });
+
+  it("asks for the sidewalk answer on a suggestion or a drawn box without one, with the copy module's message", () => {
+    const untouched = box("s2", { editable: false, selected: false, isRejected: false });
+    const drawn = box("d2", { editable: true });
+    for (const boxes of [[untouched], [drawn], [offSuggestion, untouched]]) {
+      const result = validateAnnotationForSubmit(contributor(boxes));
+      expect(result).toMatchObject({ valid: false, section: "objects", error: SIDEWALK_QUESTION_COPY.incomplete });
+    }
+    expect(validateAnnotationForSubmit(contributor([untouched, drawn])).boxIds).toEqual(["s2"]);
+    expect(validateAnnotationForSubmit(contributor([offSuggestion, drawn])).boxIds).toEqual(["d2"]);
+  });
+
+  it("asks for it even on a box answered Yes or No before the question existed", () => {
+    const oldYes = box("s3", { editable: false, selected: true, isRejected: false, obstructs: true, severity: 2 });
+    const oldNo = box("d3", { editable: true, obstructs: false });
+    expect(validateAnnotationForSubmit(contributor([oldYes])).error).toBe(SIDEWALK_QUESTION_COPY.incomplete);
+    expect(validateAnnotationForSubmit(contributor([oldNo])).error).toBe(SIDEWALK_QUESTION_COPY.incomplete);
+  });
+
+  it("accepts a box not on the walking path with no obstruction question asked", () => {
+    expect(validateAnnotationForSubmit(contributor([offSuggestion, offDrawn]))).toEqual({ valid: true });
+  });
+
+  it("still asks the obstruction question, then the severity, of a box on the walking path", () => {
+    const onSuggestion = box("s4", { editable: false, onSidewalk: true, selected: false, isRejected: false });
+    const onDrawn = box("d4", { editable: true, onSidewalk: true });
+    const noSeverity = box("d5", { editable: true, onSidewalk: true, obstructs: true, severity: null });
+    expect(validateAnnotationForSubmit(contributor([onSuggestion])).error).toBe("Please answer Yes or No for every object before submitting.");
+    expect(validateAnnotationForSubmit(contributor([onDrawn])).error).toBe("Please indicate whether each object obstructs the sidewalk.");
+    expect(validateAnnotationForSubmit(contributor([noSeverity])).error).toContain("severity");
+  });
+
+  it("asks Not an object boxes nothing", () => {
+    const notAnObject = box("s5", { editable: false, comment: "not_an_object", selected: false, isRejected: true, obstructs: false, severity: null });
+    expect(validateAnnotationForSubmit(contributor([notAnObject]))).toEqual({ valid: true });
+  });
+
+  it("leaves annotators as they were", () => {
+    const kept = box("s6", { editable: false, selected: true, isRejected: false, obstructs: false, severity: null });
+    const result = validateAnnotationForSubmit({ ...contributor([kept]), sceneLevel: null, isAnnotator: true, obstructionsConfirmed: true });
+    expect(result).toEqual({ valid: true });
   });
 });
 
@@ -416,22 +473,22 @@ describe("the boxes a failed check is about", () => {
   });
 
   it("contributors: the unanswered suggestions, the unlabeled boxes, the unanswered drawn boxes, then the Yes answers with no severity", () => {
-    const unanswered = box("s1", { editable: false, selected: false, isRejected: false, comment: "tree" });
-    const yes = box("s2", { editable: false, selected: true, comment: "car", obstructs: true, severity: 3 });
+    const unanswered = box("s1", { onSidewalk: true, editable: false, selected: false, isRejected: false, comment: "tree" });
+    const yes = box("s2", { onSidewalk: true, editable: false, selected: true, comment: "car", obstructs: true, severity: 3 });
     expect(validateAnnotationForSubmit(contributor([unanswered, yes])).boxIds).toEqual(["s1"]);
-    const unlabeled = box("d1", { editable: true, comment: "---", obstructs: false });
+    const unlabeled = box("d1", { onSidewalk: true, editable: true, comment: "---", obstructs: false });
     expect(validateAnnotationForSubmit(contributor([yes, unlabeled])).boxIds).toEqual(["d1"]);
-    const drawnUnanswered = box("d2", { editable: true, comment: "bench", obstructs: null });
+    const drawnUnanswered = box("d2", { onSidewalk: true, editable: true, comment: "bench", obstructs: null });
     expect(validateAnnotationForSubmit(contributor([yes, drawnUnanswered])).boxIds).toEqual(["d2"]);
-    const noSeverityA = box("s3", { editable: false, selected: true, comment: "car", obstructs: true, severity: null });
-    const noSeverityB = box("d3", { editable: true, comment: "bench", obstructs: true, severity: null });
+    const noSeverityA = box("s3", { onSidewalk: true, editable: false, selected: true, comment: "car", obstructs: true, severity: null });
+    const noSeverityB = box("d3", { onSidewalk: true, editable: true, comment: "bench", obstructs: true, severity: null });
     const result = validateAnnotationForSubmit(contributor([yes, noSeverityA, noSeverityB]));
     expect(result.error).toContain("severity");
     expect(result.boxIds).toEqual(["s3", "d3"]);
   });
 
   it("lists no boxes for Step 2", () => {
-    const yes = box("s2", { editable: false, selected: true, comment: "car", obstructs: true, severity: 3 });
+    const yes = box("s2", { onSidewalk: true, editable: false, selected: true, comment: "car", obstructs: true, severity: 3 });
     const result = validateAnnotationForSubmit({ ...contributor([yes]), sceneLevel: { ...scene, sidewalkWidth: null } });
     expect(result.section).toBe("scene");
     expect(result.boxIds).toBeUndefined();

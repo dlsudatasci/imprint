@@ -33,7 +33,7 @@ export const RETRAINING_CSV_KEYS = [
   "imageID", "objectKey", "objectID", "source", "isCreatedBox", "featureSource",
   "category", "boxX", "boxY", "boxW", "boxH", "confidence",
   "finalCategory", "finalBoxX", "finalBoxY", "finalBoxW", "finalBoxH",
-  "obstructs", "severity",
+  "obstructs", "onSidewalk", "severity",
   "userMobilityDisability", "userAgeGroup", "userCommuteFrequency",
   "userAccessibilityFamiliarity", "userWalkingFrequency", "userTemporaryMobility",
   "servedModelVersion", "pseudoUserId",
@@ -158,6 +158,10 @@ export function buildRetrainingRows({ annotations, userMap, imageMap }) {
         finalBoxW: box.mark?.width ?? "",
         finalBoxH: box.mark?.height ?? "",
         obstructs: box.obstructs ?? "",
+        // Contributors' answer to the sidewalk question (S12, 2 Nov 2026).
+        // A box not on the sidewalk is kept, with obstructs false. Empty for
+        // annotator boxes, which are never asked it.
+        onSidewalk: typeof box.onSidewalk === "boolean" ? box.onSidewalk : "",
         severity: box.obstructs ? (box.severity ?? "") : "",
         userMobilityDisability: user?.disability ?? "",
         userAgeGroup: user?.age ?? "",

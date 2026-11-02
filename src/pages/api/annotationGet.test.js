@@ -700,6 +700,49 @@ describe("POST /api/annotationGet", () => {
       expect(second.userSceneLevel).toEqual({ sidewalkWidth: "one_person", surfaceCondition: 2, walkability: 1, overallAccessibility: 4 });
       expect(first.userSceneScale).toBe(2);
     });
+
+    // S12 (2 Nov 2026): the sidewalk answer comes back with the box, so a box
+    // answered not on the sidewalk stays off the photo when the session resumes
+    it("gives back each box's sidewalk answer, a box off the walking path with obstructs false", async () => {
+      const mark = { x: 1, y: 1, width: 40, height: 40 };
+      const image = {
+        _id: "img-1",
+        imageID: 1,
+        isReference: false,
+        poolStatus: "deployment",
+        annotationList: [
+          { id: "s1", comment: "car", mark, confidence: 0.9 },
+          { id: "s2", comment: "tree", mark, confidence: 0.8 },
+        ],
+      };
+      const mocks = setupMocks({
+        activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: ["img-1"], completedImageIDs: [1], totalCount: 10 },
+      });
+      mocks.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([image]) });
+      mocks.annotationsCol.find.mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([
+          {
+            imageID: 1,
+            sceneLevel: null,
+            selectedObjectsID: [
+              { id: "s1", comment: "car", mark, editable: false, selected: false, isRejected: true, onSidewalk: false, obstructs: false, severity: null },
+              { id: "s2", comment: "tree", mark, editable: false, selected: true, isRejected: false, onSidewalk: true, obstructs: true, severity: 2 },
+            ],
+            newObjects: [{ id: "d1", comment: "bench", mark, editable: true, onSidewalk: false, obstructs: false, severity: null }],
+          },
+        ]),
+      });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+
+      const boxes = res._json.imgRecords[0].annotationList;
+      expect(boxes.map((b) => [b.id, b.onSidewalk, b.obstructs])).toEqual([
+        ["s1", false, false],
+        ["s2", true, true],
+        ["d1", false, false],
+      ]);
+      expect(boxes[0]).toMatchObject({ comment: "car", isRejected: true });
+    });
   });
 
   // Local testing only (6 Oct 2026): ANNOTATOR_MODEL_DEV_FIRST=true

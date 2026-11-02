@@ -78,6 +78,10 @@ describe("RETRAINING_CSV_KEYS", () => {
     expect(startIdx).toBeGreaterThan(-1);
     expect(RETRAINING_CSV_KEYS.slice(startIdx, startIdx + 6)).toEqual(demoKeys);
   });
+
+  it("has onSidewalk right after obstructs (S12, 2 Nov 2026)", () => {
+    expect(RETRAINING_CSV_KEYS[RETRAINING_CSV_KEYS.indexOf("obstructs") + 1]).toBe("onSidewalk");
+  });
 });
 
 describe("buildRetrainingRows", () => {
@@ -110,6 +114,32 @@ describe("buildRetrainingRows", () => {
     expect(rows.map((r) => r.objectID)).toEqual(["c"]);
     expect(summary.excludedNoJudgment).toBe(2);
     expect(summary.rows).toBe(1);
+  });
+
+  // S12 (2 Nov 2026): contributors' answer to the sidewalk question
+  it("keeps a contributor's boxes off the walking path as rows with obstructs false, never in excludedNoJudgment", () => {
+    const offSuggestion = makeBox({
+      id: "s1", editable: false, selected: false, isRejected: true, onSidewalk: false, obstructs: false, severity: null,
+      initialState: { comment: "tree", mark: { x: 10, y: 20, width: 100, height: 200 } },
+    });
+    const offDrawn = makeBox({ id: "d1", editable: true, comment: "bollard", onSidewalk: false, obstructs: false, severity: null });
+    const onYes = makeBox({ id: "s2", editable: false, selected: true, onSidewalk: true, obstructs: true, severity: 4 });
+    const annotations = [makeAnnotation({ selectedObjectsID: [offSuggestion, onYes], newObjects: [offDrawn] })];
+    const { rows, summary } = buildRetrainingRows({ annotations, userMap: makeUserMap(), imageMap: makeImageMap({ 1: { isReference: false } }) });
+
+    expect(summary.excludedNoJudgment).toBe(0);
+    expect(summary.excludedNotAnObject).toBe(0);
+    expect(summary.rows).toBe(3);
+    expect(rows.find((r) => r.objectID === "s1")).toMatchObject({ onSidewalk: false, obstructs: false, severity: "" });
+    expect(rows.find((r) => r.objectID === "d1")).toMatchObject({ onSidewalk: false, obstructs: false, isCreatedBox: true });
+    expect(rows.find((r) => r.objectID === "s2")).toMatchObject({ onSidewalk: true, obstructs: true, severity: 4 });
+  });
+
+  it("leaves onSidewalk empty for annotator boxes, which are never asked it", () => {
+    const annotations = [makeAnnotation({ source: "annotator", selectedObjectsID: [makeBox({ obstructs: false, severity: null })] })];
+    const { rows } = buildRetrainingRows({ annotations, userMap: makeUserMap(), imageMap: makeImageMap({ 1: { isReference: false } }) });
+    expect(rows[0].onSidewalk).toBe("");
+    expect(toCsvRow(rows[0], RETRAINING_CSV_KEYS).split(",")[RETRAINING_CSV_KEYS.indexOf("onSidewalk")]).toBe("");
   });
 
   it("starts excludedNoJudgment at zero when every box has an answer", () => {

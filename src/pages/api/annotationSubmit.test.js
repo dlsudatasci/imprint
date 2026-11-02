@@ -27,8 +27,8 @@ const validBody = {
     walkability: 3,
     overallAccessibility: 3,
   },
-  selectedObjectsID: [{ id: "c1", obstructs: true, severity: 3 }],
-  newObjects: [{ obstructs: false }],
+  selectedObjectsID: [{ id: "c1", onSidewalk: true, obstructs: true, severity: 3 }],
+  newObjects: [{ onSidewalk: true, obstructs: false }],
   currentAnnotationCount: 1,
 };
 
@@ -480,7 +480,7 @@ describe("POST /api/annotationSubmit", () => {
     it("stores a contributor box drawn up and to the left with positive width and height", async () => {
       const mocks = setupMocks();
       mocks.imageCol.findOne.mockResolvedValue({ city: "makati", width: 1280, height: 960, annotationList: CONTRIBUTOR_SUGGESTIONS });
-      const body = { ...validBody, newObjects: [{ id: "n1", comment: "tree", obstructs: false, mark: rect(300, 200, -100, -50) }] };
+      const body = { ...validBody, newObjects: [{ id: "n1", comment: "tree", onSidewalk: true, obstructs: false, mark: rect(300, 200, -100, -50) }] };
       const res = createMockRes();
       await handler(createMockReq({ body }), res);
 
@@ -503,7 +503,7 @@ describe("POST /api/annotationSubmit", () => {
     it("returns 422 for a box entirely outside the image", async () => {
       const mocks = setupMocks();
       mocks.imageCol.findOne.mockResolvedValue({ city: "makati", width: 1280, height: 960, annotationList: CONTRIBUTOR_SUGGESTIONS });
-      const body = { ...validBody, newObjects: [{ id: "n1", comment: "tree", obstructs: false, mark: rect(1400, 100, 50, 50) }] };
+      const body = { ...validBody, newObjects: [{ id: "n1", comment: "tree", onSidewalk: true, obstructs: false, mark: rect(1400, 100, 50, 50) }] };
       const res = createMockRes();
       await handler(createMockReq({ body }), res);
 
@@ -516,7 +516,7 @@ describe("POST /api/annotationSubmit", () => {
       const mocks = setupMocks();
       const pipelineBox = rect(10, 10, 20, 20);
       mocks.imageCol.findOne.mockResolvedValue({ city: "makati", width: 1280, height: 960, annotationList: [{ id: "s1", comment: "tree", mark: pipelineBox }] });
-      const body = { ...validBody, selectedObjectsID: [{ id: "s1", comment: "tree", obstructs: false, initialState: { comment: "tree", mark: rect(10, 10, 20, 20) }, mark: rect(40, 40, -20, -20) }] };
+      const body = { ...validBody, selectedObjectsID: [{ id: "s1", comment: "tree", onSidewalk: true, obstructs: false, initialState: { comment: "tree", mark: rect(10, 10, 20, 20) }, mark: rect(40, 40, -20, -20) }] };
       await handler(createMockReq({ body }), createMockRes());
 
       const stored = mocks.annotationsCol.updateOne.mock.calls[0][1].$set.selectedObjectsID[0];
@@ -538,7 +538,7 @@ describe("POST /api/annotationSubmit", () => {
 
   it("still requires a contributor's severity on an obstructing box", async () => {
     setupMocks({ userRole: "user" });
-    const req = createMockReq({ body: { ...validBody, selectedObjectsID: [{ obstructs: true }] } });
+    const req = createMockReq({ body: { ...validBody, selectedObjectsID: [{ onSidewalk: true, obstructs: true }] } });
     const res = createMockRes();
 
     await handler(req, res);
@@ -557,6 +557,53 @@ describe("POST /api/annotationSubmit", () => {
     expect($set.sceneLevel).toEqual(validBody.sceneLevel);
     expect($set.selectedObjectsID).toHaveLength(1);
     expect($set.selectedObjectsID[0]).toMatchObject(validBody.selectedObjectsID[0]);
+  });
+
+  // S12 (2 Nov 2026): the sidewalk question before the obstruction question
+  describe("on the sidewalk", () => {
+    const send = async (body) => {
+      const mocks = setupMocks({ userRole: "user" });
+      const res = createMockRes();
+      await handler(createMockReq({ body: { ...validBody, ...body } }), res);
+      return { mocks, res };
+    };
+
+    it("stores onSidewalk on every real box, an object off the walking path with obstructs false, and Not an object as today", async () => {
+      const { mocks, res } = await send({
+        selectedObjectsID: [
+          { id: "c1", onSidewalk: true, obstructs: true, severity: 3 },
+          { id: "c1", onSidewalk: false, obstructs: false, severity: null, selected: false, isRejected: true },
+          { id: "c1", comment: "not_an_object", selected: false, isRejected: true, obstructs: false, severity: null },
+        ],
+        newObjects: [{ id: "d1", onSidewalk: false, obstructs: false, severity: null }],
+      });
+      expect(res._status).toBe(200);
+      const $set = mocks.annotationsCol.updateOne.mock.calls[0][1].$set;
+      expect($set.selectedObjectsID.map((b) => b.onSidewalk)).toEqual([true, false, undefined]);
+      expect($set.selectedObjectsID[1]).toMatchObject({ onSidewalk: false, obstructs: false, isRejected: true });
+      expect($set.selectedObjectsID[1].comment).not.toBe("not_an_object");
+      expect($set.selectedObjectsID[2]).not.toHaveProperty("onSidewalk");
+      expect($set.newObjects[0]).toMatchObject({ onSidewalk: false, obstructs: false });
+    });
+
+    it("refuses a real box with no sidewalk answer, and writes nothing", async () => {
+      const { mocks, res } = await send({ newObjects: [{ obstructs: false }] });
+      expect(res._status).toBe(422);
+      expect(res._json.message).toBe("Every object must say whether it is on the sidewalk (onSidewalk: true/false).");
+      expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+    });
+
+    it("refuses an obstruction off the walking path", async () => {
+      const { res } = await send({ selectedObjectsID: [{ id: "c1", onSidewalk: false, obstructs: true, severity: 3 }] });
+      expect(res._status).toBe(422);
+      expect(res._json.message).toBe("An object not on the sidewalk must have obstructs: false and no severity.");
+    });
+
+    it("refuses a Not an object box with a sidewalk answer", async () => {
+      const { res } = await send({ selectedObjectsID: [{ id: "c1", comment: "not_an_object", onSidewalk: false, obstructs: false }] });
+      expect(res._status).toBe(422);
+      expect(res._json.message).toBe("A box marked as not an object has no sidewalk answer.");
+    });
   });
 
   it("returns 500 when the role lookup throws", async () => {
@@ -773,7 +820,7 @@ describe("POST /api/annotationSubmit stores the image record's model values", ()
   const tampered = (overrides = {}) => ({
     id: "c1",
     comment: "tree",
-    obstructs: false,
+    onSidewalk: true, obstructs: false,
     confidence: 0.99,
     initialState: { comment: "bollard", mark: rect(0, 0, 5, 5) },
     mark: rect(100, 100, 80, 200),
@@ -845,7 +892,7 @@ describe("POST /api/annotationSubmit stores the image record's model values", ()
   });
 
   it("stores drawn boxes with a null confidence and no initialState", async () => {
-    const drawn = { id: "d1", editable: true, comment: "bollard", obstructs: false, confidence: 0.8, initialState: { comment: "tree", mark: rect(1, 1, 2, 2) }, mark: rect(50, 50, 30, 90) };
+    const drawn = { id: "d1", editable: true, comment: "bollard", onSidewalk: true, obstructs: false, confidence: 0.8, initialState: { comment: "tree", mark: rect(1, 1, 2, 2) }, mark: rect(50, 50, 30, 90) };
     const { $set } = await submit({ body: { ...validBody, selectedObjectsID: [tampered()], newObjects: [drawn] } });
     expect($set.newObjects[0].confidence).toBeNull();
     expect($set.newObjects[0]).not.toHaveProperty("initialState");

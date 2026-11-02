@@ -1,4 +1,4 @@
-import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
+import { NOT_AN_OBJECT, isOffSidewalk } from "@/util/suggestionJudgment";
 import { formatLabel } from "@/util/buildDisplayLabels";
 
 /**
@@ -13,6 +13,11 @@ import { formatLabel } from "@/util/buildDisplayLabels";
  *
  * Pure logic for ObjectTrays.tsx: which list each box belongs to, the lists,
  * and every string they show. Nothing stored or submitted changes.
+ *
+ * From 2 Nov 2026 (S12) a box answered not on the sidewalk or the path people
+ * walk on is not an obstruction, so it is listed under Not obstructions with
+ * the other No answers, and its box is off the photo. A box counts as
+ * answered only once it has its sidewalk answer.
  */
 
 export const TRAYS = Object.freeze({
@@ -61,15 +66,19 @@ export function sceneProgressLine(sceneLevel) {
 }
 
 /**
- * Which list a box belongs to. Suggestions use the same states as
- * validateAnnotationForSubmit (undecided is not editable, not selected and not
- * rejected). Drawn boxes go by their Yes or No answer. null for anything that
- * is not a box.
+ * Which list a box belongs to. Not an object first, then a box answered not on
+ * the sidewalk (S12), which is a Not obstruction whatever else it carries. A
+ * box with no sidewalk answer is still to decide. Otherwise suggestions use
+ * the same states as validateAnnotationForSubmit (undecided is not editable,
+ * not selected and not rejected), and drawn boxes go by their Yes or No
+ * answer. null for anything that is not a box.
  */
 export function trayOf(box) {
   if (box == null || typeof box !== "object") return null;
+  if (!box.editable && box.comment === NOT_AN_OBJECT) return TRAYS.removed;
+  if (box.onSidewalk === false) return TRAYS.notObstructions;
+  if (box.onSidewalk !== true) return TRAYS.toDecide;
   if (!box.editable) {
-    if (box.comment === NOT_AN_OBJECT) return TRAYS.removed;
     if (box.selected === true) return TRAYS.obstructions;
     if (box.isRejected === true) return TRAYS.notObstructions;
     return TRAYS.toDecide;
@@ -81,8 +90,10 @@ export function trayOf(box) {
 
 /**
  * The lists for a set of boxes, in the order given (the caller passes them
- * sorted by id). Each item is { id, label, drawn }. total counts every box
- * except those marked Not an object, and answered counts the two answer lists.
+ * sorted by id). Each item is { id, label, drawn, offSidewalk }, offSidewalk
+ * true for a box answered not on the sidewalk, whose box is off the photo
+ * (S12). total counts every box except those marked Not an object, and
+ * answered counts the two answer lists.
  * Does not mutate the boxes.
  *
  * @param {Array<object> | null | undefined} boxes
@@ -104,6 +115,7 @@ export function buildTrays(boxes, { labels } = {}) {
       id: box.id,
       label: trayLabel(box, tray, labels),
       drawn: box.editable === true,
+      offSidewalk: isOffSidewalk(box),
     });
   }
   const answered = trays.notObstructions.length + trays.obstructions.length;
@@ -116,7 +128,8 @@ export function buildTrays(boxes, { labels } = {}) {
  * left to decide. An image with no objects at all (no suggestions, nothing
  * drawn yet, none marked Not an object) shows three in each list (17 Oct
  * 2026), since the boxes the contributor draws will go there; before, its
- * lists were blank.
+ * lists were blank. objectCount is buildTrays' total plus the boxes marked
+ * Not an object.
  */
 export function ghostSlotCount(itemCount, toDecideCount, objectCount) {
   if (objectCount === 0) return 3;
@@ -135,7 +148,7 @@ export function ghostSlotCount(itemCount, toDecideCount, objectCount) {
  *   toDecide        no answer yet (a drawn box with no category included)
  *   noSeverity      answered Yes with no severity, which also stops Next Image
  *   obstruction     answered Yes
- *   notObstruction  answered No
+ *   notObstruction  answered No, to either question (S12)
  *   removed         Not an object
  */
 export const PEEK_STATUS = Object.freeze({

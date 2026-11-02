@@ -13,7 +13,7 @@ import { snapPoints, springStep } from "@/ui/sheetSnap";
 import { TRAY_COPY, buildPeekChips, buildTrays, sceneProgressLine } from "@/features/annotate/objectTrays";
 import { BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
 import { buildDisplayLabelsInOrder, formatLabel, orderOfAppearance } from "@/util/buildDisplayLabels";
-import { getSuggestionPanelMode } from "@/util/suggestionJudgment";
+import { getSuggestionPanelMode, isOffSidewalk } from "@/util/suggestionJudgment";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 import { DEMO_IMAGES, DEMO_IMAGE_SIZE } from "./demoScript";
 
@@ -120,7 +120,7 @@ export function findTouchTarget(root, target, boxes) {
   if (target.kind === "image") return root.querySelector("[data-demo-photo]");
   if (target.kind === "box") return boxes.some((b) => b.id === target.id) ? root.querySelector("[data-demo-photo]") : null;
   if (target.kind !== "ui") return null;
-  const control = { yes: "yes", no: "no", confirm: "confirm", category: "category", slider: "severity" }[target.name];
+  const control = { "sidewalk-yes": "on-sidewalk-yes", "sidewalk-no": "on-sidewalk-no", yes: "yes", no: "no", confirm: "confirm", category: "category", slider: "severity" }[target.name];
   if (control) return root.querySelector(`[data-demo-panel] [data-control="${control}"]`);
   if (target.name === "option") return root.querySelector(`[data-demo-option="${target.value}"]`);
   if (target.name === "scene") return root.querySelector(`[data-scene-option="${target.field}:${target.value}"]`);
@@ -214,13 +214,14 @@ const Screen = memo(function Screen({ view, geo, coarse, refs }) {
   const photoW = DEMO_IMAGE_SIZE.width * scale;
   const photoH = DEMO_IMAGE_SIZE.height * scale;
   // While a box is open it is the only one on the photo (focusedBoxId, 14 Oct 2026)
-  const drawn = open ? [open] : boxes;
-  const named = open ? [] : sorted.filter((b) => b.comment);
+  // A box answered not on the path is off the photo, as in the tool (S12)
+  const drawn = open ? [open] : boxes.filter((b) => !isOffSidewalk(b));
+  const named = open ? [] : sorted.filter((b) => b.comment && !isOffSidewalk(b));
 
   let header;
   let body;
   if (open) {
-    const mode = getSuggestionPanelMode({ editable: open.editable, selected: open.selected, obstructs: open.obstructs, severity: open.severity, comment: open.comment || "" });
+    const mode = getSuggestionPanelMode({ editable: open.editable, selected: open.selected, obstructs: open.obstructs, severity: open.severity, comment: open.comment || "", onSidewalk: open.onSidewalk });
     header = <PanelTitle label={labels.get(open.id) || formatLabel(open.comment) || TRAY_COPY.fallbackLabel} />;
     body = (
       <div className="px-3 pt-1 pb-4" data-demo-panel>
@@ -246,6 +247,7 @@ const Screen = memo(function Screen({ view, geo, coarse, refs }) {
             isRejected={Boolean(open.isRejected)}
             obstructs={open.obstructs}
             severity={open.severity}
+            onSidewalk={open.onSidewalk}
             variant="sheet"
           />
         )}

@@ -13,10 +13,43 @@ export function excludeNotAnObject(boxes) {
   return boxes.filter((box) => !isNotAnObject(box));
 }
 
+/**
+ * Contributors (S12, 2 Nov 2026): whether the object is on the sidewalk or the
+ * path people walk on is asked before whether it obstructs. A box answered No
+ * leaves the photo, is listed under Not obstructions and is stored as a
+ * real object that does not obstruct, a negative example for the classifier.
+ * It is never Not an object and never removed. Not an object boxes carry no
+ * onSidewalk.
+ */
+export function isOffSidewalk(box) {
+  return box?.onSidewalk === false && !isNotAnObject(box);
+}
+
+/** No to the sidewalk question. Suggestions get today's No as well. */
+export function offSidewalkPatch({ editable }) {
+  const patch = { onSidewalk: false, obstructs: false, severity: null };
+  return editable ? patch : { ...patch, selected: false, isRejected: true };
+}
+
+/** Yes to the sidewalk question: on the path, the obstruction question still to answer. */
+export function onSidewalkPatch({ editable }) {
+  const patch = { onSidewalk: true, obstructs: undefined, severity: null };
+  return editable ? patch : { ...patch, selected: false, isRejected: false };
+}
+
+/** Go back to the sidewalk question: the box is undecided again. */
+export function clearSidewalkPatch({ editable }) {
+  return { ...onSidewalkPatch({ editable }), onSidewalk: undefined };
+}
+
 // askSeverity is false for annotators, who record no severity (decided 3 Oct 2026).
 // From 7 Oct 2026 a drawn box answered Yes goes to the same severity picker as
 // a suggestion, instead of a slider inside its panel.
-export function getSuggestionPanelMode({ editable, selected, obstructs, severity, comment, askSeverity = true }) {
+// askOnSidewalk (S12, 2 Nov 2026): until a box is answered on the sidewalk, its
+// panel shows the sidewalk question ("sidewalk"), and only then the obstruction
+// question. Not an object boxes are never asked it.
+export function getSuggestionPanelMode({ editable, selected, obstructs, severity, comment, onSidewalk, askSeverity = true, askOnSidewalk = true }) {
+  if (askOnSidewalk && comment !== NOT_AN_OBJECT && onSidewalk !== true) return "sidewalk";
   if (askSeverity && obstructs === true && severity == null && (editable || selected)) return "severity";
   if (editable) return "drawn";
   if (selected) return "confirmed";

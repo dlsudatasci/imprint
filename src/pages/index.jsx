@@ -34,6 +34,8 @@ const LOADER_SEEN_KEY = "imprint:introSeenAt";
 const LOADER_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 /** Matches the overlay's CSS transition, below. */
 const EXIT_MS = 350;
+/** Widest viewport that gets no intro. Keep in step with `max-[559px]` below. */
+const PHONE_MAX_PX = 559;
 
 export default function Index() {
   const [selectedCity, setSelectedCity] = useState(null);
@@ -62,7 +64,9 @@ export default function Index() {
       // fallback — it costs a few seconds, it does not break anything.
     }
     if (seenAt && Date.now() - seenAt < LOADER_COOLDOWN_MS) setIntro("gone");
-    if (window.innerWidth < 560) setIntro("gone");
+    // Phones skip it. PHONE_MAX_PX below hides the server-rendered overlay at
+    // the same width, so they never see it before this runs either.
+    if (window.innerWidth <= PHONE_MAX_PX) setIntro("gone");
   }, []);
 
   // Both conditions met: stamp the cooldown and start the exit.
@@ -113,6 +117,7 @@ export default function Index() {
       {showLoader && (
         <LoadingScreen
           fullscreen
+          className="max-[559px]:hidden"
           exiting={exiting}
           onLoopComplete={handleLoopComplete}
           onSkip={handleSkip}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import SidewalkLoader from './SidewalkLoader';
 import { cn } from './cn';
 
@@ -33,6 +33,12 @@ export default function LoadingScreen({
   exiting,
   className,
 }: LoadingScreenProps) {
+  // The server-rendered overlay arrives before the scene can size itself, so
+  // until the client takes over it is an empty street. Offering "skip" over
+  // that reads as a broken page; hold it back until the walk is running.
+  const [started, setStarted] = useState(false);
+  useEffect(() => setStarted(true), []);
+
   return (
     <div
       className={cn(
@@ -43,7 +49,7 @@ export default function LoadingScreen({
         className,
       )}
     >
-      {(onSkip || onLoopComplete) && (
+      {started && (onSkip || onLoopComplete) && (
         <button
           type="button"
           onClick={onSkip || onLoopComplete}

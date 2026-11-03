@@ -169,14 +169,25 @@ describe("ObjectTrays eye toggles", () => {
       />
     );
 
-  it("gives every chip, in every list, an eye that names its object", () => {
+  it("gives every chip of a box on the photo an eye that names its object", () => {
     const html = renderWith([]);
-    expect(count(html, "data-eye")).toBe(4);
-    for (const label of ["Tree #1", "Car #1", "Bollard #1", "Bench"]) {
+    expect(count(html, "data-eye")).toBe(3);
+    for (const label of ["Tree #1", "Car #1", "Bollard #1"]) {
       expect(chip(html, label)).toContain(`aria-label="Hide ${label} on the photo"`);
       expect(chip(html, label)).toContain('aria-pressed="false"');
     }
     expect(html).not.toContain("data-hidden-summary");
+  });
+
+  // S17 (4 Nov 2026): a box marked Not an object leaves the photo, as one
+  // off the path does, so there is nothing to hide or show
+  it("gives a Not an object chip no eye, never shows it hidden, and leaves it out of the hidden count", () => {
+    const html = renderWith(["d"]);
+    expect(chip(html, "Bench")).not.toContain("data-eye");
+    expect(chip(html, "Bench")).not.toContain("opacity-60");
+    expect(html).not.toContain("data-hidden-summary");
+    const withOthers = renderWith(["a", "d"]);
+    expect(withOthers).toMatch(/data-hidden-summary[^>]*>1 box hidden</);
   });
 
   it("fades a hidden object's chip, crosses out its eye and offers to show it", () => {
@@ -268,6 +279,29 @@ describe("ObjectTraysPeek's first row", () => {
     expect(withRow).toContain("Step 1: Identify Objects");
     expect(withRow).toMatch(/Show all <span[^>]*>1<\/span>/);
     expect(withRow).toContain(">Hide all<");
+  });
+
+  // S17 (4 Nov 2026): a box marked Not an object is off the photo, as one off the path is
+  it("counts neither a Not an object box nor one off the path, on the phone as on the laptop", () => {
+    const mixed = [
+      suggestion("a", "car"),
+      suggestion("b", "not_an_object", { isRejected: true, obstructs: false, initialState: { comment: "bench", mark } }),
+      suggestion("c", "tree", { onSidewalk: false, isRejected: true, obstructs: false }),
+    ];
+    const visibility = { onShowAll: () => undefined, onHideAll: () => undefined };
+    const phone = (hiddenIds: string[]) =>
+      renderToStaticMarkup(<ObjectTraysPeek trays={buildTrays(mixed)} peek={buildPeekChips(mixed)} selectedId={null} onOpen={() => undefined} onNext={() => undefined} sceneLine="Step 2" onShowScene={() => undefined} hiddenIds={hiddenIds} {...visibility} />);
+    const laptop = (hiddenIds: string[]) =>
+      renderToStaticMarkup(<ObjectTrays trays={buildTrays(mixed)} selectedId={null} hiddenIds={hiddenIds} onOpen={() => undefined} onToggleHidden={() => undefined} {...visibility} />);
+    // Hide all puts every id in the list: only Car counts, so every box is hidden
+    for (const html of [phone(["a", "b", "c"]), laptop(["a", "b", "c"])]) {
+      expect(html).not.toContain(">Hide all<");
+      expect(html).toContain("Show all");
+    }
+    expect(phone(["a", "b", "c"])).toMatch(/Show all <span[^>]*>1<\/span>/);
+    expect(laptop(["a", "b", "c"])).toMatch(/data-hidden-summary[^>]*>1 box hidden</);
+    // With Car shown, Hide all is still offered, whatever the other two say
+    for (const html of [phone(["b", "c"]), laptop(["b", "c"])]) expect(html).toContain(">Hide all<");
   });
 });
 

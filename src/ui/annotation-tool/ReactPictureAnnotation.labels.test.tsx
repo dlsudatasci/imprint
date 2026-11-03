@@ -22,6 +22,7 @@ type Tool = {
   selectedId: string | null;
   selectBoxById(id: string): void;
   onShapeChange(): void;
+  onClose(): void;
   onInputCommentChange(comment: string): void;
   currentAnnotationState: Gesture;
   state: { annotatorStep: string };
@@ -146,6 +147,8 @@ describe("labels on the photo", () => {
     const newId = tool.selectedId as string;
     expect(Object.keys(before)).not.toContain(newId);
     act(() => tool.onInputCommentChange("lamp_post"));
+    // Closed, so every box is on the photo again (S17)
+    act(() => tool.onClose());
     const after = photoLabels(tool);
     for (const [id, label] of Object.entries(before)) expect(after[id]).toBe(label);
     expect(after[newId]).toBe("Lamp Post #7");
@@ -157,8 +160,11 @@ describe("labels on the photo", () => {
     for (const order of [["lp-a", "lp-b"], ["lp-d", "aa", "lp-a", "lp-c"], ["zz", "lp-b", "tr-1", "lp-a", "lp-d"]]) {
       for (const id of order) {
         act(() => tool.selectBoxById(id));
-        // The clicked box is drawn last, on top
+        // The clicked box is drawn last, on top, and while it is open it is
+        // the only one on the photo (S17)
         expect(tool.shapes[tool.shapes.length - 1].getAnnotationData().id).toBe(id);
+        expect(Object.keys(photoLabels(tool))).toEqual([id]);
+        act(() => tool.onClose());
         expect(photoLabels(tool)).toEqual(before);
       }
     }

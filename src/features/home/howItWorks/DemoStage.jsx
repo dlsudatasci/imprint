@@ -9,7 +9,7 @@ import { boxLabelColors, boxLineStyle, boxStrokeColor, defaultShapeStyle } from 
 import { panelPosition } from "@/ui/annotation-tool/panelPosition";
 import { buildTrays } from "@/features/annotate/objectTrays";
 import { buildDisplayLabels, formatLabel } from "@/util/buildDisplayLabels";
-import { getSuggestionPanelMode, isOffSidewalk } from "@/util/suggestionJudgment";
+import { getSuggestionPanelMode, isSetAside } from "@/util/suggestionJudgment";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 import { DEMO_IMAGES, DEMO_IMAGE_SIZE, TICKS, demoFrame, tickOf } from "./demoScript";
 
@@ -262,8 +262,10 @@ const Screen = memo(function Screen({ view, photoWidth }) {
                 {/* eslint-disable-next-line @next/next/no-img-element -- a static tutorial photo, drawn at a fixed size */}
                 <img src={image.url} alt="" className="absolute inset-0 w-full h-full" draggable={false} />
                 <svg className="absolute inset-0 overflow-visible" width={photoWidth} height={DEMO_IMAGE_SIZE.height * scale}>
-                  {/* A box answered not on the path is off the photo, as in the tool (S12) */}
-                  {boxes.filter((b) => !isOffSidewalk(b) || b.id === selectedId).map((b) => (
+                  {/* As in the tool: while a box is open it is the only one on the
+                      photo (S17), and a box answered not on the path (S12) or
+                      marked Not an object (S17) is off the photo */}
+                  {(open ? [open] : boxes.filter((b) => !isSetAside(b))).map((b) => (
                     <DemoBox key={b.id} box={b} label={labels.get(b.id)} scale={scale} isOpen={b.id === selectedId} />
                   ))}
                   {draft && (

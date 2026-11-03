@@ -13,7 +13,6 @@ import {
   isOffSidewalk,
   offSidewalkPatch,
   onSidewalkPatch,
-  clearSidewalkPatch,
 } from "./suggestionJudgment";
 
 describe("NOT_AN_OBJECT", () => {
@@ -193,15 +192,6 @@ describe("the sidewalk answer's patches", () => {
     expect(changed).toMatchObject({ onSidewalk: true, selected: false, isRejected: false, severity: null, comment: "car" });
     expect(changed.obstructs).toBeUndefined();
     expect(onSidewalkPatch({ editable: true })).not.toHaveProperty("selected");
-  });
-
-  it("takes a box back to undecided with Go back", () => {
-    const yes = { editable: false, selected: true, isRejected: false, onSidewalk: true, obstructs: true, severity: 4 };
-    const back = { ...yes, ...clearSidewalkPatch(yes) };
-    expect(back.onSidewalk).toBeUndefined();
-    expect(back.obstructs).toBeUndefined();
-    expect(back).toMatchObject({ selected: false, isRejected: false, severity: null });
-    expect(getSuggestionPanelMode({ ...back, comment: "tree" })).toBe("sidewalk");
   });
 
   it("tells a box off the walking path from Not an object", () => {

@@ -71,3 +71,33 @@ describe("the guide on the path (S16)", () => {
     for (const text of [...step("answer").paragraphs, ...step("not-an-object").paragraphs, ...step("rate").paragraphs]) expect(text).not.toMatch(/[—;]/);
   });
 });
+
+// S17 (4 Nov 2026), from pilot participant 3: how to change an answer, and
+// where a Not an object box goes
+describe("the guide on changing an answer (S17)", () => {
+  const [, notAnObject, lists] = step("not-an-object").paragraphs;
+
+  it("puts Not an object at Question 1 and says where the box goes", () => {
+    expect(notAnObject).toBe("If a box has nothing real in it, choose Not an object at the foot of its panel at Question 1. The box then leaves the photo and is listed under Not an object, where you can open it and choose Restore.");
+  });
+
+  it("ends the lists paragraph with the severity scale and the two ways back", () => {
+    expect(lists.endsWith(" An obstruction opens on its severity scale. To change an earlier answer, choose Back to Question 2 or Back to Question 1, then pick the new answer.")).toBe(true);
+    expect(lists.startsWith("Every answer sorts the object into a list, Not obstructions or Obstructions,")).toBe(true);
+  });
+
+  it("never says Change or Go back, and has no em dash or semicolon", () => {
+    for (const s of GUIDE_COPY.steps) {
+      for (const p of s.paragraphs) {
+        expect(p, `${s.id}: ${p}`).not.toMatch(/\b(click|tap|choose) Change\b|Go back/);
+        expect(p).not.toMatch(/[—;]/);
+      }
+    }
+  });
+
+  it("is what the guide page shows", () => {
+    const html = decode(renderToStaticMarkup(<HelpDirectory />));
+    expect(html).toContain(notAnObject);
+    expect(html).toContain("choose Back to Question 2 or Back to Question 1, then pick the new answer.");
+  });
+});

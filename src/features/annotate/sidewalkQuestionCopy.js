@@ -31,4 +31,10 @@ export const SIDEWALK_QUESTION_COPY = Object.freeze({
   ]),
   /** The line above each question in a contributor's box panel (S16): "Question 1 of 2" */
   questionOf: (n) => `Question ${n} of 2`,
+  /**
+   * The way back to an earlier question at the foot of the panel (S17,
+   * 4 Nov 2026): "Back to Question 1" on Question 2, "Back to Question 2" on
+   * a confirmed obstruction's severity. Nothing changes until a new answer is picked.
+   */
+  backTo: (n) => `Back to Question ${n}`,
 });

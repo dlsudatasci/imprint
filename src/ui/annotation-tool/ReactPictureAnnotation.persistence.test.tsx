@@ -83,7 +83,9 @@ type Tool = {
   onInputCommentChange(comment: string): void;
   onSetObstructs(obstructs: boolean): void;
   onSetOnSidewalk(onSidewalk: boolean): void;
-  onClearOnSidewalk(): void;
+  onChangeSeverity(severity: number): void;
+  onClose(): void;
+  hideAllBoxes(): void;
   onDelete(): void;
   toggleBoxHidden(id: string): void;
   showAllBoxes(): void;
@@ -408,7 +410,8 @@ describe("the sidewalk question (S12, 2 Nov 2026)", () => {
     expect(noList().textContent).not.toContain("Car #1");
   });
 
-  it("Go back on the obstruction question returns to the sidewalk question with neither answer", () => {
+  // S17 (4 Nov 2026): Back to Question 1 replaced Go back, which cleared both answers
+  it("Back to Question 1 on the obstruction question shows the sidewalk question and changes no answer", () => {
     const tool = mount();
     act(() => {
       tool.selectBoxById("a-car");
@@ -417,13 +420,12 @@ describe("the sidewalk question (S12, 2 Nov 2026)", () => {
     });
     act(() => tool.selectBoxById("a-car"));
     expect(panelText()).toContain("obstruct the sidewalk?");
-    act(() => (host.querySelector('.rp-selected-input [data-control="back"]') as HTMLButtonElement).click());
-    const car = data(tool, "a-car");
-    expect(car).not.toHaveProperty("onSidewalk");
-    expect(car.obstructs).toBeUndefined();
-    expect(car).toMatchObject({ selected: false, isRejected: false, severity: null });
+    const before = JSON.stringify(data(tool, "a-car"));
+    act(() => (host.querySelector('.rp-selected-input [data-control="back-to-question-1"]') as HTMLButtonElement).click());
+    expect(JSON.stringify(data(tool, "a-car"))).toBe(before);
     expect(tool.selectedId).toBe("a-car");
     expect(panelText()).toContain(QUESTION);
+    expect(host.querySelector('.rp-selected-input [data-control="back"]')).toBeNull();
   });
 
   it("Not an object leaves no sidewalk answer on the box", () => {
@@ -1366,7 +1368,7 @@ describe("touch on the photo (9 Oct 2026)", () => {
     expect(markOf(tool, "a-car")).toMatchObject(CAR);
   });
 
-  it("on a phone the open box is the only box on the photo until it closes, and on the desktop layout every box stays (14 Oct 2026)", () => {
+  it("on a phone the open box is the only box on the photo until it closes (14 Oct 2026), and on the desktop layout too for contributors only (S17)", () => {
     const tool = onPhone();
     act(() => tool.selectBoxById("c-tree"));
     expect(tool.isBoxHidden("c-tree")).toBe(false);
@@ -1378,7 +1380,14 @@ describe("touch on the photo (9 Oct 2026)", () => {
     unmount();
     const desktop = mount();
     act(() => desktop.selectBoxById("c-tree"));
-    expect(desktop.isBoxHidden("a-car")).toBe(false);
+    expect(desktop.isBoxHidden("a-car")).toBe(true);
+
+    unmount();
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+    const annotator = mount({ isAnnotator: true });
+    act(() => annotator.selectBoxById("c-tree"));
+    expect(annotator.isBoxHidden("a-car")).toBe(false);
   });
 
   it("puts Show all and Hide all beside the step's name at the top of the sheet, and the list pulled up no longer repeats them (14 Oct 2026)", () => {
@@ -2705,5 +2714,303 @@ describe("an open box on a phone or tablet", () => {
     expect(hint()?.className).toContain("opacity-0");
     act(() => vi.advanceTimersByTime(400));
     expect(hint()).toBeUndefined();
+  });
+});
+
+// S17 (4 Nov 2026), from pilot participant 3, in the real tool on the
+// desktop layout: a confirmed obstruction opens on its severity scale, Back
+// to Question 2 and Back to Question 1 change nothing until a new answer, the
+// open box is the only one on the photo, and a Not an object box leaves it.
+describe("changing an answer, one box at a time, and Not an object off the photo (S17)", () => {
+  type Data = Record<string, unknown>;
+  const data = (tool: Tool, id: string) => tool.shapes.find((sh) => sh.getAnnotationData().id === id)!.getAnnotationData() as unknown as Data;
+  const panel = () => host.querySelector(".rp-selected-input");
+  const control = (name: string) => panel()?.querySelector(`[data-control="${name}"]`) as HTMLButtonElement | null;
+  const press = (el: HTMLElement | null) => act(() => el!.click());
+  const slider = () => panel()!.querySelector('input[aria-label="Severity"]') as HTMLInputElement;
+  const moveSliderTo = (v: number) => act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(slider(), String(v));
+    slider().dispatchEvent(new Event("input", { bubbles: true }));
+    slider().dispatchEvent(new Event("pointerup", { bubbles: true }));
+    slider().dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  const clickAt = (tool: Tool, x: number, y: number) => act(() => {
+    tool.currentAnnotationState.onMouseDown(x, y);
+    tool.currentAnnotationState.onMouseUp();
+  });
+  /** The tree as a confirmed obstruction at severity 2, closed */
+  const confirmTree = (tool: Tool) => act(() => {
+    tool.selectBoxById("c-tree");
+    tool.onSetOnSidewalk(true);
+    tool.onSelectObstruction();
+    tool.onSetSeverity(2);
+  });
+
+  it("onChangeSeverity sets the severity and leaves the panel open, where onSetSeverity closes it", () => {
+    const tool = mount();
+    confirmTree(tool);
+    expect(tool.selectedId).toBeNull();
+    act(() => tool.selectBoxById("c-tree"));
+    act(() => tool.onChangeSeverity(4));
+    expect(tool.selectedId).toBe("c-tree");
+    expect(data(tool, "c-tree")).toMatchObject({ obstructs: true, severity: 4, selected: true, onSidewalk: true });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(box("c-tree")).toMatchObject({ obstructs: true, severity: 4 });
+  });
+
+  it("is refused for annotators, who give no severity", () => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+    const tool = mount({ isAnnotator: true });
+    act(() => tool.selectBoxById("c-tree"));
+    act(() => tool.onChangeSeverity(4));
+    expect(data(tool, "c-tree").severity ?? null).toBeNull();
+    // Their panel has no way back and no scale
+    expect(panel()?.querySelector('[data-control^="back"]')).toBeNull();
+    expect(panel()?.querySelector("[data-severity-panel]")).toBeNull();
+  });
+
+  it("reopens a confirmed obstruction on its scale, saves a new value when the slider is let go, and keeps it after closing", () => {
+    const tool = mount();
+    confirmTree(tool);
+    act(() => tool.selectBoxById("c-tree"));
+    expect(panel()!.querySelector("[data-severity-panel]")).not.toBeNull();
+    expect(slider().value).toBe("2");
+    moveSliderTo(4);
+    expect(tool.selectedId).toBe("c-tree");
+    expect(data(tool, "c-tree").severity).toBe(4);
+    expect(panel()!.textContent).toContain("4 · Difficult to pass");
+    act(() => tool.onClose());
+    act(() => tool.selectBoxById("c-tree"));
+    expect(slider().value).toBe("4");
+  });
+
+  it("Back to Question 2 then closing changes nothing, and the box reopens on its severity", () => {
+    const tool = mount();
+    confirmTree(tool);
+    act(() => tool.selectBoxById("c-tree"));
+    moveSliderTo(4);
+    const before = JSON.stringify(data(tool, "c-tree"));
+    press(control("back-to-question-2"));
+    expect(panel()!.textContent).toContain("Question 2 of 2");
+    expect(control("yes")!.getAttribute("aria-pressed")).toBe("true");
+    act(() => tool.onClose());
+    expect(JSON.stringify(data(tool, "c-tree"))).toBe(before);
+    act(() => tool.selectBoxById("c-tree"));
+    expect(panel()!.querySelector("[data-severity-panel]")).not.toBeNull();
+    expect(slider().value).toBe("4");
+  });
+
+  it("Back to Question 2 and No records today's No, and the box reopens on Question 2 with No", () => {
+    const tool = mount();
+    confirmTree(tool);
+    act(() => tool.selectBoxById("c-tree"));
+    press(control("back-to-question-2"));
+    press(control("no"));
+    expect(tool.selectedId).toBeNull();
+    expect(data(tool, "c-tree")).toMatchObject({ onSidewalk: true, obstructs: false, severity: null, selected: false, isRejected: true });
+    act(() => tool.selectBoxById("c-tree"));
+    expect(panel()!.textContent).toContain("Question 2 of 2");
+    expect(control("no")!.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("Back to Question 1 and No takes the box off the photo", () => {
+    const tool = mount();
+    confirmTree(tool);
+    act(() => tool.selectBoxById("c-tree"));
+    press(control("back-to-question-2"));
+    press(control("back-to-question-1"));
+    expect(panel()!.textContent).toContain("Question 1 of 2");
+    expect(data(tool, "c-tree")).toMatchObject({ onSidewalk: true, obstructs: true, severity: 2 });
+    press(control("on-sidewalk-no"));
+    expect(tool.selectedId).toBeNull();
+    expect(data(tool, "c-tree")).toMatchObject({ onSidewalk: false, obstructs: false, severity: null });
+    expect(tool.isOffPhoto("c-tree")).toBe(true);
+  });
+
+  // Rans (4 Nov 2026): the severity panel, Question 2 and Question 1 reached
+  // with Back have no close button, so the way out is a click on the photo
+  // away from the box
+  it("closes the severity panel, Question 2 and Question 1 with a click on the photo, changing nothing", () => {
+    const tool = mount();
+    confirmTree(tool);
+    const before = JSON.stringify(data(tool, "c-tree"));
+    const views: Array<[string, string[]]> = [
+      ["How severe is this obstruction?", []],
+      ["Question 2 of 2", ["back-to-question-2"]],
+      ["Question 1 of 2", ["back-to-question-2", "back-to-question-1"]],
+    ];
+    for (const [shown, backs] of views) {
+      // Empty photo, then where the car is (hidden while the tree is open)
+      for (const [x, y] of [[700, 400], [250, 150]]) {
+        act(() => tool.selectBoxById("c-tree"));
+        for (const back of backs) press(control(back));
+        expect(panel()!.textContent).toContain(shown);
+        expect(panel()!.querySelector('[aria-label="Close"]')).toBeNull();
+        clickAt(tool, x, y);
+        expect(tool.selectedId).toBeNull();
+        expect(tool.shapes).toHaveLength(3);
+        expect(JSON.stringify(data(tool, "c-tree"))).toBe(before);
+      }
+    }
+  });
+
+  it("closes a reopened box answered off the path, and a reopened Not an object box, with a click on the photo, changing nothing", () => {
+    const tool = mount();
+    act(() => {
+      tool.selectBoxById("a-car");
+      tool.onSetOnSidewalk(false);
+      tool.selectBoxById("c-tree");
+      tool.onMarkNotAnObject();
+    });
+    for (const [id, shown] of [["a-car", "Question 1 of 2"], ["c-tree", "Restore"]]) {
+      const before = JSON.stringify(data(tool, id));
+      act(() => tool.selectBoxById(id));
+      expect(panel()!.textContent).toContain(shown);
+      expect(panel()!.querySelector('[aria-label="Close"]')).toBeNull();
+      // Empty photo, away from every box
+      clickAt(tool, 700, 450);
+      expect(tool.selectedId).toBeNull();
+      expect(tool.shapes).toHaveLength(3);
+      expect(JSON.stringify(data(tool, id))).toBe(before);
+      expect(tool.isOffPhoto(id)).toBe(true);
+    }
+  });
+
+  it("resets the view when another box is opened", () => {
+    const tool = mount();
+    confirmTree(tool);
+    act(() => tool.selectBoxById("c-tree"));
+    press(control("back-to-question-2"));
+    press(control("back-to-question-1"));
+    // From the lists, another box
+    act(() => tool.selectBoxById("a-car"));
+    expect(panel()!.textContent).toContain("Question 1 of 2");
+    expect(control("on-sidewalk-yes")!.getAttribute("aria-pressed")).toBe("false");
+    act(() => tool.selectBoxById("c-tree"));
+    expect(panel()!.querySelector("[data-severity-panel]")).not.toBeNull();
+  });
+
+  describe("one box at a time on the desktop layout", () => {
+    it("keeps only the open box on the photo, drawn and clickable, until it closes", () => {
+      const tool = mount();
+      act(() => tool.selectBoxById("c-tree"));
+      expect(tool.isOffPhoto("c-tree")).toBe(false);
+      expect(tool.isOffPhoto("a-car")).toBe(true);
+      expect(tool.isOffPhoto("b-pole")).toBe(true);
+      // Not stored as hidden
+      expect(tool.state.hiddenBoxIds).toEqual([]);
+      act(() => tool.onClose());
+      for (const id of ["a-car", "b-pole", "c-tree"]) expect(tool.isOffPhoto(id)).toBe(false);
+    });
+
+    it("closes the open box with a click where a hidden box is, without opening it or drawing a box", () => {
+      const tool = mount();
+      act(() => tool.selectBoxById("c-tree"));
+      // Inside the car, away from the pole
+      clickAt(tool, 250, 150);
+      expect(tool.selectedId).toBeNull();
+      expect(tool.shapes).toHaveLength(3);
+      // Closed, the car is clickable again
+      clickAt(tool, 250, 150);
+      expect(tool.selectedId).toBe("a-car");
+    });
+
+    it("draws a new box with a drag on the photo while a box is open, as before, and the new box shows as it grows", () => {
+      const tool = mount();
+      act(() => tool.selectBoxById("c-tree"));
+      act(() => {
+        tool.currentAnnotationState.onMouseDown(700, 400);
+        tool.currentAnnotationState.onMouseMove(760, 480);
+      });
+      const drawing = tool.shapes[tool.shapes.length - 1].getAnnotationData().id;
+      expect(tool.isOffPhoto(drawing)).toBe(false);
+      // The tree's panel stays open during the drag, as before
+      expect(tool.selectedId).toBe("c-tree");
+      act(() => tool.currentAnnotationState.onMouseUp());
+      expect(tool.shapes).toHaveLength(4);
+      expect(tool.selectedId).toBe(drawing);
+      expect(tool.isOffPhoto("c-tree")).toBe(true);
+    });
+
+    it("keeps a box hidden with the eye hidden after the panel closes", () => {
+      const tool = mount();
+      act(() => tool.toggleBoxHidden("a-car"));
+      act(() => tool.selectBoxById("c-tree"));
+      act(() => tool.onClose());
+      expect(tool.isOffPhoto("a-car")).toBe(true);
+      expect(tool.isOffPhoto("b-pole")).toBe(false);
+    });
+
+    it("leaves annotators' desktop as it was: every box on the photo, and a click on another box opens it", () => {
+      window.localStorage.clear();
+      writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+      const tool = mount({ isAnnotator: true });
+      act(() => tool.selectBoxById("c-tree"));
+      for (const id of ["a-car", "b-pole", "c-tree"]) expect(tool.isOffPhoto(id)).toBe(false);
+      clickAt(tool, 250, 150);
+      expect(tool.selectedId).toBe("a-car");
+    });
+  });
+
+  describe("a box marked Not an object", () => {
+    const removedChip = (label: string) =>
+      Array.from(host.querySelectorAll('[data-tray="removed"]')).find((b) => b.textContent?.includes(label)) as HTMLButtonElement | undefined;
+
+    it("leaves the photo once its panel closes, cannot be clicked, and comes back while its panel is open", () => {
+      const tool = mount();
+      act(() => tool.selectBoxById("a-car"));
+      act(() => tool.onMarkNotAnObject());
+      expect(tool.selectedId).toBeNull();
+      expect(tool.isOffPhoto("a-car")).toBe(true);
+      expect(tool.isBoxHidden("a-car")).toBe(false);
+      clickAt(tool, 250, 150);
+      expect(tool.selectedId).not.toBe("a-car");
+      act(() => tool.onClose());
+      // Listed under Not an object, with no eye, and its name opens it
+      expect(removedChip("Car")!.parentElement!.querySelector("[data-eye]")).toBeNull();
+      act(() => removedChip("Car")!.click());
+      expect(tool.selectedId).toBe("a-car");
+      expect(tool.isOffPhoto("a-car")).toBe(false);
+      expect(panel()!.textContent).toContain("Restore");
+      // Restore: back on the photo, still to decide, once closed too
+      act(() => (tool as unknown as { onRestoreObject(): void }).onRestoreObject());
+      act(() => tool.onClose());
+      expect(tool.isOffPhoto("a-car")).toBe(false);
+      expect(data(tool, "a-car").comment).toBe("car");
+    });
+
+    it("stays off the photo after Show all, and Hide all leaves it out", () => {
+      const tool = mount();
+      act(() => tool.selectBoxById("a-car"));
+      act(() => tool.onMarkNotAnObject());
+      act(() => tool.hideAllBoxes());
+      expect(tool.state.hiddenBoxIds.sort()).toEqual(["b-pole", "c-tree"]);
+      act(() => tool.showAllBoxes());
+      expect(tool.isOffPhoto("a-car")).toBe(true);
+    });
+
+    it("comes back off the photo when the session is resumed, and nothing stored changes", () => {
+      const tool = mount();
+      act(() => tool.selectBoxById("a-car"));
+      act(() => tool.onMarkNotAnObject());
+      act(() => vi.advanceTimersByTime(1000));
+      expect(box("a-car")).toMatchObject({ comment: "not_an_object", selected: false, isRejected: true, obstructs: false, severity: null });
+      expect(box("a-car")).not.toHaveProperty("onSidewalk");
+      unmount();
+      expect(mount().isOffPhoto("a-car")).toBe(true);
+    });
+
+    it("stays on the photo for annotators", () => {
+      window.localStorage.clear();
+      writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+      const tool = mount({ isAnnotator: true });
+      act(() => tool.selectBoxById("a-car"));
+      act(() => tool.onMarkNotAnObject());
+      expect(data(tool, "a-car").comment).toBe("not_an_object");
+      expect(tool.isOffPhoto("a-car")).toBe(false);
+      clickAt(tool, 250, 150);
+      expect(tool.selectedId).toBe("a-car");
+    });
   });
 });

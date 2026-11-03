@@ -22,10 +22,9 @@ import {
   keepObjectPatch,
   getObjectPanelMode,
   isDecidedForObjects,
-  isOffSidewalk,
+  isSetAside,
   offSidewalkPatch,
   onSidewalkPatch,
-  clearSidewalkPatch,
 } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
 import { isBelowMinimumSize, clampPointToImage, keepMarkInside, markArea, normalizeMark, pickNearSmallBox } from "@/util/boxGeometry";
@@ -73,6 +72,7 @@ import { SCENE_SCALE, toCurrentScale } from "@/util/validators/sceneScale.mjs";
 import { IAnnotation } from "./Annotation";
 import { IAnnotationState } from "./annotation/AnnotationState";
 import { DefaultAnnotationState } from "./annotation/DefaultAnnotationState";
+import CreatingAnnotationState from "./annotation/CreatingAnnotationState";
 import JudgingAnnotationState from "./annotation/JudgingAnnotationState";
 import TransformationState from "./annotation/TransformationState";
 import SidewalkAnnotationState from "./annotation/SidewalkAnnotationState";
@@ -297,7 +297,7 @@ interface IReactPictureAnnotationProps {
     onHide?: () => void,
     onSidewalk?: boolean,
     onSetOnSidewalk?: (onSidewalk: boolean) => void,
-    onClearOnSidewalk?: () => void,
+    onChangeSeverity?: (severity: number) => void,
   ) => React.ReactElement;
   totalAnnotationCount?: number;
   // Annotators give no severity and answer no scene-level questions (decided
@@ -398,7 +398,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       onHide?: () => void,
       onSidewalk?: boolean,
       onSetOnSidewalk?: (onSidewalk: boolean) => void,
-      onClearOnSidewalk?: () => void,
+      onChangeSeverity?: (severity: number) => void,
     ) => (
       <DefaultInputSection
         key={id}
@@ -424,7 +424,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         onHide={onHide}
         onSidewalk={onSidewalk}
         onSetOnSidewalk={onSetOnSidewalk}
-        onClearOnSidewalk={onClearOnSidewalk}
+        onChangeSeverity={onChangeSeverity}
       />
     ),
     isAnnotator: false,
@@ -662,40 +662,61 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   /**
    * True for a box hidden on the photo. Only in Step 1: every box shows in the
-   * other steps. On a phone or tablet the open box is also the only one shown
-   * (focusedBoxId).
+   * other steps. While a box is open it is also the only one shown
+   * (focusedBoxId), except the box a drag on the photo is drawing.
    */
   public isBoxHidden = (id: string) => {
     if (!this.inBoxStep) return false;
     if (this.state.hiddenBoxIds.includes(id)) return true;
     const focused = this.focusedBoxId;
-    return focused !== null && id !== focused;
+    return focused !== null && id !== focused && !this.isBeingDrawn(id);
   };
 
   /**
-   * Contributors (S12, 2 Nov 2026): a box answered not on the sidewalk is off
-   * the photo, neither drawn nor picked by a click or a tap, except while its
-   * panel is open (from its chip under Not obstructions), so its answer
-   * can be changed. Not hidden: hiddenBoxIds and Show all never bring it back.
+   * The box a mouse drag is drawing (CreatingAnnotationState keeps it last in
+   * shapes). A drag on the photo while a box is open draws a new box, as it
+   * did before S17, so the new box shows as it grows.
    */
-  private isOffSidewalkClosed(id: string) {
-    if (this.annotatorObjectStep || id === this.selectedId) return false;
-    const shape = this.shapes.find((item) => item.getAnnotationData().id === id);
-    return Boolean(shape) && isOffSidewalk(shape!.getAnnotationData());
+  private isBeingDrawn(id: string) {
+    if (!(this.currentAnnotationState instanceof CreatingAnnotationState)) return false;
+    const last = this.shapes[this.shapes.length - 1];
+    return Boolean(last) && last.getAnnotationData().id === id;
   }
 
-  /** Not on the photo: hidden by the contributor or annotator, or off the sidewalk and closed. */
-  public isOffPhoto = (id: string) => this.isBoxHidden(id) || this.isOffSidewalkClosed(id);
+  /**
+   * Contributors, a box set aside, off the photo, neither drawn nor picked by a
+   * click or a tap, except while its panel is open (from its chip), so its
+   * answer can be changed. Not hidden: hiddenBoxIds and Show all never bring
+   * it back.
+   *
+   * - A box answered not on the sidewalk (S12, 2 Nov 2026), listed under Not
+   *   obstructions.
+   * - A suggestion marked Not an object (S17, 4 Nov 2026), listed under Not
+   *   an object, where Restore brings it back. Annotators' stay drawn.
+   */
+  private isSetAsideClosed(id: string) {
+    if (this.annotatorObjectStep || id === this.selectedId) return false;
+    const shape = this.shapes.find((item) => item.getAnnotationData().id === id);
+    return Boolean(shape) && isSetAside(shape!.getAnnotationData());
+  }
+
+  /** Not on the photo: hidden by the contributor or annotator, or set aside and closed. */
+  public isOffPhoto = (id: string) => this.isBoxHidden(id) || this.isSetAsideClosed(id);
 
   /**
-   * Phones and tablets, Step 1, both roles (14 Oct 2026): the open box, a
-   * suggestion tapped or a box just added, is the only box on the photo until
-   * it closes. Every other box is neither drawn nor tapped meanwhile, so a tap
-   * where one was closes the open box. The boxes the annotator hid stay
-   * hidden after; this is not stored in hiddenBoxIds.
+   * Step 1: the open box, a suggestion tapped or a box just added, is the
+   * only box on the photo until it closes. Every other box is neither drawn
+   * nor tapped meanwhile, so a tap or a click where one was closes the open
+   * box. The boxes hidden with the eye stay hidden after; this is not stored
+   * in hiddenBoxIds.
+   *
+   * Phones and tablets, both roles (14 Oct 2026). The desktop layout too for
+   * contributors (S17, 4 Nov 2026), as pilot participant 3 asked. Annotators
+   * on the desktop see every box, as before.
    */
   private get focusedBoxId(): string | null {
-    if (!this.isSheet || !this.inBoxStep || this.selectedId == null) return null;
+    if (!this.inBoxStep || this.selectedId == null) return null;
+    if (!this.isSheet && this.annotatorObjectStep) return null;
     const id = this.selectedId;
     return this.shapes.some((shape) => shape.getAnnotationData().id === id) ? id : null;
   }
@@ -1194,7 +1215,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.inBoxStep && variant !== "sheet" ? this.hideOpenBox : undefined,
       this.state.onSidewalk,
       this.onSetOnSidewalk,
-      this.onClearOnSidewalk,
+      this.onChangeSeverity,
     );
 
     // The canvas, the same in every layout
@@ -3201,7 +3222,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.selectedId = null;
       this.setAnnotationState(new DefaultAnnotationState(this));
     }
-    const hiddenBoxIds = this.shapes.map((shape) => shape.getAnnotationData().id);
+    // Boxes set aside are off the photo already and stay out of the list (S17)
+    const hiddenBoxIds = this.shapes.map((shape) => shape.getAnnotationData().id).filter((id) => !this.isSetAsideClosed(id));
     this.setState({ hiddenBoxIds }, () => this.onShapeChange());
   };
 
@@ -4675,11 +4697,27 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.setState({ severity, obstructs: true });
       this.onShapeChange();
 
-      // Severity is only set from the severity picker's Confirm, which
+      // The first severity comes from the severity picker's Confirm, which
       // finishes the box, so the panel closes for suggestions and drawn boxes
-      // alike (7 Oct 2026)
+      // alike (7 Oct 2026). A later change goes through onChangeSeverity.
       this.onClose();
     }
+  };
+
+  /**
+   * Contributors (S17, 4 Nov 2026): a confirmed obstruction's severity changed
+   * on its severity scale, saved when the slider is let go. Sets it as
+   * onSetSeverity does, but the panel stays open on the new value.
+   */
+  private onChangeSeverity = (severity: number) => {
+    if (this.annotatorObjectStep || !this.askSeverity) return;
+    const target = this.shapes.find((shape) => shape.getAnnotationData().id === this.selectedId);
+    if (!target) return;
+    const data = target.getAnnotationData();
+    data.severity = severity as 1 | 2 | 3 | 4 | 5;
+    data.obstructs = true;
+    this.setState({ severity, obstructs: true });
+    this.onShapeChange();
   };
 
   /**
@@ -4729,22 +4767,6 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     });
     this.onShapeChange();
     if (!onSidewalk) this.closePanel();
-  };
-
-  /**
-   * Contributors (S12): Go back on the obstruction question. Back to the
-   * sidewalk question with no answer to either, as onClearObstruction takes
-   * back a Yes.
-   */
-  private onClearOnSidewalk = () => {
-    if (this.annotatorObjectStep) return;
-    const target = this.shapes.find((shape) => shape.getAnnotationData().id === this.selectedId);
-    if (!target) return;
-    const data = target.getAnnotationData();
-    Object.assign(data, clearSidewalkPatch(data));
-    delete data.onSidewalk;
-    this.setState({ onSidewalk: undefined, obstructs: undefined, severity: null, selected: data.selected || false, isRejected: data.isRejected || false });
-    this.onShapeChange();
   };
 
   /**

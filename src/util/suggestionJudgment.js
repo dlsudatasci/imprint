@@ -25,6 +25,16 @@ export function isOffSidewalk(box) {
   return box?.onSidewalk === false && !isNotAnObject(box);
 }
 
+/**
+ * Contributors: a box that leaves the photo once its panel closes, listed in
+ * the answers, where its name opens it again. A box off the sidewalk (S12),
+ * and from S17 (4 Nov 2026) a suggestion marked Not an object, like an off
+ * the path box. A drawn box is never Not an object.
+ */
+export function isSetAside(box) {
+  return isOffSidewalk(box) || (box?.editable !== true && isNotAnObject(box));
+}
+
 /** No to the sidewalk question. Suggestions get today's No as well. */
 export function offSidewalkPatch({ editable }) {
   const patch = { onSidewalk: false, obstructs: false, severity: null };
@@ -35,11 +45,6 @@ export function offSidewalkPatch({ editable }) {
 export function onSidewalkPatch({ editable }) {
   const patch = { onSidewalk: true, obstructs: undefined, severity: null };
   return editable ? patch : { ...patch, selected: false, isRejected: false };
-}
-
-/** Go back to the sidewalk question: the box is undecided again. */
-export function clearSidewalkPatch({ editable }) {
-  return { ...onSidewalkPatch({ editable }), onSidewalk: undefined };
 }
 
 // askSeverity is false for annotators, who record no severity (decided 3 Oct 2026).

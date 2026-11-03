@@ -7,7 +7,9 @@
  * annotationSubmit refuses it otherwise), so it is in chapter 2, not 3. From
  * 2 Nov 2026 (S12) the first three chapters, laptop and phone alike, name the
  * two questions on every box: on the sidewalk or the path people walk on,
- * then in your way.
+ * then in your way. From 3 Nov 2026 (S16 follow-up) the phone's first chapter
+ * names them too, the path question first, and both "Rate the sidewalk"
+ * texts say it is the sidewalk nearest you, as the tour and the guide do.
  */
 export const HOW_IT_WORKS_COPY = Object.freeze({
   eyebrow: "How contributing works",
@@ -16,6 +18,8 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
   stepOf: (n, total) => `Step ${n} of ${total}`,
   previous: "Previous step",
   next: "Next step",
+  /** The phone and tablet preview's cue at its start (S16): scrolling is what plays it */
+  scrollCue: "Keep scrolling to play",
   chapters: Object.freeze([
     Object.freeze({
       title: "Say what blocks your way",
@@ -31,7 +35,7 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
     }),
     Object.freeze({
       title: "Rate the sidewalk",
-      text: "Four quick questions about the sidewalk as a whole: how wide it is, its surface, how comfortable it looks, and whether you could get through.",
+      text: "Four quick questions about the sidewalk nearest you: how wide it is, its surface, how comfortable it looks, and whether you could get through.",
     }),
     Object.freeze({
       title: "On to the next sidewalk",
@@ -44,12 +48,12 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
    * text in the tool's words for a finger (tap, Next, Add box, the Step 2
    * line), at most two lines on a phone. From 2 Nov 2026 (S12) the second and
    * third name the two questions on every box: on the walking path, then in
-   * your way.
+   * your way, and from 3 Nov 2026 (S16 follow-up) the first does too.
    */
   touchChapters: Object.freeze([
     Object.freeze({
       title: "Say what blocks your way",
-      text: "Tap a box. If it gets in your way, tap Yes and rate its severity from 1 to 5.",
+      text: "Tap a box. On the walking path? In your way? Rate its severity, 1 to 5.",
     }),
     Object.freeze({
       title: "Answer every suggestion",
@@ -61,7 +65,7 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
     }),
     Object.freeze({
       title: "Rate the sidewalk",
-      text: "Tap the Step 2 line and answer four questions about the sidewalk.",
+      text: "Tap the Step 2 line and answer four questions about the sidewalk nearest you.",
     }),
     Object.freeze({
       title: "On to the next sidewalk",

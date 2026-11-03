@@ -5,6 +5,7 @@ import { writeSession, writeTutorialFlag } from "@/util/sessionCache";
 import { CONTRIBUTOR_OPTIONS, sessionOptionsFor } from "./sessionOptions";
 import SessionSizeOptions, { SESSION_PICKER_COPY as COPY } from "./SessionSizeOptions";
 import { EMAIL_NOT_VERIFIED_CODE } from "@/util/validators/emailVerification.mjs";
+import { prefetchImages } from "./imagePrefetch";
 
 import { Button, Card, Container } from "@/ui";
 
@@ -19,15 +20,19 @@ import { Button, Card, Container } from "@/ui";
  * is easier to finish than an open-ended queue, and it gives the progress bar
  * and the end-of-session screen something to count toward.
  *
- * Starting a session reloads the page rather than changing state in place, so
- * the annotate page picks the batch up from the session cache using the same
- * path as an ordinary visit.
+ * Starting a session writes the batch to the session cache, then hands it to
+ * `onStarted` (S16, 3 Nov 2026), which the annotate page uses to show the
+ * first image without reloading: the reload, the second sign-in check and the
+ * skeleton made a session slow to start in the first pilot sessions. The
+ * first photo starts downloading as soon as the batch arrives. Without
+ * `onStarted` the page reloads as before, and the annotate page picks the
+ * batch up from the cache.
  *
  * A contributor whose email address is not confirmed is refused by
  * /api/annotationGet (403, EMAIL_NOT_VERIFIED, S9) and sent to /check-email,
  * whether that comes from the first check or from Start.
  */
-export default function AnnotationSessionSelection() {
+export default function AnnotationSessionSelection({ onStarted } = {}) {
   const router = useRouter();
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -97,6 +102,15 @@ export default function AnnotationSessionSelection() {
       writeSession({ total: annotationJson.imgRecords.length, current: 1, data: annotationJson });
       // A real session, over the tutorial's practice photos if they were there (23 Oct 2026)
       writeTutorialFlag(false);
+
+      if (onStarted) {
+        // No reload, so the first photo can start downloading while the form
+        // renders. isNavigatingImages is not set: nothing reads it on this
+        // path, and left behind it would skip the next cold-visit check.
+        prefetchImages([annotationJson.imgRecords[0]?.url], { priority: "high" });
+        onStarted(annotationJson);
+        return;
+      }
 
       window.sessionStorage.setItem("isNavigatingImages", "true");
       router.reload();

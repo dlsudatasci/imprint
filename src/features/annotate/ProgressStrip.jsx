@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { writeCurrentCount } from "@/util/sessionCache";
-import { PauseIcon, StopIcon } from "@/ui/icons";
+import { HelpIcon, PauseIcon, StopIcon } from "@/ui/icons";
 
 /**
  * Netflix-style scrollable image strip showing annotation progress.
@@ -8,8 +8,20 @@ import { PauseIcon, StopIcon } from "@/ui/icons";
  * Each image in the session is a thumbnail card with a numbered circle overlay.
  * Completed images (green circle) are clickable to navigate back; future images
  * (gray circle) are not. Left/right arrows scroll the strip and hide at the edges.
+ *
+ * The thumbnails are the session's full-size photos. With `deferUpcoming`
+ * (S16, 3 Nov 2026, while the current photo loads) the images still to come
+ * are drawn as their numbered grey card, with no photo, so they do not take
+ * the connection from the current one. The current image's thumbnail is the
+ * same url as the photo, and the completed ones are cached, so those show at
+ * once and nothing flickers on Next Image. Every thumbnail loads at low
+ * priority.
+ *
+ * In the tutorial, `onShowTour` adds a ? button beside Stop Tutorial that runs
+ * the tour again (S16b, 3 Nov 2026, in place of the beacons on each point), as
+ * the phone's top bar has.
  */
-export default function ProgressStrip({ images, current, onPause, onStop, isTutorial = false }) {
+export default function ProgressStrip({ images, current, onPause, onStop, onShowTour, isTutorial = false, deferUpcoming = false }) {
   const scrollRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -113,7 +125,7 @@ export default function ProgressStrip({ images, current, onPause, onStop, isTuto
                   data-index={i}
                   disabled={!canClick}
                   onClick={() => canClick && navigateTo(i)}
-                  className={`shrink-0 relative rounded-lg overflow-hidden border-2 transition-all ${
+                  className={`shrink-0 relative rounded-lg overflow-hidden border-2 bg-surface-subtle transition-all ${
                     isCurrent
                       ? "border-primary ring-2 ring-primary/30 shadow-md"
                       : isCompleted
@@ -122,13 +134,17 @@ export default function ProgressStrip({ images, current, onPause, onStop, isTuto
                   }`}
                   style={{ width: 140, height: 88 }}
                 >
-                  {/* Thumbnail */}
-                  <img
-                    src={img.url}
-                    alt={`Sidewalk ${i + 1}`}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    loading="lazy"
-                  />
+                  {/* Thumbnail, not yet for an image still to come while the photo loads */}
+                  {!(deferUpcoming && i > current - 1) && (
+                    <img
+                      src={img.url}
+                      alt={`Sidewalk ${i + 1}`}
+                      className="absolute inset-0 w-full h-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                      fetchPriority="low"
+                    />
+                  )}
 
                   {/* Darkening overlay */}
                   <div className={`absolute inset-0 ${
@@ -175,8 +191,19 @@ export default function ProgressStrip({ images, current, onPause, onStop, isTuto
         )}
       </div>
 
-      {/* Pause / Stop below the strip */}
+      {/* Pause / Stop below the strip, and the tutorial's tour */}
       <div className="flex justify-center gap-2 mt-3">
+        {onShowTour && (
+          // eslint-disable-next-line react/forbid-elements -- the same pill as Pause and Stop beside it
+          <button
+            onClick={onShowTour}
+            title="Show the tour"
+            className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-body transition-colors px-3 py-1.5 rounded-control border border-line hover:border-primary/30 bg-surface"
+          >
+            <HelpIcon size={14} />
+            Tour
+          </button>
+        )}
         {!isTutorial && (
           <button
             onClick={onPause}

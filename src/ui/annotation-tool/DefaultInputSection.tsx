@@ -402,6 +402,7 @@ const DefaultInputSection = ({
         onHide={onHide}
         onClose={answer ? onClose : undefined}
         question={SIDEWALK_QUESTION_COPY.question}
+        step={1}
         answer={answer}
         disabled={!hasCategory}
         onYes={() => onSetOnSidewalk(true)}
@@ -444,6 +445,8 @@ const DefaultInputSection = ({
       onHide={onHide}
       onClose={answered ? onClose : undefined}
       question={<>Does <span className="font-semibold text-ink">{label}</span> obstruct the sidewalk?</>}
+      // Second of the two only when the path question was asked (contributors)
+      step={askOnSidewalk ? 2 : undefined}
       answer={answer}
       disabled={!hasCategory}
       onYes={onYes}
@@ -472,14 +475,20 @@ const DefaultInputSection = ({
  * the obstruction question share it (S12), so both look the same. The buttons'
  * data-control is `control` with -yes and -no, or yes and no without it, which
  * the landing page's preview finds them by.
+ *
+ * `step` (S16, 3 Nov 2026): the first pilot participants took the first Yes
+ * or No for the obstruction question, so for contributors a small line above
+ * the question says which of the two it is. No line without it.
  */
-function QuestionPanel({ variant, header, onHide, onClose, question, answer, disabled, onYes, onNo, onBack, control, footer, children }: {
+function QuestionPanel({ variant, header, onHide, onClose, question, step, answer, disabled, onYes, onNo, onBack, control, footer, children }: {
   variant: PanelVariant;
   header: React.ReactNode;
   onHide?: () => void;
   /** No close button without it */
   onClose?: () => void;
   question: React.ReactNode;
+  /** 1 or 2: "Question 1 of 2" above the question */
+  step?: 1 | 2;
   answer: "yes" | "no" | null;
   disabled: boolean;
   onYes: () => void;
@@ -498,7 +507,8 @@ function QuestionPanel({ variant, header, onHide, onClose, question, answer, dis
         {onClose && <CloseButton onClose={onClose} variant={variant} />}
       </div>
 
-      <p className="text-sm text-body mt-3 mb-2">{question}</p>
+      {step && <p data-question-step={step} className="text-xs font-semibold text-muted mt-3">{SIDEWALK_QUESTION_COPY.questionOf(step)}</p>}
+      <p className={`text-sm text-body ${step ? "mt-0.5" : "mt-3"} mb-2`}>{question}</p>
       <div className="grid grid-cols-2 gap-2">
         <AnswerButton active={answer === "yes"} disabled={disabled} onClick={onYes} variant={variant} control={control ? `${control}-yes` : "yes"}>Yes</AnswerButton>
         <AnswerButton active={answer === "no"} disabled={disabled} onClick={onNo} variant={variant} control={control ? `${control}-no` : "no"}>No</AnswerButton>

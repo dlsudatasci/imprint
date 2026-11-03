@@ -11,7 +11,8 @@ vi.mock("next/dynamic", () => ({
   default: () => (props) => <div data-stage data-tick={props.frame.tick} data-touch={String(props.frame.snap !== undefined)} data-coarse={String(Boolean(props.coarse))} />,
 }));
 
-import HowItWorks, { LEAD_IN, TOUCH_STILL_TICKS, TRACK_SCREENS, chapterShare } from "./HowItWorks";
+import HowItWorks, { LEAD_IN, TOUCH_STILL_TICKS, TRACK_SCREENS, chapterShare, showsScrollCue, SCROLL_CUE_END } from "./HowItWorks";
+import { touchFrame, touchTickOf } from "./howItWorks/touchScript";
 import { CHAPTERS, ENTRANCE_END, TICKS, chapterAt } from "./howItWorks/demoScript";
 import { HOW_IT_WORKS_COPY as COPY } from "./howItWorks/howItWorksCopy";
 import { SHEET_LAYOUT_QUERY, TOUCH_DEVICE_QUERY } from "@/hooks/useAnnotateLayout";
@@ -235,5 +236,51 @@ describe("HowItWorks on phones and tablets (22 Oct 2026)", () => {
     expect(list.textContent).toContain(COPY.touchChapters[2].text);
     expect(list.textContent).not.toContain(COPY.chapters[2].text);
     expect(el.querySelectorAll("a, button, input, select, [tabindex]")).toHaveLength(0);
+  });
+});
+
+// S16 (3 Nov 2026): the first pilot participants did not know scrolling plays the phone preview
+describe("the phone preview's scroll cue", () => {
+  it("shows at the start, and not once the first box has opened", () => {
+    expect(SCROLL_CUE_END).toBe(touchTickOf("tree-open", "end"));
+    // Nothing is open before that tick, and the tree is right after it
+    expect(touchFrame((SCROLL_CUE_END - 1) / TICKS).selectedId).toBeNull();
+    expect(touchFrame(SCROLL_CUE_END / TICKS).selectedId).not.toBeNull();
+    expect(showsScrollCue(0)).toBe(true);
+    expect(showsScrollCue((SCROLL_CUE_END - 1) / TICKS)).toBe(true);
+    expect(showsScrollCue(SCROLL_CUE_END / TICKS)).toBe(false);
+    expect(showsScrollCue(0.5)).toBe(false);
+    expect(showsScrollCue(1)).toBe(false);
+  });
+
+  it("shows again when the reader scrolls back to the start, and at the start for a progress that is not a number", () => {
+    for (const p of [0.9, 0.2, 0.01, 0]) expect(showsScrollCue(p)).toBe(p * TICKS < SCROLL_CUE_END);
+    expect(showsScrollCue(NaN)).toBe(true);
+  });
+
+  it("renders the pill in the touch scroll preview, hidden from screen readers, fading as it plays", () => {
+    const el = render({ reduced: false, narrow: true });
+    const cue = el.querySelector("[data-scroll-cue]");
+    expect(cue).not.toBeNull();
+    expect(cue.textContent).toBe("Keep scrolling to play");
+    expect(COPY.scrollCue).toBe("Keep scrolling to play");
+    expect(cue.getAttribute("aria-hidden")).toBe("true");
+    expect(cue.querySelector("svg").getAttribute("aria-hidden")).toBe("true");
+    expect(cue.className).toContain("motion-safe:transition-opacity");
+    expect(cue.className).toContain("pointer-events-none");
+    // jsdom has no layout: progress 0, the start
+    expect(cue.className).toContain("opacity-100");
+    // In the frame, over the phone screen
+    expect(cue.closest("[data-frame]")).not.toBeNull();
+  });
+
+  it("is not in the reduced-motion preview or on a laptop", () => {
+    expect(render({ reduced: true, narrow: true }).querySelector("[data-scroll-cue]")).toBeNull();
+    act(() => root.unmount());
+    host.remove();
+    expect(render({ reduced: false }).querySelector("[data-scroll-cue]")).toBeNull();
+    act(() => root.unmount());
+    host.remove();
+    expect(render({ reduced: true }).querySelector("[data-scroll-cue]")).toBeNull();
   });
 });

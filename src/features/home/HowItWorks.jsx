@@ -48,6 +48,13 @@ import { useScrollProgress } from "./howItWorks/useScrollProgress";
  * The same scroll, the same five chapters and the same answers. The chapter
  * is a band across the top of the frame, where the tool's top bar would be,
  * since a card over the bottom would cover the sheet.
+ *
+ * The first pilot participants did not know that scrolling plays it on a
+ * phone (S16, 3 Nov 2026), so at its start the phone and tablet preview shows
+ * a "Keep scrolling to play" pill near the bottom of the frame
+ * (showsScrollCue), which fades as it starts to play and comes back at the
+ * start. Not with reduced motion, whose preview has its own buttons, and not
+ * on a laptop, where the step rail moves with the scroll.
  */
 
 const DemoStage = dynamic(() => import("./howItWorks/DemoStage"), {
@@ -86,6 +93,15 @@ export const TOUCH_STILL_TICKS = Object.freeze([
   touchTickOf("overallAccessibility", "end"),
   TICKS,
 ]);
+
+/** The tick the phone preview's first box opens at: the scroll cue shows before it */
+export const SCROLL_CUE_END = touchTickOf("tree-open", "end");
+
+/** Whether the phone and tablet preview shows its scroll cue at `progress` (0 to 1) */
+export function showsScrollCue(progress) {
+  const p = Number.isFinite(progress) ? progress : 0;
+  return p * TICKS < SCROLL_CUE_END;
+}
 
 /**
  * The track is TRACK_SCREENS screens tall, and the preview starts LEAD_IN of
@@ -341,6 +357,30 @@ function TouchCaption({ active, progress = null, children }) {
   );
 }
 
+/**
+ * "Keep scrolling to play", near the bottom of the frame (S16). Screen readers
+ * get the chapters from the heading's list, so it is hidden from them.
+ */
+function ScrollCue({ shown }) {
+  return (
+    <div
+      data-scroll-cue
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute inset-x-0 bottom-6 z-40 flex justify-center motion-safe:transition-opacity motion-safe:duration-300",
+        shown ? "opacity-100" : "opacity-0"
+      )}
+    >
+      <p className="flex items-center gap-1.5 rounded-full bg-ink/85 px-3 py-2 text-xs font-semibold text-white shadow-lg">
+        {COPY.scrollCue}
+        <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 3v10M3.5 8.5 8 13l4.5-4.5" />
+        </svg>
+      </p>
+    </div>
+  );
+}
+
 /** The scroll-played preview on phones and tablets: the band, then the tool's phone screen */
 function TouchScrollPreview({ coarse }) {
   const trackRef = useRef(null);
@@ -362,6 +402,7 @@ function TouchScrollPreview({ coarse }) {
             <TouchCaption active={frame.chapter} progress={progress} />
             <div className="relative min-h-0 flex-1" inert aria-hidden="true">
               <TouchStage frame={frame} coarse={coarse} />
+              <ScrollCue shown={showsScrollCue(progress)} />
             </div>
           </div>
         </Container>

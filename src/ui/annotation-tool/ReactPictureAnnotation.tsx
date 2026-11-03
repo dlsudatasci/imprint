@@ -319,6 +319,10 @@ interface IReactPictureAnnotationProps {
   focus?: boolean;
   onEnterFocus?: () => void;
   onExitFocus?: () => void;
+  // Told once the photo has loaded and been painted (S16, 3 Nov 2026):
+  // AnnotateForm holds the progress strip's upcoming thumbnails until then,
+  // and then fetches the next photos
+  onPhotoReady?: () => void;
 }
 
 type AnnotatorStep = "objects" | "sidewalk" | "obstructions";
@@ -4428,6 +4432,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private onPhotoShown = () => {
     this.photoShown = true;
     this.noteSuggestionsShown();
+    this.props.onPhotoReady?.();
   };
 
   /**
@@ -4850,6 +4855,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           this.onPhotoShown();
         });
         nextImageNode.alt = "";
+        // Before the strip's thumbnails and the next photos (S16)
+        nextImageNode.fetchPriority = "high";
         nextImageNode.src = this.props.image;
       }
     }

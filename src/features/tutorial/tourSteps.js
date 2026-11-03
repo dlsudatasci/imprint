@@ -18,31 +18,42 @@
  * Walking Space, Sidewalk Outline, Next: Obstructions) and four in Obstructions
  * (canvas, What Counts as an Obstruction, the list and confirmation, Next
  * Image).
- * Contributors have one tour of five steps. From 7 Oct 2026 its second step,
- * "Your Answers", points at the lists under the photo (Not obstructions and
- * Obstructions), where every answered object is listed. From 2 Nov 2026 (S12)
- * the canvas step names the two questions in order, the sidewalk question
- * first, and the answers step says a No to it takes the box off the photo and
- * lists it under Not obstructions. The question's wording comes from
- * sidewalkQuestionCopy.js, the one place it is spelled out.
+ * Contributors have one tour. From 3 Nov 2026 (S16, after the first two pilot
+ * sessions found the tutorial harder than the task) it has six steps, each
+ * short, most with a numbered list: Check Each Box (Question 1 then Question
+ * 2, and that a dashed box is only a suggestion), What Counts as the Path (the
+ * sidewalk nearest you only), Your Answers, Severity, Scene-Level Assessment
+ * (the same nearest sidewalk) and Next Image. The wording is Rans's (S16b, the
+ * same day): Your Answers and Next Image have no list, and Severity no intro.
+ * After Rans's review of S16b (the same day) Check Each Box has no line on the
+ * dashed boxes, Your Answers names Hide all and Show all, and Next Image is
+ * two sentences, without Finish Session.
+ * A contributor step has `intro`, `points` (possibly none), `after` (text
+ * after the list) and `note`, with `touchIntro`, `touchPoints`, `touchAfter`
+ * and `touchNote` where the touch wording differs. buildTourSteps returns
+ * them, and `content` as the same text joined into plain sentences, and the
+ * tutorial page builds the list. Each step stays within CONTRIBUTOR_BUDGET
+ * (tourSteps.test.js checks). Check Each Box sits right of the photo (S16b).
+ * The question's wording and the path's lines come from
+ * sidewalkQuestionCopy.js, the one place they are spelled out.
  *
- * tourTargets(), tourStepCount() and tourBeaconPlacements() take the role and
- * the annotator step, so the beacons and the "Step n of N" counter match the
- * tour on screen.
+ * tourTargets() and tourStepCount() take the role and the annotator step, so
+ * the "Step n of N" counter matches the tour on screen. No tour has beacons
+ * (the laptop's went on 3 Nov 2026, S16b): a ? button runs the tour again, in
+ * the top bar on a phone and in the progress strip on a laptop.
  *
  * They also take the input (9 Oct 2026): "pointer" (the default, the tours
  * above) or "touch", the tours for the sheet layout on a phone or tablet
- * (tourInputFor). The contributor touch tour has six steps: the photo, Add box,
- * the answers at the bottom of the screen, the severity scale, Step 2 and Next
- * Image. From 12 Oct 2026 annotators have touch tours too (five steps in
- * Objects, five in Sidewalk, four in Obstructions), and the touch tours have
- * no beacons (tourShowsBeacons): the top bar's ? button replays the tour. A
- * touch step whose target is in the part of the sheet pulled down carries
- * `sheet: "full"`, and the tutorial moves the sheet up for it.
+ * (tourInputFor). The contributor touch tour has seven steps (S16): the
+ * photo, the path, Add box, the answers in the sheet pulled up (S16b), the
+ * severity scale, Step 2 and Next Image. From 12 Oct 2026 annotators have
+ * touch tours too (five steps in Objects, five in Sidewalk, four in
+ * Obstructions). A touch step whose target is in the part of the sheet pulled
+ * down carries `sheet: "full"`, and the tutorial moves the sheet up for it.
  *
  * The wording is chosen apart from the tour (tourWordsFor, 12 Oct 2026). On
  * the desktop layout with a finger as the primary pointer (an iPad held
- * sideways) the pointer tour runs, with its targets and beacons, but a step
+ * sideways) the pointer tour runs, with its targets, but a step
  * with `touchContent` uses it: it says "tap", and names Add box where the
  * mouse copy says to draw by dragging, which a finger cannot do. With a mouse
  * every pointer tour reads as before, apart from the last steps of two tours,
@@ -50,15 +61,20 @@
  */
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 
-// Contributors (S12, 2 Nov 2026): the two questions on every box, in order
-const OFF_PATH = "A No to the path question takes the box off the photo and lists it under Not obstructions.";
-const TWO_QUESTIONS = `Then answer two questions. First, “${SIDEWALK_QUESTION_COPY.question}” No takes the box off the photo and lists it under Not obstructions. Yes asks whether the object obstructs the sidewalk. ${SIDEWALK_QUESTION_COPY.tutorial}`;
-const JUST_AS_USEFUL = "Answering No is just as valuable as answering Yes. An object on the sidewalk that does not get in the way is just as useful to record as one that does.";
+const QUESTION = SIDEWALK_QUESTION_COPY.question;
+
+/**
+ * The most a contributor step may say (S16): the intro, the points, `after`
+ * and the note together, the question's text counted, and one point on its own.
+ */
+export const CONTRIBUTOR_BUDGET = Object.freeze({ words: 80, points: 5, wordsPerPoint: 18 });
 
 // The severity step points at the photo (8 Oct 2026): the severity scale opens
-// on the photo beside the box after a Yes, not in the lists under it
+// on the photo beside the box after a Yes, not in the lists under it. The
+// path step (S16) points at Step 1's instructions above the photo.
 const CONTRIBUTOR_TARGETS = Object.freeze([
   ".rp-stage",
+  "#step1-instructions",
   "#box-review-section",
   ".rp-stage",
   "#scene-level-section",
@@ -74,35 +90,61 @@ const ANNOTATOR_TARGETS = Object.freeze([
   "button[type='submit']",
 ]);
 
-const CONTRIBUTOR_PLACEMENTS = ["bottom", "top", "bottom", "top", "top"];
+// Check Each Box to the right of the photo (S16b): below it, the card could not
+// be read without scrolling. Where there is no room on the right it slides over
+// the photo's right side (CHECK_FLOATING), never below the photo.
+const CONTRIBUTOR_PLACEMENTS = ["right", "bottom", "top", "bottom", "top", "top"];
 const ANNOTATOR_PLACEMENTS = ["bottom", "left", "top", "top"];
 
-// Where each step's pulsing beacon sits against its target: above it, below
-// it, or to its left. When two steps share a target (the contributor canvas and
-// severity steps, both on the photo) the second beacon sits beside the photo's
-// left edge, level with its middle, as the Sidewalk tour's photo beacon does.
-const CONTRIBUTOR_BEACONS = ["top", "top", "left", "top", "top"];
-const ANNOTATOR_BEACONS = ["top", "top", "top", "top"];
+// ---- Contributors (S16, 3 Nov 2026): short numbered steps ----
+// The wording from S16b (3 Nov 2026) is Rans's, after his review of S16.
 
+const checkPoints = (verb) => [
+  `${verb} a box and check its label.`,
+  `Question 1 asks only where it is: “${QUESTION}”`,
+  "Question 2 asks whether it obstructs the path for you.",
+  `Nothing real in it? ${verb} Not an object.`,
+];
+/**
+ * Check Each Box sits right of the photo, and never runs off the screen: no
+ * flip to below the photo, and a slide left over the photo where there is no
+ * room on the right, as well as up or down into the screen.
+ */
+const CHECK_FLOATING = Object.freeze({ flipOptions: false, shiftOptions: { crossAxis: true } });
+
+const PATH_STEP = {
+  title: "What Counts as the Path",
+  points: SIDEWALK_QUESTION_COPY.pathPoints,
+};
+
+const SEVERITY_RATE = "Rate how much it blocks you, from 1 (a minor inconvenience) to 5 (it completely blocks the path).";
 const SEVERITY_STEP = {
   title: "Severity",
-  content: "When you answer Yes, a scale opens on the photo beside the box. Rate how severely the object blocks passage, from 1 (a minor inconvenience) to 5 (it completely blocks the path), then click Confirm. To change it later, open the box and click Change.",
-  touchContent: "When you answer Yes, a scale opens on the photo beside the box. Rate how severely the object blocks passage, from 1 (a minor inconvenience) to 5 (it completely blocks the path), then tap Confirm. To change it later, open the box and tap Change.",
+  points: [SEVERITY_RATE, "Click Confirm.", "To change it later, open the box and click Change."],
+  touchPoints: [SEVERITY_RATE, "Tap Confirm.", "To change it later, open the box and tap Change."],
 };
 
+// Rated on the same sidewalk as Question 1, so a photo with two sidewalks is
+// rated on one (Rans, 3 Nov 2026). The four questions keep their wording.
 const SCENE_STEP = {
   title: "Scene-Level Assessment",
-  content: "Answer four questions about the sidewalk as a whole: its width, its surface condition, how comfortable it looks for walking, and whether you could personally get along it. If there is no sidewalk, choose None and the other three are skipped.",
+  intro: "Then rate the sidewalk nearest you as a whole:",
+  points: ["Its width", "Its surface condition", "How comfortable it looks for walking", "Whether you could get along it yourself"],
+  note: "No sidewalk? Choose None and the other three are skipped.",
 };
+
+// Hide all and Show all (Rans, 3 Nov 2026): beside Still to decide on a laptop, beside the step's name on a phone
+const HIDE_ALL = (verb) => `${verb} Hide all to hide all the boxes on the photo. ${verb} Show all to show them again.`;
+const ANSWERS_AFTER = (verb) => `${verb} a name to open it and change the answer. ${verb} the eye to hide a box while you work on the boxes around it. ${HIDE_ALL(verb)}`;
 
 // The submit button reads Next Image, or Finish Session on the last image, and
 // is never disabled. submit() shows a message naming what is still missing
 // instead. Titled "Submit" until 12 Oct 2026, a name the button never had.
-const NEXT_IMAGE_WHEN = "when every suggested box has been decided (Yes, No, or Not an object), every box has a category, and all four scene-level questions are answered. On the last image the button reads Finish Session. If something is missing, a message tells you what to finish.";
+const nextImageAfter = (verb) => `${verb} Next Image once every box has an answer. If something is missing, there will be a warning to specify what's missing.`;
 const CONTRIBUTOR_SUBMIT_STEP = {
   title: "Next Image",
-  content: `Click Next Image ${NEXT_IMAGE_WHEN}`,
-  touchContent: `Tap Next Image ${NEXT_IMAGE_WHEN}`,
+  after: nextImageAfter("Click"),
+  touchAfter: nextImageAfter("Tap"),
 };
 
 // The tour runs in Objects, so its last step points ahead to Sidewalk and
@@ -115,14 +157,19 @@ const ANNOTATOR_SUBMIT_STEP = {
 
 const CONTRIBUTOR = [
   {
-    title: "Annotation Canvas",
-    content: `Dashed yellow boxes are model suggestions. Click each one and check that its label is right (change it from the list if it is not). ${TWO_QUESTIONS} If a box does not mark a real object, click Not an object. You can also draw your own boxes by clicking and dragging to label objects the model missed.`,
-    touchContent: `Dashed yellow boxes are model suggestions. Tap each one and check that its label is right (change it from the list if it is not). ${TWO_QUESTIONS} If a box does not mark a real object, tap Not an object. To label an object the model missed, tap Add box at the bottom left of the photo and drag the new box's corners to fit it. Pinch to zoom in on small objects.`,
+    title: "Check Each Box",
+    points: checkPoints("Click"),
+    touchPoints: checkPoints("Tap"),
+    note: "Missed one? Click and drag to box it.",
+    touchNote: "Missed one? Tap Add box to box it.",
+    floatingOptions: CHECK_FLOATING,
   },
+  PATH_STEP,
   {
     title: "Your Answers",
-    content: `Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you draw are listed there too. ${OFF_PATH} ${JUST_AS_USEFUL} Click any object to change its answer. A box off the photo shows again while it is open. Click the eye beside an object to hide its box on the photo while you work on boxes around it.`,
-    touchContent: `Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you add are listed there too. ${OFF_PATH} ${JUST_AS_USEFUL} Tap any object to change its answer. A box off the photo shows again while it is open. Tap the eye beside an object to hide its box on the photo while you work on boxes around it. To show a hidden box again, double-tap where it was.`,
+    intro: "Every answer goes into a list under the photo.",
+    after: ANSWERS_AFTER("Click"),
+    touchAfter: ANSWERS_AFTER("Tap"),
   },
   SEVERITY_STEP,
   SCENE_STEP,
@@ -148,13 +195,10 @@ const ANNOTATOR = [
 ];
 
 // Annotators, Sidewalk step (6 Oct 2026). The drawing tools are a bar at the
-// top of the photo's card (13 Oct 2026, before that a row above the card), so
-// their beacons go to the left of both rather than on top of the bar's buttons
-// or under the photo, where the card's beacon is.
+// top of the photo's card (13 Oct 2026, before that a row above the card).
 const SIDEWALK_TOUR = Object.freeze({
   targets: Object.freeze([".rp-stage", "#sidewalk-tools", "#sidewalk-guide", "#sidewalk-shapes", "button[type='submit']"]),
   placements: ["bottom", "bottom", "left", "top", "top"],
-  beacons: ["left", "left", "top", "top", "top"],
   copy: [
     {
       title: "Outline the Walking Space",
@@ -188,7 +232,6 @@ const SIDEWALK_TOUR = Object.freeze({
 const OBSTRUCTIONS_TOUR = Object.freeze({
   targets: Object.freeze([".rp-stage", "#obstruction-guide", "#box-review-section", "button[type='submit']"]),
   placements: ["bottom", "left", "top", "top"],
-  beacons: ["top", "top", "top", "top"],
   copy: [
     {
       title: "Mark the Obstructions",
@@ -215,64 +258,78 @@ const OBSTRUCTIONS_TOUR = Object.freeze({
 const CONTRIBUTOR_TOUR = Object.freeze({
   targets: CONTRIBUTOR_TARGETS,
   placements: CONTRIBUTOR_PLACEMENTS,
-  beacons: CONTRIBUTOR_BEACONS,
   copy: CONTRIBUTOR,
 });
 
 // Contributors on a phone or tablet (9 Oct 2026). The answers sit in a sheet at
 // the bottom of the screen, whose top part (#box-review-section-peek) is always
 // in view. Step 2 is in the part pulled up: the tutorial moves the sheet up
-// before that step, and its beacon sits on the Step 2 line in the sheet's top
-// part when there is one (beaconTargets).
+// before that step. Seven steps from 3 Nov 2026 (S16), in the same short
+// format as the pointer tour, with the path step second.
+//
+// Your Answers (S16b) pulls the sheet up and highlights the lists there, from
+// their Still to decide line down to the Obstructions card. Its target is
+// #box-review-lists, which holds exactly those, with no padding: the whole
+// lists block (#box-review-section) has padding under the Obstructions card,
+// and with the highlight's own margin it ran into the Step 2 heading (Rans,
+// 3 Nov 2026).
 const SCENE_SECTION = "#scene-level-section";
 const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
   targets: Object.freeze([
     ".rp-stage",
-    "#add-box-button",
-    "#box-review-section-peek",
-    "#box-review-chips-peek",
-    SCENE_SECTION,
-    "button[type='submit']",
-  ]),
-  beaconTargets: Object.freeze([
     ".rp-stage",
     "#add-box-button",
-    "#box-review-section-peek",
+    "#box-review-lists",
     "#box-review-chips-peek",
-    `#scene-level-peek, ${SCENE_SECTION}`,
+    SCENE_SECTION,
     "button[type='submit']",
   ]),
   // "center": the tooltip in the middle of the screen. The photo fills the
   // screen above the sheet, and a card in the pulled-up sheet fills it too, so
   // a tooltip above or below either would run off the screen with its Next
-  // button (found 12 Oct 2026).
-  placements: ["center", "top", "top", "top", "center", "top"],
-  beacons: ["top", "top", "top", "top", "top", "top"],
+  // button (found 12 Oct 2026). A centred step has no highlight, so Add a Box
+  // and Your Answers point at their targets (S16b): their cards slide up or
+  // down into the screen (buildTourSteps) and are no taller than the room
+  // beside the target (the tutorial page's fitBesideTarget).
+  placements: ["center", "center", "top", "top", "top", "center", "top"],
   copy: [
     {
-      title: "Annotation Canvas",
-      content: `Dashed yellow boxes are model suggestions. Tap each one and check that its label is right (change it from the list if it is not). ${TWO_QUESTIONS} If a box does not mark a real object, tap Not an object. While a box is open it is the only box on the photo, and the others come back when you close it. Pinch to zoom in on small objects.`,
+      title: "Check Each Box",
+      points: checkPoints("Tap"),
     },
+    PATH_STEP,
     {
       title: "Add a Box",
-      content: "To label an object the model missed, tap Add box. A box appears in the middle of the photo. Drag its four corners to fit the object. A magnifier shows exactly where the corner sits. Until you close it, it is the only box on the photo.",
+      points: [
+        "Tap Add box. A box appears in the middle of the photo.",
+        "Drag its four corners to fit the object. A magnifier shows where each corner sits.",
+        "Pick its category and answer both questions.",
+      ],
+      note: "Pinch to zoom in on small objects.",
+      fitBesideTarget: true,
     },
     {
       title: "Your Answers",
-      content: `Every object is listed at the bottom of the screen, with what is left first and what you answered for each. Boxes you add are listed there too. ${OFF_PATH} ${JUST_AS_USEFUL} Pull the list up for your answers in Not obstructions and Obstructions, and tap any object to change its answer. Hide all and Show all, beside the step's name, hide or bring back every box on the photo, and the eye beside an object in the list pulled up hides one. To show a hidden box again, double-tap where it was.`,
-    },
-    {
-      title: "Severity",
-      content: "When you answer Yes, a scale opens at the bottom of the screen. Rate how severely the object blocks passage, from 1 (a minor inconvenience) to 5 (it completely blocks the path), then tap Confirm. To change it later, open the box and tap Change.",
-    },
-    {
-      title: "Scene-Level Assessment",
       sheet: "full",
-      content: "Pull the list up to answer four questions about the sidewalk as a whole: its width, its surface condition, how comfortable it looks for walking, and whether you could personally get along it. If there is no sidewalk, choose None and the other three are skipped.",
+      intro: "Every object is listed at the bottom of the screen.",
+      after: `Pull the list up to see them all. ${ANSWERS_AFTER("Tap")}`,
+      fitBesideTarget: true,
+      // The lists are in the sheet's scrolling part, and the library keeps a
+      // card inside its target's scrolling parent: that put the card over the
+      // lists, under the part's top edge (found 3 Nov 2026). It may use the
+      // whole screen instead, and follows the lists as the sheet settles,
+      // which no scroll or resize reports.
+      floatingOptions: { shiftOptions: { crossAxis: true, boundary: "clippingAncestors" }, autoUpdate: { animationFrame: true } },
     },
+    {
+      // On the phone screen the scale opens in the sheet, not beside the box
+      title: "Severity",
+      points: SEVERITY_STEP.touchPoints,
+    },
+    { ...SCENE_STEP, sheet: "full" },
     {
       title: "Next Image",
-      content: `Tap Next Image ${NEXT_IMAGE_WHEN}`,
+      after: CONTRIBUTOR_SUBMIT_STEP.touchAfter,
     },
   ],
 });
@@ -280,12 +337,10 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
 // Annotators on a phone or tablet (12 Oct 2026). Their cards are in the answers
 // sheet: the top part (#box-review-section-peek, #sidewalk-tools) is always in
 // view, and the cards below it are in the part pulled up (sheet: "full").
-const TOP = (n) => Array.from({ length: n }, () => "top");
 const ANNOTATOR_TOUCH_TOURS = Object.freeze({
   objects: Object.freeze({
     targets: Object.freeze([".rp-stage", "#add-box-button", "#box-review-section-peek", "#taxonomy-guide", "button[type='submit']"]),
     placements: ["center", "top", "top", "center", "top"],
-    beacons: TOP(5),
     copy: [
       {
         title: "Annotation Canvas",
@@ -313,7 +368,6 @@ const ANNOTATOR_TOUCH_TOURS = Object.freeze({
   sidewalk: Object.freeze({
     targets: Object.freeze([".rp-stage", "#sidewalk-tools", "#sidewalk-shapes", "#sidewalk-guide", "button[type='submit']"]),
     placements: ["center", "top", "center", "center", "top"],
-    beacons: TOP(5),
     copy: [
       {
         title: "Outline the Walking Space",
@@ -342,7 +396,6 @@ const ANNOTATOR_TOUCH_TOURS = Object.freeze({
   obstructions: Object.freeze({
     targets: Object.freeze([".rp-stage", "#box-review-section-peek", "#obstruction-guide", "button[type='submit']"]),
     placements: ["center", "top", "center", "top"],
-    beacons: TOP(4),
     copy: [
       {
         title: "Mark the Obstructions",
@@ -365,13 +418,18 @@ const ANNOTATOR_TOUCH_TOURS = Object.freeze({
   }),
 });
 
-/** Added to the first step of every touch tour on a phone (not a tablet). */
+/** Added to the first step of every annotator touch tour on a phone (not a tablet). */
 export const PHONE_FULL_SCREEN_SENTENCE = "On a phone, the button at the bottom right of the photo shows the photo full screen, which you can also use with the phone held sideways.";
-/** Added to the first step of every touch tour on a tablet (12 Oct 2026). */
+/** Added to the first step of every annotator touch tour on a tablet (12 Oct 2026). */
 export const TABLET_FULL_SCREEN_SENTENCE = "The button at the bottom right of the photo shows the photo full screen.";
+/**
+ * The contributor touch tour's first note, on a phone and a tablet alike (S16):
+ * the two sentences above, shortened to fit the step's budget.
+ */
+export const FULL_SCREEN_TIP = "Tip: the photo's bottom-right button goes full screen.";
 
 const ANNOTATOR_TOURS = Object.freeze({
-  objects: Object.freeze({ targets: ANNOTATOR_TARGETS, placements: ANNOTATOR_PLACEMENTS, beacons: ANNOTATOR_BEACONS, copy: ANNOTATOR }),
+  objects: Object.freeze({ targets: ANNOTATOR_TARGETS, placements: ANNOTATOR_PLACEMENTS, copy: ANNOTATOR }),
   sidewalk: SIDEWALK_TOUR,
   obstructions: OBSTRUCTIONS_TOUR,
 });
@@ -390,7 +448,7 @@ function tourFor(isAnnotator, step, input = "pointer") {
 /**
  * Which tour a layout gets: the touch tours point at the answers sheet, which
  * only the sheet layout has. The desktop layout keeps the pointer tour, with
- * its targets and beacons, on every device (12 Oct 2026). Before, an iPad held
+ * its targets, on every device (12 Oct 2026). Before, an iPad held
  * sideways got the touch tour, whose targets were not on that screen.
  */
 export function tourInputFor(layout) {
@@ -409,66 +467,90 @@ export function tourWordsFor({ layout, coarsePointer } = {}) {
   return layout === "sheet" || coarsePointer === true ? "touch" : "pointer";
 }
 
-/**
- * The touch tours have no beacons (12 Oct 2026): on a phone they sat over the
- * photo and the sheet and blocked swipes and drags. The top bar's ? button
- * replays the tour instead.
- */
-export function tourShowsBeacons(input = "pointer") {
-  return input !== "touch";
-}
-
 export function tourTargets(isAnnotator = false, step = "objects", input = "pointer") {
   return tourFor(isAnnotator, step, input).targets;
-}
-
-/**
- * What each step's beacon is measured against: the step's target, or for the
- * touch tour's Step 2 the Step 2 line at the top of the sheet when there is
- * one, since the section itself is in the part of the sheet pulled down.
- */
-export function tourBeaconTargets(isAnnotator = false, step = "objects", input = "pointer") {
-  const tour = tourFor(isAnnotator, step, input);
-  return tour.beaconTargets || tour.targets;
 }
 
 export function tourStepCount(isAnnotator = false, step = "objects", input = "pointer") {
   return tourTargets(isAnnotator, step, input).length;
 }
 
-/** Where each step's beacon sits against its target: "top", "bottom" or "left". */
-export function tourBeaconPlacements(isAnnotator = false, step = "objects", input = "pointer") {
-  return [...tourFor(isAnnotator, step, input).beacons];
+/** A list point as a sentence of its own, for `content` */
+const asSentence = (text) => (/[.?!”]$/.test(text) ? text : `${text}.`);
+
+/**
+ * A contributor step's words in this wording: `intro`, `points` and `note`,
+ * or their touch versions where the step has them.
+ */
+function contributorWords(entry, touchWords) {
+  const pick = (key, touchKey) => (touchWords && entry[touchKey] !== undefined ? entry[touchKey] : entry[key]);
+  return {
+    intro: pick("intro", "touchIntro"),
+    points: [...(pick("points", "touchPoints") || [])],
+    after: pick("after", "touchAfter"),
+    note: pick("note", "touchNote"),
+  };
 }
 
 /**
  * The react-joyride steps for this person, annotator step and input.
  *
  * `options.words` ("pointer" by default) picks the wording of a pointer tour:
- * with "touch", a step that has `touchContent` uses it. The touch tours ignore
- * it. `options.phone` adds the full-screen sentence to the first step of a
- * touch tour, and `options.tablet` adds the tablet's. Never on a pointer tour:
- * phones and tablets always have the sheet layout, so the touch tours. A touch step in the part of the sheet pulled down keeps its
- * `sheet: "full"`, for the tutorial page to move the sheet.
+ * with "touch", a step that has `touchContent` (annotators) or `touchIntro`,
+ * `touchPoints` and `touchNote` (contributors) uses it. The touch tours
+ * ignore it. `options.phone` adds the full-screen sentence to the first step
+ * of a touch tour, and `options.tablet` adds the tablet's. Contributors get
+ * FULL_SCREEN_TIP as that step's note on either. Never on a pointer tour:
+ * phones and tablets always have the sheet layout, so the touch tours. A
+ * touch step in the part of the sheet pulled down keeps its `sheet: "full"`,
+ * for the tutorial page to move the sheet.
+ *
+ * A contributor step also carries `intro`, `points` and `note` (S16), and
+ * `after` (S16b), which the tutorial page turns into a paragraph, a numbered
+ * list (none when `points` is empty), a paragraph and a muted line. Its
+ * `content` is the same text as plain sentences, in that order.
  */
 export function buildTourSteps(isAnnotator = false, step = "objects", input = "pointer", { words = "pointer", phone = false, tablet = false } = {}) {
   const { copy, targets, placements } = tourFor(isAnnotator, step, input);
   const touchWords = input === "pointer" && words === "touch";
   return copy.map((entry, i) => {
-    let content = touchWords && entry.touchContent ? entry.touchContent : entry.content;
-    if (input === "touch" && phone && i === 0) content = `${content} ${PHONE_FULL_SCREEN_SENTENCE}`;
-    else if (input === "touch" && tablet && i === 0) content = `${content} ${TABLET_FULL_SCREEN_SENTENCE}`;
+    let text;
+    if (isAnnotator) {
+      let content = touchWords && entry.touchContent ? entry.touchContent : entry.content;
+      if (input === "touch" && phone && i === 0) content = `${content} ${PHONE_FULL_SCREEN_SENTENCE}`;
+      else if (input === "touch" && tablet && i === 0) content = `${content} ${TABLET_FULL_SCREEN_SENTENCE}`;
+      text = { content };
+    } else {
+      const { intro, points, after, note } = contributorWords(entry, touchWords);
+      const fullNote = input === "touch" && (phone || tablet) && i === 0 ? FULL_SCREEN_TIP : note;
+      text = {
+        ...(intro ? { intro } : {}),
+        points,
+        ...(after ? { after } : {}),
+        ...(fullNote ? { note: fullNote } : {}),
+        content: [intro, ...points.map(asSentence), after, fullNote].filter(Boolean).join(" "),
+      };
+    }
     return {
       target: targets[i],
       title: entry.title,
-      content,
+      ...text,
       skipBeacon: true,
       overlayClickAction: "none",
       placement: placements[i],
       // On the phone screen nothing but the sheet's own list may scroll, and
       // the tutorial page moves that itself. The tour library's scrolling
-      // shifted the whole screen (12 Oct 2026).
+      // shifted the whole screen (12 Oct 2026). The library flips a card that
+      // has no room above its target to below it, but never moves it up or
+      // down into the screen, so a card with no room either side ran off it
+      // (S16): `crossAxis` lets it slide up or down until it is in view.
+      // A step's own positioning is added (S16b: Check Each Box right of the photo)
+      ...(input === "touch" || entry.floatingOptions
+        ? { floatingOptions: { ...(input === "touch" ? { shiftOptions: { crossAxis: true } } : {}), ...entry.floatingOptions } }
+        : {}),
       ...(input === "touch" ? { skipScroll: true } : {}),
+      // No taller than the room beside its target, for the tutorial page (S16b)
+      ...(entry.fitBesideTarget ? { fitBesideTarget: true } : {}),
       ...(entry.sheet ? { sheet: entry.sheet } : {}),
     };
   });

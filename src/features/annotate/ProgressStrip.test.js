@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ProgressStrip from "./ProgressStrip";
 
 /**
  * ProgressStrip is a React component with DOM interactions (scroll, click,
@@ -217,5 +220,65 @@ describe("ProgressStrip logic", () => {
       expect(canScrollLeft(0)).toBe(false);
       expect(canScrollRight(0, 500, 500)).toBe(false);
     });
+  });
+});
+
+// S16 (3 Nov 2026): the current photo first, then the strip's thumbnails
+describe("ProgressStrip thumbnails", () => {
+  const images = Array.from({ length: 6 }, (_, i) => ({ url: `/corpus-images/${i + 1}.jpg` }));
+  const thumbnails = (props) => {
+    const html = renderToStaticMarkup(createElement(ProgressStrip, { images, current: 3, onPause() {}, onStop() {}, ...props }));
+    // Each card, with its photo's <img> if it has one
+    return [...html.matchAll(/<button[^>]*data-index="(\d)"[^>]*>([\s\S]*?)<\/button>/g)].map(([, index, inner]) => ({
+      index: Number(index),
+      img: inner.match(/<img [^>]*>/)?.[0] ?? null,
+      inner,
+    }));
+  };
+
+  it("loads every thumbnail lazily, at low priority, decoded off the main thread", () => {
+    const cards = thumbnails({});
+    expect(cards).toHaveLength(6);
+    for (const card of cards) {
+      expect(card.img).toContain(`src="/corpus-images/${card.index + 1}.jpg"`);
+      expect(card.img).toContain('loading="lazy"');
+      expect(card.img).toContain('decoding="async"');
+      expect(card.img).toContain('fetchPriority="low"');
+    }
+  });
+
+  it("with deferUpcoming, draws the images still to come as numbered cards with no photo, and the current and completed ones as before", () => {
+    const cards = thumbnails({ deferUpcoming: true });
+    for (const card of cards) {
+      if (card.index <= 2) {
+        expect(card.img, `card ${card.index}`).toContain(`src="/corpus-images/${card.index + 1}.jpg"`);
+      } else {
+        expect(card.img, `card ${card.index}`).toBeNull();
+        expect(card.inner).not.toContain("src=");
+        // Still numbered
+        expect(card.inner).toContain(`>${card.index + 1}</div>`);
+      }
+    }
+  });
+
+  it("without deferUpcoming, gives every card its photo, as for any other caller", () => {
+    expect(thumbnails({ deferUpcoming: false }).every((card) => card.img !== null)).toBe(true);
+  });
+});
+
+// S16b (3 Nov 2026): the tutorial's ? button on a laptop, in place of the beacons
+describe("ProgressStrip's tour button", () => {
+  const images = [{ url: "/1.jpg" }, { url: "/2.jpg" }, { url: "/3.jpg" }];
+  const html = (props) => renderToStaticMarkup(createElement(ProgressStrip, { images, current: 1, onPause() {}, onStop() {}, ...props }));
+
+  it("shows Tour with the ? icon beside Stop Tutorial when the tutorial passes onShowTour", () => {
+    const strip = html({ isTutorial: true, onShowTour() {} });
+    expect(strip).toMatch(/<button title="Show the tour"[^>]*>.*?Tour<\/button>/);
+    expect(strip.indexOf("Show the tour")).toBeLessThan(strip.indexOf("Stop Tutorial"));
+  });
+
+  it("has no tour button without onShowTour, as in a real session", () => {
+    expect(html({})).not.toContain("Show the tour");
+    expect(html({ isTutorial: true })).not.toContain("Show the tour");
   });
 });

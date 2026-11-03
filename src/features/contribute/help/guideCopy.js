@@ -25,6 +25,13 @@ import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy
  *
  * From 2 Nov 2026 (S12) the box panel asks first whether the object is on the
  * sidewalk or the path people walk on, in sidewalkQuestionCopy.js's words.
+ * From 3 Nov 2026 (S16) the guide says a box is only the model's guess, lists
+ * what counts as the path (pathPoints, under the question: only the sidewalk
+ * nearest you counts), and says Step 2 rates that same sidewalk. The S16
+ * follow-up (3 Nov 2026) names the two questions as the box panel does,
+ * Question 1 and Question 2, in "Answer each suggestion" and "Mark boxes with
+ * nothing in them", and no paragraph says to choose No without naming which
+ * question it answers.
  *
  * Nothing here names the study's hypotheses or the reference images.
  */
@@ -49,17 +56,20 @@ export const GUIDE_COPY = Object.freeze({
       title: "Answer each suggestion",
       still: 0,
       paragraphs: Object.freeze([
-        "Dashed boxes are the model's suggestions. Click one, or tap it on a phone, to open its panel.",
-        `Check the category, then answer the question “${SIDEWALK_QUESTION_COPY.question}” with Yes or No. ${SIDEWALK_QUESTION_COPY.tutorial}`,
-        "If you choose Yes, answer “Does it obstruct the sidewalk?” with Yes or No. Answer for yourself, as you normally travel. If you choose Yes again, rate how much from 1, a minor inconvenience, to 5, impassable.",
+        "Dashed boxes are the model's suggestions. A box only means the model found an object, not that it is on the path or in your way. Click one, or tap it on a phone, to open its panel.",
+        `Check the category, then answer Question 1, “${SIDEWALK_QUESTION_COPY.question}”, with Yes or No.`,
+        "If you choose Yes, Question 2 asks “Does it obstruct the sidewalk?” Answer it for yourself, as you normally travel. If you choose Yes again, rate how much from 1, a minor inconvenience, to 5, impassable.",
       ]),
+      // What counts as the path, listed under the question (paragraph 2)
+      pathPoints: SIDEWALK_QUESTION_COPY.pathPoints,
+      pathPointsAfter: 2,
     }),
     Object.freeze({
       id: "not-an-object",
       title: "Mark boxes with nothing in them",
       still: 1,
       paragraphs: Object.freeze([
-        "If a box does not obstruct the sidewalk, choose No.",
+        "If an object is off the path, choose No to Question 1. If it is on the path but not in your way, choose No to Question 2.",
         "If a box has nothing real in it, choose Not an object at the foot of its panel.",
         "Every answer sorts the object into a list, Not obstructions or Obstructions, under the photo on a laptop and in the answers sheet on a phone or tablet. A No to the path question takes the box off the photo and lists it under Not obstructions. Click or tap a name in a list to open its panel and change the answer.",
       ]),
@@ -78,7 +88,7 @@ export const GUIDE_COPY = Object.freeze({
       title: "Rate the sidewalk",
       still: 3,
       paragraphs: Object.freeze([
-        "Step 2 asks four questions about the sidewalk as a whole. On a phone or tablet, tap the Step 2 line in the answers sheet to bring them up. If there is no sidewalk, choose None for its width, and the other three are skipped.",
+        "Step 2 asks four questions about the sidewalk nearest you as a whole, the same one as in Step 1. On a phone or tablet, tap the Step 2 line in the answers sheet to bring them up. If there is no sidewalk, choose None for its width, and the other three are skipped.",
       ]),
       listsQuestions: true,
     }),

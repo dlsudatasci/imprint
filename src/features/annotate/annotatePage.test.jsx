@@ -8,9 +8,20 @@ vi.mock("next-auth/react", () => ({ useSession: () => ({ status: "authenticated"
 vi.mock("next/router", () => ({ default: { reload: vi.fn() } }));
 vi.mock("@/ui/page", () => ({ default: ({ children }) => <div>{children}</div> }));
 vi.mock("@/features/layout/contentSkeleton", () => ({ default: () => <p>loading</p> }));
-vi.mock("@/features/annotate/selection", () => ({ default: () => <p>picker</p> }));
+// The picker's and the form's props, for the session started in place (S16)
+const seen = vi.hoisted(() => ({ picker: null, form: null }));
+vi.mock("@/features/annotate/selection", () => ({
+  default: (props) => {
+    seen.picker = props;
+    return <p>picker</p>;
+  },
+}));
 vi.mock("@/features/annotate/form", () => ({
-  default: ({ data, current, tau }) => <p>photo {data?._id} ({current}){tau === undefined ? "" : ` tau ${tau}`}</p>,
+  default: (props) => {
+    seen.form = props;
+    const { data, current, tau } = props;
+    return <p>photo {data?._id} ({current}){tau === undefined ? "" : ` tau ${tau}`}</p>;
+  },
 }));
 vi.mock("@/features/annotate/done", () => ({ default: () => <p>done</p> }));
 
@@ -131,5 +142,36 @@ describe("the batch's suggestion threshold", () => {
     const el = await open({ server: { isExistingSession: true, currentCount: 1, ...batch("a"), tau: 0.43 } });
     expect(readSessionData().tau).toBe(0.43);
     expect(el.textContent).toBe("photo a (1) tau 0.43");
+  });
+});
+
+// S16 (3 Nov 2026): Start Session shows image 1 without reloading the page
+describe("a session started from the picker", () => {
+  it("shows the form on image 1 of the served count, with no reload, no second annotationGet and no cold-visit check", async () => {
+    window.scrollTo = vi.fn();
+    const el = await open({ server: { imgRecords: [], sessionSizes: [5, 10, 20, 40], isAnnotator: false } });
+    expect(el.textContent).toBe("picker");
+    const asked = globalThis.fetch.mock.calls.length;
+
+    // What the picker does: the cache first, then the batch handed over
+    const json = { ...batch("a", "b", "c"), isAnnotator: false, isExistingSession: false, tau: 0.41 };
+    writeSession({ total: 3, current: 1, data: json });
+    writeTutorialFlag(false);
+    await act(async () => seen.picker.onStarted(json));
+    await act(async () => {});
+
+    expect(el.textContent).toBe("photo a (1) tau 0.41");
+    expect(seen.form).toMatchObject({ current: 1, total: 3, allImages: json.imgRecords, isAnnotator: false });
+    expect(Router.reload).not.toHaveBeenCalled();
+    // The effect runs again as the page renders, and asks the server nothing
+    await act(async () => root.render(<AnnotatePage />));
+    expect(globalThis.fetch).toHaveBeenCalledTimes(asked);
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+    expect(readCurrentCount()).toBe(1);
+  });
+
+  it("is offered only on the picker", async () => {
+    await open({ server: { imgRecords: [], sessionSizes: [5, 10, 20, 40] } });
+    expect(typeof seen.picker.onStarted).toBe("function");
   });
 });

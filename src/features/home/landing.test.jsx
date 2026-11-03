@@ -9,7 +9,7 @@ import ClosingSection from "./ClosingSection";
 import { HOW_IT_WORKS_COPY } from "./howItWorks/howItWorksCopy";
 import { CLOSING_COPY } from "./closingCopy";
 import { CHAPTERS, TICKS } from "./howItWorks/demoScript";
-import { TOUCH_CHAPTERS } from "./howItWorks/touchScript";
+import { TOUCH_CHAPTERS, touchFrame, touchTickOf } from "./howItWorks/touchScript";
 import { cityStatsItems } from "./cityStatsItems";
 
 /** Every string in a copy object, functions called with sample numbers */
@@ -45,8 +45,8 @@ describe("landing page copy", () => {
     expect(first.text.length).toBeLessThanOrEqual(200);
     expect(answer.text.length).toBeLessThanOrEqual(155);
     expect(draw.text.length).toBeLessThanOrEqual(100);
-    // Rate the sidewalk is left for S15
-    expect(HOW_IT_WORKS_COPY.chapters[3].text).toBe("Four quick questions about the sidewalk as a whole: how wide it is, its surface, how comfortable it looks, and whether you could get through.");
+    // Rate the sidewalk: the sidewalk nearest you, as in the tour and the guide (S16 follow-up, 3 Nov 2026)
+    expect(HOW_IT_WORKS_COPY.chapters[3].text).toBe("Four quick questions about the sidewalk nearest you: how wide it is, its surface, how comfortable it looks, and whether you could get through.");
   });
 
   it("offers Not an object only where it is offered: the model's boxes, never a drawn one", () => {
@@ -79,6 +79,21 @@ describe("landing page copy", () => {
     expect(answer.text).toContain("walking path");
     expect(answer.text).toContain("In your way");
     expect(draw.text).toContain("both questions");
+    // S16 follow-up (3 Nov 2026): the first chapter names the path question before the obstruction
+    // question, as the preview plays it (Yes to the path, Yes, severity 1), in two lines at 320 and
+    // 375 px (measured in Chrome at 71 characters)
+    const [first, , , rate] = HOW_IT_WORKS_COPY.touchChapters;
+    expect(first.text).toBe("Tap a box. On the walking path? In your way? Rate its severity, 1 to 5.");
+    expect(first.text.indexOf("walking path")).toBeLessThan(first.text.indexOf("In your way"));
+    expect(first.text.length).toBeLessThanOrEqual(72);
+    // What the first chapter plays: Tree #1, Yes to the path question, Yes, severity 1
+    expect(touchTickOf("tree-confirm", "end")).toBeLessThanOrEqual(TOUCH_CHAPTERS[1].start);
+    const tree = touchFrame(touchTickOf("tree-confirm", "end") / TICKS).boxes.find((b) => b.comment === "tree");
+    expect(tree).toMatchObject({ onSidewalk: true, selected: true, obstructs: true, severity: 1 });
+    expect(touchTickOf("tree-sidewalk")).toBeLessThan(touchTickOf("tree-yes"));
+    // Both "Rate the sidewalk" texts say which sidewalk
+    expect(rate.text).toBe("Tap the Step 2 line and answer four questions about the sidewalk nearest you.");
+    expect(HOW_IT_WORKS_COPY.chapters[3].text).toContain("the sidewalk nearest you");
     expect(TOUCH_STILL_TICKS).toHaveLength(TOUCH_CHAPTERS.length);
     TOUCH_STILL_TICKS.forEach((tick) => {
       expect(tick).toBeGreaterThanOrEqual(0);

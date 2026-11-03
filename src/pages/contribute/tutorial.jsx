@@ -12,13 +12,12 @@ import { useAnnotateLayout } from "@/hooks/useAnnotateLayout";
 import { useIsPhone } from "@/hooks/useIsPhone";
 import {
   buildTourSteps,
-  tourBeaconTargets,
   tourStepCount,
-  tourBeaconPlacements,
   tourInputFor,
   tourWordsFor,
-  tourShowsBeacons,
 } from "@/features/tutorial/tourSteps";
+import TourCard, { TourStepBody } from "@/features/tutorial/TourCard";
+import { fitBesideTarget, whenStill } from "@/features/tutorial/tourFit";
 import { SHEET_EVENT } from "@/ui/annotation-tool/index";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
@@ -28,10 +27,18 @@ import { isAnnotatorUser } from "@/util/userRole";
 // is a snap name, or { snap, scrollTo } with the selector the step points at.
 // Any request also closes an open box, so the top of the sheet shows the step.
 const moveSheet = (detail) => window.dispatchEvent(new CustomEvent(SHEET_EVENT, { detail }));
-// The sheet's slide, and a little more, before the tour measures its target
+// The sheet's slide starting, before the tour waits for its target to keep
+// still (whenStill) and measures it
 const SHEET_SETTLE_MS = 260;
+// How long after the sheet goes back down, from a step that pulled it up, the
+// next step also waits for its target to keep still: a step measured before
+// the sheet landed had its highlight where the sheet had been (S16b, found on
+// a phone 3 Nov 2026)
+const SHEET_DOWN_SETTLE_MS = 400;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // How long "Tap ? to see the tour again." stays up
 const TOUR_HINT_MS = 4000;
+
 
 // How many images the walkthrough runs through. Referenced by the step counter,
 // the progress bar, and the sampling query, so change it in one place.
@@ -47,9 +54,9 @@ const MOCKED_ENDPOINTS = [
 
 // The places the tour points at, in order, and the wording of each step
 // (annotator and contributor versions) live in src/features/tutorial/tourSteps.js,
-// so the "Step n of N" counter and the beacons can't drift from the step list.
-// Contributors have five steps (six with the touch tour on a phone or tablet,
-// 9 Oct 2026), and annotators a tour per step.
+// so the "Step n of N" counter can't drift from the step list.
+// Contributors have six steps (seven with the touch tour on a phone or tablet,
+// S16, 3 Nov 2026), and annotators a tour per step.
 
 /**
  * The guided walkthrough new contributors complete before their first real
@@ -62,9 +69,12 @@ const MOCKED_ENDPOINTS = [
  *
  * The tour has two modes:
  *
- *   touring   the tooltip is open, stepping through the four points in order
- *   beacons   idle; pulsing dots mark each point, and clicking one jumps back
- *             into the tour there
+ *   touring   the tooltip is open, stepping through the points in order
+ *   idle      closed; the ? button (the top bar on a phone, the progress
+ *             strip on a laptop) runs it again from its first step
+ *
+ * Pulsing beacons on every point marked the idle tour on a laptop until
+ * 3 Nov 2026 (S16b, Rans): now both layouts have the ? button.
  *
  * The tour library is rebuilt on every mode change, because it keeps internal
  * step state that can't otherwise be reset partway through.
@@ -72,7 +82,7 @@ const MOCKED_ENDPOINTS = [
  * Finishing all three images marks the tutorial complete, which is what unlocks
  * annotating in the navbar and on the dashboard.
  */
-/* eslint-disable react/forbid-elements -- react-joyride tooltip and beacon controls: the tour library owns these elements' props and behaviour */
+/* eslint-disable react/forbid-elements -- react-joyride tooltip controls: the tour library owns these elements' props and behaviour */
 export default function TutorialPage({ isAnnotator = false }) {
   const { status, update } = useSession();
   const loading = status === "loading";
@@ -83,11 +93,10 @@ export default function TutorialPage({ isAnnotator = false }) {
   useEffect(() => {
     setCoarsePointer(Boolean(window.matchMedia?.("(pointer: coarse)")?.matches));
   }, []);
-  // The sheet layout gets the touch tours, which point at the answers sheet
-  // and have no beacons. Phones and tablets always have it, either way up (12
-  // Oct 2026): an iPad held sideways used to get the desktop layout, with
-  // beacons over a touch screen. The desktop layout, for a mouse, keeps the
-  // pointer tours and their beacons.
+  // The sheet layout gets the touch tours, which point at the answers sheet.
+  // Phones and tablets always have it, either way up (12 Oct 2026): an iPad
+  // held sideways used to get the desktop layout. The desktop layout, for a
+  // mouse, keeps the pointer tours.
   const tourInput = tourInputFor(layout);
   const tourWords = tourWordsFor({ layout, coarsePointer });
   // The first step of a tour mentions the full-screen photo on phones and tablets
@@ -98,33 +107,31 @@ export default function TutorialPage({ isAnnotator = false }) {
   const [data, setData] = useState(null);
   const completingRef = useRef(false);
 
-  // "touring" = auto-open tooltip (disableBeacon: true on all steps)
-  // "beacons" = show pulsing dots (disableBeacon: false on all steps)
+  // "touring" = the tooltip open, "idle" = closed until the ? button
   const [tourMode, setTourMode] = useState(null);
-  const [stepOffset, setStepOffset] = useState(0);
   // Incremented to force-remount Joyride
   const [joyrideKey, setJoyrideKey] = useState(0);
   // Only true once DOM targets (.rp-stage etc) are confirmed in the page
   const [domReady, setDomReady] = useState(false);
   // Annotators move from Objects to Sidewalk to Obstructions on each image (4
-  // and 6 Oct 2026), and each step has its own tour and beacons (6 Oct 2026).
+  // and 6 Oct 2026), and each step has its own tour (6 Oct 2026).
   // Contributors stay on "objects" throughout.
   const [annotatorStep, setAnnotatorStep] = useState("objects");
   const stepCount = tourStepCount(isAnnotator, annotatorStep, tourInput);
   // Steps whose tour has already run by itself. Like Objects, Sidewalk and
   // Obstructions walk the annotator through on the first image only, once
-  // each. On later images every step shows beacons.
+  // each. On later images the ? button shows them.
   const autoTouredRef = useRef(new Set());
   // The image on screen, read inside the step-change handler below
   const currentRef = useRef(current);
   currentRef.current = current;
-  // The touch tours have no beacons, so once a tour ends nothing on the screen
-  // says how to see it again. Said once per page load, under the top bar.
+  // Once a tour ends nothing on the screen points at it, so the first time it
+  // ends the page says how to see it again, under the top bar or the navbar
   const [tourHint, setTourHint] = useState(false);
   const tourHintShownRef = useRef(false);
   const tourHintTimerRef = useRef(null);
-  const tourInputRef = useRef(tourInput);
-  tourInputRef.current = tourInput;
+  // When the sheet last went back down after a step that pulled it up
+  const sheetDownAtRef = useRef(0);
   // The full-screen photo on a phone (12 Oct 2026). A tour's steps point at the
   // top bar and the answers sheet, which are not on the screen there, so a
   // tour waits: one that would start in full screen starts on leaving it.
@@ -133,9 +140,9 @@ export default function TutorialPage({ isAnnotator = false }) {
 
   /** A tour ended: finished, dismissed with ×, or a tap on the overlay. */
   const endTour = useCallback(() => {
-    setTourMode("beacons");
+    setTourMode("idle");
     setJoyrideKey((k) => k + 1);
-    if (tourInputRef.current === "touch" && !tourHintShownRef.current) {
+    if (!tourHintShownRef.current) {
       tourHintShownRef.current = true;
       setTourHint(true);
       clearTimeout(tourHintTimerRef.current);
@@ -143,27 +150,26 @@ export default function TutorialPage({ isAnnotator = false }) {
     }
   }, []);
 
-  /** The top bar's ? button (touch): the current step's tour from its first step. */
+  /** The ? button: the current step's tour from its first step. */
   const showTour = useCallback(() => {
     // A tour step points at the top of the answers sheet, which shows the box
     // panel instead while a box is open: close it and collapse the sheet first
+    // (the event is only heard on the sheet layout)
     moveSheet("collapsed");
     setTourHint(false);
-    setStepOffset(0);
     setTourMode("touring");
     setJoyrideKey((k) => k + 1);
   }, []);
 
   const handleAnnotatorStepChange = useCallback((step) => {
     setAnnotatorStep(step);
-    setStepOffset(0);
     setJoyrideKey((k) => k + 1);
     if (step !== "objects" && currentRef.current === 1 && !autoTouredRef.current.has(step)) {
       autoTouredRef.current.add(step);
       setTourMode("touring");
     } else {
       // A tour left open in the previous step would otherwise carry over
-      setTourMode("beacons");
+      setTourMode("idle");
     }
   }, []);
 
@@ -183,9 +189,8 @@ export default function TutorialPage({ isAnnotator = false }) {
       if (target) {
         clearInterval(interval);
         // Walk them through it once on the first image; after that they've seen
-        // the explanations, so sit back in beacon mode and let them ask
-        setTourMode(current === 1 ? "touring" : "beacons");
-        setStepOffset(0);
+        // the explanations, and the ? button shows them again
+        setTourMode(current === 1 ? "touring" : "idle");
         setJoyrideKey((k) => k + 1);
         setDomReady(true);
       }
@@ -201,82 +206,81 @@ export default function TutorialPage({ isAnnotator = false }) {
     primaryProps,
     tooltipProps,
   }) => (
-    <div
-      {...tooltipProps}
-      className="bg-surface rounded-card p-5 shadow-2xl w-[320px] max-w-[calc(100vw-32px)] border border-line font-sans z-[10000]"
-    >
-      <div className="flex justify-between items-start mb-2">
-        {step.title && <h3 className="font-bold text-lg text-ink">{step.title}</h3>}
-        {!step.title && <div />}
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            endTour();
-          }}
-          aria-label="Dismiss tour"
-          className="text-subtle hover:text-body transition-colors duration-300 bg-surface-subtle hover:bg-line-card rounded-full shrink-0 w-6 h-6 flex items-center justify-center -mr-2 -mt-2"
-        >
-          ×
-        </button>
-      </div>
-      <div className="text-body text-sm leading-relaxed mb-5">
-        {step.content}
-      </div>
-      <div className="flex justify-between items-center mt-4">
-        <span className="text-xs font-semibold text-subtle">
-          Step {index + stepOffset + 1} of {stepCount}
-        </span>
-        <div className="flex gap-2">
-          {(index > 0 || stepOffset > 0) && (
+    <TourCard
+      tooltipProps={tooltipProps}
+      title={step.title}
+      onDismiss={endTour}
+      footer={(
+        <>
+          <span className="text-xs font-semibold text-subtle">
+            Step {index + 1} of {stepCount}
+          </span>
+          <div className="flex gap-2">
+            {index > 0 && (
+              <button
+                onClick={(e) => backProps.onClick(e)}
+                className="px-4 py-2 text-sm font-semibold text-body bg-surface-subtle hover:bg-line rounded-control transition-colors"
+              >
+                Back
+              </button>
+            )}
             <button
               onClick={(e) => {
-                if (index === 0) {
+                if (index === stepCount - 1) {
                   e.preventDefault();
-                  setStepOffset(stepOffset - 1);
-                  setJoyrideKey((k) => k + 1);
+                  endTour();
                 } else {
-                  backProps.onClick(e);
+                  primaryProps.onClick(e);
                 }
               }}
-              className="px-4 py-2 text-sm font-semibold text-body bg-surface-subtle hover:bg-line rounded-control transition-colors"
+              className="px-4 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary/90 rounded-control transition-colors shadow-sm"
             >
-              Back
+              {index === stepCount - 1 ? "Finish" : "Next"}
             </button>
-          )}
-          <button
-            onClick={(e) => {
-              if (index + stepOffset === stepCount - 1) {
-                e.preventDefault();
-                endTour();
-              } else {
-                primaryProps.onClick(e);
-              }
-            }}
-            className="px-4 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary/90 rounded-control transition-colors shadow-sm"
-          >
-            {index + stepOffset === stepCount - 1 ? "Finish" : "Next"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </div>
+        </>
+      )}
+    >
+      {step.content}
+    </TourCard>
   );
 
   // A touch tour step whose target is in the part of the answers sheet pulled
   // down carries `sheet: "full"`: the sheet moves up before that step, with
-  // its target scrolled into view, and back after it
+  // its target scrolled into view, and back after it. A step's text becomes
+  // its element here (a contributor step's numbered list, S16), so
+  // tourSteps.js stays plain data.
   const buildSteps = useCallback(
-    () => buildTourSteps(isAnnotator, annotatorStep, tourInput, { words: tourWords, phone: phone === true, tablet }).map(({ sheet, ...step }) =>
-      sheet === "full"
-        ? {
+    () => buildTourSteps(isAnnotator, annotatorStep, tourInput, { words: tourWords, phone: phone === true, tablet }).map(({ sheet, fitBesideTarget: fit, ...plain }) => {
+      const step = {
+        ...plain,
+        content: <TourStepBody step={plain} />,
+        ...(fit ? { floatingOptions: { ...plain.floatingOptions, middleware: [fitBesideTarget] } } : {}),
+      };
+      if (sheet === "full") {
+        return {
           ...step,
+          // The highlight is measured once the target has stopped moving: a
+          // fixed wait was too short on a slower phone (3 Nov 2026)
           before: () => {
             moveSheet({ snap: "full", scrollTo: step.target });
-            return new Promise((resolve) => setTimeout(resolve, SHEET_SETTLE_MS));
+            return wait(SHEET_SETTLE_MS).then(() => whenStill(step.target));
           },
-          after: () => moveSheet("collapsed"),
-        }
-        : step
-    ),
+          after: () => {
+            moveSheet("collapsed");
+            sheetDownAtRef.current = Date.now();
+          },
+        };
+      }
+      // Any other step, just after the sheet went down, waits for its target
+      // to keep still, so its highlight is not measured where the sheet had
+      // been. The tour library always waits on what `before` returns, so it
+      // is always a promise (an undefined one stopped the whole page).
+      return {
+        ...step,
+        before: () => (Date.now() - sheetDownAtRef.current < SHEET_DOWN_SETTLE_MS ? whenStill(step.target) : Promise.resolve()),
+      };
+    }),
     [isAnnotator, annotatorStep, tourInput, tourWords, phone, tablet]
   );
 
@@ -296,7 +300,7 @@ export default function TutorialPage({ isAnnotator = false }) {
   }, [tourMode, endTour]);
 
   // Once the tour runs out of steps (or is skipped) we drop back to the
-  // idle state: pulsing beacons the user can click to replay any single step.
+  // idle state, until the ? button.
   const handleJoyrideCallback = useCallback(({ status: tourStatus }) => {
     if (tourStatus === "finished" || tourStatus === "skipped") endTour();
   }, [endTour]);
@@ -421,8 +425,9 @@ export default function TutorialPage({ isAnnotator = false }) {
         isTutorial
         isAnnotator={isAnnotator}
         onAnnotatorStepChange={handleAnnotatorStepChange}
-        // Touch: no beacons, so the top bar gets a ? button that replays the tour
-        onShowTour={tourShowsBeacons(tourInput) ? undefined : showTour}
+        // The ? button that replays the tour: the top bar on a phone, the
+        // progress strip on a laptop (S16b, in place of the laptop's beacons)
+        onShowTour={showTour}
         onFocusChange={setFullScreen}
       />
 
@@ -430,29 +435,19 @@ export default function TutorialPage({ isAnnotator = false }) {
         <p
           role="status"
           className="pointer-events-none fixed left-1/2 -translate-x-1/2 z-[60] px-3 py-2 rounded-full bg-ink/85 text-white text-xs font-semibold whitespace-nowrap"
-          style={{ top: "calc(env(safe-area-inset-top) + 56px)" }}
+          style={{ top: tourInput === "touch" ? "calc(env(safe-area-inset-top) + 56px)" : "calc(var(--nav-h, 64px) + 12px)" }}
         >
-          Tap ? to see the tour again.
+          {/* On a laptop the tour ends scrolled down, with the strip's Tour
+              button out of view at the top of the page */}
+          {tourInput === "touch" ? "Tap ? to see the tour again." : "Click Tour at the top of the page to see the tour again."}
         </p>
-      )}
-
-      {/* Custom pulsing beacons on every target of the step's tour, shown when
-          not in active tour. Keyed on the step so they measure again for each step.
-          Not on touch (12 Oct 2026): over the photo and the sheet they blocked
-          swipes and drags. */}
-      {domReady && tourMode === "beacons" && tourShowsBeacons(tourInput) && !fullScreen && (
-        <TutorialBeacons key={`beacons-${annotatorStep}-${current}-${tourInput}`} isAnnotator={isAnnotator} annotatorStep={annotatorStep} input={tourInput} onBeaconClick={(idx) => {
-          setStepOffset(idx);
-          setTourMode("touring");
-          setJoyrideKey((k) => k + 1);
-        }} />
       )}
 
       {/* Joyride guided tour — only in touring mode */}
       {domReady && tourMode === "touring" && !fullScreen && (
         <Joyride
           key={`joyride-${joyrideKey}`}
-          steps={buildSteps().slice(stepOffset)}
+          steps={buildSteps()}
           run={true}
           continuous
           showSkipButton
@@ -469,127 +464,6 @@ export default function TutorialPage({ isAnnotator = false }) {
         />
       )}
     </Page>
-  );
-}
-
-/**
- * Pulsing dots on every tour target at once, shown when the tour isn't running.
- *
- * Joyride's own beacons appear one at a time, in sequence. Showing them all
- * lets someone jump straight to the part they're unsure about instead of
- * stepping through the whole tour again.
- *
- * Positioned absolutely against the document (rect + scrollY) rather than
- * fixed to the viewport, so they scroll with the page. They follow their
- * targets when the layout moves (6 Oct 2026): an error message pushing the
- * buttons down, an image finishing loading, a card growing, or the sticky
- * guide card sliding as the page scrolls. Every such change schedules one
- * re-measure on the next animation frame.
- */
-function TutorialBeacons({ isAnnotator = false, annotatorStep = "objects", input = "pointer", onBeaconClick }) {
-  // One beacon per step of the tour on screen, so a beacon's index is its step.
-  // Each tour says where its beacons sit (tourBeaconPlacements): above the
-  // target by default, and to its left beside the photo for the contributor
-  // severity step and in the Sidewalk step, where the drawing tools sit at the
-  // top of the photo's card.
-  // The touch tour's beacons sit above or below their targets only (9 Oct 2026)
-  const placements = tourBeaconPlacements(isAnnotator, annotatorStep, input);
-  const targets = tourBeaconTargets(isAnnotator, annotatorStep, input).map((sel, i) => ({
-    sel,
-    placement: placements[i],
-    offset: 15,
-  }));
-  const [positions, setPositions] = useState([]);
-
-  useEffect(() => {
-    let lastKey = "";
-    const calcPositions = () => {
-      const pos = targets.map((t, index) => {
-        const el = document.querySelector(t.sel);
-        if (!el) return null;
-        const rect = el.getBoundingClientRect();
-
-        let top;
-        let left = rect.left + window.scrollX + rect.width / 2;
-        if (t.placement === "bottom") {
-          top = rect.bottom + t.offset;
-        } else if (t.placement === "left") {
-          // Beside the target, level with its middle, in the gutter
-          top = rect.top + rect.height / 2;
-          left = rect.left + window.scrollX - t.offset - 7;
-        } else {
-          top = rect.top - t.offset;
-        }
-
-        return {
-          top: top + window.scrollY,
-          left,
-          index
-        };
-      }).filter(Boolean);
-      // Skip the re-render when nothing moved
-      const key = JSON.stringify(pos);
-      if (key !== lastKey) {
-        lastKey = key;
-        setPositions(pos);
-      }
-    };
-
-    // At most one measurement per frame, however many changes arrive
-    let frame = null;
-    const schedule = () => {
-      if (frame !== null) return;
-      frame = requestAnimationFrame(() => {
-        frame = null;
-        calcPositions();
-      });
-    };
-
-    calcPositions();
-
-    // The page growing or shrinking (an error message, a loaded image) and
-    // each target changing size
-    const resizeObserver = new ResizeObserver(schedule);
-    resizeObserver.observe(document.body);
-    for (const t of targets) {
-      const el = document.querySelector(t.sel);
-      if (el) resizeObserver.observe(el);
-    }
-    // Elements added or removed anywhere, which can shift a target without
-    // changing the page's size
-    const mutationObserver = new MutationObserver(schedule);
-    mutationObserver.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener("resize", schedule);
-    // Capture, so scrolling inside any container counts too. The sticky guide
-    // card moves relative to the page as it scrolls.
-    window.addEventListener("scroll", schedule, true);
-
-    return () => {
-      if (frame !== null) cancelAnimationFrame(frame);
-      resizeObserver.disconnect();
-      mutationObserver.disconnect();
-      window.removeEventListener("resize", schedule);
-      window.removeEventListener("scroll", schedule, true);
-    };
-  }, []);
-
-  return (
-    <>
-      {positions.map((pos) => (
-        <button
-          key={pos.index}
-          onClick={() => onBeaconClick(pos.index)}
-          className="absolute z-[9999] w-9 h-9 flex items-center justify-center"
-          style={{ top: pos.top - 18, left: pos.left - 18 }}
-        >
-          {/* The ripple grows to twice the beacon. It must not take clicks: it
-              reached over the bottom of the photo, where a click meant for the
-              sidewalk outline opened the tour instead (found 13 Oct 2026). */}
-          <span className="pointer-events-none absolute w-full h-full rounded-full bg-ink/30 animate-ping" />
-          <span className="relative w-4 h-4 rounded-full bg-ink" />
-        </button>
-      ))}
-    </>
   );
 }
 

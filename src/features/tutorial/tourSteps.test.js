@@ -3,20 +3,34 @@ import {
   buildTourSteps,
   tourTargets,
   tourStepCount,
-  tourBeaconPlacements,
-  tourBeaconTargets,
   tourInputFor,
   tourWordsFor,
-  tourShowsBeacons,
   PHONE_FULL_SCREEN_SENTENCE,
   TABLET_FULL_SCREEN_SENTENCE,
+  FULL_SCREEN_TIP,
+  CONTRIBUTOR_BUDGET,
 } from "./tourSteps";
+import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
+
+// A contributor step's words: intro, points, after (S16b) and note (S16)
+const wordsOf = (step) => [step.intro, ...step.points, step.after, step.note].filter(Boolean);
+const countWords = (text) => text.split(/\s+/).filter(Boolean).length;
+// Every contributor tour as it can be shown: pointer, pointer said for a finger, touch on a phone and on a tablet
+const CONTRIBUTOR_TOURS = [
+  ["pointer", {}],
+  ["pointer", { words: "touch" }],
+  ["touch", {}],
+  ["touch", { phone: true }],
+  ["touch", { tablet: true }],
+];
 
 describe("tour steps", () => {
-  it("gives contributors five steps at the five targets", () => {
-    expect(tourStepCount(false)).toBe(5);
+  // S16 (3 Nov 2026): the path step is new, and Step 1's instructions are its target
+  it("gives contributors six steps at the six targets", () => {
+    expect(tourStepCount(false)).toBe(6);
     expect([...tourTargets(false)]).toEqual([
       ".rp-stage",
+      "#step1-instructions",
       "#box-review-section",
       ".rp-stage",
       "#scene-level-section",
@@ -24,13 +38,25 @@ describe("tour steps", () => {
     ]);
     const steps = buildTourSteps(false);
     expect(steps.map((s) => s.title)).toEqual([
-      "Annotation Canvas",
+      "Check Each Box",
+      "What Counts as the Path",
       "Your Answers",
       "Severity",
       "Scene-Level Assessment",
       // The button reads Next Image, not Submit (12 Oct 2026)
       "Next Image",
     ]);
+    // Check Each Box right of the photo (S16b): below it, it could not be read without scrolling
+    expect(steps.map((s) => s.placement)).toEqual(["right", "bottom", "top", "bottom", "top", "top"]);
+  });
+
+  // S16b (3 Nov 2026): never below the photo, and over its right side where there is no room on the right
+  it("keeps Check Each Box beside the photo: no flip below it, and a slide over it or up and down into the screen", () => {
+    for (const words of ["pointer", "touch"]) {
+      const [check, ...rest] = buildTourSteps(false, "objects", "pointer", { words });
+      expect(check.floatingOptions).toEqual({ flipOptions: false, shiftOptions: { crossAxis: true } });
+      for (const s of rest) expect(s).not.toHaveProperty("floatingOptions");
+    }
   });
 
   it("gives annotators four steps in Objects, the last pointing to Sidewalk (6 Oct 2026)", () => {
@@ -94,49 +120,131 @@ describe("tour steps", () => {
     for (const s of buildTourSteps(true)) expect(s.content).not.toMatch(/[Rr]eference/);
   });
 
-  it("keeps the contributor wording for the canvas step", () => {
-    const [canvas] = buildTourSteps(false);
-    expect(canvas.content).toMatch(/^Dashed yellow boxes are model suggestions\./);
+  // S16b (3 Nov 2026): Rans's wording
+  it("lists the two questions, with no line on the dashed boxes (Rans, 3 Nov 2026)", () => {
+    const [check] = buildTourSteps(false);
+    expect(check).not.toHaveProperty("intro");
+    expect(check.points).toEqual([
+      "Click a box and check its label.",
+      `Question 1 asks only where it is: “${SIDEWALK_QUESTION_COPY.question}”`,
+      "Question 2 asks whether it obstructs the path for you.",
+      "Nothing real in it? Click Not an object.",
+    ]);
+    expect(check).not.toHaveProperty("after");
+    expect(check.note).toBe("Missed one? Click and drag to box it.");
   });
 
-  it("points contributors' second step at the lists of answers (7 Oct 2026)", () => {
-    const answers = buildTourSteps(false)[1];
+  it("adds a step on what counts as the path, the nearest sidewalk only, to both tours, with no note", () => {
+    for (const input of ["pointer", "touch"]) {
+      const path = buildTourSteps(false, "objects", input)[1];
+      expect(path.title).toBe("What Counts as the Path");
+      expect(path.points).toEqual([...SIDEWALK_QUESTION_COPY.pathPoints]);
+      expect(path.points.join(" ")).toContain("Only the one nearest you counts. Answer No for objects on a farther one.");
+      for (const key of ["intro", "after", "note"]) expect(path).not.toHaveProperty(key);
+    }
+    expect(buildTourSteps(false)[1].target).toBe("#step1-instructions");
+  });
+
+  it("points contributors' answers step at the lists under the photo, with no list of its own", () => {
+    const answers = buildTourSteps(false)[2];
     expect(answers.target).toBe("#box-review-section");
     expect(answers.title).toBe("Your Answers");
-    expect(answers.content).toBe(
-      "Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you draw are listed there too. A No to the path question takes the box off the photo and lists it under Not obstructions. Answering No is just as valuable as answering Yes. An object on the sidewalk that does not get in the way is just as useful to record as one that does. Click any object to change its answer. A box off the photo shows again while it is open. Click the eye beside an object to hide its box on the photo while you work on boxes around it."
-    );
+    expect(answers.intro).toBe("Every answer goes into a list under the photo.");
+    expect(answers.points).toEqual([]);
+    // Hide all and Show all named too (Rans, 3 Nov 2026)
+    expect(answers.after).toBe("Click a name to open it and change the answer. Click the eye to hide a box while you work on the boxes around it. Click Hide all to hide all the boxes on the photo. Click Show all to show them again.");
+    expect(answers).not.toHaveProperty("note");
   });
 
-  it("points the contributor severity step at the photo, where the scale opens (8 Oct 2026)", () => {
-    const severity = buildTourSteps(false)[2];
+  it("points the contributor severity step at the photo, with the scale and no intro", () => {
+    const severity = buildTourSteps(false)[3];
     expect(severity.title).toBe("Severity");
     expect(severity.target).toBe(".rp-stage");
     expect(severity.placement).toBe("bottom");
-    expect(severity.content).toContain("a scale opens on the photo beside the box");
-    expect(severity.content).toContain("Confirm");
-    expect(severity.content).not.toContain(";");
+    expect(severity).not.toHaveProperty("intro");
+    expect(severity.points).toEqual([
+      "Rate how much it blocks you, from 1 (a minor inconvenience) to 5 (it completely blocks the path).",
+      "Click Confirm.",
+      "To change it later, open the box and click Change.",
+    ]);
+  });
+
+  it("keeps the joined text as `content`: the intro, the points as sentences, after, then the note", () => {
+    for (const [input, options] of CONTRIBUTOR_TOURS) {
+      for (const s of buildTourSteps(false, "objects", input, options)) {
+        const sentences = s.points.map((p) => (/[.?!”]$/.test(p) ? p : `${p}.`));
+        expect(s.content).toBe([s.intro, ...sentences, s.after, s.note].filter(Boolean).join(" "));
+      }
+    }
+    expect(buildTourSteps(false)[0].content).toBe(`Click a box and check its label. Question 1 asks only where it is: “${SIDEWALK_QUESTION_COPY.question}” Question 2 asks whether it obstructs the path for you. Nothing real in it? Click Not an object. Missed one? Click and drag to box it.`);
+    expect(buildTourSteps(false)[2].content).toBe(`Every answer goes into a list under the photo. ${buildTourSteps(false)[2].after}`);
+  });
+
+  it("keeps every contributor step within the budget: 80 words, 5 points, 18 words a point", () => {
+    expect(CONTRIBUTOR_BUDGET).toEqual({ words: 80, points: 5, wordsPerPoint: 18 });
+    for (const [input, options] of CONTRIBUTOR_TOURS) {
+      for (const s of buildTourSteps(false, "objects", input, options)) {
+        // The question's own words are counted with the rest
+        expect(countWords(wordsOf(s).join(" ")), `${input} ${s.title}`).toBeLessThanOrEqual(80);
+        expect(s.points.length, s.title).toBeLessThanOrEqual(5);
+        for (const point of s.points) expect(countWords(point), point).toBeLessThanOrEqual(18);
+      }
+    }
+  });
+
+  it("drops the wording Rans cut (S16b), on every contributor tour", () => {
+    for (const [input, options] of CONTRIBUTOR_TOURS) {
+      const text = buildTourSteps(false, "objects", input, options).map((s) => s.content).join(" ");
+      expect(text).not.toContain("A No is just as useful");
+      expect(text).not.toMatch(/for yourself, traveling/);
+      expect(text).not.toMatch(/a scale opens/);
+      expect(text).not.toMatch(/model's guesses/);
+      expect(text).not.toMatch(/dashed yellow boxes are suggested/i);
+      expect(text).not.toMatch(/Finish Session/);
+      expect(text).not.toMatch(/double-tap/);
+    }
+  });
+
+  it("has no em dash or semicolon in any contributor step", () => {
+    for (const [input, options] of CONTRIBUTOR_TOURS) {
+      for (const s of buildTourSteps(false, "objects", input, options)) {
+        expect([s.title, ...wordsOf(s), s.content].join(" ")).not.toMatch(/[—;]/);
+      }
+    }
   });
 
   it("tells contributors that Not an object is a button, not a category (7 Oct 2026)", () => {
-    const [canvas] = buildTourSteps(false);
-    expect(canvas.content).toContain("click Not an object");
-    expect(canvas.content).not.toContain("from the list. You can");
+    const [check] = buildTourSteps(false);
+    expect(check.points).toContain("Nothing real in it? Click Not an object.");
+    expect(check.content).not.toContain("from the list. You can");
+  });
+
+  it("leaves annotator steps as one paragraph, with no list", () => {
+    for (const step of ["objects", "sidewalk", "obstructions"]) {
+      for (const input of ["pointer", "touch"]) {
+        for (const s of buildTourSteps(true, step, input)) {
+          expect(s.content).toBeTruthy();
+          for (const key of ["intro", "points", "after", "note", "fitBesideTarget"]) expect(s).not.toHaveProperty(key);
+        }
+      }
+    }
   });
 
   it("names what each role's last step needs and never says the button is disabled", () => {
     const contributorSubmit = buildTourSteps(false).at(-1);
     const annotatorNext = buildTourSteps(true).at(-1);
     for (const step of [contributorSubmit, annotatorNext]) {
-      expect(step.content).toMatch(/a message tells you what to finish/);
       expect(step.content).not.toMatch(/disabled/i);
       expect(step.content).not.toMatch(/accepted or rejected/);
     }
+    expect(annotatorNext.content).toMatch(/a message tells you what to finish/);
     expect(contributorSubmit.title).toBe("Next Image");
-    expect(contributorSubmit.content).toMatch(/^Click Next Image when/);
-    expect(contributorSubmit.content).toMatch(/On the last image the button reads Finish Session\./);
-    expect(contributorSubmit.content).toMatch(/\(Yes, No, or Not an object\)/);
-    expect(contributorSubmit.content).toMatch(/all four scene-level questions/);
+    // No list and no intro (S16b)
+    expect(contributorSubmit.points).toEqual([]);
+    for (const key of ["intro", "note"]) expect(contributorSubmit).not.toHaveProperty(key);
+    // Rans's two sentences (3 Nov 2026), without Finish Session
+    expect(contributorSubmit.after).toBe("Click Next Image once every box has an answer. If something is missing, there will be a warning to specify what's missing.");
+    expect(contributorSubmit.content).not.toMatch(/Finish Session/);
   });
 
   it("tells annotators to click Next: Sidewalk, outline the walking space, then mark obstructions", () => {
@@ -150,11 +258,15 @@ describe("tour steps", () => {
     expect(annotatorNext.content).not.toMatch(/scene-level|Yes or No/);
   });
 
-  it("describes the current scene questions to contributors", () => {
-    const sceneStep = buildTourSteps(false)[3];
-    expect(sceneStep.content).toMatch(/its width, its surface condition, how comfortable it looks for walking/);
-    expect(sceneStep.content).toMatch(/choose None and the other three are skipped/);
-    expect(sceneStep.content).not.toMatch(/whether a sidewalk is present/);
+  it("names the current four scene questions, rated on the sidewalk nearest you (S16)", () => {
+    for (const input of ["pointer", "touch"]) {
+      const sceneStep = buildTourSteps(false, "objects", input).find((s) => s.title === "Scene-Level Assessment");
+      expect(sceneStep.target).toBe("#scene-level-section");
+      expect(sceneStep.intro).toBe("Then rate the sidewalk nearest you as a whole:");
+      expect(sceneStep.points).toEqual(["Its width", "Its surface condition", "How comfortable it looks for walking", "Whether you could get along it yourself"]);
+      expect(sceneStep.note).toMatch(/Choose None and the other three are skipped/);
+      expect(sceneStep.content).not.toMatch(/whether a sidewalk is present/);
+    }
   });
 
   it("has no em dash in any step for either role", () => {
@@ -209,20 +321,15 @@ describe("annotator tours for Sidewalk and Obstructions", () => {
     expect(submit.content).toMatch(/the box is ticked/);
   });
 
-  it("puts the Sidewalk beacons for the photo and toolbar to their left, and the rest above", () => {
-    expect(tourBeaconPlacements(true, "sidewalk")).toEqual(["left", "left", "top", "top", "top"]);
-    expect(tourBeaconPlacements(true, "obstructions")).toEqual(["top", "top", "top", "top"]);
-    expect(tourBeaconPlacements(true, "objects")).toEqual(["top", "top", "top", "top"]);
-    // The severity step's beacon sits beside the photo's left edge (8 Oct 2026)
-    expect(tourBeaconPlacements(false)).toEqual(["top", "top", "left", "top", "top"]);
-  });
-
-  it("has one beacon and one target per tour step for every tour", () => {
+  // No tour has beacons (S16b, 3 Nov 2026): a ? button runs it again on both layouts
+  it("has one target per tour step for every tour, and no beacons anywhere", () => {
     for (const [isAnnotator, step] of [[false, "objects"], [true, "objects"], [true, "sidewalk"], [true, "obstructions"]]) {
-      const steps = buildTourSteps(isAnnotator, step);
-      expect(steps).toHaveLength(tourStepCount(isAnnotator, step));
-      expect(tourBeaconPlacements(isAnnotator, step)).toHaveLength(steps.length);
-      expect(steps.map((s) => s.target)).toEqual([...tourTargets(isAnnotator, step)]);
+      for (const input of ["pointer", "touch"]) {
+        const steps = buildTourSteps(isAnnotator, step, input);
+        expect(steps).toHaveLength(tourStepCount(isAnnotator, step, input));
+        expect(steps.map((s) => s.target)).toEqual([...tourTargets(isAnnotator, step, input)]);
+        for (const s of steps) expect(s.skipBeacon).toBe(true);
+      }
     }
   });
 
@@ -230,12 +337,6 @@ describe("annotator tours for Sidewalk and Obstructions", () => {
     expect(buildTourSteps(false, "sidewalk")).toEqual(buildTourSteps(false));
     expect(buildTourSteps(true, "nope")).toEqual(buildTourSteps(true, "objects"));
     expect(buildTourSteps(true)).toEqual(buildTourSteps(true, "objects"));
-  });
-
-  it("returns a copy of the beacon placements", () => {
-    const placements = tourBeaconPlacements(true, "sidewalk");
-    placements[0] = "bottom";
-    expect(tourBeaconPlacements(true, "sidewalk")[0]).toBe("left");
   });
 
   it("has no em dash or semicolon in the Sidewalk and Obstructions tours", () => {
@@ -249,79 +350,87 @@ describe("annotator tours for Sidewalk and Obstructions", () => {
 
 // Contributors on a phone or tablet (9 Oct 2026)
 describe("the touch tour", () => {
-  it("gives contributors six steps at six targets, and leaves the other tours as they were", () => {
-    expect(tourStepCount(false, "objects", "touch")).toBe(6);
+  it("gives contributors seven steps at seven targets, and leaves the other tours as they were", () => {
+    expect(tourStepCount(false, "objects", "touch")).toBe(7);
     expect([...tourTargets(false, "objects", "touch")]).toEqual([
       ".rp-stage",
+      ".rp-stage",
       "#add-box-button",
-      "#box-review-section-peek",
+      // The lists in the sheet pulled up, Still to decide to the Obstructions card, with no padding (S16b)
+      "#box-review-lists",
       "#box-review-chips-peek",
       "#scene-level-section",
       "button[type='submit']",
     ]);
     const steps = buildTourSteps(false, "objects", "touch");
     expect(steps.map((s) => s.title)).toEqual([
-      "Annotation Canvas",
+      "Check Each Box",
+      "What Counts as the Path",
       "Add a Box",
       "Your Answers",
       "Severity",
       "Scene-Level Assessment",
       "Next Image",
     ]);
-    expect(steps.at(-1).content).toMatch(/^Tap Next Image when/);
-    expect(steps.at(-1).content).toContain("Finish Session");
+    // Add a Box and Your Answers point at their targets (S16b): a centred card has no highlight
+    expect(steps.map((s) => s.placement)).toEqual(["center", "center", "top", "top", "top", "center", "top"]);
+    expect(steps.map((s) => s.fitBesideTarget)).toEqual([undefined, undefined, true, true, undefined, undefined, undefined]);
+    expect(steps.at(-1).after).toBe("Tap Next Image once every box has an answer. If something is missing, there will be a warning to specify what's missing.");
     expect(steps.map((s) => s.target)).toEqual([...tourTargets(false, "objects", "touch")]);
-    expect(tourBeaconPlacements(false, "objects", "touch")).toHaveLength(6);
-    // Step 2 is in the part of the sheet pulled down, and only that step says so
-    expect(steps.map((s) => s.sheet)).toEqual([undefined, undefined, undefined, undefined, "full", undefined]);
+    // The answers and Step 2 are in the part of the sheet pulled down, and only those steps say so
+    expect(steps.map((s) => s.sheet)).toEqual([undefined, undefined, undefined, "full", undefined, "full", undefined]);
     // The pointer tour is as it was
     expect(buildTourSteps(false, "objects", "pointer")).toEqual(buildTourSteps(false));
-    expect(tourStepCount(false, "objects", "pointer")).toBe(5);
+    expect(tourStepCount(false, "objects", "pointer")).toBe(6);
   });
 
-  it("explains Add box, the corners, the magnifier and pinch to zoom", () => {
-    const text = buildTourSteps(false, "objects", "touch").map((s) => s.content).join(" ");
-    expect(text).toContain("tap Add box");
-    expect(text).toContain("four corners");
-    expect(text).toContain("magnifier");
-    expect(text).toContain("Pinch to zoom");
-    expect(text).toContain("bottom of the screen");
+  it("says the desktop wording with Tap, and Add box in its own step", () => {
+    const [check, path, add, answers, severity, , next] = buildTourSteps(false, "objects", "touch");
+    const desktop = buildTourSteps(false);
+    expect(check.points).toEqual(desktop[0].points.map((p) => p.replace("Click", "Tap")));
+    for (const key of ["after", "note"]) expect(check).not.toHaveProperty(key);
+    expect(path.points).toEqual(desktop[1].points);
+    expect(add.points).toEqual([
+      "Tap Add box. A box appears in the middle of the photo.",
+      "Drag its four corners to fit the object. A magnifier shows where each corner sits.",
+      "Pick its category and answer both questions.",
+    ]);
+    expect(add.note).toBe("Pinch to zoom in on small objects.");
+    expect(answers.intro).toBe("Every object is listed at the bottom of the screen.");
+    expect(answers.points).toEqual([]);
+    expect(answers.after).toBe("Pull the list up to see them all. Tap a name to open it and change the answer. Tap the eye to hide a box while you work on the boxes around it. Tap Hide all to hide all the boxes on the photo. Tap Show all to show them again.");
+    expect(answers).not.toHaveProperty("note");
+    expect(severity).not.toHaveProperty("intro");
+    expect(severity.points).toEqual([
+      "Rate how much it blocks you, from 1 (a minor inconvenience) to 5 (it completely blocks the path).",
+      "Tap Confirm.",
+      "To change it later, open the box and tap Change.",
+    ]);
+    expect(next.points).toEqual([]);
+    expect(next.after).toBe(desktop.at(-1).after.replace("Click", "Tap"));
   });
 
-  it("says the open or new box is the only one on the photo, and how to show a hidden box again (14 Oct 2026)", () => {
-    for (const isAnnotator of [false, true]) {
-      const steps = buildTourSteps(isAnnotator, "objects", "touch");
-      expect(steps[0].content).toContain("While a box is open it is the only box on the photo, and the others come back when you close it.");
-      expect(steps[1].content).toContain("Until you close it, it is the only box on the photo.");
-      expect(steps[2].content).toContain("To show a hidden box again, double-tap where it was.");
-    }
-    const annotatorList = buildTourSteps(true, "objects", "touch")[2].content;
-    expect(annotatorList).toContain("with what is left first: the suggestions still to decide and the boxes with no category yet");
-    expect(annotatorList).toContain("Hide all and Show all, beside the step's name");
-    expect(buildTourSteps(false, "objects", "touch")[2].content).toContain("Hide all and Show all, beside the step's name");
-  });
-
-  it("puts no beacon beside its target", () => {
-    expect(tourBeaconPlacements(false, "objects", "touch").every((p) => p === "top" || p === "bottom")).toBe(true);
+  it("says how to show a hidden box again in the annotator tour, unchanged (14 Oct 2026)", () => {
+    const steps = buildTourSteps(true, "objects", "touch");
+    expect(steps[0].content).toContain("While a box is open it is the only box on the photo, and the others come back when you close it.");
+    expect(steps[1].content).toContain("Until you close it, it is the only box on the photo.");
+    expect(steps[2].content).toContain("To show a hidden box again, double-tap where it was.");
+    expect(steps[2].content).toContain("with what is left first: the suggestions still to decide and the boxes with no category yet");
+    expect(steps[2].content).toContain("Hide all and Show all, beside the step's name");
   });
 
   it("never says click, and has no em dash or semicolon", () => {
-    for (const s of buildTourSteps(false, "objects", "touch")) {
-      expect(`${s.title} ${s.content}`).not.toMatch(/click/i);
-      expect(`${s.title} ${s.content}`).not.toMatch(/[—;]/);
+    for (const options of [{}, { phone: true }, { tablet: true }]) {
+      for (const s of buildTourSteps(false, "objects", "touch", options)) {
+        const text = [s.title, ...wordsOf(s), s.content].join(" ");
+        expect(text).not.toMatch(/click/i);
+        expect(text).not.toMatch(/[—;]/);
+      }
     }
   });
-
-  it("measures the Step 2 beacon on the sheet's Step 2 line when there is one", () => {
-    const beaconTargets = tourBeaconTargets(false, "objects", "touch");
-    expect(beaconTargets).toHaveLength(6);
-    expect(beaconTargets[4]).toBe("#scene-level-peek, #scene-level-section");
-    expect([...tourBeaconTargets(false)]).toEqual([...tourTargets(false)]);
-  });
-
 });
 
-// 12 Oct 2026: which tour and which wording, and no beacons on touch
+// 12 Oct 2026: which tour and which wording
 describe("choosing the tour and its wording", () => {
   it("gives the sheet layout the touch tour and the desktop layout the pointer tour", () => {
     expect(tourInputFor("sheet")).toBe("touch");
@@ -332,11 +441,6 @@ describe("choosing the tour and its wording", () => {
     expect(tourWordsFor({ layout: "sheet", coarsePointer: false })).toBe("touch");
     expect(tourWordsFor({ layout: "desktop", coarsePointer: true })).toBe("touch");
     expect(tourWordsFor({ layout: "desktop", coarsePointer: false })).toBe("pointer");
-  });
-
-  it("shows beacons for the pointer tours only", () => {
-    expect(tourShowsBeacons("pointer")).toBe(true);
-    expect(tourShowsBeacons("touch")).toBe(false);
   });
 });
 
@@ -349,14 +453,16 @@ describe("the pointer tours with touch wording", () => {
     [true, "obstructions"],
   ];
   const touch = (isAnnotator, step) => buildTourSteps(isAnnotator, step, "pointer", { words: "touch" });
-  // Every field of each step but its content
-  const strip = (steps) => steps.map((step) => Object.fromEntries(Object.entries(step).filter(([key]) => key !== "content")));
+  // Every field of each step but its words
+  const WORDS = ["content", "intro", "points", "after", "note"];
+  const strip = (steps) => steps.map((step) => Object.fromEntries(Object.entries(step).filter(([key]) => !WORDS.includes(key))));
 
   it("never says click, with no em dash or semicolon, and keeps every target, step, title, placement and beacon", () => {
     for (const [isAnnotator, step] of TOURS) {
       for (const s of touch(isAnnotator, step)) {
-        expect(`${s.title} ${s.content}`).not.toMatch(/click/i);
-        expect(`${s.title} ${s.content}`).not.toMatch(/[—;]/);
+        const text = [s.title, s.content, ...(s.points ? wordsOf(s) : [])].join(" ");
+        expect(text).not.toMatch(/click/i);
+        expect(text).not.toMatch(/[—;]/);
       }
       const plain = buildTourSteps(isAnnotator, step);
       expect(strip(touch(isAnnotator, step))).toEqual(strip(plain));
@@ -367,14 +473,17 @@ describe("the pointer tours with touch wording", () => {
     }
   });
 
-  it("gives contributors the touch copy for the canvas, the answers, severity and Next Image, and leaves Step 2 as it is", () => {
+  it("gives contributors the touch words for Check Each Box, the answers, severity and Next Image, and leaves the path and Step 2 as they are", () => {
     const steps = touch(false, "objects");
     const plain = buildTourSteps(false);
-    expect(steps[0].content).toBe("Dashed yellow boxes are model suggestions. Tap each one and check that its label is right (change it from the list if it is not). Then answer two questions. First, “Is it on the sidewalk or the path people walk on?” No takes the box off the photo and lists it under Not obstructions. Yes asks whether the object obstructs the sidewalk. Some streets have no sidewalk. There, the path people walk on is usually the edge of the road. Answer Yes if the object is on that path. If a box does not mark a real object, tap Not an object. To label an object the model missed, tap Add box at the bottom left of the photo and drag the new box's corners to fit it. Pinch to zoom in on small objects.");
-    expect(steps[1].content).toBe("Every object you answer is listed under the photo, in Not obstructions or Obstructions. Boxes you add are listed there too. A No to the path question takes the box off the photo and lists it under Not obstructions. Answering No is just as valuable as answering Yes. An object on the sidewalk that does not get in the way is just as useful to record as one that does. Tap any object to change its answer. A box off the photo shows again while it is open. Tap the eye beside an object to hide its box on the photo while you work on boxes around it. To show a hidden box again, double-tap where it was.");
-    expect(steps[2].content).toBe("When you answer Yes, a scale opens on the photo beside the box. Rate how severely the object blocks passage, from 1 (a minor inconvenience) to 5 (it completely blocks the path), then tap Confirm. To change it later, open the box and tap Change.");
-    expect(steps[3].content).toBe(plain[3].content);
-    expect(steps[4].content).toBe("Tap Next Image when every suggested box has been decided (Yes, No, or Not an object), every box has a category, and all four scene-level questions are answered. On the last image the button reads Finish Session. If something is missing, a message tells you what to finish.");
+    expect(steps[0].points[0]).toBe("Tap a box and check its label.");
+    expect(steps[0].points[3]).toBe("Nothing real in it? Tap Not an object.");
+    // A finger cannot draw by dragging: Add box
+    expect(steps[0].note).toBe("Missed one? Tap Add box to box it.");
+    expect(steps[2].after).toBe("Tap a name to open it and change the answer. Tap the eye to hide a box while you work on the boxes around it. Tap Hide all to hide all the boxes on the photo. Tap Show all to show them again.");
+    expect(steps[3].points.slice(1)).toEqual(["Tap Confirm.", "To change it later, open the box and tap Change."]);
+    expect(steps[5].after).toMatch(/^Tap Next Image once/);
+    for (const i of [1, 4]) expect(steps[i].content).toBe(plain[i].content);
   });
 
   it("gives annotators the touch copy on the steps that said click, and leaves the others as they are", () => {
@@ -442,14 +551,20 @@ describe("the annotator touch tours", () => {
   });
 
   it("centres the tooltip on the steps that fill the screen: the photo, and a card in the pulled-up sheet", () => {
-    for (const [isAnnotator, step] of [[false, "objects"], [true, "objects"], [true, "sidewalk"], [true, "obstructions"]]) {
+    for (const [isAnnotator, step] of [[true, "objects"], [true, "sidewalk"], [true, "obstructions"]]) {
       for (const s of buildTourSteps(isAnnotator, step, "touch")) {
         const fillsScreen = s.target === ".rp-stage" || s.sheet === "full";
         expect(s.placement).toBe(fillsScreen ? "center" : "top");
       }
     }
+    // Contributors: the photo and Step 2 centred, every other step at its
+    // target, Your Answers too though its lists are pulled up (S16b)
+    for (const s of buildTourSteps(false, "objects", "touch")) {
+      const centred = s.target === ".rp-stage" || s.target === "#scene-level-section";
+      expect(s.placement, s.title).toBe(centred ? "center" : "top");
+    }
     // The desktop tours keep theirs
-    expect(buildTourSteps(false)[0].placement).toBe("bottom");
+    expect(buildTourSteps(false)[0].placement).toBe("right");
   });
 
   // 12 Oct 2026: the tour's own scrolling moved the phone screen, which is fixed
@@ -458,14 +573,32 @@ describe("the annotator touch tours", () => {
     for (const [isAnnotator, step] of [[false, "objects"], [true, "objects"], [true, "sidewalk"], [true, "obstructions"]]) {
       for (const s of buildTourSteps(isAnnotator, step, "touch")) expect(s.skipScroll).toBe(true);
       for (const s of buildTourSteps(isAnnotator, step, "pointer")) expect(s).not.toHaveProperty("skipScroll");
+      // Only Check Each Box positions itself on the desktop layout (S16b)
+      for (const s of buildTourSteps(isAnnotator, step, "pointer").filter((x) => x.title !== "Check Each Box")) expect(s).not.toHaveProperty("floatingOptions");
       for (const s of buildTourSteps(isAnnotator, step, "pointer", { words: "touch" })) expect(s).not.toHaveProperty("skipScroll");
+    }
+  });
+
+  // S16 (3 Nov 2026): Your Answers ran off the top of a phone in the first
+  // pilot session, its × with it. The tour library flips a card with no room
+  // above its target, but only slides it sideways.
+  it("lets every touch card slide up or down into the screen, for both roles", () => {
+    for (const [isAnnotator, step] of [[false, "objects"], [true, "objects"], [true, "sidewalk"], [true, "obstructions"]]) {
+      for (const s of buildTourSteps(isAnnotator, step, "touch")) {
+        // Your Answers may use the whole screen, not only the sheet's scrolling
+        // part, and follows its lists as the sheet settles (S16b)
+        const answers = !isAnnotator && s.title === "Your Answers";
+        expect(s.floatingOptions, s.title).toEqual(answers
+          ? { shiftOptions: { crossAxis: true, boundary: "clippingAncestors" }, autoUpdate: { animationFrame: true } }
+          : { shiftOptions: { crossAxis: true } });
+      }
     }
   });
 
   // 12 Oct 2026: tablets get the full-screen photo too, on either layout
   it("adds the tablet's full-screen sentence to the first step of a tablet's touch tour", () => {
     expect(TABLET_FULL_SCREEN_SENTENCE).toBe("The button at the bottom right of the photo shows the photo full screen.");
-    for (const [isAnnotator, step] of [[false, "objects"], [true, "objects"], [true, "sidewalk"], [true, "obstructions"]]) {
+    for (const [isAnnotator, step] of [[true, "objects"], [true, "sidewalk"], [true, "obstructions"]]) {
       const plain = buildTourSteps(isAnnotator, step, "touch");
       const onTablet = buildTourSteps(isAnnotator, step, "touch", { tablet: true });
       expect(onTablet[0].content).toBe(`${plain[0].content} ${TABLET_FULL_SCREEN_SENTENCE}`);
@@ -479,7 +612,7 @@ describe("the annotator touch tours", () => {
 
   it("adds the full-screen sentence to the first step on a phone only, for both roles", () => {
     expect(PHONE_FULL_SCREEN_SENTENCE).toBe("On a phone, the button at the bottom right of the photo shows the photo full screen, which you can also use with the phone held sideways.");
-    for (const [isAnnotator, step] of [[false, "objects"], [true, "objects"], [true, "sidewalk"], [true, "obstructions"]]) {
+    for (const [isAnnotator, step] of [[true, "objects"], [true, "sidewalk"], [true, "obstructions"]]) {
       const phone = buildTourSteps(isAnnotator, step, "touch", { phone: true });
       const tablet = buildTourSteps(isAnnotator, step, "touch");
       expect(phone[0].content).toBe(`${tablet[0].content} ${PHONE_FULL_SCREEN_SENTENCE}`);
@@ -488,6 +621,23 @@ describe("the annotator touch tours", () => {
       // Never on a pointer tour
       expect(buildTourSteps(isAnnotator, step, "pointer", { phone: true })).toEqual(buildTourSteps(isAnnotator, step));
     }
+  });
+
+  // S16: the contributors' two sentences, shortened into one tip for both
+  it("gives the contributor tour's first step the full-screen tip as its note, on a phone and a tablet alike", () => {
+    expect(FULL_SCREEN_TIP).toBe("Tip: the photo's bottom-right button goes full screen.");
+    const plain = buildTourSteps(false, "objects", "touch");
+    for (const options of [{ phone: true }, { tablet: true }, { phone: true, tablet: true }]) {
+      const steps = buildTourSteps(false, "objects", "touch", options);
+      expect(steps[0].note).toBe(FULL_SCREEN_TIP);
+      expect(steps[0].content.endsWith(FULL_SCREEN_TIP)).toBe(true);
+      expect(steps[0].content).not.toContain(PHONE_FULL_SCREEN_SENTENCE);
+      expect(steps.slice(1)).toEqual(plain.slice(1));
+    }
+    expect(plain[0]).not.toHaveProperty("note");
+    expect(plain.map((s) => s.content).join(" ")).not.toContain("full screen");
+    // Never on a pointer tour
+    expect(buildTourSteps(false, "objects", "pointer", { phone: true, tablet: true })).toEqual(buildTourSteps(false));
   });
 });
 

@@ -389,7 +389,13 @@ const Screen = memo(function Screen({ view, geo, coarse, refs }) {
             <div ref={refs.content}>{body}</div>
           </div>
         </section>
-        <div ref={refs.footer} className="absolute inset-x-0 bottom-0 z-20 bg-surface border-t border-line px-4 pt-3 pb-3">
+        {/* Not drawn while a box is open, as the tool's sheet drops its empty
+            footer then (renderActions, 28 Oct 2026): it measures 0, so the
+            sheet's points leave it out and the open panel has its room. Drawn
+            under the panel, it covered the panel's foot, and with the
+            "Question 1 of 2" line (S16) ran 24 px past the frame on a
+            375 x 667 phone. */}
+        <div ref={refs.footer} className={`absolute inset-x-0 bottom-0 z-20 bg-surface border-t border-line px-4 pt-3 pb-3${open ? " hidden" : ""}`}>
           {/* renderActions("sheet") for a contributor: Previous from the second photo on */}
           <div className="flex gap-2" data-demo="next">
             {imageIndex > 0 && <Button variant="neutral">Previous</Button>}

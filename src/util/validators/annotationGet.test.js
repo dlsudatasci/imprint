@@ -13,6 +13,7 @@ import {
   annotatorModelDevFirst,
   toModelDevCandidates,
   pickAnnotatorModelDev,
+  leastAnnotatedPipeline,
 } from "./annotationGet.js";
 
 describe("session size constants", () => {
@@ -396,5 +397,41 @@ describe("toModelDevCandidates", () => {
   it("handles missing input", () => {
     expect(toModelDevCandidates()).toEqual([]);
     expect(toModelDevCandidates({ images: [null, images[0]] })).toHaveLength(1);
+  });
+});
+
+// S16 (3 Nov 2026): the draws sort ids, not whole records
+describe("leastAnnotatedPipeline", () => {
+  const match = { ...CONTRIBUTOR_DEPLOYMENT_MATCH, imageID: { $nin: [3, 4] } };
+
+  it("gives exactly the stages: match, project the count, a random number, sort, limit, then the records", () => {
+    expect(leastAnnotatedPipeline(match, 7)).toEqual([
+      { $match: match },
+      { $project: { annotationCount: { $ifNull: ["$annotationCount", 0] } } },
+      { $addFields: { rand: { $rand: {} } } },
+      { $sort: { annotationCount: 1, rand: 1 } },
+      { $limit: 7 },
+      { $lookup: { from: "Image", localField: "_id", foreignField: "_id", as: "doc" } },
+      { $unwind: "$doc" },
+      { $replaceRoot: { newRoot: { $mergeObjects: ["$doc", { annotationCount: "$annotationCount" }] } } },
+    ]);
+  });
+
+  it("passes the match in unchanged and uses the limit given", () => {
+    const pipeline = leastAnnotatedPipeline(REFERENCE_MATCH, 2);
+    expect(pipeline[0].$match).toBe(REFERENCE_MATCH);
+    expect(pipeline.find((st) => st.$limit).$limit).toBe(2);
+  });
+
+  it("projects before it sorts and looks the records up only after the limit", () => {
+    const stages = leastAnnotatedPipeline(match, 5).map((st) => Object.keys(st)[0]);
+    expect(stages.indexOf("$project")).toBeLessThan(stages.indexOf("$sort"));
+    expect(stages.indexOf("$limit")).toBeLessThan(stages.indexOf("$lookup"));
+  });
+
+  it("sends no rand with the records: the output stage keeps only the record and its count", () => {
+    const output = leastAnnotatedPipeline(match, 5).at(-1);
+    expect(JSON.stringify(output)).not.toContain("rand");
+    expect(output.$replaceRoot.newRoot.$mergeObjects).toEqual(["$doc", { annotationCount: "$annotationCount" }]);
   });
 });

@@ -7,12 +7,28 @@
  * "Or the path people walk on": about one photo in ten has no sidewalk, and
  * people walk along the edge of the road. With "sidewalk" alone, no object in
  * those photos could ever obstruct. The stored field is still `onSidewalk`.
+ *
+ * With two sidewalks in view only the nearest counts (Rans, 3 Nov 2026, S16):
+ * the one a person standing where the photo was taken would walk on. Objects
+ * on a farther sidewalk are answered No. The far side is too distant and too
+ * often hidden to judge. pathPoints says so, and the tour and the guide read
+ * it from here. Step 1's instructions above the photo say it in their own
+ * words (Rans, 3 Nov 2026).
  */
 export const SIDEWALK_QUESTION_COPY = Object.freeze({
   /** The question in the box panel, desktop, phone and tablet alike, answered Yes or No */
   question: "Is it on the sidewalk or the path people walk on?",
   /** Next Image with a box whose sidewalk answer is missing */
   incomplete: "Please say whether each object is on the sidewalk or the path people walk on.",
-  /** The tour's line on streets with no sidewalk */
-  tutorial: "Some streets have no sidewalk. There, the path people walk on is usually the edge of the road. Answer Yes if the object is on that path.",
+  /**
+   * What counts as the path (S16, 3 Nov 2026), in the tour's "What Counts as
+   * the Path" step and the guide. Replaced the one-sentence `tutorial`.
+   */
+  pathPoints: Object.freeze([
+    "The path is the sidewalk, or any paved path made for walking.",
+    "No sidewalk in the photo? The path is the edge of the road people walk along.",
+    "More than one sidewalk? Only the one nearest you counts. Answer No for objects on a farther one.",
+  ]),
+  /** The line above each question in a contributor's box panel (S16): "Question 1 of 2" */
+  questionOf: (n) => `Question ${n} of 2`,
 });

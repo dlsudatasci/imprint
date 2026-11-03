@@ -17,10 +17,12 @@ import {
   annotatorModelDevFirst,
   toModelDevCandidates,
   pickAnnotatorModelDev,
+  leastAnnotatedPipeline,
 } from "@/util/validators/annotationGet";
 import { SCENE_SCALE, toCurrentScale } from "@/util/validators/sceneScale.mjs";
 import { needsEmailVerification, EMAIL_NOT_VERIFIED_RESPONSE } from "@/util/validators/emailVerification.mjs";
 import { readTau, sessionTau } from "@/util/validators/tauSetting.mjs";
+import { serverTimer } from "@/util/serverTiming";
 
 /**
  * POST /api/annotationGet — gives the annotate page a batch of images to work
@@ -58,6 +60,13 @@ import { readTau, sessionTau } from "@/util/validators/tauSetting.mjs";
  * A contributor whose email address is not confirmed gets 403 { code:
  * "EMAIL_NOT_VERIFIED" } for both kinds of call (S9), read from the database on
  * every request. Annotators and admins are never refused.
+ *
+ * S16 (3 Nov 2026), after the first pilot sessions found a session slow to
+ * start: the answers carry a Server-Timing header (auth, check, draw,
+ * prepare, save; durations only), every draw sorts ids rather than whole
+ * records (leastAnnotatedPipeline), and the reads that do not depend on each
+ * other run together. Which images can be drawn, and what is saved, is
+ * unchanged.
  */
 
 function ensureModelVersion(imgRecords) {
@@ -177,6 +186,8 @@ const handler = async (req, res) => {
   // without a top-level catch: a dropped connection surfaced as an unhandled
   // rejection with nothing logged, where every sibling returns a 500.
   try {
+    const timer = serverTimer();
+    const sendTiming = () => res.setHeader("Server-Timing", timer.header());
     const session = await getServerSession(req, res, authOptions);
 
     if (!session || !session.user?._id) {
@@ -200,6 +211,7 @@ const handler = async (req, res) => {
     // the scene step and severity for annotators (decided 3 Oct 2026).
     const isAnnotator = user.role === "annotator";
     const allowedSizes = isAnnotator ? ANNOTATOR_SESSION_SIZES : ALLOWED_SESSION_SIZES;
+    timer.mark("auth");
 
     // 1. Check for an existing active session
     const existingSession = await db.collection("sessions").findOne({
@@ -219,10 +231,16 @@ const handler = async (req, res) => {
       const sortedImgRecords = existingSession.imageIDs
         .map((id) => imgRecords.find((img) => img._id.toString() === id.toString()))
         .filter((img) => img !== undefined);
+      timer.mark("check");
 
       ensureModelVersion(sortedImgRecords);
 
-      await mergeUserAnnotations(db, userId, sortedImgRecords);
+      // The two reads do not depend on each other
+      const [, tau] = await Promise.all([
+        mergeUserAnnotations(db, userId, sortedImgRecords),
+        sessionTau(db, existingSession),
+      ]);
+      timer.mark("prepare");
 
       const completedCount = existingSession.completedImageIDs
         ? existingSession.completedImageIDs.length
@@ -240,19 +258,23 @@ const handler = async (req, res) => {
       // step3AnnotationList (S1)
       // The suggestion threshold the session started with (S2), or the
       // stored one for a session from before 29 Oct 2026
+      sendTiming();
       return res.json({
         imgRecords: sortedImgRecords.map(toClientImage),
         isExistingSession: true,
         currentCount: currentCount,
         isAnnotator,
-        tau: await sessionTau(db, existingSession),
+        tau,
       });
     }
+
+    timer.mark("check");
 
     // 2. No active session, create a new one
     if (!annotationTotalCount) {
       // sessionSizes tells the batch-size picker which counts this person may
       // choose: annotators and contributors have different lists.
+      sendTiming();
       return res.json({
         imgRecords: [],
         message: "No active session found and no count provided.",
@@ -268,11 +290,25 @@ const handler = async (req, res) => {
     }
 
     // Images this contributor has already completed — never re-serve them.
-    const completedImageIDs = await db
+    // Read together with the images a contributor was served in earlier
+    // sessions (below), since both need only the user's id.
+    const completedRead = db
       .collection("annotations")
       .find({ userId, status: "completed" }, { projection: { imageID: 1 } })
       .toArray()
       .then((docs) => docs.map((d) => d.imageID));
+    // Mix reference images into contributor sessions at one in eight. The
+    // rate is held over the contributor's whole participation: the count
+    // comes from every image they were served in earlier sessions, so short
+    // sessions do not over- or under-sample reference images.
+    const priorServedRead = isAnnotator ? Promise.resolve([]) : db
+      .collection("sessions")
+      .aggregate([
+        { $match: { userId } },
+        { $group: { _id: null, served: { $sum: { $size: { $ifNull: ["$imageIDs", []] } } } } },
+      ])
+      .toArray();
+    const [completedImageIDs, priorServedResult] = await Promise.all([completedRead, priorServedRead]);
 
     let imgRecords;
 
@@ -296,22 +332,7 @@ const handler = async (req, res) => {
       // 1. Draw incomplete reference images first
       const refImages = modelDevFirst ? [] : await db
         .collection("Image")
-        .aggregate([
-          {
-            $match: {
-              ...REFERENCE_MATCH,
-              imageID: { $nin: completedImageIDs },
-            },
-          },
-          {
-            $addFields: {
-              annotationCount: { $ifNull: ["$annotationCount", 0] },
-              rand: { $rand: {} },
-            },
-          },
-          { $sort: { annotationCount: 1, rand: 1 } },
-          { $limit: annotationTotalCount },
-        ])
+        .aggregate(leastAnnotatedPipeline({ ...REFERENCE_MATCH, imageID: { $nin: completedImageIDs } }, annotationTotalCount))
         .toArray();
 
       if (refImages.length >= annotationTotalCount) {
@@ -338,16 +359,7 @@ const handler = async (req, res) => {
       // Mix reference images into contributor sessions at one in eight. These
       // are indistinguishable in the UI but let us measure contributor
       // reliability by comparing their answers to the annotator ground truth.
-      // The rate is held over the contributor's whole participation: the count
-      // comes from every image they were served in earlier sessions, so short
-      // sessions do not over- or under-sample reference images.
-      const priorServedResult = await db
-        .collection("sessions")
-        .aggregate([
-          { $match: { userId } },
-          { $group: { _id: null, served: { $sum: { $size: { $ifNull: ["$imageIDs", []] } } } } },
-        ])
-        .toArray();
+      // The images served in earlier sessions were read above.
       const priorServed = priorServedResult[0]?.served ?? 0;
       const refCount = calculateReferenceCount(annotationTotalCount, priorServed);
       const regularCount = annotationTotalCount - refCount;
@@ -355,12 +367,7 @@ const handler = async (req, res) => {
       // $limit must be positive, so a session owed no reference image skips the query.
       const refImages = refCount === 0 ? [] : await db
         .collection("Image")
-        .aggregate([
-          { $match: { ...REFERENCE_MATCH, imageID: { $nin: completedImageIDs } } },
-          { $addFields: { annotationCount: { $ifNull: ["$annotationCount", 0] }, rand: { $rand: {} } } },
-          { $sort: { annotationCount: 1, rand: 1 } },
-          { $limit: refCount },
-        ])
+        .aggregate(leastAnnotatedPipeline({ ...REFERENCE_MATCH, imageID: { $nin: completedImageIDs } }, refCount))
         .toArray();
 
       // Profiles store display names; Image.city stores slugs.
@@ -372,36 +379,22 @@ const handler = async (req, res) => {
       const needed = regularCount + (refCount - refImages.length);
       let regularImages = await db
         .collection("Image")
-        .aggregate([
-          {
-            $match: {
-              city: { $in: targetCities },
-              ...CONTRIBUTOR_DEPLOYMENT_MATCH,
-              imageID: { $nin: completedImageIDs },
-            },
-          },
-          { $addFields: { annotationCount: { $ifNull: ["$annotationCount", 0] }, rand: { $rand: {} } } },
-          { $sort: { annotationCount: 1, rand: 1 } },
-          { $limit: needed },
-        ])
+        .aggregate(leastAnnotatedPipeline({
+          city: { $in: targetCities },
+          ...CONTRIBUTOR_DEPLOYMENT_MATCH,
+          imageID: { $nin: completedImageIDs },
+        }, needed))
         .toArray();
 
       if (regularImages.length < needed) {
         const remaining = needed - regularImages.length;
         const additional = await db
           .collection("Image")
-          .aggregate([
-            {
-              $match: {
-                city: { $nin: targetCities },
-                ...CONTRIBUTOR_DEPLOYMENT_MATCH,
-                imageID: { $nin: completedImageIDs },
-              },
-            },
-            { $addFields: { annotationCount: { $ifNull: ["$annotationCount", 0] }, rand: { $rand: {} } } },
-            { $sort: { annotationCount: 1, rand: 1 } },
-            { $limit: remaining },
-          ])
+          .aggregate(leastAnnotatedPipeline({
+            city: { $nin: targetCities },
+            ...CONTRIBUTOR_DEPLOYMENT_MATCH,
+            imageID: { $nin: completedImageIDs },
+          }, remaining))
           .toArray();
 
         regularImages = regularImages.concat(additional);
@@ -425,6 +418,7 @@ const handler = async (req, res) => {
         `annotationGet: dropped ${drawn - imgRecords.length} image(s) outside the ${isAnnotator ? "annotator" : "contributor"} pool`
       );
     }
+    timer.mark("draw");
 
     if (imgRecords.length === 0) {
       await logTelemetryEvent({
@@ -434,6 +428,7 @@ const handler = async (req, res) => {
         requestedCount: annotationTotalCount,
         availableImages: 0,
       });
+      sendTiming();
       return res.json({
         imgRecords: [],
         poolExhausted: true,
@@ -445,11 +440,14 @@ const handler = async (req, res) => {
     const imageIDs = imgRecords.map((img) => img._id);
 
     ensureModelVersion(imgRecords);
-    await mergeUserAnnotations(db, userId, imgRecords);
-
     // The stored suggestion threshold (S2), kept on the session so the whole
-    // batch shows the same suggestions and annotationSubmit checks the same
-    const tau = await readTau(db);
+    // batch shows the same suggestions and annotationSubmit checks the same.
+    // Read together with the user's own annotations, which it does not need.
+    const [, tau] = await Promise.all([
+      mergeUserAnnotations(db, userId, imgRecords),
+      readTau(db),
+    ]);
+    timer.mark("prepare");
 
     // Pinning the image list now is what lets the session resume: the same
     // batch comes back on reload instead of a fresh random draw.
@@ -463,25 +461,26 @@ const handler = async (req, res) => {
       tau,
     });
 
-    const cumulativeSessionsToDate = await db
-      .collection("sessions")
-      .countDocuments({ userId, status: "completed" });
-
-    const lastSessionEnd = await db
-      .collection("telemetry_logs")
-      .findOne(
-        { userId, event: "SESSION_END" },
-        { sort: { timestamp: -1 }, projection: { timestamp: 1 } }
-      );
-
-    const distinctActiveDaysResult = await db
-      .collection("telemetry_logs")
-      .aggregate([
-        { $match: { userId, event: "IMAGE_SUBMITTED" } },
-        { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Manila" } } } },
-        { $count: "count" },
-      ])
-      .toArray();
+    // The three reads for SESSION_START, together, after the insert as before
+    const [cumulativeSessionsToDate, lastSessionEnd, distinctActiveDaysResult] = await Promise.all([
+      db
+        .collection("sessions")
+        .countDocuments({ userId, status: "completed" }),
+      db
+        .collection("telemetry_logs")
+        .findOne(
+          { userId, event: "SESSION_END" },
+          { sort: { timestamp: -1 }, projection: { timestamp: 1 } }
+        ),
+      db
+        .collection("telemetry_logs")
+        .aggregate([
+          { $match: { userId, event: "IMAGE_SUBMITTED" } },
+          { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Manila" } } } },
+          { $count: "count" },
+        ])
+        .toArray(),
+    ]);
 
     await logTelemetryEvent({
       event: "SESSION_START",
@@ -495,7 +494,9 @@ const handler = async (req, res) => {
         ? Date.now() - new Date(lastSessionEnd.timestamp).getTime()
         : null,
     });
+    timer.mark("save");
 
+    sendTiming();
     res.json({
       imgRecords: imgRecords.map(toClientImage),
       isExistingSession: false,

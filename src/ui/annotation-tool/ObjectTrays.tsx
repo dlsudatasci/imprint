@@ -237,44 +237,48 @@ export default function ObjectTrays({ trays, selectedId, hiddenIds = [], onOpen,
 
   return (
     <div id="box-review-section" className="px-4 pt-3.5 pb-4">
-      <div id={tourIds ? "box-review-section-peek" : undefined} className={cn("flex flex-wrap items-center min-h-[28px]", CHIP_GAP)}>
-        {toDecide.length > 0 ? (
-          <>
-            <span className="text-sm font-semibold text-ink mr-1">
-              {TRAY_COPY.toDecideTitle} <span className="font-medium text-muted tabular-nums">{toDecide.length}</span>
+      {/* Still to decide down to the Obstructions card, with no padding, for
+          the phone tour's Your Answers step to light exactly that (S16b) */}
+      <div id="box-review-lists">
+        <div id={tourIds ? "box-review-section-peek" : undefined} className={cn("flex flex-wrap items-center min-h-[28px]", CHIP_GAP)}>
+          {toDecide.length > 0 ? (
+            <>
+              <span className="text-sm font-semibold text-ink mr-1">
+                {TRAY_COPY.toDecideTitle} <span className="font-medium text-muted tabular-nums">{toDecide.length}</span>
+              </span>
+              <ul className="contents">
+                {toDecide.map((item) => (
+                  <Chip key={item.id} item={item} tone="toDecide" actions={actions} />
+                ))}
+              </ul>
+            </>
+          ) : total > 0 || removed.length > 0 ? (
+            <span className="text-sm font-semibold text-success">{TRAY_COPY.allAnswered}</span>
+          ) : (
+            <span className="text-sm text-muted">{TRAY_COPY.noObjects}</span>
+          )}
+          {((hiddenCount > 0 && onShowAll) || showHideAll) && (
+            <span data-hidden-summary className="ml-auto inline-flex items-center gap-3 pl-2 text-xs text-muted whitespace-nowrap">
+              {hiddenCount > 0 && onShowAll && (
+                <>
+                  {BOX_VISIBILITY_COPY.hiddenCount(hiddenCount)}
+                  <VisibilityButton label={BOX_VISIBILITY_COPY.showAll} onPress={onShowAll} />
+                </>
+              )}
+              {showHideAll && <VisibilityButton label={BOX_VISIBILITY_COPY.hideAll} onPress={onHideAll!} />}
             </span>
-            <ul className="contents">
-              {toDecide.map((item) => (
-                <Chip key={item.id} item={item} tone="toDecide" actions={actions} />
-              ))}
-            </ul>
-          </>
-        ) : total > 0 || removed.length > 0 ? (
-          <span className="text-sm font-semibold text-success">{TRAY_COPY.allAnswered}</span>
-        ) : (
-          <span className="text-sm text-muted">{TRAY_COPY.noObjects}</span>
-        )}
-        {((hiddenCount > 0 && onShowAll) || showHideAll) && (
-          <span data-hidden-summary className="ml-auto inline-flex items-center gap-3 pl-2 text-xs text-muted whitespace-nowrap">
-            {hiddenCount > 0 && onShowAll && (
-              <>
-                {BOX_VISIBILITY_COPY.hiddenCount(hiddenCount)}
-                <VisibilityButton label={BOX_VISIBILITY_COPY.showAll} onPress={onShowAll} />
-              </>
-            )}
-            {showHideAll && <VisibilityButton label={BOX_VISIBILITY_COPY.hideAll} onPress={onHideAll!} />}
-          </span>
-        )}
-      </div>
+          )}
+        </div>
 
-      <div className={cn("grid gap-3 mt-3", stacked ? "grid-cols-1" : "grid-cols-2")}>
-        <AnswerList tray={TRAYS.notObstructions as "notObstructions"} trays={trays} actions={actions} />
-        <AnswerList
-          tray={TRAYS.obstructions as "obstructions"}
-          trays={trays}
-          actions={actions}
-          tourId={tourIds ? "box-review-obstructions-peek" : undefined}
-        />
+        <div className={cn("grid gap-3 mt-3", stacked ? "grid-cols-1" : "grid-cols-2")}>
+          <AnswerList tray={TRAYS.notObstructions as "notObstructions"} trays={trays} actions={actions} />
+          <AnswerList
+            tray={TRAYS.obstructions as "obstructions"}
+            trays={trays}
+            actions={actions}
+            tourId={tourIds ? "box-review-obstructions-peek" : undefined}
+          />
+        </div>
       </div>
 
       {removed.length > 0 && (

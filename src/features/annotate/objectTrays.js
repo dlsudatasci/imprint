@@ -30,7 +30,6 @@ export const TRAYS = Object.freeze({
 const FALLBACK_LABEL = "Select a category";
 
 export const TRAY_COPY = Object.freeze({
-  stepHint: "Your answers are listed below the photo.",
   toDecideTitle: "Still to decide",
   allAnswered: "Every object is answered.",
   noObjects: "No suggestions in this image. Draw a box around any object the model missed.",

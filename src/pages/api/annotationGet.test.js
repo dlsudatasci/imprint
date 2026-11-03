@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createMockReq, createMockRes, createMockCollection, createMockDb, mockAuthSession, MOCK_USER_ID } from "@/test-utils/api-helpers";
+import { leastAnnotatedPipeline } from "@/util/validators/annotationGet";
 
 vi.mock("@/util/mongodb", () => ({ connectToDatabase: vi.fn() }));
 vi.mock("next-auth/next", () => ({ getServerSession: vi.fn() }));
@@ -220,8 +221,9 @@ describe("POST /api/annotationGet", () => {
       expect(sortStage.$sort).toHaveProperty("annotationCount", 1);
       expect(sortStage.$sort).toHaveProperty("rand", 1);
 
-      const addFieldsStage = pipeline.find((s) => s.$addFields);
-      expect(addFieldsStage.$addFields).toHaveProperty("annotationCount");
+      // annotationCount is defaulted in the $project before the sort since S16
+      const projectStage = pipeline.find((s) => s.$project);
+      expect(projectStage.$project).toHaveProperty("annotationCount");
     }
   });
 
@@ -1094,5 +1096,101 @@ describe("POST /api/annotationGet annotator model-dev draw (S14)", () => {
     expect(mocks.imageCol.find).not.toHaveBeenCalled();
     expect(mocks.annotationsCol.aggregate).not.toHaveBeenCalled();
     expect(mocks.sessionsCol.find).not.toHaveBeenCalled();
+  });
+});
+
+// S16 (3 Nov 2026): a session slow to start in the first pilot sessions
+describe("annotationGet's speed (S16)", () => {
+  const timing = (res) => res._headers["Server-Timing"];
+  const served = (n) => Array.from({ length: n }, (_, i) => ({ _id: `img-${i}`, imageID: i + 1, isReference: false, poolStatus: "served", annotationList: [] }));
+
+  it("sends Server-Timing with a new session: auth, check, draw, prepare and save, durations only", async () => {
+    const mocks = setupMocks();
+    mocks.imageCol.aggregate.mockReturnValue({ toArray: vi.fn().mockResolvedValue(served(5)) });
+    const res = createMockRes();
+    await handler(createMockReq({ body: { annotationTotalCount: 5 } }), res);
+    expect(res._json.isExistingSession).toBe(false);
+    expect(timing(res)).toMatch(/^auth;dur=\d+\.\d, check;dur=\d+\.\d, draw;dur=\d+\.\d, prepare;dur=\d+\.\d, save;dur=\d+\.\d$/);
+  });
+
+  it("sends Server-Timing when resuming a session: auth, check, prepare", async () => {
+    setupMocks({ activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: [], completedImageIDs: [], totalCount: 10, tau: 0.4 } });
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._json.isExistingSession).toBe(true);
+    expect(res._json.tau).toBe(0.4);
+    expect(timing(res)).toMatch(/^auth;dur=\d+\.\d, check;dur=\d+\.\d, prepare;dur=\d+\.\d$/);
+  });
+
+  it("sends Server-Timing with no session: auth, check", async () => {
+    setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._json.sessionSizes).toEqual([5, 10, 20, 40]);
+    expect(timing(res)).toMatch(/^auth;dur=\d+\.\d, check;dur=\d+\.\d$/);
+  });
+
+  it("sends no Server-Timing with a refusal", async () => {
+    setupMocks({ hasSession: false });
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._status).toBe(401);
+    expect(timing(res)).toBeUndefined();
+  });
+
+  it("draws every Image aggregate with leastAnnotatedPipeline, for contributors and annotators", async () => {
+    const contributor = setupMocks();
+    contributor.sessionsCol.aggregate.mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: null, served: 4 }]) });
+    await handler(createMockReq({ body: { annotationTotalCount: 40 } }), createMockRes());
+    const contributorCalls = contributor.imageCol.aggregate.mock.calls;
+    // The reference draw, the city-first draw and the fill
+    expect(contributorCalls).toHaveLength(3);
+    for (const [pipeline] of contributorCalls) {
+      expect(pipeline).toEqual(leastAnnotatedPipeline(pipeline[0].$match, pipeline.find((st) => st.$limit).$limit));
+    }
+
+    vi.clearAllMocks();
+    const annotator = setupMocks({ userRole: "annotator" });
+    mockModelDevPool(annotator);
+    await handler(createMockReq({ body: { annotationTotalCount: 10 } }), createMockRes());
+    const [[reference]] = annotator.imageCol.aggregate.mock.calls;
+    expect(reference).toEqual(leastAnnotatedPipeline(reference[0].$match, 10));
+  });
+
+  it("reads the completed annotations and the earlier sessions together, before the draw", async () => {
+    const mocks = setupMocks();
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    mocks.annotationsCol.find.mockReturnValueOnce({ toArray: vi.fn(() => gate.then(() => [{ imageID: 7 }])) });
+    const done = handler(createMockReq({ body: { annotationTotalCount: 10 } }), createMockRes());
+    // The completed annotations have not answered, and the earlier sessions are already asked
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.sessionsCol.aggregate).toHaveBeenCalledTimes(1);
+    expect(mocks.imageCol.aggregate).not.toHaveBeenCalled();
+    release();
+    await done;
+    // The draw still leaves out what was completed
+    expect(mocks.imageCol.aggregate.mock.calls[0][0][0].$match.imageID).toEqual({ $nin: [7] });
+  });
+
+  it("asks for SESSION_START's three figures together, after the session is saved, and logs it last", async () => {
+    const mocks = setupMocks();
+    mocks.imageCol.aggregate.mockReturnValue({ toArray: vi.fn().mockResolvedValue(served(1)) });
+    const order = [];
+    mocks.sessionsCol.insertOne.mockImplementation(async () => { order.push("insert"); return { insertedId: "s" }; });
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    mocks.sessionsCol.countDocuments.mockImplementation(() => { order.push("count"); return gate.then(() => 2); });
+    mocks.telemetryCol.findOne.mockImplementation(async () => { order.push("last end"); return null; });
+    mocks.telemetryCol.aggregate.mockImplementation(() => { order.push("days"); return { toArray: async () => [{ count: 1 }] }; });
+    logTelemetryEvent.mockImplementation(async (e) => { order.push(e.event); });
+    const done = handler(createMockReq({ body: { annotationTotalCount: 5 } }), createMockRes());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The count has not answered, and the other two are already asked
+    expect(order).toEqual(["insert", "count", "last end", "days"]);
+    release();
+    await done;
+    expect(order.at(-1)).toBe("SESSION_START");
+    expect(logTelemetryEvent).toHaveBeenCalledWith(expect.objectContaining({ cumulativeSessionsToDate: 2, distinctActiveDays: 1, intervalSincePreviousSessionMs: null }));
   });
 });

@@ -35,6 +35,11 @@ import { cachedSessionCheck } from "@/util/validators/sessionSync";
  * every image. On a cold visit the cached copy is then checked against the
  * server's, in case the session changed elsewhere (23 Oct 2026).
  *
+ * Starting a session from the picker no longer reloads the page (S16, 3 Nov
+ * 2026): the picker writes the cache as before and hands the batch to
+ * startSession, which shows image 1 in place. Moving between images still
+ * reloads.
+ *
  * Everyone can annotate on any device: contributors from 9 Oct 2026, and
  * annotators from 12 Oct 2026, when their three steps got the phone and tablet
  * layout. There is no device check any more. AnnotateForm picks the layout by
@@ -206,6 +211,20 @@ export default function AnnotatePage() {
     };
   }, [needsRole]);
 
+  // The picker started a session (S16): image 1 of the batch, without the
+  // reload. The batch was just made, so there is nothing to check it against,
+  // and the cache is already written. The same state as a restore from the
+  // server, which mounts the form this way too.
+  const startSession = React.useCallback((json) => {
+    sessionCheckedRef.current = true;
+    window.scrollTo(0, 0);
+    setState({
+      annotationCurrentCount: 1,
+      annotationTotalCount: json.imgRecords.length,
+      annotationSetData: json,
+    });
+  }, []);
+
   // Hold the page until we know whether a session exists. `restoring` matters
   // as much as `loading`: without it the gap between "nothing cached" and the
   // server answering renders the batch-size picker, so someone resuming on a
@@ -230,7 +249,7 @@ export default function AnnotatePage() {
       !state.annotationTotalCount
     ) {
       return (
-        <AnnotationSessionSelection />
+        <AnnotationSessionSelection onStarted={startSession} />
       );
     }
 

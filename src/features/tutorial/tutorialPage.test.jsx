@@ -11,9 +11,24 @@ vi.mock("next-auth/next", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/pages/api/auth/[...nextauth]", () => ({ authOptions: {} }));
 vi.mock("@/util/mongodb", () => ({ connectToDatabase: vi.fn() }));
 vi.mock("next/router", () => ({ default: { replace: vi.fn(), reload: vi.fn() } }));
-vi.mock("react-joyride", () => ({ Joyride: () => null }));
+// The tour's props, for its steps (S16b)
+const joyride = vi.hoisted(() => ({ props: null }));
+vi.mock("react-joyride", () => ({
+  Joyride: (props) => {
+    joyride.props = props;
+    return null;
+  },
+}));
 vi.mock("@/ui/page", () => ({ default: ({ children }) => <div>{children}</div> }));
-vi.mock("@/features/annotate/form", () => ({ default: () => <p>practice photo</p> }));
+// The form's props, for the ? button (S16b)
+const seen = vi.hoisted(() => ({ form: null }));
+vi.mock("@/features/annotate/form", () => ({
+  default: (props) => {
+    seen.form = props;
+    // The tour starts once the photo's stage is on the page
+    return <p className="rp-stage">practice photo</p>;
+  },
+}));
 vi.mock("@/features/layout/contentSkeleton", () => ({ default: () => <p>loading</p> }));
 vi.mock("@/hooks/useAnnotateLayout", () => ({ useAnnotateLayout: () => "desktop" }));
 vi.mock("@/hooks/useIsPhone", () => ({ useIsPhone: () => false }));
@@ -65,5 +80,36 @@ describe("the tutorial and a real session's saved copy", () => {
     writeTutorialFlag(true);
     await open();
     expect(Router.replace).not.toHaveBeenCalled();
+  });
+});
+
+// S16b (3 Nov 2026): no beacons on a laptop, the ? button in their place, as on a phone
+describe("the tour's ? button on a laptop", () => {
+  it("is passed to the form on the desktop layout", async () => {
+    await open();
+    expect(typeof seen.form.onShowTour).toBe("function");
+  });
+
+  it("draws no beacons", async () => {
+    await open();
+    expect(document.querySelector(".animate-ping")).toBeNull();
+  });
+});
+
+// S16b (3 Nov 2026): the tour library calls .then on what a step's `before`
+// returns, and an undefined one stopped the whole page
+describe("the tour's steps", () => {
+  it("each give the tour library a promise before they show", async () => {
+    await open();
+    // The page looks for the photo's stage every 100 ms before starting the tour
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+    const steps = joyride.props?.steps;
+    expect(steps?.length).toBe(6);
+    for (const step of steps) {
+      expect(typeof step.before, step.title).toBe("function");
+      const result = step.before();
+      expect(typeof result?.then, step.title).toBe("function");
+      await result;
+    }
   });
 });

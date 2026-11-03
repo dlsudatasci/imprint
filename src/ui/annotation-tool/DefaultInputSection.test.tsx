@@ -218,6 +218,47 @@ describe("DefaultInputSection", () => {
     });
   });
 
+  // S16 (3 Nov 2026): the first pilot participants took the first Yes or No
+  // for the obstruction question
+  describe("which of the two questions is on screen", () => {
+    const label = (html: string) => html.match(/<p data-question-step="(\d)" class="([^"]*)">([^<]*)<\/p>/);
+
+    it("says Question 1 of 2 above the path question, desktop panel and phone sheet alike", () => {
+      for (const variant of ["floating", "sheet"] as const) {
+        for (const html of [render({ variant, onSidewalk: undefined }), render({ variant, onSidewalk: undefined, editable: true, value: "bollard" }), render({ variant, onSidewalk: false, isRejected: true, obstructs: false })]) {
+          const found = label(html);
+          expect(found?.[1]).toBe("1");
+          expect(found?.[3]).toBe("Question 1 of 2");
+          expect(found?.[2]).toBe("text-xs font-semibold text-muted mt-3");
+          // Right above the question
+          expect(html).toMatch(/Question 1 of 2<\/p><p class="text-sm text-body mt-0\.5 mb-2">Is it on the sidewalk or the path people walk on\?<\/p>/);
+        }
+      }
+    });
+
+    it("says Question 2 of 2 above the obstruction question", () => {
+      for (const variant of ["floating", "sheet"] as const) {
+        for (const html of [render({ variant }), render({ variant, editable: true, value: "bollard" }), render({ variant, selected: true, obstructs: true, severity: 2 })]) {
+          expect(label(html)?.[3]).toBe("Question 2 of 2");
+          expect(html).toMatch(/Question 2 of 2<\/p><p class="text-sm text-body mt-0\.5 mb-2">Does <span/);
+        }
+      }
+    });
+
+    it("shows no label without the path question, and keeps the question where it was", () => {
+      const html = render({ askOnSidewalk: false, onSidewalk: undefined });
+      expect(html).toContain("obstruct the sidewalk?");
+      expect(html).not.toContain("data-question-step");
+      expect(html).not.toMatch(/Question \d of 2/);
+      expect(html).toContain('<p class="text-sm text-body mt-3 mb-2">Does <span');
+    });
+
+    it("shows no label on the severity picker or a box marked Not an object", () => {
+      expect(render({ selected: true, obstructs: true, severity: null })).not.toContain("data-question-step");
+      expect(render({ value: "not_an_object", isRejected: true, obstructs: false })).not.toContain("data-question-step");
+    });
+  });
+
   // 10 Oct 2026: the open box can be hidden from its panel
   it("offers a Hide button when the box can be hidden, and none otherwise", () => {
     const hideButton = /<button[^>]*aria-label="Hide this box on the photo"/;

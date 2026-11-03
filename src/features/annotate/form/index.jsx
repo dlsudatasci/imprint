@@ -10,6 +10,7 @@ import { useAnnotateLayout, TOUCH_DEVICE_QUERY } from "@/hooks/useAnnotateLayout
 import { useIsPhone } from "@/hooks/useIsPhone";
 import { useHideSiteChrome } from "@/features/layout/siteChrome";
 import { requiresSidewalkMask } from "@/util/validators/sidewalkMask";
+import { prefetchImages, upcomingImageUrls } from "@/features/annotate/imagePrefetch";
 
 // A phone held sideways. Tablets are taller than 500 px and are not affected.
 const SIDEWAYS_QUERY = "(orientation: landscape) and (max-height: 500px)";
@@ -17,6 +18,9 @@ const SIDEWAYS_QUERY = "(orientation: landscape) and (max-height: 500px)";
 // across it: the time the page was left in full screen, in sessionStorage.
 export const KEEP_FOCUS_KEY = "imprintFullScreenLeftAt";
 const KEEP_FOCUS_MS = 15000;
+// The progress strip's upcoming thumbnails wait for the photo at most this
+// long, so a photo that fails never leaves the strip empty (S16)
+export const PHOTO_READY_FALLBACK_MS = 4000;
 
 /** A media query's live answer, false until it runs in the browser. */
 function useMediaQuery(query) {
@@ -49,6 +53,12 @@ function useMediaQuery(query) {
  * can be held sideways there. The tool stays mounted through every change, so nothing is lost,
  * and full screen is kept from one image to the next. A phone held sideways
  * outside full screen shows a notice with a way in.
+ *
+ * The photo comes first (S16, 3 Nov 2026): until it is on screen, or for
+ * PHOTO_READY_FALLBACK_MS, the progress strip leaves out the thumbnails of
+ * the images still to come, which are full-size photos that took the
+ * connection from it at the start of a session. Then the next two photos are
+ * fetched, so Next Image finds the next one in the cache.
  */
 export default function AnnotateForm({
   data,
@@ -60,7 +70,8 @@ export default function AnnotateForm({
   // The batch's suggestion threshold from annotationGet (S2). The tutorial sends none.
   tau,
   onAnnotatorStepChange,
-  // The tutorial on a phone or tablet: shows the step's tour again (the top bar's ? button)
+  // The tutorial: shows the step's tour again (the ? button in the top bar on a
+  // phone or tablet, in the progress strip on a laptop, S16b)
   onShowTour,
   // Told when the full-screen photo starts and ends (the tutorial holds its tour meanwhile)
   onFocusChange,
@@ -89,6 +100,17 @@ export default function AnnotateForm({
   const hintTimer = useRef(null);
   const phoneRef = useRef(phone);
   phoneRef.current = phone;
+
+  // The photo on screen, or PHOTO_READY_FALLBACK_MS since the form mounted
+  const [photoReady, setPhotoReady] = useState(false);
+  const onPhotoReady = useCallback(() => setPhotoReady(true), []);
+  useEffect(() => {
+    const timer = setTimeout(() => setPhotoReady(true), PHOTO_READY_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    if (photoReady) prefetchImages(upcomingImageUrls(allImages, current));
+  }, [photoReady, allImages, current]);
 
   const leaveBrowserFullScreen = useCallback(() => {
     try {
@@ -323,6 +345,7 @@ export default function AnnotateForm({
       focus={focus}
       onEnterFocus={canFocus ? enterFocus : undefined}
       onExitFocus={exitFocus}
+      onPhotoReady={onPhotoReady}
     />
   );
 
@@ -359,7 +382,9 @@ export default function AnnotateForm({
             total={total}
             onPause={() => setShowPauseModal(true)}
             onStop={() => setShowAbandonModal(true)}
+            onShowTour={onShowTour}
             isTutorial={isTutorial}
+            deferUpcoming={!photoReady}
           />
 
           {/* Title */}

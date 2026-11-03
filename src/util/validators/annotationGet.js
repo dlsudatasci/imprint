@@ -52,6 +52,31 @@ export const ANNOTATOR_MODEL_DEV_MATCH = { isReference: { $ne: true }, poolStatu
 export const CONTRIBUTOR_DEPLOYMENT_MATCH = { isReference: false, poolStatus: "served" };
 
 /**
+ * The draw for every Image aggregate in annotationGet (S16, 3 Nov 2026): the
+ * images `match` allows, least annotated first and at random among ties, at
+ * most `limit` of them, each as its whole record with annotationCount
+ * defaulted to 0.
+ *
+ * The sort carries only each image's id, its count and its random number. It
+ * used to carry the whole record, about 7 KB since S1 stored every suggestion
+ * above the floor, and the contributor draws sort every served deployment
+ * image. The chosen ones are looked up after $limit, and $lookup keeps the
+ * sorted order. `rand` no longer reaches the client, and nothing read it.
+ */
+export function leastAnnotatedPipeline(match, limit) {
+  return [
+    { $match: match },
+    { $project: { annotationCount: { $ifNull: ["$annotationCount", 0] } } },
+    { $addFields: { rand: { $rand: {} } } },
+    { $sort: { annotationCount: 1, rand: 1 } },
+    { $limit: limit },
+    { $lookup: { from: "Image", localField: "_id", foreignField: "_id", as: "doc" } },
+    { $unwind: "$doc" },
+    { $replaceRoot: { newRoot: { $mergeObjects: ["$doc", { annotationCount: "$annotationCount" }] } } },
+  ];
+}
+
+/**
  * The same rules as a predicate on one image record. annotationGet applies it to
  * every image of a new session after drawing, so no query mistake can put a
  * model-development image in front of a contributor.

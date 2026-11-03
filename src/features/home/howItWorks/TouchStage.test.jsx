@@ -64,6 +64,8 @@ describe("TouchStage", () => {
     // The sidewalk question first (S12), then, after its Yes, the obstruction question
     expect(panel.textContent).toContain(SIDEWALK_QUESTION_COPY.question);
     expect(panel.textContent).not.toContain("obstruct the sidewalk?");
+    // Which of the two questions it is (S16)
+    expect(panel.querySelector("[data-question-step]").textContent).toBe("Question 1 of 2");
     expect(panel.textContent).toContain("Not an object");
     expect(sheet(el).textContent).toContain("Tree #1");
     expect(sheet(el).textContent).toContain("Hide on photo");
@@ -74,6 +76,24 @@ describe("TouchStage", () => {
     // Mounted last: show() unmounts the screen above
     const after = sheet(show(touchTickOf("tree-sidewalk", "end"))).querySelector("[data-demo-panel]");
     expect(after.textContent).toContain("Does Tree obstruct the sidewalk?");
+    expect(after.querySelector("[data-question-step]").textContent).toBe("Question 2 of 2");
+  });
+
+  // S16 follow-up (3 Nov 2026): as the tool's sheet drops its empty footer while a box is open
+  // (renderActions, 28 Oct 2026), so the open panel and its "Question 1 of 2" line have the room
+  it("leaves Next Image out while a box is open, and draws it again when the box closes", () => {
+    const footerOf = (el) => el.querySelector('[data-demo="next"]').parentElement;
+    for (const tick of [touchTickOf("tree-open", "end"), touchTickOf("tree-sidewalk", "end"), touchTickOf("tree-severity", "end") - 0.5, touchTickOf("category-pick", "end")]) {
+      const el = show(tick);
+      expect(sheet(el).querySelector("[data-demo-panel]"), String(tick)).not.toBeNull();
+      expect(footerOf(el).className.split(" "), String(tick)).toContain("hidden");
+    }
+    for (const tick of [0, touchTickOf("tree-confirm", "end"), touchTickOf("to-next", "end")]) {
+      const el = show(tick);
+      expect(sheet(el).querySelector("[data-demo-panel]"), String(tick)).toBeNull();
+      expect(footerOf(el).className.split(" "), String(tick)).not.toContain("hidden");
+      expect(footerOf(el).textContent).toContain("Next Image");
+    }
   });
 
   it("shows the sheet's severity picker at the dragged value: 1 for Tree #1, 4 for the drawn box", () => {

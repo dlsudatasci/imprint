@@ -6,6 +6,8 @@ import { severityLabel } from "@/ui/annotation-tool/DefaultInputSection";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 import { ALLOWED_SESSION_SIZES } from "@/util/validators/annotationGet";
 import { SEVERITY_SCALE, SCENE_QUESTIONS, CATEGORY_GROUPS, SESSION_SIZES_TEXT } from "./taskFacts";
+import { GUIDE_COPY } from "./guideCopy";
+import DefaultInputSection from "@/ui/annotation-tool/DefaultInputSection";
 
 /**
  * The About page and the annotation guide describe the task from taskFacts.js
@@ -79,5 +81,30 @@ describe("the guide's button names", () => {
     expect(read("src/ui/annotation-tool/DefaultInputSection.tsx")).toContain("Delete box");
     expect(read("src/ui/annotation-tool/DefaultInputSection.tsx")).toContain(">Not an object<");
     expect(read("src/ui/annotation-tool/DefaultInputSection.tsx")).toContain("Other...");
+  });
+});
+
+// S16 follow-up (3 Nov 2026): the guide names the two questions as the box panel does
+describe("the guide's question names", () => {
+  const noop = () => undefined;
+  const panel = (onSidewalk) => decode(renderToStaticMarkup(
+    <DefaultInputSection value="tree" onChange={noop} onDelete={noop} onSelectObstruction={noop} onUnselectObstruction={noop} onMarkNotAnObject={noop} onSetSeverity={noop} onSetObstructs={noop} onClose={noop} onClearObstruction={noop} onRestoreObject={noop} editable={false} selected={false} isRejected={false} obstructs={undefined} severity={null} askSeverity onSidewalk={onSidewalk} />
+  ));
+  const guide = (id) => GUIDE_COPY.steps.find((s) => s.id === id).paragraphs.join(" ");
+
+  it("match the panel's Question 1 and Question 2, in the panel's order", () => {
+    const first = panel(undefined);
+    const second = panel(true);
+    expect(first).toContain(">Question 1 of 2<");
+    expect(first).toContain("Is it on the sidewalk or the path people walk on?");
+    expect(second).toContain(">Question 2 of 2<");
+    expect(second).toMatch(/obstruct the sidewalk\?/);
+    for (const id of ["answer", "not-an-object"]) {
+      const text = guide(id);
+      expect(text.indexOf("Question 1"), id).toBeGreaterThan(-1);
+      expect(text.indexOf("Question 1"), id).toBeLessThan(text.indexOf("Question 2"));
+    }
+    // The guide's Question 2, the panel's wording with "it" for the object's name
+    expect(guide("answer")).toContain("“Does it obstruct the sidewalk?”");
   });
 });

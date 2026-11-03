@@ -255,6 +255,8 @@ const Screen = memo(function Screen({ view, photoWidth }) {
         <div style={{ flex: "65 1 0%" }} className="min-w-0">
           <Step1Card
             data-demo-region="step1"
+            // Drawn several times on the guide's page: no id
+            instructionsId={null}
             photo={
               <div data-demo-region="photo" data-demo-photo className="relative" style={{ width: photoWidth, height: DEMO_IMAGE_SIZE.height * scale }}>
                 {/* eslint-disable-next-line @next/next/no-img-element -- a static tutorial photo, drawn at a fixed size */}

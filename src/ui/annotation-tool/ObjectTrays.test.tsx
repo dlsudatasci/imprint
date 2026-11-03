@@ -367,3 +367,22 @@ describe("ObjectTraysPeek's chip row", () => {
     expect(render()).toMatch(/Still to decide <span[^>]*>3<\/span>/);
   });
 });
+
+// S16b (3 Nov 2026): the phone tour's Your Answers step lights exactly the lists
+describe("the lists' tour target", () => {
+  it("holds Still to decide and both cards, with no padding of its own, and not the Not an object row", () => {
+    const html = render([suggestion("a", "tree"), suggestion("b", "car", { comment: "not_an_object", isRejected: true })]);
+    const open = html.indexOf('<div id="box-review-lists">');
+    expect(open).toBeGreaterThan(-1);
+    const toDecide = html.indexOf("Still to decide");
+    const obstructions = html.indexOf('<section id="object-tray-obstructions"');
+    const removed = html.lastIndexOf(">Not an object<");
+    expect(toDecide).toBeGreaterThan(open);
+    expect(html.indexOf('<section id="object-tray-not-obstructions"')).toBeGreaterThan(open);
+    expect(obstructions).toBeGreaterThan(open);
+    // The wrapper closes after the Obstructions card and before the Not an object row
+    const afterObstructions = html.indexOf("</section>", obstructions);
+    expect(html.slice(afterObstructions, afterObstructions + "</section></div></div>".length)).toBe("</section></div></div>");
+    expect(removed).toBeGreaterThan(afterObstructions);
+  });
+});

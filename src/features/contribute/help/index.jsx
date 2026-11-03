@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { Container, H1, H2, P } from "@/ui";
 import GuideStill from "./GuideStill";
 import SessionPickerStill from "./SessionPickerStill";
@@ -50,8 +51,17 @@ export default function HelpDirectory() {
             <div>
               <p className="text-sm font-semibold text-primary tabular-nums">{i + 1}</p>
               <H2 className="mt-1"><span id={`${step.id}-title`}>{step.title}</span></H2>
-              {step.paragraphs.map((p) => (
-                <P key={p} className="mt-4 text-base leading-relaxed">{p}</P>
+              {step.paragraphs.map((p, k) => (
+                <Fragment key={p}>
+                  <P className="mt-4 text-base leading-relaxed">{p}</P>
+                  {step.pathPoints && step.pathPointsAfter === k + 1 && (
+                    <ul data-path-points className="mt-3 list-disc pl-5 space-y-1.5 text-base leading-relaxed font-medium text-body">
+                      {step.pathPoints.map((point) => (
+                        <li key={point}>{point}</li>
+                      ))}
+                    </ul>
+                  )}
+                </Fragment>
               ))}
               {step.listsQuestions && (
                 <dl className="mt-6 space-y-3">

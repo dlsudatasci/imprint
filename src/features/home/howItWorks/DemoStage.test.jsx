@@ -45,11 +45,14 @@ describe("DemoStage", () => {
   it("opens the real question panel on the selected suggestion, Motorcycle #1, the path question first", () => {
     const first = show(tickOf("moto-to-sidewalk", "end")).querySelector("[data-demo-panel]");
     expect(first.textContent).toContain(SIDEWALK_QUESTION_COPY.question);
+    // Which of the two questions it is (S16)
+    expect(first.querySelector("[data-question-step]").textContent).toBe("Question 1 of 2");
     expect(first.textContent).toContain("Not an object");
     act(() => root.unmount());
     host.remove();
     const panel = show(tickOf("moto-to-no", "end")).querySelector("[data-demo-panel]");
     expect(panel.textContent).toContain("Does Motorcycle obstruct the sidewalk?");
+    expect(panel.querySelector("[data-question-step]").textContent).toBe("Question 2 of 2");
     expect(panel.textContent).toContain("Not an object");
   });
 

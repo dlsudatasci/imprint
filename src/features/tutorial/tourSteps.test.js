@@ -165,7 +165,7 @@ describe("tour steps", () => {
     expect(severity.points).toEqual([
       "Rate how much it blocks you, from 1 (a minor inconvenience) to 5 (it completely blocks the path).",
       "Click Confirm.",
-      "To change it later, open the box and click Change.",
+      "To change it later, open the box and move the scale.",
     ]);
   });
 
@@ -404,7 +404,7 @@ describe("the touch tour", () => {
     expect(severity.points).toEqual([
       "Rate how much it blocks you, from 1 (a minor inconvenience) to 5 (it completely blocks the path).",
       "Tap Confirm.",
-      "To change it later, open the box and tap Change.",
+      "To change it later, open the box and move the scale.",
     ]);
     expect(next.points).toEqual([]);
     expect(next.after).toBe(desktop.at(-1).after.replace("Click", "Tap"));
@@ -481,7 +481,7 @@ describe("the pointer tours with touch wording", () => {
     // A finger cannot draw by dragging: Add box
     expect(steps[0].note).toBe("Missed one? Tap Add box to box it.");
     expect(steps[2].after).toBe("Tap a name to open it and change the answer. Tap the eye to hide a box while you work on the boxes around it. Tap Hide all to hide all the boxes on the photo. Tap Show all to show them again.");
-    expect(steps[3].points.slice(1)).toEqual(["Tap Confirm.", "To change it later, open the box and tap Change."]);
+    expect(steps[3].points.slice(1)).toEqual(["Tap Confirm.", "To change it later, open the box and move the scale."]);
     expect(steps[5].after).toMatch(/^Tap Next Image once/);
     for (const i of [1, 4]) expect(steps[i].content).toBe(plain[i].content);
   });
@@ -641,3 +641,16 @@ describe("the annotator touch tours", () => {
   });
 });
 
+
+// S17 (4 Nov 2026): a confirmed obstruction opens on its severity scale, and
+// the panel has no Change any more
+describe("changing a severity later", () => {
+  it("says to move the scale on every contributor tour, and never to click or tap Change", () => {
+    for (const [input, options] of CONTRIBUTOR_TOURS) {
+      const steps = buildTourSteps(false, "objects", input, options);
+      const severity = steps.find((s) => s.title === "Severity");
+      expect(severity.points).toContain("To change it later, open the box and move the scale.");
+      for (const s of steps) expect(s.content).not.toMatch(/(click|tap) Change/i);
+    }
+  });
+});

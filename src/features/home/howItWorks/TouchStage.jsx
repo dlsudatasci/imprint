@@ -13,7 +13,7 @@ import { snapPoints, springStep } from "@/ui/sheetSnap";
 import { TRAY_COPY, buildPeekChips, buildTrays, sceneProgressLine } from "@/features/annotate/objectTrays";
 import { BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
 import { buildDisplayLabelsInOrder, formatLabel, orderOfAppearance } from "@/util/buildDisplayLabels";
-import { getSuggestionPanelMode, isOffSidewalk } from "@/util/suggestionJudgment";
+import { getSuggestionPanelMode, isSetAside } from "@/util/suggestionJudgment";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 import { DEMO_IMAGES, DEMO_IMAGE_SIZE } from "./demoScript";
 
@@ -214,9 +214,9 @@ const Screen = memo(function Screen({ view, geo, coarse, refs }) {
   const photoW = DEMO_IMAGE_SIZE.width * scale;
   const photoH = DEMO_IMAGE_SIZE.height * scale;
   // While a box is open it is the only one on the photo (focusedBoxId, 14 Oct 2026)
-  // A box answered not on the path is off the photo, as in the tool (S12)
-  const drawn = open ? [open] : boxes.filter((b) => !isOffSidewalk(b));
-  const named = open ? [] : sorted.filter((b) => b.comment && !isOffSidewalk(b));
+  // A box answered not on the path (S12) or marked Not an object (S17) is off the photo, as in the tool
+  const drawn = open ? [open] : boxes.filter((b) => !isSetAside(b));
+  const named = open ? [] : sorted.filter((b) => b.comment && !isSetAside(b));
 
   let header;
   let body;

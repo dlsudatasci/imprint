@@ -15,7 +15,7 @@ import { writeSession } from "@/util/sessionCache";
  * own box.
  */
 type Shape = { getAnnotationData(): { id: string }; paint: (...args: unknown[]) => unknown };
-type Tool = { shapes: Shape[]; selectBoxById(id: string): void; onShapeChange(): void };
+type Tool = { shapes: Shape[]; selectBoxById(id: string): void; onShapeChange(): void; onClose(): void };
 
 const mark = (x: number) => ({ x, y: 40, width: 30, height: 120, type: "RECT" });
 // Three suggestions 20 px apart, each name about 64 px wide
@@ -132,11 +132,17 @@ describe("names on the photo", () => {
     for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) expect(overlap(placed[i], placed[j])).toBe(false);
   });
 
+  // From S17 (4 Nov 2026) the open box is the only one on the photo, so the
+  // names are compared once it closes, drawn in the new order
   it("stay where they are when a box is clicked, though the drawing order changes", () => {
     const tool = mount();
     const before = nameSpots(tool);
-    act(() => tool.selectBoxById("m1"));
-    const after = nameSpots(tool);
-    for (const id of ["m1", "m2", "m3", "far"]) expect(after.get(id)).toEqual(before.get(id));
+    for (const id of ["m2", "m1", "far", "m3"]) {
+      act(() => tool.selectBoxById(id));
+      expect(tool.shapes[tool.shapes.length - 1].getAnnotationData().id).toBe(id);
+      act(() => tool.onClose());
+      const after = nameSpots(tool);
+      for (const each of ["m1", "m2", "m3", "far"]) expect(after.get(each)).toEqual(before.get(each));
+    }
   });
 });

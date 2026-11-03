@@ -120,8 +120,9 @@ const PATH_STEP = {
 const SEVERITY_RATE = "Rate how much it blocks you, from 1 (a minor inconvenience) to 5 (it completely blocks the path).";
 const SEVERITY_STEP = {
   title: "Severity",
-  points: [SEVERITY_RATE, "Click Confirm.", "To change it later, open the box and click Change."],
-  touchPoints: [SEVERITY_RATE, "Tap Confirm.", "To change it later, open the box and tap Change."],
+  // S17 (4 Nov 2026): a confirmed obstruction opens on its scale, with no Change
+  points: [SEVERITY_RATE, "Click Confirm.", "To change it later, open the box and move the scale."],
+  touchPoints: [SEVERITY_RATE, "Tap Confirm.", "To change it later, open the box and move the scale."],
 };
 
 // Rated on the same sidewalk as Question 1, so a photo with two sidewalks is

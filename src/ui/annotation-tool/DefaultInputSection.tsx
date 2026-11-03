@@ -13,13 +13,24 @@ import { EyeOffIcon } from "../icons";
  * a severity closes it. A suggestion and a box the contributor drew behave the
  * same way, except that a drawn box can be deleted and a suggestion can be
  * marked Not an object, each from a button at the foot of the panel. The panel
- * offers a close button only once the box is fully answered, so a new box is
- * never left half done by accident.
+ * offered a close button only once the box was fully answered, so a new box
+ * was never left half done by accident (see S17 below for where it is now).
  *
  * From 2 Nov 2026 (S12) the panel first asks whether the object is on the
  * sidewalk or the path people walk on, with the same Yes and No buttons. No
  * closes the panel and the box leaves the photo. Yes moves on to the
- * obstruction question, which has a Go back to the first question.
+ * obstruction question.
+ *
+ * Changing an answer (S17, 4 Nov 2026, option B of three, decided by Rans): a
+ * confirmed obstruction opens on its severity scale, which saves when the
+ * slider is let go, with no Confirm. Its footer has Back to Question 2, and
+ * Question 2's footer has Back to Question 1. Going back is a view change
+ * held in this panel's state, never in the box: the earlier question shows
+ * with its answer chosen, and nothing changes until a different answer is
+ * picked there. Not an object is offered on Question 1 only. A drawn box
+ * keeps Delete box on every level. No contributor panel has a close button
+ * (Rans, 4 Nov 2026): a click or a tap on the photo away from the box closes
+ * it. Without the path question the close button is as it was.
  *
  * Two variants (9 Oct 2026): "floating", the card beside the box on the
  * desktop photo, and "sheet", the same panel in the answers sheet on a phone
@@ -71,8 +82,8 @@ export interface IDefaultInputSection {
   onSidewalk?: boolean | null;
   /** Answers the sidewalk question. No also closes the panel. */
   onSetOnSidewalk?: (onSidewalk: boolean) => void;
-  /** Go back from the obstruction question to the sidewalk question, clearing both answers */
-  onClearOnSidewalk?: () => void;
+  /** A confirmed obstruction's new severity, from its severity scale (S17). Leaves the panel open. */
+  onChangeSeverity?: (severity: number) => void;
   /** False only where no sidewalk question is asked */
   askOnSidewalk?: boolean;
 }
@@ -88,9 +99,18 @@ const panelClass = (variant: PanelVariant) => (variant === "sheet" ? SHEET_PANEL
 const secondaryButton = (variant: PanelVariant) => (variant === "sheet" ? `${SECONDARY_BUTTON} ${TOUCH_TARGET} px-3.5` : SECONDARY_BUTTON);
 const stop = (e: React.MouseEvent) => e.stopPropagation();
 
-function SeveritySlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+// The keys that move a range input
+const SLIDER_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
+
+/**
+ * `onRelease` (S17): the value when the slider is let go, on pointer up, touch
+ * end or the release of a key that moves it, not on every step of a drag.
+ * Several of these fire for one release, so the caller drops repeats.
+ */
+function SeveritySlider({ value, onChange, onRelease }: { value: number; onChange: (v: number) => void; onRelease?: (v: number) => void }) {
   const [local, setLocal] = useState(value);
   const committedRef = useRef(false);
+  const release = (e: React.SyntheticEvent<HTMLInputElement>) => onRelease?.(Number(e.currentTarget.value));
 
   useEffect(() => { setLocal(value); }, [value]);
 
@@ -127,7 +147,10 @@ function SeveritySlider({ value, onChange }: { value: number; onChange: (v: numb
           setLocal(v);
           if (!committedRef.current) { committedRef.current = true; onChange(v); }
         }}
-        onMouseUp={() => { committedRef.current = true; onChange(local); }}
+        onMouseUp={(e) => { committedRef.current = true; onChange(local); release(e); }}
+        onPointerUp={release}
+        onTouchEnd={release}
+        onKeyUp={(e) => { if (SLIDER_KEYS.includes(e.key)) release(e); }}
       />
       <div className="flex justify-between items-center mt-1">
         <span className="text-[10px] text-muted">1</span>
@@ -307,13 +330,15 @@ const DefaultInputSection = ({
   onHide,
   onSidewalk,
   onSetOnSidewalk = () => undefined,
-  onClearOnSidewalk = () => undefined,
+  onChangeSeverity = () => undefined,
   askOnSidewalk = true,
 }: IDefaultInputSection) => {
   // A typed-in label opens as the "Other..." field straight away
   const [isCustom, setIsCustom] = useState(() => isCustomLabel(value));
-  // Changing the severity of a box already answered Yes
-  const [adjustingSeverity, setAdjustingSeverity] = useState(false);
+  // Back to Question 1 or 2 (S17): which earlier question is on screen, or
+  // null for the box's deepest answered level. A view only, never the box's
+  // data. The panel is keyed by box, so it resets when another box opens.
+  const [back, setBack] = useState<1 | 2 | null>(null);
 
   useEffect(() => {
     if (value === NOT_AN_OBJECT) {
@@ -351,21 +376,11 @@ const DefaultInputSection = ({
     return <SeverityPicker initialValue={severity} onConfirm={onSetSeverity} onBack={onClearObstruction} variant={variant} />;
   }
 
-  if (adjustingSeverity) {
-    return (
-      <SeverityPicker
-        variant={variant}
-        initialValue={severity}
-        onConfirm={(v) => { setAdjustingSeverity(false); onSetSeverity(v); }}
-        onBack={() => setAdjustingSeverity(false)}
-      />
-    );
-  }
-
-  // Laid out like the question panel (8 Oct 2026): a title with the close
-  // button, one line on which box this is, and the way back in the footer,
-  // mirroring "No real object in this box?" there. Restore, not Undo, since
-  // the panel is often reopened long after the box was marked.
+  // Laid out like the question panel (8 Oct 2026): a title, one line on which
+  // box this is, and the way back in the footer, mirroring "No real object in
+  // this box?" there. Restore, not Undo, since the panel is often reopened
+  // long after the box was marked. No close button for contributors (Rans,
+  // 4 Nov 2026): a click or a tap on the photo closes it.
   if (mode === "not_an_object") {
     const suggested = originalComment && originalComment !== NOT_AN_OBJECT ? translateValue(originalComment) : "";
     return (
@@ -373,7 +388,7 @@ const DefaultInputSection = ({
         <div className="flex items-center gap-2">
           <span className="flex-1 pl-1 text-sm font-semibold text-ink">Not an object</span>
           {onHide && <HideButton onHide={onHide} variant={variant} />}
-          <CloseButton onClose={onClose} variant={variant} />
+          {!askOnSidewalk && <CloseButton onClose={onClose} variant={variant} />}
         </div>
         <span className="block px-1 text-xs text-muted">
           {suggested ? `Suggested as ${suggested}. ` : ""}This box won&apos;t be counted.
@@ -390,17 +405,19 @@ const DefaultInputSection = ({
 
   const hasCategory = Boolean(value) && value !== "---";
   const label = hasCategory ? translateValue(value) : "this object";
+  const header = <CategoryField value={value} isCustom={isCustom} setIsCustom={setIsCustom} onChange={onChange} variant={variant} />;
+  const footer = <PanelFooter editable={editable} variant={variant} onDelete={onDelete} onMarkNotAnObject={onMarkNotAnObject} />;
 
   // "sidewalk": the first question (S12). Answered No, the box is reopened
-  // from its chip under Not obstructions, so No shows chosen and the panel can close.
+  // from its chip under Not obstructions, so No shows chosen. No close button
+  // (Rans, 4 Nov 2026): a click or a tap on the photo closes the panel.
   if (mode === "sidewalk") {
     const answer = onSidewalk === false ? "no" : null;
     return (
       <QuestionPanel
         variant={variant}
-        header={<CategoryField value={value} isCustom={isCustom} setIsCustom={setIsCustom} onChange={onChange} variant={variant} />}
+        header={header}
         onHide={onHide}
-        onClose={answer ? onClose : undefined}
         question={SIDEWALK_QUESTION_COPY.question}
         step={1}
         answer={answer}
@@ -408,20 +425,63 @@ const DefaultInputSection = ({
         onYes={() => onSetOnSidewalk(true)}
         onNo={() => onSetOnSidewalk(false)}
         control="on-sidewalk"
-        footer={<PanelFooter editable={editable} variant={variant} onDelete={onDelete} onMarkNotAnObject={onMarkNotAnObject} />}
+        footer={footer}
       />
     );
   }
 
-  // "judge", "confirmed" or "drawn": the obstruction question
+  // "judge", "confirmed" or "drawn": on the sidewalk, so the obstruction question
   const answer = editable
     ? obstructs === true ? "yes" : obstructs === false ? "no" : null
     : selected ? "yes" : isRejected ? "no" : null;
   const answered = answer === "no" || (answer === "yes" && (!askSeverity || severity != null));
+  // A confirmed obstruction opens on its severity scale (S17)
+  const confirmed = answer === "yes" && askSeverity && severity != null;
+  const view = back === 1 && askOnSidewalk ? 1 : back === 2 || !confirmed ? 2 : "severity";
+  // Delete box on the right of every footer for a drawn box
+  const deleteBox = editable ? <DeleteBoxButton variant={variant} onDelete={onDelete} /> : null;
+
+  // Back to Question 1: Question 1 with its Yes chosen. Yes goes back to the
+  // deepest level with nothing changed (never onSetOnSidewalk(true), which
+  // would clear Question 2). No is Question 1's No: the box leaves the photo.
+  // No close button (Rans, 4 Nov 2026): a click or a tap on the photo closes
+  // the panel, changing nothing.
+  if (view === 1) {
+    return (
+      <QuestionPanel
+        variant={variant}
+        header={header}
+        onHide={onHide}
+        question={SIDEWALK_QUESTION_COPY.question}
+        step={1}
+        answer="yes"
+        disabled={!hasCategory}
+        onYes={() => setBack(null)}
+        onNo={() => onSetOnSidewalk(false)}
+        control="on-sidewalk"
+        footer={footer}
+      />
+    );
+  }
+
+  if (view === "severity") {
+    return (
+      <SeverityPanel
+        variant={variant}
+        header={header}
+        onHide={onHide}
+        severity={severity!}
+        onChangeSeverity={onChangeSeverity}
+        footer={<><BackButton to={2} variant={variant} onClick={() => setBack(2)} />{deleteBox}</>}
+      />
+    );
+  }
 
   const onYes = () => {
     if (answer === "yes") {
-      if (askSeverity) setAdjustingSeverity(true);
+      // A confirmed obstruction (reached with Back to Question 2): back to its
+      // severity with nothing changed. Without a severity to ask, done.
+      if (askSeverity) setBack(null);
       else onClose();
       return;
     }
@@ -441,9 +501,11 @@ const DefaultInputSection = ({
   return (
     <QuestionPanel
       variant={variant}
-      header={<CategoryField value={value} isCustom={isCustom} setIsCustom={setIsCustom} onChange={onChange} variant={variant} />}
+      header={header}
       onHide={onHide}
-      onClose={answered ? onClose : undefined}
+      // Contributors close it with a click on the photo (Rans, 4 Nov 2026).
+      // Without the path question, the close button as before.
+      onClose={!askOnSidewalk && answered ? onClose : undefined}
       question={<>Does <span className="font-semibold text-ink">{label}</span> obstruct the sidewalk?</>}
       // Second of the two only when the path question was asked (contributors)
       step={askOnSidewalk ? 2 : undefined}
@@ -451,23 +513,76 @@ const DefaultInputSection = ({
       disabled={!hasCategory}
       onYes={onYes}
       onNo={onNo}
-      // Back to the sidewalk question, with the same Go back as the severity picker
-      onBack={askOnSidewalk ? onClearOnSidewalk : undefined}
-      footer={<PanelFooter editable={editable} variant={variant} onDelete={onDelete} onMarkNotAnObject={onMarkNotAnObject} />}
-    >
-      {/* The severity number only, styled like "Drawn by you". Its wording is on
-          the picker. */}
-      {answer === "yes" && askSeverity && severity != null && (
-        <div className="flex items-center justify-between gap-2 mt-3">
-          <span className="text-xs text-muted">Severity {severity}</span>
-          <button className={`text-xs font-semibold text-primary hover:underline${variant === "sheet" ? ` ${TOUCH_TARGET} px-2` : ""}`} onClick={() => setAdjustingSeverity(true)}>
-            Change
-          </button>
-        </div>
-      )}
-    </QuestionPanel>
+      // Contributors: Back to Question 1, and no Not an object past Question 1
+      // (S17). Without the path question the footer is as it was.
+      footer={askOnSidewalk ? <><BackButton to={1} variant={variant} onClick={() => setBack(1)} />{deleteBox}</> : footer}
+    />
   );
 };
+
+/**
+ * A confirmed obstruction reopened (S17, 4 Nov 2026): the category with the
+ * eye, as on the question panels, then its severity scale at the stored
+ * value. No close button, as on Question 2. Letting go of the slider at a different value
+ * saves it and the panel stays open on the new value. No Confirm and no
+ * Change. The first severity still comes from SeverityPicker.
+ */
+function SeverityPanel({ variant, header, onHide, severity, onChangeSeverity, footer }: {
+  variant: PanelVariant;
+  header: React.ReactNode;
+  onHide?: () => void;
+  severity: number;
+  onChangeSeverity: (severity: number) => void;
+  footer: React.ReactNode;
+}) {
+  // The value last saved, so the several events of one release save once
+  const saved = useRef(severity);
+  useEffect(() => { saved.current = severity; }, [severity]);
+  const onRelease = (v: number) => {
+    if (v === saved.current) return;
+    saved.current = v;
+    onChangeSeverity(v);
+  };
+
+  return (
+    <div className={panelClass(variant)} onMouseDown={stop} onMouseUp={stop} data-severity-panel>
+      <div className="flex items-center gap-2">
+        {header}
+        {onHide && <HideButton onHide={onHide} variant={variant} />}
+      </div>
+      <p className="text-sm text-body mt-3 mb-3">How severe is this obstruction?</p>
+      <SeveritySlider value={severity} onChange={() => undefined} onRelease={onRelease} />
+      <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-2">
+        {footer}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Back to an earlier question (S17): plain text on the left of the footer, as
+ * the severity picker's Go back is styled, with an arrow that is not read out.
+ */
+function BackButton({ to, variant, onClick }: { to: 1 | 2; variant: PanelVariant; onClick: () => void }) {
+  return (
+    <button
+      data-control={`back-to-question-${to}`}
+      className={`inline-flex items-center gap-1 py-1.5 text-left text-xs font-medium text-muted hover:text-body transition-colors${variant === "sheet" ? ` ${TOUCH_TARGET}` : ""}`}
+      onClick={onClick}
+    >
+      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.25" d="M15 18l-6-6 6-6" /></svg>
+      {SIDEWALK_QUESTION_COPY.backTo(to)}
+    </button>
+  );
+}
+
+function DeleteBoxButton({ variant, onDelete }: { variant: PanelVariant; onDelete: () => void }) {
+  return (
+    <button className={`${secondaryButton(variant)} hover:text-danger`} onClick={() => onDelete()}>
+      Delete box
+    </button>
+  );
+}
 
 /**
  * A Yes or No question about the box: the category with the eye and the close
@@ -480,7 +595,7 @@ const DefaultInputSection = ({
  * or No for the obstruction question, so for contributors a small line above
  * the question says which of the two it is. No line without it.
  */
-function QuestionPanel({ variant, header, onHide, onClose, question, step, answer, disabled, onYes, onNo, onBack, control, footer, children }: {
+function QuestionPanel({ variant, header, onHide, onClose, question, step, answer, disabled, onYes, onNo, control, footer }: {
   variant: PanelVariant;
   header: React.ReactNode;
   onHide?: () => void;
@@ -493,12 +608,9 @@ function QuestionPanel({ variant, header, onHide, onClose, question, step, answe
   disabled: boolean;
   onYes: () => void;
   onNo: () => void;
-  onBack?: () => void;
   control?: string;
   footer: React.ReactNode;
-  children?: React.ReactNode;
 }) {
-  const sheet = variant === "sheet";
   return (
     <div className={panelClass(variant)} onMouseDown={stop} onMouseUp={stop}>
       <div className="flex items-center gap-2">
@@ -513,17 +625,6 @@ function QuestionPanel({ variant, header, onHide, onClose, question, step, answe
         <AnswerButton active={answer === "yes"} disabled={disabled} onClick={onYes} variant={variant} control={control ? `${control}-yes` : "yes"}>Yes</AnswerButton>
         <AnswerButton active={answer === "no"} disabled={disabled} onClick={onNo} variant={variant} control={control ? `${control}-no` : "no"}>No</AnswerButton>
       </div>
-      {onBack && (
-        <button
-          data-control="back"
-          className={`w-full mt-1 py-1.5 rounded-control text-xs font-medium text-muted hover:text-body transition-colors${sheet ? ` ${TOUCH_TARGET}` : ""}`}
-          onClick={onBack}
-        >
-          Go back
-        </button>
-      )}
-
-      {children}
 
       <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-2">
         {footer}
@@ -532,7 +633,7 @@ function QuestionPanel({ variant, header, onHide, onClose, question, step, answe
   );
 }
 
-/** Delete box for a drawn box, Not an object for a suggestion */
+/** Question 1's footer (S17: and the obstruction question's without the path question): Delete box for a drawn box, Not an object for a suggestion */
 function PanelFooter({ editable, variant, onDelete, onMarkNotAnObject }: {
   editable: boolean;
   variant: PanelVariant;
@@ -542,9 +643,7 @@ function PanelFooter({ editable, variant, onDelete, onMarkNotAnObject }: {
   return editable ? (
     <>
       <span className="text-xs text-muted">Drawn by you</span>
-      <button className={`${secondaryButton(variant)} hover:text-danger`} onClick={() => onDelete()}>
-        Delete box
-      </button>
+      <DeleteBoxButton variant={variant} onDelete={onDelete} />
     </>
   ) : (
     <>

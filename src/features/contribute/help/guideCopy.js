@@ -70,8 +70,8 @@ export const GUIDE_COPY = Object.freeze({
       still: 1,
       paragraphs: Object.freeze([
         "If an object is off the path, choose No to Question 1. If it is on the path but not in your way, choose No to Question 2.",
-        "If a box has nothing real in it, choose Not an object at the foot of its panel.",
-        "Every answer sorts the object into a list, Not obstructions or Obstructions, under the photo on a laptop and in the answers sheet on a phone or tablet. A No to the path question takes the box off the photo and lists it under Not obstructions. Click or tap a name in a list to open its panel and change the answer.",
+        "If a box has nothing real in it, choose Not an object at the foot of its panel at Question 1. The box then leaves the photo and is listed under Not an object, where you can open it and choose Restore.",
+        "Every answer sorts the object into a list, Not obstructions or Obstructions, under the photo on a laptop and in the answers sheet on a phone or tablet. A No to the path question takes the box off the photo and lists it under Not obstructions. Click or tap a name in a list to open its panel and change the answer. An obstruction opens on its severity scale. To change an earlier answer, choose Back to Question 2 or Back to Question 1, then pick the new answer.",
       ]),
     }),
     Object.freeze({

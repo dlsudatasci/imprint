@@ -36,7 +36,13 @@ describe("SIDEWALK_QUESTION_COPY", () => {
 
   it("has no tutorial sentence any more: pathPoints replaced it", () => {
     expect(SIDEWALK_QUESTION_COPY).not.toHaveProperty("tutorial");
-    expect(Object.keys(SIDEWALK_QUESTION_COPY).sort()).toEqual(["incomplete", "pathPoints", "question", "questionOf"]);
+    expect(Object.keys(SIDEWALK_QUESTION_COPY).sort()).toEqual(["backTo", "incomplete", "pathPoints", "question", "questionOf"]);
+  });
+
+  // S17 (4 Nov 2026): the way back at the foot of the box panel
+  it("names the way back to each question", () => {
+    expect(SIDEWALK_QUESTION_COPY.backTo(1)).toBe("Back to Question 1");
+    expect(SIDEWALK_QUESTION_COPY.backTo(2)).toBe("Back to Question 2");
   });
 
   it("has no em dash or semicolon", () => {
@@ -46,6 +52,8 @@ describe("SIDEWALK_QUESTION_COPY", () => {
       ...SIDEWALK_QUESTION_COPY.pathPoints,
       SIDEWALK_QUESTION_COPY.questionOf(1),
       SIDEWALK_QUESTION_COPY.questionOf(2),
+      SIDEWALK_QUESTION_COPY.backTo(1),
+      SIDEWALK_QUESTION_COPY.backTo(2),
     ];
     for (const text of texts) expect(text).not.toMatch(/[—;]/);
   });

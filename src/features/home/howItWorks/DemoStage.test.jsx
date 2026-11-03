@@ -53,7 +53,10 @@ describe("DemoStage", () => {
     const panel = show(tickOf("moto-to-no", "end")).querySelector("[data-demo-panel]");
     expect(panel.textContent).toContain("Does Motorcycle obstruct the sidewalk?");
     expect(panel.querySelector("[data-question-step]").textContent).toBe("Question 2 of 2");
-    expect(panel.textContent).toContain("Not an object");
+    // Back to Question 1 in Question 2's footer, and Not an object on Question 1 only (S17)
+    expect(panel.querySelector('[data-control="back-to-question-1"]').textContent).toBe("Back to Question 1");
+    expect(panel.textContent).not.toContain("Not an object");
+    expect(panel.textContent).not.toContain("Go back");
   });
 
   // S12 (Rans, 2 Nov 2026): Car and Lamp Post #1 are not on the path
@@ -65,10 +68,31 @@ describe("DemoStage", () => {
     expect(labels(el).sort()).toEqual(["Motorcycle #1", "Tree #1"]);
     const notObstructions = el.querySelector("#object-tray-not-obstructions").textContent;
     for (const name of ["Car #1", "Lamp Post #1", "Motorcycle #1"]) expect(notObstructions).toContain(name);
-    // While its panel is open, Lamp Post #1's box is on the photo (Car #1 is not)
+    // While its panel is open, Lamp Post #1's box is the only one on the
+    // photo, as in the tool on a laptop (S17)
     act(() => root.unmount());
     host.remove();
-    expect(boxesOnPhoto(show(tickOf("lamp-to-sidewalk", "end")))).toBe(3);
+    const open = show(tickOf("lamp-to-sidewalk", "end"));
+    expect(boxesOnPhoto(open)).toBe(1);
+    expect(open.querySelector("[data-demo-panel]")).not.toBeNull();
+  });
+
+  // S17 (4 Nov 2026): the laptop tool shows only the open box
+  it("draws only the open box while a panel is open, and every box on the photo once it closes", () => {
+    const boxesOnPhoto = (el) => el.querySelectorAll("[data-demo-photo] svg > g").length;
+    const before = show(tickOf("to-tree", "end") - 0.5);
+    expect(before.querySelector("[data-demo-panel]")).toBeNull();
+    expect(boxesOnPhoto(before)).toBe(4);
+    for (const at of ["tree-open", "tree-sidewalk", "tree-severity"]) {
+      act(() => root.unmount());
+      host.remove();
+      const el = show(tickOf(at, "end"));
+      expect(el.querySelector("[data-demo-panel]")).not.toBeNull();
+      expect(boxesOnPhoto(el)).toBe(1);
+    }
+    act(() => root.unmount());
+    host.remove();
+    expect(boxesOnPhoto(show(tickOf("tree-confirm", "end")))).toBe(4);
   });
 
   it("shows the severity picker at the dragged value: 1 for Tree #1, 4 for the drawn box", () => {

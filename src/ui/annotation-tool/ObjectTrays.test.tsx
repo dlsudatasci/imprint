@@ -41,9 +41,9 @@ describe("ObjectTrays", () => {
     expect(html).toContain('id="box-review-section"');
     expect(html).toMatch(/Still to decide <span[^>]*>3<\/span>/);
     expect(count(html, 'data-tray="toDecide"')).toBe(3);
-    // Dashed amber for suggestions, dashed blue for the box the contributor drew
+    // Dashed amber for suggestions, dashed green for the box the contributor drew (blue before 5 Nov 2026)
     expect(chip(html, "Tree #1")).toContain("border-dashed border-warning");
-    expect(chip(html, "Bollard #1")).toContain("border-dashed border-primary");
+    expect(chip(html, "Bollard #1")).toContain("border-dashed border-success");
     expect(chip(html, "Bollard #1")).toContain('<svg data-drawn="true"');
     // Each empty list shows three empty slots, so it is clear answers go there
     for (const id of ["object-tray-not-obstructions", "object-tray-obstructions"]) {
@@ -116,7 +116,7 @@ describe("ObjectTrays", () => {
 
   it("says when the image has no objects at all, and still shows both lists with their empty slots (17 Oct 2026)", () => {
     const html = render([]);
-    expect(html).toContain("No suggestions in this image. Draw a box around any object the model missed.");
+    expect(html).toContain("No suggestions in this image. Draw a box around any object on the sidewalk we missed.");
     for (const id of ["object-tray-not-obstructions", "object-tray-obstructions"]) {
       expect(count(list(html, id), 'data-slot="empty"')).toBe(3);
     }
@@ -145,6 +145,35 @@ describe("ObjectTrays", () => {
     const html = render([suggestion("a", "tree"), suggestion("b", "car")], "b");
     expect(count(html, "ring-2 ring-primary/40")).toBe(1);
     expect(chip(html, "Car #1")).toContain("ring-2 ring-primary/40");
+  });
+});
+
+// Rans (5 Nov 2026): a drawn box is green on the photo, so its chip and pencil are too
+describe("a drawn box's colour in the answers (5 Nov 2026)", () => {
+  const boxes = [suggestion("a", "tree"), drawn("c", "bollard"), drawn("d", "planter", { obstructs: false })];
+
+  it("dashes a drawn box's chip in green, with a green wash on hover, and no brand blue", () => {
+    const html = render(boxes);
+    const bollard = chip(html, "Bollard #1");
+    expect(bollard).toContain("border-dashed border-success bg-surface text-ink hover:bg-success-soft");
+    expect(bollard).not.toMatch(/border-primary|hover:bg-primary-50|drawn\//);
+    // A suggestion's chip is as it was
+    expect(chip(html, "Tree #1")).toContain("border-dashed border-warning bg-surface text-ink hover:bg-warning-soft");
+  });
+
+  it("draws the pencil green, an outline only, in every list and on the phone's chip row", () => {
+    const html = render(boxes);
+    const pencils = html.match(/<svg data-drawn="true"[^>]*>/g) ?? [];
+    expect(pencils).toHaveLength(2);
+    for (const pencil of pencils) {
+      expect(pencil).toContain('class="w-3 h-3 shrink-0 text-success"');
+      expect(pencil).toContain('fill="none"');
+      expect(pencil).not.toMatch(/text-primary|fill-drawn/);
+    }
+    const peek = renderToStaticMarkup(
+      <ObjectTraysPeek trays={buildTrays(boxes)} peek={buildPeekChips(boxes)} selectedId={null} onOpen={() => undefined} onNext={() => undefined} sceneLine="Step 2" onShowScene={() => undefined} />
+    );
+    expect(peek).toContain('class="w-3 h-3 shrink-0 text-success"');
   });
 });
 

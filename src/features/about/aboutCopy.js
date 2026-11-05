@@ -56,12 +56,12 @@ export const ABOUT_COPY = Object.freeze({
     title: "How it works",
     items: Object.freeze([
       Object.freeze({
-        title: "A model suggests",
-        text: "Before you see a street photo, a model has already boxed the objects in it.",
+        title: "Objects are suggested",
+        text: "Before you see a street photo, we've already boxed the objects in it.",
       }),
       Object.freeze({
         title: "You decide",
-        text: "Open each box and say whether the object gets in your way as you normally travel, and if it does, how much, from 1 to 5. Mark a box with nothing real in it as Not an object, and draw any object the model missed.",
+        text: "Open each box and say whether the object gets in your way as you normally travel, and if it does, how much, from 1 to 5. Mark a box with nothing real in it as Not an object, and draw any objects we missed.",
       }),
       Object.freeze({
         title: "You rate the sidewalk",

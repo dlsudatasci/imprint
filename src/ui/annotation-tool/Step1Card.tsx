@@ -10,8 +10,9 @@ export interface Step1CardProps extends React.HTMLAttributes<HTMLDivElement> {
   answers: React.ReactNode;
   /**
    * The instructions' id, which the tutorial's "What Counts as the Path" step
-   * points at (S16). null for the landing page's preview and the guide's
-   * stills, which draw the card several times on one page.
+   * pointed at from S16 until 5 Nov 2026 (it points at the photo now). null
+   * for the landing page's preview and the guide's stills, which draw the
+   * card several times on one page.
    */
   instructionsId?: string | null;
 }
@@ -31,7 +32,12 @@ export interface Step1CardProps extends React.HTMLAttributes<HTMLDivElement> {
  * Rans's wording) they are one short paragraph with no list, and "Your answers
  * are listed below the photo." is gone. After his review the same day the
  * paragraph names the two questions by what they ask rather than quoting the
- * first.
+ * first. From S18 (4 Nov 2026, pilot participant 4 found it wordy) it no
+ * longer numbers them: the box panel's "Question 1 of 2" labels do that. Its
+ * last sentence says the mouse and that the boxes to draw are the objects we
+ * missed, obstructing or not, and to leave out objects off the sidewalk
+ * (Rans, 5 Nov 2026). It said "objects that are obstructing the sidewalk"
+ * from S16b, but every object on the path is boxed.
  */
 export default function Step1Card({ photo, answers, instructionsId = "step1-instructions", className, ...rest }: Step1CardProps) {
   return (
@@ -39,7 +45,7 @@ export default function Step1Card({ photo, answers, instructionsId = "step1-inst
       <div id={instructionsId ?? undefined} className="p-4 pb-3">
         <H2 className="text-lg font-bold text-ink mb-1">{TRAY_COPY.stepHeading}</H2>
         <P className="text-body text-sm">
-          The dashed yellow boxes are suggested objects. Click each one and check its label, then answer Question 1 if it&apos;s on the sidewalk and Question 2 if it&apos;s an obstruction. If the photo shows two sidewalks, only the one nearest you counts. You can also drag to box objects that are obstructing the sidewalk.
+          The dashed yellow boxes are suggested objects. Click each one, check its label, then answer whether it&apos;s on the sidewalk and whether it&apos;s an obstruction. If the photo shows two sidewalks, only the one nearest you counts. You can also drag your mouse to box objects on the sidewalk or path that we missed, whether or not they obstruct. Leave out objects that are not on the sidewalk.
         </P>
       </div>
       <div data-step1-well className="bg-surface-subtle p-2 border-y border-line">

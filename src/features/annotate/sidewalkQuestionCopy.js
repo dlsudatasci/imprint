@@ -29,6 +29,11 @@ export const SIDEWALK_QUESTION_COPY = Object.freeze({
     "No sidewalk in the photo? The path is the edge of the road people walk along.",
     "More than one sidewalk? Only the one nearest you counts. Answer No for objects on a farther one.",
   ]),
+  /**
+   * The path question as the tour's Check Each Box says it (Rans, 5 Nov 2026):
+   * an instruction rather than the question quoted.
+   */
+  answerWhether: "Answer whether it's on the sidewalk or the path people walk on.",
   /** The line above each question in a contributor's box panel (S16): "Question 1 of 2" */
   questionOf: (n) => `Question ${n} of 2`,
   /**

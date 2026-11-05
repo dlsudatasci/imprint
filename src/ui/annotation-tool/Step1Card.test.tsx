@@ -7,12 +7,13 @@ import { TRAY_COPY } from "@/features/annotate/objectTrays";
  * Step 1's instructions above the photo (S16, then Rans's wording in S16b and
  * after his review of it, 3 Nov 2026), on the tool's desktop layout and in the
  * landing page's preview: one short paragraph naming the two questions by what
- * they ask, only the nearest of two sidewalks counting.
+ * they ask, only the nearest of two sidewalks counting. From S18 (4 Nov 2026)
+ * without "Question 1" and "Question 2", which pilot participant 4 found wordy.
  */
 const decode = (html: string) => html.replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/&quot;/g, '"');
 const render = (props: { instructionsId?: string | null } = {}) =>
   decode(renderToStaticMarkup(<Step1Card photo={<div data-photo />} answers={<div data-answers />} {...props} />));
-const PARAGRAPH = "The dashed yellow boxes are suggested objects. Click each one and check its label, then answer Question 1 if it's on the sidewalk and Question 2 if it's an obstruction. If the photo shows two sidewalks, only the one nearest you counts. You can also drag to box objects that are obstructing the sidewalk.";
+const PARAGRAPH = "The dashed yellow boxes are suggested objects. Click each one, check its label, then answer whether it's on the sidewalk and whether it's an obstruction. If the photo shows two sidewalks, only the one nearest you counts. You can also drag your mouse to box objects on the sidewalk or path that we missed, whether or not they obstruct. Leave out objects that are not on the sidewalk.";
 
 describe("Step1Card", () => {
   it("says it in one paragraph: the two questions, the two-sidewalks sentence and drawing a box", () => {
@@ -21,6 +22,8 @@ describe("Step1Card", () => {
     const paragraphs = Array.from(block.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g), (m) => m[1].trim());
     expect(paragraphs).toEqual([PARAGRAPH]);
     expect(html).toContain("If the photo shows two sidewalks, only the one nearest you counts.");
+    // No question numbers (S18)
+    expect(html).not.toMatch(/Question [12]/);
   });
 
   it("has no list and no line about where the answers are", () => {
@@ -41,7 +44,7 @@ describe("Step1Card", () => {
   it("puts #step1-instructions on the heading and the instructions, for the tour's path step, and none when asked", () => {
     const block = render().match(/<div id="step1-instructions"[^>]*>([\s\S]*?)<div data-step1-well/)?.[1] ?? "";
     expect(block).toContain(TRAY_COPY.stepHeading);
-    expect(block).toContain("Question 1 if it's on the sidewalk");
+    expect(block).toContain("whether it's on the sidewalk and whether it's an obstruction");
     expect(render({ instructionsId: null })).not.toContain("id=");
   });
 

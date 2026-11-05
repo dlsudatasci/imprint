@@ -32,6 +32,10 @@ import { EyeOffIcon } from "../icons";
  * (Rans, 4 Nov 2026): a click or a tap on the photo away from the box closes
  * it. Without the path question the close button is as it was.
  *
+ * S18 (4 Nov 2026, pilot participant 4): each question, the severity
+ * panel's and the picker's included, is 16 px semibold ink, the size of the
+ * category chooser, and Not an object and Delete box are red outline buttons.
+ *
  * Two variants (9 Oct 2026): "floating", the card beside the box on the
  * desktop photo, and "sheet", the same panel in the answers sheet on a phone
  * or tablet: full width with no shadow, every button at least 44 px tall, and
@@ -97,6 +101,13 @@ const SECONDARY_BUTTON = "px-2.5 py-1.5 rounded-control text-xs font-semibold bo
 const TOUCH_TARGET = "min-h-[44px]";
 const panelClass = (variant: PanelVariant) => (variant === "sheet" ? SHEET_PANEL_CLASS : PANEL_CLASS);
 const secondaryButton = (variant: PanelVariant) => (variant === "sheet" ? `${SECONDARY_BUTTON} ${TOUCH_TARGET} px-3.5` : SECONDARY_BUTTON);
+// Not an object and Delete box (S18, 4 Nov 2026): red outline, the same size
+// as the grey button, so they read as "remove" and not as the main action
+const DANGER_BUTTON = "px-2.5 py-1.5 rounded-control text-xs font-semibold border border-danger/50 bg-surface text-danger hover:bg-danger/10 transition-colors";
+const dangerButton = (variant: PanelVariant) => (variant === "sheet" ? `${DANGER_BUTTON} ${TOUCH_TARGET} px-3.5` : DANGER_BUTTON);
+// The question on every panel (S18): the category chooser's 16 px, so it is
+// the panel's most prominent text. Its "Question 1 of 2" line stays small.
+const QUESTION_TEXT = "text-base font-semibold text-ink";
 const stop = (e: React.MouseEvent) => e.stopPropagation();
 
 // The keys that move a range input
@@ -176,7 +187,7 @@ export function SeverityPicker({ initialValue, onConfirm, onBack, variant = "flo
       onMouseDown={stop}
       onMouseUp={stop}
     >
-      <p className="text-sm font-semibold text-ink mb-3 text-center">How severe is this obstruction?</p>
+      <p className={`${QUESTION_TEXT} mb-3 text-center`}>How severe is this obstruction?</p>
       <SeveritySlider value={localSeverity} onChange={setLocalSeverity} />
       <button
         data-control="confirm"
@@ -506,7 +517,8 @@ const DefaultInputSection = ({
       // Contributors close it with a click on the photo (Rans, 4 Nov 2026).
       // Without the path question, the close button as before.
       onClose={!askOnSidewalk && answered ? onClose : undefined}
-      question={<>Does <span className="font-semibold text-ink">{label}</span> obstruct the sidewalk?</>}
+      // The category in bold within the semibold question (S18)
+      question={<>Does <span className="font-bold">{label}</span> obstruct the sidewalk?</>}
       // Second of the two only when the path question was asked (contributors)
       step={askOnSidewalk ? 2 : undefined}
       answer={answer}
@@ -550,7 +562,7 @@ function SeverityPanel({ variant, header, onHide, severity, onChangeSeverity, fo
         {header}
         {onHide && <HideButton onHide={onHide} variant={variant} />}
       </div>
-      <p className="text-sm text-body mt-3 mb-3">How severe is this obstruction?</p>
+      <p className={`${QUESTION_TEXT} mt-3 mb-3`}>How severe is this obstruction?</p>
       <SeveritySlider value={severity} onChange={() => undefined} onRelease={onRelease} />
       <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-2">
         {footer}
@@ -578,7 +590,7 @@ function BackButton({ to, variant, onClick }: { to: 1 | 2; variant: PanelVariant
 
 function DeleteBoxButton({ variant, onDelete }: { variant: PanelVariant; onDelete: () => void }) {
   return (
-    <button className={`${secondaryButton(variant)} hover:text-danger`} onClick={() => onDelete()}>
+    <button className={dangerButton(variant)} onClick={() => onDelete()}>
       Delete box
     </button>
   );
@@ -620,7 +632,7 @@ function QuestionPanel({ variant, header, onHide, onClose, question, step, answe
       </div>
 
       {step && <p data-question-step={step} className="text-xs font-semibold text-muted mt-3">{SIDEWALK_QUESTION_COPY.questionOf(step)}</p>}
-      <p className={`text-sm text-body ${step ? "mt-0.5" : "mt-3"} mb-2`}>{question}</p>
+      <p className={`${QUESTION_TEXT} ${step ? "mt-0.5" : "mt-3"} mb-2`}>{question}</p>
       <div className="grid grid-cols-2 gap-2">
         <AnswerButton active={answer === "yes"} disabled={disabled} onClick={onYes} variant={variant} control={control ? `${control}-yes` : "yes"}>Yes</AnswerButton>
         <AnswerButton active={answer === "no"} disabled={disabled} onClick={onNo} variant={variant} control={control ? `${control}-no` : "no"}>No</AnswerButton>
@@ -648,7 +660,7 @@ function PanelFooter({ editable, variant, onDelete, onMarkNotAnObject }: {
   ) : (
     <>
       <span className="text-xs text-muted">No real object in this box?</span>
-      <button className={secondaryButton(variant)} onClick={() => onMarkNotAnObject()}>
+      <button className={dangerButton(variant)} onClick={() => onMarkNotAnObject()}>
         Not an object
       </button>
     </>

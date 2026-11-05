@@ -3014,3 +3014,116 @@ describe("changing an answer, one box at a time, and Not an object off the photo
     });
   });
 });
+
+// S18 (4 Nov 2026), from pilot participant 4: on a laptop, resizing a box
+// towards its panel dropped the drag, since the panel sits over the canvas and
+// the canvas's mouseleave ended it. During a press the window follows the mouse,
+// and the panel fades and lets the pointer through.
+describe("dragging a box with its panel open on the desktop layout (S18)", () => {
+  type DragTool = Tool & { state: Tool["state"] & { boxDragging: boolean; inputPosition: { left: number; top: number } } };
+  const realRect = HTMLCanvasElement.prototype.getBoundingClientRect;
+  beforeEach(() => {
+    // The stage at 1:1 from the window's top-left, so client px are stage px
+    HTMLCanvasElement.prototype.getBoundingClientRect = function () {
+      return { left: 0, top: 0, width: 960, height: 600, right: 960, bottom: 600, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    };
+  });
+  afterEach(() => {
+    HTMLCanvasElement.prototype.getBoundingClientRect = realRect;
+  });
+
+  const canvas = () => host.querySelector("canvas.rp-shapes") as HTMLCanvasElement;
+  const panelEl = () => host.querySelector(".rp-selected-input") as HTMLDivElement;
+  const carMark = (tool: Tool) => (tool.shapes.find((sh) => sh.getAnnotationData().id === "a-car")!.getAnnotationData() as unknown as { mark: { x: number; y: number; width: number; height: number } }).mark;
+  const pressOnCanvas = (tool: Tool, x: number, y: number) =>
+    act(() => (tool.onMouseDown as unknown as (e: object) => void)({ nativeEvent: { offsetX: x, offsetY: y }, currentTarget: canvas(), clientX: x, clientY: y, detail: 1 }));
+  const windowMouse = (type: string, x: number, y: number, target: EventTarget = window) =>
+    act(() => {
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }));
+    });
+  const open = () => {
+    const tool = mount() as DragTool;
+    tool.currentImageElement = { width: 960, height: 600 };
+    act(() => tool.selectBoxById("a-car"));
+    return tool;
+  };
+
+  it("keeps resizing when the mouse leaves the canvas onto the panel or off the photo, fading the panel meanwhile", () => {
+    const tool = open();
+    // The panel opens right of the car (100 to 300): 310
+    expect(panelEl().style.left).toBe("310px");
+    // The car's right edge handle, mid-height
+    pressOnCanvas(tool, 300, 160);
+    windowMouse("mousemove", 340, 160);
+    expect(carMark(tool).width).toBe(240);
+    expect(tool.state.boxDragging).toBe(true);
+    expect(panelEl().style.pointerEvents).toBe("none");
+    expect(panelEl().style.opacity).toBe("0.2");
+    expect(panelEl().dataset.boxDragging).toBe("true");
+    // Onto the panel: the canvas's mouseleave, then moves the panel would have swallowed
+    act(() => (tool as unknown as { onMouseLeave(): void }).onMouseLeave());
+    windowMouse("mousemove", 420, 170, panelEl());
+    expect(carMark(tool).width).toBe(320);
+    // Off the photo: clamped at its edge, still resizing
+    windowMouse("mousemove", 1500, 160, document.body);
+    expect(carMark(tool).width).toBe(860);
+    windowMouse("mousemove", 600, 160, document.body);
+    expect(carMark(tool).width).toBe(500);
+    // Released over the panel: the drag ends as on the photo, and the panel comes back for the new size
+    windowMouse("mouseup", 600, 160, panelEl());
+    expect(tool.state.boxDragging).toBe(false);
+    expect(panelEl().style.pointerEvents).toBe("");
+    expect(panelEl().style.opacity).toBe("");
+    expect(panelEl().dataset.boxDragging).toBeUndefined();
+    expect(tool.selectedId).toBe("a-car");
+    // 600 + 10 + 280 fits in 960
+    expect(panelEl().style.left).toBe("610px");
+    // Released: the window no longer moves the box
+    windowMouse("mousemove", 700, 160);
+    expect(carMark(tool).width).toBe(500);
+  });
+
+  it("moves the whole box past the panel too, and a release anywhere ends it", () => {
+    const tool = open();
+    pressOnCanvas(tool, 200, 160);
+    windowMouse("mousemove", 260, 200, panelEl());
+    expect(carMark(tool)).toMatchObject({ x: 160, y: 140, width: 200, height: 120 });
+    expect(tool.state.boxDragging).toBe(true);
+    windowMouse("mouseup", 2000, 2000, document.body);
+    expect(tool.state.boxDragging).toBe(false);
+    windowMouse("mousemove", 300, 300);
+    expect(carMark(tool)).toMatchObject({ x: 160, y: 140 });
+  });
+
+  it("does not fade the panel for a click on the box, or a move under 3 px", () => {
+    const tool = open();
+    pressOnCanvas(tool, 200, 160);
+    windowMouse("mousemove", 202, 161);
+    expect(tool.state.boxDragging).toBe(false);
+    windowMouse("mouseup", 202, 161);
+    expect(tool.state.boxDragging).toBe(false);
+    expect(tool.selectedId).toBe("a-car");
+  });
+
+  it("ends the drag when the window loses focus mid-press", () => {
+    const tool = open();
+    pressOnCanvas(tool, 300, 160);
+    windowMouse("mousemove", 340, 160);
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    expect(tool.state.boxDragging).toBe(false);
+    windowMouse("mousemove", 500, 160);
+    expect(carMark(tool).width).toBe(240);
+  });
+
+  it("removes its window listeners when the tool unmounts mid-press", () => {
+    const tool = open();
+    const removed = vi.spyOn(window, "removeEventListener");
+    pressOnCanvas(tool, 300, 160);
+    unmount();
+    const types = removed.mock.calls.map((c) => c[0]);
+    expect(types).toEqual(expect.arrayContaining(["mousemove", "mouseup", "blur"]));
+    removed.mockRestore();
+  });
+});

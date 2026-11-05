@@ -7,6 +7,7 @@ import SceneQuestions from "@/ui/annotation-tool/SceneQuestions";
 import Step1Card from "@/ui/annotation-tool/Step1Card";
 import { boxLabelColors, boxLineStyle, boxStrokeColor, defaultShapeStyle } from "@/ui/annotation-tool/Shape";
 import { panelPosition } from "@/ui/annotation-tool/panelPosition";
+import { MOUSE_HANDLE_DOT_PX } from "@/ui/annotation-tool/Transformer";
 import { buildTrays } from "@/features/annotate/objectTrays";
 import { buildDisplayLabels, formatLabel } from "@/util/buildDisplayLabels";
 import { getSuggestionPanelMode, isSetAside } from "@/util/suggestionJudgment";
@@ -122,7 +123,6 @@ function DemoBox({ box, label, scale, isOpen }) {
   const stroke = boxStrokeColor(box);
   const line = boxLineStyle(box);
   const { background: labelBg, text: labelInk } = boxLabelColors(box);
-  const handle = BOX.transformerSize;
   const text = label || formatLabel(box.comment);
   return (
     <g>
@@ -166,7 +166,18 @@ function DemoBox({ box, label, scale, isOpen }) {
           [x + width, y + height / 2], [x + width, y + height],
           [x + width / 2, y + height], [x, y + height], [x, y + height / 2],
         ].map(([hx, hy], i) => (
-          <rect key={i} x={hx * scale - handle / 2} y={hy * scale - handle / 2} width={handle} height={handle} fill={BOX.transformerBackground} />
+          // Transformer's mouse handles (5 Nov 2026): white dots ringed in the box's colour, a soft shadow
+          <circle
+            key={i}
+            data-handle
+            cx={hx * scale}
+            cy={hy * scale}
+            r={MOUSE_HANDLE_DOT_PX}
+            fill="#ffffff"
+            stroke={stroke}
+            strokeWidth={2}
+            style={{ filter: "drop-shadow(0 0 3px rgba(15, 23, 42, 0.35))" }}
+          />
         ))}
     </g>
   );

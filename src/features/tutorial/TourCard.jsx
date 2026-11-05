@@ -61,7 +61,8 @@ export default function TourCard({ tooltipProps, title, children, footer, onDism
           ×
         </button>
       </div>
-      <div data-tour-body className="min-h-0 overflow-y-auto overscroll-contain text-body text-sm leading-relaxed mb-5">
+      {/* 16 px to the footer, its mt-4 alone: a mb-5 here as well left 36 px (Rans, 5 Nov 2026) */}
+      <div data-tour-body className="min-h-0 overflow-y-auto overscroll-contain text-body text-sm leading-relaxed">
         {children}
       </div>
       <div className="shrink-0 flex justify-between items-center mt-4">

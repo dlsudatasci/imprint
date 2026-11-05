@@ -1,7 +1,15 @@
 import { IShape, IShapeBase, boxStrokeColor } from "./Shape";
 import { pickCorner, markCorners, TOUCH_HANDLE_HIT_PX, TOUCH_HANDLE_DOT_PX } from "./touchGeometry";
 
-/** "mouse": eight square handles. "touch": four round corner handles (9 Oct 2026). */
+/**
+ * The mouse's round handles (Rans, 5 Nov 2026), CSS px: a 6 px dot, smaller
+ * than a finger's 10 px, grabbed within 7 px of its centre so the whole dot
+ * can be grabbed (the square was 10 stage px, about 4 to 6 CSS px either side).
+ */
+export const MOUSE_HANDLE_DOT_PX = 6;
+export const MOUSE_HANDLE_HIT_PX = 7;
+
+/** "mouse": eight round handles (square until 5 Nov 2026). "touch": four round corner handles (9 Oct 2026). */
 export type TransformerMode = "mouse" | "touch";
 
 export interface ITransformer {
@@ -36,6 +44,11 @@ export interface ITransformer {
  * instead, sized in CSS px so a finger can grab them at any zoom: a 10 px dot
  * with a 22 px reach. The touch gesture moves a corner itself (moveCorner in
  * touchGeometry.ts). A rejected box gets no handles, since it cannot move.
+ *
+ * From 5 Nov 2026 (Rans) the mouse's eight handles look like the touch ones,
+ * white dots ringed in the box's colour with a soft shadow, in place of the
+ * dark squares, smaller (MOUSE_HANDLE_DOT_PX) and still eight, so one side can
+ * be dragged on its own.
  */
 export default class Transformer implements ITransformer {
   private readonly shape: IShape;
@@ -45,11 +58,13 @@ export default class Transformer implements ITransformer {
   // Stage px to CSS px, so touch handles keep their size on screen
   private canvasScale: number;
 
-  // Divided by scale so the handles stay a constant size on screen regardless
-  // of how far the image is zoomed — otherwise they'd shrink to nothing on a
-  // zoomed-out image and swallow the box when zoomed in
-  private get nodeWidth() {
-    return this.shape.shapeStyle.transformerSize / this.scale;
+  // Half the side of the square a mouse handle is grabbed in, image px.
+  // Divided by scale (and the stage's CSS scale) so the handles stay a
+  // constant size on screen regardless of how far the image is zoomed —
+  // otherwise they'd shrink to nothing on a zoomed-out image and swallow the
+  // box when zoomed in
+  private get mouseReach() {
+    return MOUSE_HANDLE_HIT_PX / (this.scale * this.canvasScale);
   }
 
   constructor(shape: IShape, scale: number, mode: TransformerMode = "mouse", canvasScale = 1) {
@@ -118,34 +133,30 @@ export default class Transformer implements ITransformer {
       return;
     }
 
-    const allCentersTable = this.getAllCentersTable();
-    canvas2D.save();
-    canvas2D.fillStyle = this.shape.shapeStyle.transformerBackground;
-
-    for (const item of allCentersTable) {
-      const { x, y, width, height } = calculateTruePosition({
-        x: item.x - this.nodeWidth / 2,
-        y: item.y - this.nodeWidth / 2,
-        width: this.nodeWidth,
-        height: this.nodeWidth,
-      });
-      canvas2D.fillRect(x, y, width, height);
-    }
-
-    canvas2D.restore();
+    this.paintRoundHandles(canvas2D, calculateTruePosition, this.getAllCentersTable(), MOUSE_HANDLE_DOT_PX);
   };
 
-  /** Four round handles: white, ringed in the box's colour, with a soft shadow. */
+  /** Four round corner handles, unless the box is rejected. */
   private paintTouchHandles = (
     canvas2D: CanvasRenderingContext2D,
     calculateTruePosition: (shapeData: IShapeBase) => IShapeBase
   ) => {
+    if (this.shape.getAnnotationData().isRejected) return;
+    this.paintRoundHandles(canvas2D, calculateTruePosition, markCorners(this.shape.getAnnotationData().mark), TOUCH_HANDLE_DOT_PX);
+  };
+
+  /** Round handles at `points` (image px): white, ringed in the box's colour, with a soft shadow. `dotPx` is the radius in CSS px. */
+  private paintRoundHandles = (
+    canvas2D: CanvasRenderingContext2D,
+    calculateTruePosition: (shapeData: IShapeBase) => IShapeBase,
+    points: Array<{ x: number; y: number }>,
+    dotPx: number
+  ) => {
     const data = this.shape.getAnnotationData();
-    if (data.isRejected) return;
-    const radius = TOUCH_HANDLE_DOT_PX / this.canvasScale;
+    const radius = dotPx / this.canvasScale;
     canvas2D.save();
     canvas2D.setLineDash([]);
-    for (const corner of markCorners(data.mark)) {
+    for (const corner of points) {
       const { x, y } = calculateTruePosition({ x: corner.x, y: corner.y, width: 0, height: 0 });
       canvas2D.beginPath();
       canvas2D.arc(x, y, radius, 0, Math.PI * 2);
@@ -155,7 +166,7 @@ export default class Transformer implements ITransformer {
       canvas2D.fill();
       canvas2D.shadowColor = "transparent";
       canvas2D.shadowBlur = 0;
-      canvas2D.lineWidth = 2.5 / this.canvasScale;
+      canvas2D.lineWidth = (dotPx === TOUCH_HANDLE_DOT_PX ? 2.5 : 2) / this.canvasScale;
       canvas2D.strokeStyle = boxStrokeColor(data);
       canvas2D.stroke();
     }
@@ -176,8 +187,8 @@ export default class Transformer implements ITransformer {
     positionY: number
   ) => {
     return (
-      Math.abs(positionX - rectCenterX) <= this.nodeWidth / 2 &&
-      Math.abs(positionY - rectCenterY) <= this.nodeWidth / 2
+      Math.abs(positionX - rectCenterX) <= this.mouseReach &&
+      Math.abs(positionY - rectCenterY) <= this.mouseReach
     );
   };
 

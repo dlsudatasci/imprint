@@ -73,6 +73,7 @@ import { IAnnotation } from "./Annotation";
 import { IAnnotationState } from "./annotation/AnnotationState";
 import { DefaultAnnotationState } from "./annotation/DefaultAnnotationState";
 import CreatingAnnotationState from "./annotation/CreatingAnnotationState";
+import DraggingAnnotationState from "./annotation/DraggingAnnotationState";
 import JudgingAnnotationState from "./annotation/JudgingAnnotationState";
 import TransformationState from "./annotation/TransformationState";
 import SidewalkAnnotationState from "./annotation/SidewalkAnnotationState";
@@ -233,6 +234,8 @@ const SIDEWALK_CLOSE_PX = 12;
  * tap marked a box and the copied mousedown unmarked it straight away.
  */
 const COMPAT_MOUSE_MS = 1000;
+// How far a mouse press moves before the floating panel fades for it (S18)
+const MOUSE_DRAG_SLOP_PX = 3;
 /**
  * The events that count as an interaction for the idle check (S10): any
  * pointer, key or touch event on the page while an image is open, the photo,
@@ -482,6 +485,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // corner is dragged, the box Add box just placed (shows its hint), and
     // whether any pointer is coarse (shows Add box in the desktop layout)
     zoomed: false,
+    // A box being moved or resized on the desktop photo (S18): the floating
+    // panel fades and lets the pointer through until it is released
+    boxDragging: false,
     loupe: null as { left: number; top: number } | null,
     addBoxHintId: null as string | null,
     addBoxHintFading: false,
@@ -1082,6 +1088,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (this.keepInViewTimer !== null) clearTimeout(this.keepInViewTimer);
     if (this.loupeFrame !== null && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(this.loupeFrame);
     this.editSaver.flush();
+    this.stopMouseDrag();
     if (typeof window !== "undefined") {
       window.removeEventListener("keydown", this.onSidewalkKeyDown);
       for (const type of INTERACTION_EVENTS) window.removeEventListener(type, this.noteInteraction, { capture: true });
@@ -1258,7 +1265,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               <div
                 ref={this.floatingPanelRef}
                 className={touch ? "rp-selected-input select-text" : "rp-selected-input"}
-                style={inputPosition}
+                data-box-dragging={this.state.boxDragging || undefined}
+                // Out of the way while its box is moved or resized (S18)
+                style={{ ...inputPosition, transition: "opacity 150ms", ...(this.state.boxDragging ? { pointerEvents: "none", opacity: 0.2 } : {}) }}
                 onMouseDown={(e) => e.stopPropagation()}
                 onMouseUp={(e) => e.stopPropagation()}
                 onMouseMove={(e) => e.stopPropagation()}
@@ -2761,6 +2770,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const { state, effect } = reduceTouch(this.touchState, event);
     this.touchState = state;
     this.applyTouchEffect(effect);
+    // A finger fitting or moving the box on the desktop photo fades the panel too (S18)
+    this.setBoxDragging(!this.isSheet && (state.phase === "corner" || state.phase === "moveBox"));
   }
 
   /**
@@ -4431,6 +4442,19 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * the painting code). On the desktop photo the panel sits beside the box: to
    * its right, or to its left when it would run off the stage.
    */
+  /**
+   * The part of the stage the photo covers across, stage px (S18): the panel
+   * stays inside it. All of the stage when the photo fills it or is zoomed past it.
+   */
+  private photoExtent(stage: { width: number; height: number }) {
+    const image = this.currentImageElement;
+    if (!image) return stage;
+    const { originX, scale } = this.scaleState;
+    const left = Math.max(0, originX);
+    const right = Math.min(stage.width, originX + image.width * scale);
+    return right > left ? { left, width: right - left, height: stage.height } : stage;
+  }
+
   private syncPanel(item: IShape) {
     const data = item.getAnnotationData();
     const { x, y, width: boxW } = this.calculateShapePosition(data.mark);
@@ -4438,7 +4462,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     this.setState({
       showInput: true,
-      inputPosition: panelPosition({ x, y, width: boxW }, stage, this.props.marginWithInput),
+      inputPosition: panelPosition({ x, y, width: boxW }, this.photoExtent(stage), this.props.marginWithInput),
       inputComment: data.comment || "",
       originalComment: data.initialState?.comment || "",
       editable: data.editable || false,
@@ -4896,6 +4920,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   private onMouseDown: MouseEventHandler<HTMLCanvasElement> = (event) => {
     if (this.isMouseFromTouch(event)) return;
+    this.mouseDragEnded = false;
     // For telemetry, and the square handles (9 Oct 2026)
     this.inputTypesUsed.add("mouse");
     this.setInputMode("mouse");
@@ -4908,11 +4933,17 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       offsetY
     );
     this.currentAnnotationState.onMouseDown(positionX, positionY);
+    if (this.inBoxStep) this.startMouseDrag(event.currentTarget, event.clientX, event.clientY);
   };
 
   private onMouseMove: MouseEventHandler<HTMLCanvasElement> = (event) => {
-    if (this.isMouseFromTouch(event)) return;
+    if (this.isMouseFromTouch(event) || this.mouseDragCanvas) return;
     const { offsetX, offsetY } = event.nativeEvent;
+    this.mouseMoveAt(offsetX, offsetY);
+  };
+
+  /** A mouse move at stage px on the canvas, from the canvas or, during a press, the window */
+  private mouseMoveAt(offsetX: number, offsetY: number) {
     const { positionX, positionY } = this.calculateMousePosition(
       offsetX,
       offsetY
@@ -4926,18 +4957,90 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       return;
     }
     this.currentAnnotationState.onMouseMove(positionX, positionY);
-  };
+  }
 
   private onMouseUp: MouseEventHandler<HTMLCanvasElement> = (event) => {
-    if (this.isMouseFromTouch(event)) return;
+    // A press in Step 1 ends on the window's release (S18), just before this one
+    if (this.isMouseFromTouch(event) || this.mouseDragCanvas || this.mouseDragEnded) return;
     this.currentAnnotationState.onMouseUp();
     this.endMouseLoupe();
   };
 
   private onMouseLeave: MouseEventHandler<HTMLCanvasElement> = () => {
+    // During a press in Step 1 the window follows the mouse, so leaving the
+    // canvas (onto the floating panel, or off the photo) ends nothing (S18)
+    if (this.mouseDragCanvas) return;
     this.currentAnnotationState.onMouseLeave();
     this.endMouseLoupe();
   };
+
+  /**
+   * Step 1, a mouse press on the photo (S18, 4 Nov 2026): until it is
+   * released, the window, not the canvas, follows the mouse. Before, the
+   * canvas's mouseleave ended a drag, and the floating panel sits over the
+   * canvas, so resizing a box towards its panel dropped the drag (pilot
+   * participant 4). Window listeners rather than pointer capture, since the
+   * mouse drag runs on mouse events and the canvas's offsetX: a move anywhere
+   * is turned into canvas px from the canvas's rect, and clamped to the photo
+   * as before. In the capture phase, so the panel's stopPropagation cannot
+   * hide them. A release anywhere, or the window losing focus, ends the drag
+   * as a release on the photo does.
+   */
+  private mouseDragCanvas: HTMLCanvasElement | null = null;
+  // The window ended the press, so the canvas's own mouseup that follows is skipped
+  private mouseDragEnded = false;
+  // Where the press began, client px: the panel fades only once the mouse has
+  // moved past MOUSE_DRAG_SLOP_PX, so a click on a box does not flicker it
+  private mouseDragFrom: { x: number; y: number } | null = null;
+
+  private startMouseDrag(canvas: HTMLCanvasElement, clientX: number, clientY: number) {
+    if (typeof window === "undefined") return;
+    this.stopMouseDrag();
+    this.mouseDragCanvas = canvas;
+    this.mouseDragFrom = { x: clientX, y: clientY };
+    window.addEventListener("mousemove", this.onWindowMouseMove, true);
+    window.addEventListener("mouseup", this.onWindowMouseUp, true);
+    window.addEventListener("blur", this.onWindowMouseUp);
+  }
+
+  private stopMouseDrag() {
+    if (typeof window === "undefined") return;
+    window.removeEventListener("mousemove", this.onWindowMouseMove, true);
+    window.removeEventListener("mouseup", this.onWindowMouseUp, true);
+    window.removeEventListener("blur", this.onWindowMouseUp);
+    this.mouseDragCanvas = null;
+  }
+
+  private onWindowMouseMove = (event: MouseEvent) => {
+    const canvas = this.mouseDragCanvas;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const stage = this.stageSize();
+    if (!rect.width || !rect.height) return;
+    this.mouseMoveAt(((event.clientX - rect.left) * stage.width) / rect.width, ((event.clientY - rect.top) * stage.height) / rect.height);
+    const from = this.mouseDragFrom;
+    const moved = !from || Math.hypot(event.clientX - from.x, event.clientY - from.y) > MOUSE_DRAG_SLOP_PX;
+    if (moved) this.setBoxDragging(this.isMovingBox());
+  };
+
+  private onWindowMouseUp = () => {
+    if (!this.mouseDragCanvas) return;
+    this.stopMouseDrag();
+    this.mouseDragEnded = true;
+    this.currentAnnotationState.onMouseUp();
+    this.endMouseLoupe();
+    this.setBoxDragging(false);
+  };
+
+  /** A box is being moved, resized or drawn with the mouse */
+  private isMovingBox() {
+    const state = this.currentAnnotationState;
+    return state instanceof DraggingAnnotationState || state instanceof TransformationState || state instanceof CreatingAnnotationState;
+  }
+
+  private setBoxDragging(boxDragging: boolean) {
+    if (this.state.boxDragging !== boxDragging) this.setState({ boxDragging });
+  }
 
   /**
    * The magnifier while a resize handle is dragged with the mouse (10 Oct

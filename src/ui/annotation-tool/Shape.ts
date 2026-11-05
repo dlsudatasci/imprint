@@ -35,15 +35,20 @@ export const drawnBoxStyle: IShapeStyle = {
 };
 
 /**
- * A box's outline colour in the default view, which encodes its status:
- * blue drawn by the user, green confirmed, amber rejected or undecided. The
- * touch corner handles are ringed in the same colour.
+ * A box's outline colour in the default view, which encodes who made it:
+ * green drawn by the user, amber a suggestion, dashed until answered and solid
+ * after (boxIsSolid). The touch corner handles are ringed in the same colour.
+ *
+ * Drawn boxes were the brand blue until S18 (4 Nov 2026), when pilot
+ * participant 4 lost them against shadows, dark vehicles and the sky. They
+ * took the green that confirmed obstructions had (Rans, 5 Nov 2026), and an
+ * answered suggestion, Yes or No, stays amber, solid. Suggestions off the
+ * path or marked Not an object leave the photo (S12, S17), and the lists say
+ * each answer.
  */
-export function boxStrokeColor({ selected, isRejected, editable }: { selected?: boolean; isRejected?: boolean; editable?: boolean }) {
-  if (editable) return "#004aad"; // blue — user-drawn box
-  if (selected) return "#16a34a"; // green — confirmed
-  if (isRejected) return "#d97706"; // warning — rejected
-  return "#d97706";
+export function boxStrokeColor({ editable }: { selected?: boolean; isRejected?: boolean; editable?: boolean }) {
+  if (editable) return "#16a34a"; // green — user-drawn box
+  return "#d97706"; // amber — a suggestion, answered or not
 }
 
 /**
@@ -65,11 +70,10 @@ export function boxLineStyle(data: { selected?: boolean; isRejected?: boolean; e
   return boxIsSolid(data) ? { width: 3, dash: [] as number[] } : { width: lineWidth, dash: [5, 5] };
 }
 
-/** A box's label colours in the default view: its status colour, as boxStrokeColor. */
-export function boxLabelColors({ selected, editable }: { selected?: boolean; isRejected?: boolean; editable?: boolean }) {
-  if (editable) return { background: "#004aad", text: "white" }; // blue — user-drawn
-  if (selected) return { background: "#16a34a", text: "white" }; // green — confirmed
-  return { background: "#d97706", text: "#111827" }; // amber — rejected or undecided
+/** A box's label colours in the default view: its colour, as boxStrokeColor. */
+export function boxLabelColors({ editable }: { selected?: boolean; isRejected?: boolean; editable?: boolean }) {
+  if (editable) return { background: "#16a34a", text: "white" }; // green — user-drawn
+  return { background: "#d97706", text: "#111827" }; // amber — a suggestion
 }
 
 export interface IShapeStyle {
@@ -253,9 +257,10 @@ export class RectShape implements IShape {
    *
    *   yellow dashed  a suggestion nobody has ruled on yet — the only state the
    *                  form refuses to submit on
-   *   green solid    confirmed as an obstruction
-   *   yellow solid   rejected; kept visible so it's clear it was considered
-   *   blue           drawn by the user (dashed until they pick a label)
+   *   yellow solid   an answered suggestion, an obstruction or not (green for
+   *                  an obstruction until 5 Nov 2026)
+   *   green          drawn by the user (dashed until they pick a label; blue
+   *                  until S18)
    *
    * In the "obstructions" variant (the annotator's Obstructions step) the boxes
    * are locked and only the obstruction answer is shown:

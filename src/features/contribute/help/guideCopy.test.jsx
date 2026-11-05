@@ -27,13 +27,14 @@ describe("the guide on the path (S16)", () => {
     expect([...list.matchAll(/<li>([^<]+)<\/li>/g)].map((m) => m[1])).toEqual([...SIDEWALK_QUESTION_COPY.pathPoints]);
     // Right under the question, before Question 2's paragraph
     expect(section.indexOf("data-path-points")).toBeGreaterThan(section.indexOf(SIDEWALK_QUESTION_COPY.question));
-    expect(section.indexOf("data-path-points")).toBeLessThan(section.indexOf("If you choose Yes"));
+    expect(section.indexOf("data-path-points")).toBeLessThan(section.indexOf("If it is on the sidewalk, then Question 2"));
     // Only once on the page
     expect(html.match(/data-path-points/g)).toHaveLength(1);
   });
 
-  it("says a box only means the model found an object, beside the dashed boxes", () => {
-    expect(step("answer").paragraphs[0]).toBe("Dashed boxes are the model's suggestions. A box only means the model found an object, not that it is on the path or in your way. Click one, or tap it on a phone, to open its panel.");
+  // Rans's wording (5 Nov 2026), with no "model"
+  it("says a box is only a suggested object, beside the dashed yellow boxes", () => {
+    expect(step("answer").paragraphs[0]).toBe("Dashed yellow boxes are suggested objects. A box is only a suggested object, it doesn't necessarily mean it's on the sidewalk or an obstruction. Click one, or tap it on a phone, to open its panel.");
   });
 
   it("rates the sidewalk nearest you in Step 2, the same one as in Step 1", () => {
@@ -44,16 +45,18 @@ describe("the guide on the path (S16)", () => {
   it("names Question 1 then Question 2 in Answer each suggestion", () => {
     const [, first, second] = step("answer").paragraphs;
     expect(first).toBe(`Check the category, then answer Question 1, “${SIDEWALK_QUESTION_COPY.question}”, with Yes or No.`);
-    expect(second).toBe("If you choose Yes, Question 2 asks “Does it obstruct the sidewalk?” Answer it for yourself, as you normally travel. If you choose Yes again, rate how much from 1, a minor inconvenience, to 5, impassable.");
+    expect(second).toBe("If it is on the sidewalk, then Question 2 asks “Does it obstruct the sidewalk?” Answer it for yourself if you believe the object obstructs your path or not. If it does obstruct, rate the severity of its obstruction from 1, a minor inconvenience, to 5, impassable.");
     const text = step("answer").paragraphs.join(" ");
     expect(text.indexOf("Question 1")).toBeLessThan(text.indexOf("Question 2"));
     // The path list still right after Question 1
     expect(step("answer").pathPointsAfter).toBe(2);
   });
 
-  it("names Question 1 then Question 2 in Mark boxes with nothing in them", () => {
+  it("names Question 1 then Question 2 in Mark boxes with nothing in them, then Not an object, in one paragraph", () => {
+    expect(step("not-an-object").paragraphs).toEqual([
+      "If an object is not on the sidewalk, choose No to Question 1. If it is on the sidewalk but not an obstruction, choose No to Question 2. If a box does not seem to be a real object, choose Not an object. The box then leaves the photo and is listed under Not an object, where you can open it and choose Restore.",
+    ]);
     const [first] = step("not-an-object").paragraphs;
-    expect(first).toBe("If an object is off the path, choose No to Question 1. If it is on the path but not in your way, choose No to Question 2.");
     expect(first.indexOf("Question 1")).toBeLessThan(first.indexOf("Question 2"));
   });
 
@@ -72,24 +75,36 @@ describe("the guide on the path (S16)", () => {
   });
 });
 
-// S17 (4 Nov 2026), from pilot participant 3: how to change an answer, and
-// where a Not an object box goes
-describe("the guide on changing an answer (S17)", () => {
-  const [, notAnObject, lists] = step("not-an-object").paragraphs;
+// S17 (4 Nov 2026), from pilot participant 3, then Rans's wording after S18
+// (5 Nov 2026): the guide no longer explains the lists or the ways back
+describe("the guide after Rans's review of S18 (5 Nov 2026)", () => {
+  const text = () => GUIDE_COPY.steps.flatMap((s) => s.paragraphs).join(" ");
 
-  it("puts Not an object at Question 1 and says where the box goes", () => {
-    expect(notAnObject).toBe("If a box has nothing real in it, choose Not an object at the foot of its panel at Question 1. The box then leaves the photo and is listed under Not an object, where you can open it and choose Restore.");
+  it("starts with one paragraph, the session picker, with no tutorial, Pause or Stop", () => {
+    const start = step("start").paragraphs;
+    expect(start).toHaveLength(1);
+    expect(start[0]).toMatch(/^From your dashboard, choose Let's Annotate!, pick how many photos to do \(.+\), and choose Start Session\.$/);
+    expect(text()).not.toMatch(/\bPause\b|\bStop\b|The first time|tutorial|practice photos/);
   });
 
-  it("ends the lists paragraph with the severity scale and the two ways back", () => {
-    expect(lists.endsWith(" An obstruction opens on its severity scale. To change an earlier answer, choose Back to Question 2 or Back to Question 1, then pick the new answer.")).toBe(true);
-    expect(lists.startsWith("Every answer sorts the object into a list, Not obstructions or Obstructions,")).toBe(true);
+  it("no longer has the paragraph on the lists, the severity scale or Back to Question, but says where a Not an object box goes", () => {
+    expect(text()).not.toMatch(/Every answer sorts the object|Back to Question/);
+    expect(step("not-an-object").paragraphs[0]).toMatch(/choose Not an object\. The box then leaves the photo and is listed under Not an object, where you can open it and choose Restore\.$/);
   });
 
-  it("never says Change or Go back, and has no em dash or semicolon", () => {
+  it("titles drawing Draw the objects we missed, drags around the object, and says Click Next Image once every object has an answer", () => {
+    expect(step("draw").title).toBe("Draw the objects we missed");
+    expect(step("draw").paragraphs.slice(0, 2)).toEqual([
+      "Box every object on the sidewalk or the path people walk on that we missed, whether or not it is an obstruction. Leave out objects that are not on the sidewalk.",
+      "With a mouse, drag a box around the object. On a phone or tablet, tap Add box and drag its corners to fit.",
+    ]);
+    expect(step("next").paragraphs[0]).toBe("Click Next Image once every object has an answer. Previous takes you back to a photo you already did, to change it.");
+  });
+
+  it("never says model, Change or Go back, and has no em dash or semicolon", () => {
     for (const s of GUIDE_COPY.steps) {
-      for (const p of s.paragraphs) {
-        expect(p, `${s.id}: ${p}`).not.toMatch(/\b(click|tap|choose) Change\b|Go back/);
+      for (const p of [s.title, ...s.paragraphs]) {
+        expect(p, `${s.id}: ${p}`).not.toMatch(/\bmodel|\b(click|tap|choose) Change\b|Go back/i);
         expect(p).not.toMatch(/[—;]/);
       }
     }
@@ -97,7 +112,9 @@ describe("the guide on changing an answer (S17)", () => {
 
   it("is what the guide page shows", () => {
     const html = decode(renderToStaticMarkup(<HelpDirectory />));
-    expect(html).toContain(notAnObject);
-    expect(html).toContain("choose Back to Question 2 or Back to Question 1, then pick the new answer.");
+    expect(html).toContain(step("not-an-object").paragraphs[0]);
+    expect(html).toContain("Draw the objects we missed");
+    expect(html).not.toContain("The tutorial uses practice photos");
+    expect(html).not.toContain("Pause keeps your work");
   });
 });

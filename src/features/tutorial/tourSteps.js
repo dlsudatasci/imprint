@@ -20,14 +20,17 @@
  * Image).
  * Contributors have one tour. From 3 Nov 2026 (S16, after the first two pilot
  * sessions found the tutorial harder than the task) it has six steps, each
- * short, most with a numbered list: Check Each Box (Question 1 then Question
- * 2, and that a dashed box is only a suggestion), What Counts as the Path (the
+ * short, most with a numbered list: Check Each Box (where the object is, then
+ * whether it obstructs, without the question numbers from S18, and that a
+ * dashed box is only a suggestion), What Counts as the Path (the
  * sidewalk nearest you only), Your Answers, Severity, Scene-Level Assessment
  * (the same nearest sidewalk) and Next Image. The wording is Rans's (S16b, the
  * same day): Your Answers and Next Image have no list, and Severity no intro.
  * After Rans's review of S16b (the same day) Check Each Box has no line on the
  * dashed boxes, Your Answers names Hide all and Show all, and Next Image is
- * two sentences, without Finish Session.
+ * two sentences, without Finish Session. From Rans's review of S18 (5 Nov
+ * 2026) Your Answers is its first sentence only and Severity one paragraph
+ * with no list.
  * A contributor step has `intro`, `points` (possibly none), `after` (text
  * after the list) and `note`, with `touchIntro`, `touchPoints`, `touchAfter`
  * and `touchNote` where the touch wording differs. buildTourSteps returns
@@ -61,8 +64,6 @@
  */
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 
-const QUESTION = SIDEWALK_QUESTION_COPY.question;
-
 /**
  * The most a contributor step may say (S16): the intro, the points, `after`
  * and the note together, the question's text counted, and one point on its own.
@@ -71,10 +72,12 @@ export const CONTRIBUTOR_BUDGET = Object.freeze({ words: 80, points: 5, wordsPer
 
 // The severity step points at the photo (8 Oct 2026): the severity scale opens
 // on the photo beside the box after a Yes, not in the lists under it. The
-// path step (S16) points at Step 1's instructions above the photo.
+// path step (S16) pointed at Step 1's instructions above the photo until
+// 5 Nov 2026, when Rans found that confusing: it points at the photo, as
+// Check Each Box does, with its card on the photo's right.
 const CONTRIBUTOR_TARGETS = Object.freeze([
   ".rp-stage",
-  "#step1-instructions",
+  ".rp-stage",
   "#box-review-section",
   ".rp-stage",
   "#scene-level-section",
@@ -93,17 +96,20 @@ const ANNOTATOR_TARGETS = Object.freeze([
 // Check Each Box to the right of the photo (S16b): below it, the card could not
 // be read without scrolling. Where there is no room on the right it slides over
 // the photo's right side (CHECK_FLOATING), never below the photo.
-const CONTRIBUTOR_PLACEMENTS = ["right", "bottom", "top", "bottom", "top", "top"];
+const CONTRIBUTOR_PLACEMENTS = ["right", "right", "top", "bottom", "top", "top"];
 const ANNOTATOR_PLACEMENTS = ["bottom", "left", "top", "top"];
 
 // ---- Contributors (S16, 3 Nov 2026): short numbered steps ----
 // The wording from S16b (3 Nov 2026) is Rans's, after his review of S16.
 
+// S18 (4 Nov 2026): the two questions by what they ask, not by number. The
+// box panel's "Question 1 of 2" labels number them. Rans's wording (5 Nov
+// 2026): both questions as instructions, and Not an object spelled out.
 const checkPoints = (verb) => [
   `${verb} a box and check its label.`,
-  `Question 1 asks only where it is: “${QUESTION}”`,
-  "Question 2 asks whether it obstructs the path for you.",
-  `Nothing real in it? ${verb} Not an object.`,
+  SIDEWALK_QUESTION_COPY.answerWhether,
+  "Then, answer whether it obstructs the sidewalk or the path for you.",
+  `If it's not a real object, ${verb.toLowerCase()} Not an object.`,
 ];
 /**
  * Check Each Box sits right of the photo, and never runs off the screen: no
@@ -117,12 +123,11 @@ const PATH_STEP = {
   points: SIDEWALK_QUESTION_COPY.pathPoints,
 };
 
-const SEVERITY_RATE = "Rate how much it blocks you, from 1 (a minor inconvenience) to 5 (it completely blocks the path).";
+// One paragraph, no list (Rans, 5 Nov 2026). A confirmed obstruction opens on
+// its scale (S17), so the scale is how it is changed.
 const SEVERITY_STEP = {
   title: "Severity",
-  // S17 (4 Nov 2026): a confirmed obstruction opens on its scale, with no Change
-  points: [SEVERITY_RATE, "Click Confirm.", "To change it later, open the box and move the scale."],
-  touchPoints: [SEVERITY_RATE, "Tap Confirm.", "To change it later, open the box and move the scale."],
+  intro: "Rate how much it blocks you, from 1 to 5. You can still change this later by opening the box and adjusting the scale.",
 };
 
 // Rated on the same sidewalk as Question 1, so a photo with two sidewalks is
@@ -134,14 +139,10 @@ const SCENE_STEP = {
   note: "No sidewalk? Choose None and the other three are skipped.",
 };
 
-// Hide all and Show all (Rans, 3 Nov 2026): beside Still to decide on a laptop, beside the step's name on a phone
-const HIDE_ALL = (verb) => `${verb} Hide all to hide all the boxes on the photo. ${verb} Show all to show them again.`;
-const ANSWERS_AFTER = (verb) => `${verb} a name to open it and change the answer. ${verb} the eye to hide a box while you work on the boxes around it. ${HIDE_ALL(verb)}`;
-
 // The submit button reads Next Image, or Finish Session on the last image, and
 // is never disabled. submit() shows a message naming what is still missing
 // instead. Titled "Submit" until 12 Oct 2026, a name the button never had.
-const nextImageAfter = (verb) => `${verb} Next Image once every box has an answer. If something is missing, there will be a warning to specify what's missing.`;
+const nextImageAfter = (verb) => `${verb} Next Image once every box has an answer. If something is missing, a warning will appear to point it out.`;
 const CONTRIBUTOR_SUBMIT_STEP = {
   title: "Next Image",
   after: nextImageAfter("Click"),
@@ -161,16 +162,18 @@ const CONTRIBUTOR = [
     title: "Check Each Box",
     points: checkPoints("Click"),
     touchPoints: checkPoints("Tap"),
-    note: "Missed one? Click and drag to box it.",
-    touchNote: "Missed one? Tap Add box to box it.",
+    // We missed it, not the contributor (Rans, 5 Nov 2026)
+    // Any object on the path we missed, obstructing or not (Rans, 5 Nov 2026)
+    note: "Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.",
+    touchNote: "Did we miss an object on the sidewalk or path? Tap Add box to box it, even if it doesn't obstruct.",
     floatingOptions: CHECK_FLOATING,
   },
-  PATH_STEP,
+  // On the photo's right, as Check Each Box (5 Nov 2026)
+  { ...PATH_STEP, floatingOptions: CHECK_FLOATING },
   {
+    // The lines on the names, the eye, Hide all and Show all went (Rans, 5 Nov 2026)
     title: "Your Answers",
     intro: "Every answer goes into a list under the photo.",
-    after: ANSWERS_AFTER("Click"),
-    touchAfter: ANSWERS_AFTER("Tap"),
   },
   SEVERITY_STEP,
   SCENE_STEP,
@@ -302,7 +305,9 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
     {
       title: "Add a Box",
       points: [
-        "Tap Add box. A box appears in the middle of the photo.",
+        // Which objects to add, obstructing or not (Rans, 5 Nov 2026), its own point to stay within 18 words
+        "Tap Add box for any object on the sidewalk or path we missed, even if it doesn't obstruct.",
+        "A box appears in the middle of the photo.",
         "Drag its four corners to fit the object. A magnifier shows where each corner sits.",
         "Pick its category and answer both questions.",
       ],
@@ -313,7 +318,7 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
       title: "Your Answers",
       sheet: "full",
       intro: "Every object is listed at the bottom of the screen.",
-      after: `Pull the list up to see them all. ${ANSWERS_AFTER("Tap")}`,
+      after: "Pull the list up to see them all.",
       fitBesideTarget: true,
       // The lists are in the sheet's scrolling part, and the library keeps a
       // card inside its target's scrolling parent: that put the card over the
@@ -324,8 +329,7 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
     },
     {
       // On the phone screen the scale opens in the sheet, not beside the box
-      title: "Severity",
-      points: SEVERITY_STEP.touchPoints,
+      ...SEVERITY_STEP,
     },
     { ...SCENE_STEP, sheet: "full" },
     {

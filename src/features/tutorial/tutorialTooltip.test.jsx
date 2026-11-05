@@ -17,7 +17,7 @@ describe("a tour step's text", () => {
     const html = body(check);
     expect(html).toMatch(/^<ol class="list-decimal pl-5 space-y-1">/);
     expect([...html.matchAll(/<li>([^<]+)<\/li>/g)].map((m) => m[1])).toEqual(check.points);
-    expect(html).toMatch(/<\/ol><p class="mt-2 text-muted">Missed one\? Click and drag to box it\.<\/p>$/);
+    expect(html).toMatch(/<\/ol><p class="mt-2 text-muted">Did we miss an object on the sidewalk or path\? Click and drag to box it, even if it doesn't obstruct\.<\/p>$/);
   });
 
   it("renders the intro first and `after` between the list and the note", () => {
@@ -27,7 +27,10 @@ describe("a tour step's text", () => {
 
   it("renders a step with no points as its paragraphs, with no list", () => {
     const answers = buildTourSteps(false)[2];
-    expect(body(answers)).toBe(`<p>${answers.intro}</p><p class="mt-2">${answers.after}</p>`);
+    expect(body(answers)).toBe(`<p>${answers.intro}</p>`);
+    // Severity, one paragraph from 5 Nov 2026 (Rans)
+    const severity = buildTourSteps(false)[3];
+    expect(body(severity)).toBe(`<p>${severity.intro}</p>`);
     const next = buildTourSteps(false).at(-1);
     expect(body(next)).toBe(`<p>${next.after}</p>`);
     expect(body(buildTourSteps(false, "objects", "touch")[3])).not.toContain("<ol");
@@ -78,5 +81,20 @@ describe("the tour card", () => {
     expect(html).toContain('aria-label="Dismiss tour"');
     expect(html).toContain("<span>Step 4 of 7</span>");
     expect(html.indexOf("data-tour-body")).toBeLessThan(html.indexOf("Step 4 of 7"));
+  });
+});
+
+// Rans (5 Nov 2026): the text sat 36 px above the Step n of N row, the body's
+// mb-5 and the footer's mt-4 together. Now the footer's 16 px alone.
+describe("the tour card's spacing", () => {
+  it("leaves 16 px between the text and the Step n of N row, the footer's mt-4 alone", () => {
+    const html = renderToStaticMarkup(
+      <TourCard tooltipProps={{}} title="Severity" footer={<span data-footer>Step 4 of 6</span>} onDismiss={() => undefined}>
+        <p>Text.</p>
+      </TourCard>
+    );
+    const bodyClass = html.match(/<div data-tour-body="true" class="([^"]*)"/)?.[1] ?? "";
+    expect(bodyClass).not.toMatch(/\bmb-\d/);
+    expect(html).toMatch(/<div class="shrink-0 flex justify-between items-center mt-4"><span data-footer="true">Step 4 of 6<\/span><\/div>/);
   });
 });

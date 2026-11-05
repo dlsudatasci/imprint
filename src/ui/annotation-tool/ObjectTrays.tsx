@@ -14,9 +14,9 @@ import { EyeIcon, EyeOffIcon } from "../icons";
  * is clear that answers will go there.
  *
  * Chips in the lists are plain white. Still-to-decide chips are dashed like
- * their boxes on the canvas: amber for a suggestion, blue for a box the
- * contributor drew. A drawn box has a small blue pencil before its name, blue
- * like its box on the canvas.
+ * their boxes on the canvas: amber for a suggestion, green for a box the
+ * contributor drew (blue until S18, 4 Nov 2026). A drawn box has a small
+ * green pencil before its name, green like its box on the canvas.
  *
  * Each chip also has an eye that hides its box on the photo (8 Oct 2026), so
  * crowded boxes can be drawn and fitted. A line at the top counts the hidden
@@ -80,7 +80,7 @@ const toneClass = (tone: Tone, drawn: boolean) => {
   switch (tone) {
     case "toDecide":
       return drawn
-        ? "border-dashed border-primary bg-surface text-ink hover:bg-primary-50"
+        ? "border-dashed border-success bg-surface text-ink hover:bg-success-soft"
         : "border-dashed border-warning bg-surface text-ink hover:bg-warning-soft";
     case "removed":
       return "border-line bg-surface text-muted hover:text-ink hover:border-subtle";
@@ -89,13 +89,17 @@ const toneClass = (tone: Tone, drawn: boolean) => {
   }
 };
 
-/** A pencil: this box was drawn by the contributor, or from 17 Oct 2026 by the annotator (their chips use it too). */
+/**
+ * A pencil: this box was drawn by the contributor, or from 17 Oct 2026 by the
+ * annotator (their chips use it too). Green like its box from 5 Nov 2026
+ * (blue before).
+ */
 export function DrawnMark() {
   return (
     <svg
       data-drawn
       aria-hidden="true"
-      className="w-3 h-3 shrink-0 text-primary"
+      className="w-3 h-3 shrink-0 text-success"
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"

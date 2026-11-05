@@ -10,6 +10,8 @@
  * then in your way. From 3 Nov 2026 (S16 follow-up) the phone's first chapter
  * names them too, the path question first, and both "Rate the sidewalk"
  * texts say it is the sidewalk nearest you, as the tour and the guide do.
+ * From 5 Nov 2026 (Rans) the copy says "we" where it said "the model", and
+ * the drawing chapter is about the objects we missed, obstructing or not.
  */
 export const HOW_IT_WORKS_COPY = Object.freeze({
   eyebrow: "How contributing works",
@@ -23,15 +25,15 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
   chapters: Object.freeze([
     Object.freeze({
       title: "Say what blocks your way",
-      text: "Our model has already boxed the objects it found. Open a box and say if it is on the sidewalk or the path people walk on, then if it obstructs your path. If it does, rate its severity from 1 to 5.",
+      text: "We've already boxed the objects we found. Open a box and say if it is on the sidewalk or the path people walk on, then if it obstructs your path. If it does, rate its severity from 1 to 5.",
     }),
     Object.freeze({
       title: "Answer every suggestion",
-      text: "Go through the rest the same way. If an object is off the path or not in your way, click No. If a box has nothing real in it, mark it Not an object.",
+      text: "Go through the rest the same way. If an object is off the sidewalk or not an obstruction, click No. If a box does not seem to be a real object, mark it Not an object.",
     }),
     Object.freeze({
-      title: "Draw what the model missed",
-      text: "Drag a box around anything the model missed, pick its category, and answer both questions.",
+      title: "Draw the objects we missed",
+      text: "Drag a box around any object on the sidewalk we missed, pick its category, and answer both questions.",
     }),
     Object.freeze({
       title: "Rate the sidewalk",
@@ -60,7 +62,7 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
       text: "Tap Next. Is it on the walking path? In your way? Or tap Not an object.",
     }),
     Object.freeze({
-      title: "Draw what the model missed",
+      title: "Draw the objects we missed",
       text: "Tap Add box, fit it, pick its category, and answer both questions.",
     }),
     Object.freeze({

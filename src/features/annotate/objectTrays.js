@@ -32,7 +32,7 @@ const FALLBACK_LABEL = "Select a category";
 export const TRAY_COPY = Object.freeze({
   toDecideTitle: "Still to decide",
   allAnswered: "Every object is answered.",
-  noObjects: "No suggestions in this image. Draw a box around any object the model missed.",
+  noObjects: "No suggestions in this image. Draw a box around any object on the sidewalk we missed.",
   notObstructions: "Not obstructions",
   obstructions: "Obstructions",
   removed: "Not an object",
@@ -42,7 +42,7 @@ export const TRAY_COPY = Object.freeze({
   next: "Next",
   // The first row of the sheet, beside Show all and Hide all (14 Oct 2026)
   stepHeading: "Step 1: Identify Objects and Obstructions",
-  noObjectsTouch: "No suggestions in this image. Tap Add box for any object the model missed.",
+  noObjectsTouch: "No suggestions in this image. Tap Add box for any object on the sidewalk we missed.",
 });
 
 /**

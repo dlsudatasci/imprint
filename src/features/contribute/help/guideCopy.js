@@ -33,6 +33,13 @@ import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy
  * nothing in them", and no paragraph says to choose No without naming which
  * question it answers.
  *
+ * Rans's wording (5 Nov 2026, after S18): the start step in one paragraph
+ * without Pause, Stop or the tutorial, a box only a suggested object,
+ * Question 2 asked if it is on the sidewalk, Not an object (and where the box
+ * goes) in the same paragraph as the two Noes, no paragraph on the lists,
+ * drawing the objects we missed (obstructing or not), and no "model" in
+ * the text.
+ *
  * Nothing here names the study's hypotheses or the reference images.
  */
 export const GUIDE_COPY = Object.freeze({
@@ -47,8 +54,6 @@ export const GUIDE_COPY = Object.freeze({
       picker: true,
       paragraphs: Object.freeze([
         `From your dashboard, choose Let's Annotate!, pick how many photos to do (${SESSION_SIZES_TEXT}), and choose Start Session.`,
-        "The first time, the tutorial comes first. It uses practice photos, and nothing you do in it is saved.",
-        "Pause keeps your work, so you can pick up where you left off from the dashboard. Stop ends the session and keeps the photos you already finished.",
       ]),
     }),
     Object.freeze({
@@ -56,9 +61,9 @@ export const GUIDE_COPY = Object.freeze({
       title: "Answer each suggestion",
       still: 0,
       paragraphs: Object.freeze([
-        "Dashed boxes are the model's suggestions. A box only means the model found an object, not that it is on the path or in your way. Click one, or tap it on a phone, to open its panel.",
+        "Dashed yellow boxes are suggested objects. A box is only a suggested object, it doesn't necessarily mean it's on the sidewalk or an obstruction. Click one, or tap it on a phone, to open its panel.",
         `Check the category, then answer Question 1, “${SIDEWALK_QUESTION_COPY.question}”, with Yes or No.`,
-        "If you choose Yes, Question 2 asks “Does it obstruct the sidewalk?” Answer it for yourself, as you normally travel. If you choose Yes again, rate how much from 1, a minor inconvenience, to 5, impassable.",
+        "If it is on the sidewalk, then Question 2 asks “Does it obstruct the sidewalk?” Answer it for yourself if you believe the object obstructs your path or not. If it does obstruct, rate the severity of its obstruction from 1, a minor inconvenience, to 5, impassable.",
       ]),
       // What counts as the path, listed under the question (paragraph 2)
       pathPoints: SIDEWALK_QUESTION_COPY.pathPoints,
@@ -69,16 +74,15 @@ export const GUIDE_COPY = Object.freeze({
       title: "Mark boxes with nothing in them",
       still: 1,
       paragraphs: Object.freeze([
-        "If an object is off the path, choose No to Question 1. If it is on the path but not in your way, choose No to Question 2.",
-        "If a box has nothing real in it, choose Not an object at the foot of its panel at Question 1. The box then leaves the photo and is listed under Not an object, where you can open it and choose Restore.",
-        "Every answer sorts the object into a list, Not obstructions or Obstructions, under the photo on a laptop and in the answers sheet on a phone or tablet. A No to the path question takes the box off the photo and lists it under Not obstructions. Click or tap a name in a list to open its panel and change the answer. An obstruction opens on its severity scale. To change an earlier answer, choose Back to Question 2 or Back to Question 1, then pick the new answer.",
+        "If an object is not on the sidewalk, choose No to Question 1. If it is on the sidewalk but not an obstruction, choose No to Question 2. If a box does not seem to be a real object, choose Not an object. The box then leaves the photo and is listed under Not an object, where you can open it and choose Restore.",
       ]),
     }),
     Object.freeze({
       id: "draw",
-      title: "Draw what the model missed",
+      title: "Draw the objects we missed",
       still: 2,
       paragraphs: Object.freeze([
+        "Box every object on the sidewalk or the path people walk on that we missed, whether or not it is an obstruction. Leave out objects that are not on the sidewalk.",
         "With a mouse, drag a box around the object. On a phone or tablet, tap Add box and drag its corners to fit.",
         "Pick its category, or choose Other... to type one, and answer the same questions. To remove a box you drew, choose Delete box.",
       ]),
@@ -97,7 +101,7 @@ export const GUIDE_COPY = Object.freeze({
       title: "Go to the next photo",
       still: 4,
       paragraphs: Object.freeze([
-        "Next Image is ready once every object has an answer and all four questions are answered. Previous takes you back to a photo you already did, to change it.",
+        "Click Next Image once every object has an answer. Previous takes you back to a photo you already did, to change it.",
       ]),
     }),
   ]),

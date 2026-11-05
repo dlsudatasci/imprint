@@ -296,9 +296,9 @@ padding or outline. The photo well around them is the frame.
   per-chip buttons.
 - **Colour**: chips in the two lists are plain white (`bg-surface border-line text-ink`), since
   the list already says the answer. Still-to-decide chips are dashed like their boxes on the
-  canvas: amber for a suggestion, blue (`border-primary`) for a box the contributor drew. A
-  drawn box has a small pencil before its name in `text-primary`, the blue of its box on the
-  canvas, with "Drawn by you" as its title and for screen readers. The open box's chip is
+  canvas: amber for a suggestion, green (`border-success`, 5 Nov 2026, blue before) for a box the
+  contributor drew. A drawn box has a small pencil before its name in `text-success`, the green of
+  its box on the canvas, with "Drawn by you" as its title and for screen readers. The open box's chip is
   highlighted (see below).
 - **Hiding a box** (8 Oct 2026, both roles): each chip ends in an eye (`EyeIcon` from `@/ui`,
   14px, `text-subtle`) that hides its box on the photo. A hidden chip fades to `opacity-60` with

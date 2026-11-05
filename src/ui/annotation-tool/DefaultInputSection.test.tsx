@@ -45,7 +45,7 @@ describe("DefaultInputSection", () => {
   it("offers a new drawn box only the category, the question, Back to Question 1 and Delete, with no checkmark or close", () => {
     const html = render({ editable: true, value: "---" });
     expect(html).toContain("Select a category");
-    expect(html).toContain("Does <span class=\"font-semibold text-ink\">this object</span> obstruct the sidewalk?");
+    expect(html).toContain("Does <span class=\"font-bold\">this object</span> obstruct the sidewalk?");
     expect(disabledButton(html, "Yes")).toBe(true);
     expect(disabledButton(html, "No")).toBe(true);
     expect(html).toContain("Delete box");
@@ -151,7 +151,8 @@ describe("DefaultInputSection", () => {
     expect(floating).toContain("w-[280px]");
     expect(floating).toMatch(/<select[^>]*class="[^"]*text-sm/);
     expect(floating).not.toContain("min-h-[44px]");
-    expect(floating).not.toContain("text-base");
+    // 16 px only on the question (S18), not the fields
+    expect(floating).not.toMatch(/<(select|input)[^>]*text-base/);
   });
 
   // S12 (2 Nov 2026): whether the object is on the sidewalk, before whether it obstructs
@@ -242,7 +243,7 @@ describe("DefaultInputSection", () => {
           expect(found?.[3]).toBe("Question 1 of 2");
           expect(found?.[2]).toBe("text-xs font-semibold text-muted mt-3");
           // Right above the question
-          expect(html).toMatch(/Question 1 of 2<\/p><p class="text-sm text-body mt-0\.5 mb-2">Is it on the sidewalk or the path people walk on\?<\/p>/);
+          expect(html).toMatch(/Question 1 of 2<\/p><p class="text-base font-semibold text-ink mt-0\.5 mb-2">Is it on the sidewalk or the path people walk on\?<\/p>/);
         }
       }
     });
@@ -251,7 +252,7 @@ describe("DefaultInputSection", () => {
       for (const variant of ["floating", "sheet"] as const) {
         for (const html of [render({ variant }), render({ variant, editable: true, value: "bollard" }), render({ variant, isRejected: true, obstructs: false })]) {
           expect(label(html)?.[3]).toBe("Question 2 of 2");
-          expect(html).toMatch(/Question 2 of 2<\/p><p class="text-sm text-body mt-0\.5 mb-2">Does <span/);
+          expect(html).toMatch(/Question 2 of 2<\/p><p class="text-base font-semibold text-ink mt-0\.5 mb-2">Does <span/);
         }
       }
     });
@@ -261,7 +262,7 @@ describe("DefaultInputSection", () => {
       expect(html).toContain("obstruct the sidewalk?");
       expect(html).not.toContain("data-question-step");
       expect(html).not.toMatch(/Question \d of 2/);
-      expect(html).toContain('<p class="text-sm text-body mt-3 mb-2">Does <span');
+      expect(html).toContain('<p class="text-base font-semibold text-ink mt-3 mb-2">Does <span');
     });
 
     it("shows no label on the severity picker or a box marked Not an object", () => {
@@ -291,6 +292,51 @@ describe("DefaultInputSection", () => {
         render({ variant, askOnSidewalk: false, askSeverity: false, onSidewalk: undefined, value: "not_an_object", isRejected: true, obstructs: false }),
       ]) expect(html).toContain('aria-label="Close"');
     }
+  });
+
+  // S18 (4 Nov 2026), from pilot participant 4
+  describe("red remove buttons and larger questions (S18)", () => {
+    const DANGER = "px-2.5 py-1.5 rounded-control text-xs font-semibold border border-danger/50 bg-surface text-danger hover:bg-danger/10 transition-colors";
+    const buttonClass = (html: string, label: string) => html.match(new RegExp(`<button class="([^"]*)">${label}</button>`))?.[1];
+
+    it("makes Not an object and Delete box red outline buttons, the same size as before, 44 px in the sheet", () => {
+      for (const variant of ["floating", "sheet"] as const) {
+        const notAnObject = buttonClass(render({ variant, onSidewalk: undefined }), "Not an object");
+        const deleteBox = [
+          render({ variant, onSidewalk: undefined, editable: true, value: "bollard" }),
+          render({ variant, editable: true, value: "bollard" }),
+          render({ variant, editable: true, value: "bollard", obstructs: true, severity: 2 }),
+        ].map((html) => buttonClass(html, "Delete box"));
+        for (const cls of [notAnObject, ...deleteBox]) {
+          expect(cls).toBe(variant === "sheet" ? `${DANGER} min-h-[44px] px-3.5` : DANGER);
+          // Outlined, not filled
+          expect(cls).not.toMatch(/\bbg-danger\b(?!\/)/);
+        }
+      }
+    });
+
+    it("keeps the footer's hint grey, Restore grey and the Back buttons plain", () => {
+      expect(render({ onSidewalk: undefined })).toContain('<span class="text-xs text-muted">No real object in this box?</span>');
+      const restore = buttonClass(render({ value: "not_an_object", isRejected: true, obstructs: false }), "Restore");
+      expect(restore).toContain("border-line bg-surface-subtle text-ink");
+      expect(restore).not.toContain("danger");
+      expect(render({})).toMatch(/<button data-control="back-to-question-1" class="[^"]*text-muted[^"]*">/);
+    });
+
+    it("sets every question at 16 px semibold ink, laptop card and phone sheet, with the category bold and the step line small", () => {
+      for (const variant of ["floating", "sheet"] as const) {
+        const paths = render({ variant, onSidewalk: undefined });
+        expect(paths).toContain('<p class="text-base font-semibold text-ink mt-0.5 mb-2">Is it on the sidewalk or the path people walk on?</p>');
+        const obstruction = render({ variant, value: "car" });
+        expect(obstruction).toContain('<p class="text-base font-semibold text-ink mt-0.5 mb-2">Does <span class="font-bold">Car</span> obstruct the sidewalk?</p>');
+        // The severity panel and the first severity picker match
+        expect(render({ variant, selected: true, obstructs: true, severity: 2 })).toContain('<p class="text-base font-semibold text-ink mt-3 mb-3">How severe is this obstruction?</p>');
+        expect(render({ variant, selected: true, obstructs: true, severity: null })).toContain('<p class="text-base font-semibold text-ink mb-3 text-center">How severe is this obstruction?</p>');
+        // "Question 1 of 2" stays small
+        expect(paths).toContain('<p data-question-step="1" class="text-xs font-semibold text-muted mt-3">');
+        expect(paths).not.toContain("text-sm text-body");
+      }
+    });
   });
 
   // 10 Oct 2026: the open box can be hidden from its panel

@@ -38,13 +38,20 @@ describe("landing page copy", () => {
     expect(first.text).toContain("obstructs your path");
     expect(first.text).toContain("rate its severity from 1 to 5");
     expect(first.text.indexOf("path people walk on")).toBeLessThan(first.text.indexOf("obstructs your path"));
-    expect(answer.text).toContain("off the path or not in your way, click No");
+    // Rans's wording (5 Nov 2026)
+    expect(answer.text).toBe("Go through the rest the same way. If an object is off the sidewalk or not an obstruction, click No. If a box does not seem to be a real object, mark it Not an object.");
+    expect(draw.title).toBe("Draw the objects we missed");
+    expect(draw.text).toBe("Drag a box around any object on the sidewalk we missed, pick its category, and answer both questions.");
+    expect(first.text).toMatch(/^We've already boxed the objects we found\. /);
+    expect(HOW_IT_WORKS_COPY.touchChapters[2].title).toBe("Draw the objects we missed");
     expect(draw.text).toContain("answer both questions");
     expect(draw.text).not.toContain("the same question.");
-    // About as long as the texts they replaced (167, 139 and 94 characters)
+    // About as long as the texts they replaced (167, 139 and 94 characters);
+    // the second 165 from 5 Nov 2026 (Rans's wording)
     expect(first.text.length).toBeLessThanOrEqual(200);
-    expect(answer.text.length).toBeLessThanOrEqual(155);
-    expect(draw.text.length).toBeLessThanOrEqual(100);
+    expect(answer.text.length).toBeLessThanOrEqual(170);
+    // 101 from 5 Nov 2026 (Rans: any object on the sidewalk)
+    expect(draw.text.length).toBeLessThanOrEqual(105);
     // Rate the sidewalk: the sidewalk nearest you, as in the tour and the guide (S16 follow-up, 3 Nov 2026)
     expect(HOW_IT_WORKS_COPY.chapters[3].text).toBe("Four quick questions about the sidewalk nearest you: how wide it is, its surface, how comfortable it looks, and whether you could get through.");
   });
@@ -175,5 +182,64 @@ describe("the figures under the map", () => {
     expect(items["Avg. Obstructions"]).toMatchObject({ value: "1.4", sub: "per image" });
     for (const item of cityStatsItems(stats)) expect(item.sub).not.toMatch(/[;—]/);
     expect(cityStatsItems(null)).toEqual([]);
+  });
+});
+
+// Rans (5 Nov 2026): no "model" in the copy a new contributor reads first,
+// except where the About page explains what Imprint is
+describe("no model in the task's copy (5 Nov 2026)", () => {
+  it("leaves model out of the landing preview's chapters and the empty-photo line under the photo", async () => {
+    const { TRAY_COPY } = await import("@/features/annotate/objectTrays");
+    for (const c of [...HOW_IT_WORKS_COPY.chapters, ...HOW_IT_WORKS_COPY.touchChapters]) {
+      expect(`${c.title} ${c.text}`).not.toMatch(/\bmodel/i);
+    }
+    expect(TRAY_COPY.noObjects).toBe("No suggestions in this image. Draw a box around any object on the sidewalk we missed.");
+    expect(TRAY_COPY.noObjectsTouch).toBe("No suggestions in this image. Tap Add box for any object on the sidewalk we missed.");
+  });
+
+  it("keeps the About page's model where Rans kept it, and changes the step about suggestions and drawing", async () => {
+    const { ABOUT_COPY } = await import("@/features/about/aboutCopy");
+    const [suggest, decide, , learns] = ABOUT_COPY.steps.items;
+    expect(suggest).toEqual({ title: "Objects are suggested", text: "Before you see a street photo, we've already boxed the objects in it." });
+    expect(decide.text).toMatch(/and draw any objects we missed\.$/);
+    expect(learns.title).toBe("The model learns");
+  });
+});
+
+// Rans (5 Nov 2026): every object on the sidewalk or the path is boxed,
+// obstructing or not, so no text about drawing a box says obstruction
+describe("drawing is about objects, not obstructions (5 Nov 2026)", () => {
+  it("never ties drawing a box to obstructions, in the tool, the tour, the guide, the landing page or the About page", async () => {
+    const [{ TRAY_COPY }, { buildTourSteps }, { GUIDE_COPY }, { ABOUT_COPY }, { renderToStaticMarkup }, { default: Step1Card }, React] = await Promise.all([
+      import("@/features/annotate/objectTrays"),
+      import("@/features/tutorial/tourSteps"),
+      import("@/features/contribute/help/guideCopy"),
+      import("@/features/about/aboutCopy"),
+      import("react-dom/server"),
+      import("@/ui/annotation-tool/Step1Card"),
+      import("react"),
+    ]);
+    const card = renderToStaticMarkup(React.createElement(Step1Card, { photo: null, answers: null })).replace(/&#x27;/g, "'");
+    const texts = [
+      card,
+      TRAY_COPY.noObjects,
+      TRAY_COPY.noObjectsTouch,
+      ...["pointer", "touch"].flatMap((input) => buildTourSteps(false, "objects", input).map((s) => s.content)),
+      ...GUIDE_COPY.steps.flatMap((s) => [s.title, ...s.paragraphs]),
+      ...[...HOW_IT_WORKS_COPY.chapters, ...HOW_IT_WORKS_COPY.touchChapters].flatMap((c) => [c.title, c.text]),
+      ...ABOUT_COPY.steps.items.map((i) => i.text),
+    ];
+    // Every sentence about drawing, dragging, Add box or a missed object
+    const drawing = texts.flatMap((t) => t.split(/(?<=[.?!])\s+/)).filter((s) => /\b(draw|drag (a box|your mouse|to box)|Add box|missed)\b/i.test(s));
+    expect(drawing.length).toBeGreaterThanOrEqual(8);
+    // "whether or not it obstructs" says the opposite of tying drawing to
+    // obstructions: with those phrases taken out, no sentence says obstruct
+    const neutral = /,? (whether or not (they|it) (obstructs?|is an obstruction)|even if it doesn't obstruct)/gi;
+    for (const s of drawing) expect(s.replace(neutral, ""), s).not.toMatch(/obstruct/i);
+    // And says so where people are told to draw (Rans, 5 Nov 2026)
+    expect(card).toContain("You can also drag your mouse to box objects on the sidewalk or path that we missed, whether or not they obstruct. Leave out objects that are not on the sidewalk.");
+    expect(GUIDE_COPY.steps.find((s) => s.id === "draw").paragraphs[0]).toMatch(/whether or not it is an obstruction\. Leave out objects that are not on the sidewalk\.$/);
+    for (const t of [TRAY_COPY.noObjects, TRAY_COPY.noObjectsTouch, HOW_IT_WORKS_COPY.chapters[2].text]) expect(t).toContain("any object on the sidewalk we missed");
+    expect(GUIDE_COPY.steps.find((s) => s.id === "draw").title).toBe("Draw the objects we missed");
   });
 });

@@ -36,7 +36,7 @@ describe("SIDEWALK_QUESTION_COPY", () => {
 
   it("has no tutorial sentence any more: pathPoints replaced it", () => {
     expect(SIDEWALK_QUESTION_COPY).not.toHaveProperty("tutorial");
-    expect(Object.keys(SIDEWALK_QUESTION_COPY).sort()).toEqual(["backTo", "incomplete", "pathPoints", "question", "questionOf"]);
+    expect(Object.keys(SIDEWALK_QUESTION_COPY).sort()).toEqual(["answerWhether", "backTo", "incomplete", "pathPoints", "question", "questionOf"]);
   });
 
   // S17 (4 Nov 2026): the way back at the foot of the box panel
@@ -52,6 +52,7 @@ describe("SIDEWALK_QUESTION_COPY", () => {
       ...SIDEWALK_QUESTION_COPY.pathPoints,
       SIDEWALK_QUESTION_COPY.questionOf(1),
       SIDEWALK_QUESTION_COPY.questionOf(2),
+      SIDEWALK_QUESTION_COPY.answerWhether,
       SIDEWALK_QUESTION_COPY.backTo(1),
       SIDEWALK_QUESTION_COPY.backTo(2),
     ];
@@ -61,15 +62,17 @@ describe("SIDEWALK_QUESTION_COPY", () => {
   it("is what the tour and the guide show, and Step 1's instructions keep the nearest-sidewalk rule", () => {
     for (const input of ["pointer", "touch"]) {
       const [check, path] = buildTourSteps(false, "objects", input);
-      expect(check.content).toContain(SIDEWALK_QUESTION_COPY.question);
+      // The tour says it as an instruction (Rans, 5 Nov 2026)
+      expect(check.content).toContain(SIDEWALK_QUESTION_COPY.answerWhether);
+      expect(SIDEWALK_QUESTION_COPY.answerWhether).toBe("Answer whether it's on the sidewalk or the path people walk on.");
       expect(path.points).toEqual([...SIDEWALK_QUESTION_COPY.pathPoints]);
     }
     const guide = GUIDE_COPY.steps.flatMap((step) => step.paragraphs).join(" ");
     expect(guide).toContain(SIDEWALK_QUESTION_COPY.question);
     expect(GUIDE_COPY.steps.find((step) => step.id === "answer").pathPoints).toBe(SIDEWALK_QUESTION_COPY.pathPoints);
-    // Step 1's instructions name the questions by what they ask (Rans, 3 Nov 2026), with the nearest-sidewalk rule
+    // Step 1's instructions name the questions by what they ask (Rans, 3 Nov 2026), with no numbers from S18, and the nearest-sidewalk rule
     const card = renderToStaticMarkup(React.createElement(Step1Card, { photo: null, answers: null })).replace(/&#x27;/g, "'");
-    expect(card).toContain("answer Question 1 if it's on the sidewalk and Question 2 if it's an obstruction. If the photo shows two sidewalks, only the one nearest you counts.");
+    expect(card).toContain("answer whether it's on the sidewalk and whether it's an obstruction. If the photo shows two sidewalks, only the one nearest you counts.");
   });
 
   it("names no list of its own anywhere: a No to the path question goes under Not obstructions", () => {
@@ -78,7 +81,6 @@ describe("SIDEWALK_QUESTION_COPY", () => {
     for (const text of [...tours, ...guide, ...Object.values(TRAY_COPY), ...Object.values(PEEK_TAG)]) {
       expect(text).not.toMatch(/walking path/i);
     }
-    expect(guide.join(" ")).toContain("A No to the path question takes the box off the photo and lists it under Not obstructions.");
-    // The tour no longer names the lists' contents (S16b, Rans's shorter wording): the guide does
+    // Neither the tour (S16b) nor the guide (Rans, 5 Nov 2026) names the lists' contents any more
   });
 });

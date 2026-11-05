@@ -25,12 +25,13 @@ const CONTRIBUTOR_TOURS = [
 ];
 
 describe("tour steps", () => {
-  // S16 (3 Nov 2026): the path step is new, and Step 1's instructions are its target
+  // S16 (3 Nov 2026): the path step is new. Its target was Step 1's
+  // instructions until 5 Nov 2026 (Rans): it points at the photo, as Check Each Box does
   it("gives contributors six steps at the six targets", () => {
     expect(tourStepCount(false)).toBe(6);
     expect([...tourTargets(false)]).toEqual([
       ".rp-stage",
-      "#step1-instructions",
+      ".rp-stage",
       "#box-review-section",
       ".rp-stage",
       "#scene-level-section",
@@ -46,15 +47,16 @@ describe("tour steps", () => {
       // The button reads Next Image, not Submit (12 Oct 2026)
       "Next Image",
     ]);
-    // Check Each Box right of the photo (S16b): below it, it could not be read without scrolling
-    expect(steps.map((s) => s.placement)).toEqual(["right", "bottom", "top", "bottom", "top", "top"]);
+    // Check Each Box right of the photo (S16b): below it, it could not be read
+    // without scrolling. The path step beside it too (5 Nov 2026)
+    expect(steps.map((s) => s.placement)).toEqual(["right", "right", "top", "bottom", "top", "top"]);
   });
 
   // S16b (3 Nov 2026): never below the photo, and over its right side where there is no room on the right
-  it("keeps Check Each Box beside the photo: no flip below it, and a slide over it or up and down into the screen", () => {
+  it("keeps Check Each Box and the path step beside the photo: no flip below it, and a slide over it or up and down into the screen", () => {
     for (const words of ["pointer", "touch"]) {
-      const [check, ...rest] = buildTourSteps(false, "objects", "pointer", { words });
-      expect(check.floatingOptions).toEqual({ flipOptions: false, shiftOptions: { crossAxis: true } });
+      const [check, path, ...rest] = buildTourSteps(false, "objects", "pointer", { words });
+      for (const s of [check, path]) expect(s.floatingOptions).toEqual({ flipOptions: false, shiftOptions: { crossAxis: true } });
       for (const s of rest) expect(s).not.toHaveProperty("floatingOptions");
     }
   });
@@ -120,18 +122,18 @@ describe("tour steps", () => {
     for (const s of buildTourSteps(true)) expect(s.content).not.toMatch(/[Rr]eference/);
   });
 
-  // S16b (3 Nov 2026): Rans's wording
-  it("lists the two questions, with no line on the dashed boxes (Rans, 3 Nov 2026)", () => {
+  // S16b (3 Nov 2026): Rans's wording. S18 (4 Nov 2026): without the question numbers
+  it("lists the two questions by what they ask, with no line on the dashed boxes (Rans, 3 Nov 2026)", () => {
     const [check] = buildTourSteps(false);
     expect(check).not.toHaveProperty("intro");
     expect(check.points).toEqual([
       "Click a box and check its label.",
-      `Question 1 asks only where it is: “${SIDEWALK_QUESTION_COPY.question}”`,
-      "Question 2 asks whether it obstructs the path for you.",
-      "Nothing real in it? Click Not an object.",
+      "Answer whether it's on the sidewalk or the path people walk on.",
+      "Then, answer whether it obstructs the sidewalk or the path for you.",
+      "If it's not a real object, click Not an object.",
     ]);
     expect(check).not.toHaveProperty("after");
-    expect(check.note).toBe("Missed one? Click and drag to box it.");
+    expect(check.note).toBe("Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.");
   });
 
   it("adds a step on what counts as the path, the nearest sidewalk only, to both tours, with no note", () => {
@@ -142,7 +144,7 @@ describe("tour steps", () => {
       expect(path.points.join(" ")).toContain("Only the one nearest you counts. Answer No for objects on a farther one.");
       for (const key of ["intro", "after", "note"]) expect(path).not.toHaveProperty(key);
     }
-    expect(buildTourSteps(false)[1].target).toBe("#step1-instructions");
+    expect(buildTourSteps(false)[1].target).toBe(".rp-stage");
   });
 
   it("points contributors' answers step at the lists under the photo, with no list of its own", () => {
@@ -151,22 +153,21 @@ describe("tour steps", () => {
     expect(answers.title).toBe("Your Answers");
     expect(answers.intro).toBe("Every answer goes into a list under the photo.");
     expect(answers.points).toEqual([]);
-    // Hide all and Show all named too (Rans, 3 Nov 2026)
-    expect(answers.after).toBe("Click a name to open it and change the answer. Click the eye to hide a box while you work on the boxes around it. Click Hide all to hide all the boxes on the photo. Click Show all to show them again.");
+    // Its first sentence only (Rans, 5 Nov 2026): the lines on the names, the eye, Hide all and Show all went
+    expect(answers).not.toHaveProperty("after");
+    expect(answers.content).toBe("Every answer goes into a list under the photo.");
     expect(answers).not.toHaveProperty("note");
   });
 
-  it("points the contributor severity step at the photo, with the scale and no intro", () => {
+  // One paragraph, no numbered list (Rans, 5 Nov 2026)
+  it("points the contributor severity step at the photo, as one paragraph with no list", () => {
     const severity = buildTourSteps(false)[3];
     expect(severity.title).toBe("Severity");
     expect(severity.target).toBe(".rp-stage");
     expect(severity.placement).toBe("bottom");
-    expect(severity).not.toHaveProperty("intro");
-    expect(severity.points).toEqual([
-      "Rate how much it blocks you, from 1 (a minor inconvenience) to 5 (it completely blocks the path).",
-      "Click Confirm.",
-      "To change it later, open the box and move the scale.",
-    ]);
+    expect(severity.intro).toBe("Rate how much it blocks you, from 1 to 5. You can still change this later by opening the box and adjusting the scale.");
+    expect(severity.points).toEqual([]);
+    expect(severity.content).toBe(severity.intro);
   });
 
   it("keeps the joined text as `content`: the intro, the points as sentences, after, then the note", () => {
@@ -176,8 +177,8 @@ describe("tour steps", () => {
         expect(s.content).toBe([s.intro, ...sentences, s.after, s.note].filter(Boolean).join(" "));
       }
     }
-    expect(buildTourSteps(false)[0].content).toBe(`Click a box and check its label. Question 1 asks only where it is: “${SIDEWALK_QUESTION_COPY.question}” Question 2 asks whether it obstructs the path for you. Nothing real in it? Click Not an object. Missed one? Click and drag to box it.`);
-    expect(buildTourSteps(false)[2].content).toBe(`Every answer goes into a list under the photo. ${buildTourSteps(false)[2].after}`);
+    expect(buildTourSteps(false)[0].content).toBe("Click a box and check its label. Answer whether it's on the sidewalk or the path people walk on. Then, answer whether it obstructs the sidewalk or the path for you. If it's not a real object, click Not an object. Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.");
+    expect(buildTourSteps(false)[2].content).toBe("Every answer goes into a list under the photo.");
   });
 
   it("keeps every contributor step within the budget: 80 words, 5 points, 18 words a point", () => {
@@ -215,7 +216,7 @@ describe("tour steps", () => {
 
   it("tells contributors that Not an object is a button, not a category (7 Oct 2026)", () => {
     const [check] = buildTourSteps(false);
-    expect(check.points).toContain("Nothing real in it? Click Not an object.");
+    expect(check.points).toContain("If it's not a real object, click Not an object.");
     expect(check.content).not.toContain("from the list. You can");
   });
 
@@ -243,7 +244,7 @@ describe("tour steps", () => {
     expect(contributorSubmit.points).toEqual([]);
     for (const key of ["intro", "note"]) expect(contributorSubmit).not.toHaveProperty(key);
     // Rans's two sentences (3 Nov 2026), without Finish Session
-    expect(contributorSubmit.after).toBe("Click Next Image once every box has an answer. If something is missing, there will be a warning to specify what's missing.");
+    expect(contributorSubmit.after).toBe("Click Next Image once every box has an answer. If something is missing, a warning will appear to point it out.");
     expect(contributorSubmit.content).not.toMatch(/Finish Session/);
   });
 
@@ -375,7 +376,7 @@ describe("the touch tour", () => {
     // Add a Box and Your Answers point at their targets (S16b): a centred card has no highlight
     expect(steps.map((s) => s.placement)).toEqual(["center", "center", "top", "top", "top", "center", "top"]);
     expect(steps.map((s) => s.fitBesideTarget)).toEqual([undefined, undefined, true, true, undefined, undefined, undefined]);
-    expect(steps.at(-1).after).toBe("Tap Next Image once every box has an answer. If something is missing, there will be a warning to specify what's missing.");
+    expect(steps.at(-1).after).toBe("Tap Next Image once every box has an answer. If something is missing, a warning will appear to point it out.");
     expect(steps.map((s) => s.target)).toEqual([...tourTargets(false, "objects", "touch")]);
     // The answers and Step 2 are in the part of the sheet pulled down, and only those steps say so
     expect(steps.map((s) => s.sheet)).toEqual([undefined, undefined, undefined, "full", undefined, "full", undefined]);
@@ -387,25 +388,22 @@ describe("the touch tour", () => {
   it("says the desktop wording with Tap, and Add box in its own step", () => {
     const [check, path, add, answers, severity, , next] = buildTourSteps(false, "objects", "touch");
     const desktop = buildTourSteps(false);
-    expect(check.points).toEqual(desktop[0].points.map((p) => p.replace("Click", "Tap")));
+    expect(check.points).toEqual(desktop[0].points.map((p) => p.replace("Click", "Tap").replace("click", "tap")));
     for (const key of ["after", "note"]) expect(check).not.toHaveProperty(key);
     expect(path.points).toEqual(desktop[1].points);
     expect(add.points).toEqual([
-      "Tap Add box. A box appears in the middle of the photo.",
+      "Tap Add box for any object on the sidewalk or path we missed, even if it doesn't obstruct.",
+      "A box appears in the middle of the photo.",
       "Drag its four corners to fit the object. A magnifier shows where each corner sits.",
       "Pick its category and answer both questions.",
     ]);
     expect(add.note).toBe("Pinch to zoom in on small objects.");
     expect(answers.intro).toBe("Every object is listed at the bottom of the screen.");
     expect(answers.points).toEqual([]);
-    expect(answers.after).toBe("Pull the list up to see them all. Tap a name to open it and change the answer. Tap the eye to hide a box while you work on the boxes around it. Tap Hide all to hide all the boxes on the photo. Tap Show all to show them again.");
+    expect(answers.after).toBe("Pull the list up to see them all.");
     expect(answers).not.toHaveProperty("note");
-    expect(severity).not.toHaveProperty("intro");
-    expect(severity.points).toEqual([
-      "Rate how much it blocks you, from 1 (a minor inconvenience) to 5 (it completely blocks the path).",
-      "Tap Confirm.",
-      "To change it later, open the box and move the scale.",
-    ]);
+    expect(severity.intro).toBe("Rate how much it blocks you, from 1 to 5. You can still change this later by opening the box and adjusting the scale.");
+    expect(severity.points).toEqual([]);
     expect(next.points).toEqual([]);
     expect(next.after).toBe(desktop.at(-1).after.replace("Click", "Tap"));
   });
@@ -477,11 +475,11 @@ describe("the pointer tours with touch wording", () => {
     const steps = touch(false, "objects");
     const plain = buildTourSteps(false);
     expect(steps[0].points[0]).toBe("Tap a box and check its label.");
-    expect(steps[0].points[3]).toBe("Nothing real in it? Tap Not an object.");
+    expect(steps[0].points[3]).toBe("If it's not a real object, tap Not an object.");
     // A finger cannot draw by dragging: Add box
-    expect(steps[0].note).toBe("Missed one? Tap Add box to box it.");
-    expect(steps[2].after).toBe("Tap a name to open it and change the answer. Tap the eye to hide a box while you work on the boxes around it. Tap Hide all to hide all the boxes on the photo. Tap Show all to show them again.");
-    expect(steps[3].points.slice(1)).toEqual(["Tap Confirm.", "To change it later, open the box and move the scale."]);
+    expect(steps[0].note).toBe("Did we miss an object on the sidewalk or path? Tap Add box to box it, even if it doesn't obstruct.");
+    expect(steps[2]).not.toHaveProperty("after");
+    expect(steps[3].content).toBe("Rate how much it blocks you, from 1 to 5. You can still change this later by opening the box and adjusting the scale.");
     expect(steps[5].after).toMatch(/^Tap Next Image once/);
     for (const i of [1, 4]) expect(steps[i].content).toBe(plain[i].content);
   });
@@ -573,8 +571,8 @@ describe("the annotator touch tours", () => {
     for (const [isAnnotator, step] of [[false, "objects"], [true, "objects"], [true, "sidewalk"], [true, "obstructions"]]) {
       for (const s of buildTourSteps(isAnnotator, step, "touch")) expect(s.skipScroll).toBe(true);
       for (const s of buildTourSteps(isAnnotator, step, "pointer")) expect(s).not.toHaveProperty("skipScroll");
-      // Only Check Each Box positions itself on the desktop layout (S16b)
-      for (const s of buildTourSteps(isAnnotator, step, "pointer").filter((x) => x.title !== "Check Each Box")) expect(s).not.toHaveProperty("floatingOptions");
+      // Only Check Each Box (S16b) and the path step (5 Nov 2026) position themselves on the desktop layout
+      for (const s of buildTourSteps(isAnnotator, step, "pointer").filter((x) => x.title !== "Check Each Box" && x.title !== "What Counts as the Path")) expect(s).not.toHaveProperty("floatingOptions");
       for (const s of buildTourSteps(isAnnotator, step, "pointer", { words: "touch" })) expect(s).not.toHaveProperty("skipScroll");
     }
   });
@@ -643,14 +641,51 @@ describe("the annotator touch tours", () => {
 
 
 // S17 (4 Nov 2026): a confirmed obstruction opens on its severity scale, and
-// the panel has no Change any more
+// the panel has no Change any more. One paragraph from 5 Nov 2026 (Rans)
 describe("changing a severity later", () => {
-  it("says to move the scale on every contributor tour, and never to click or tap Change", () => {
+  it("says to adjust the scale on every contributor tour, with no list, and never to click or tap Change", () => {
     for (const [input, options] of CONTRIBUTOR_TOURS) {
       const steps = buildTourSteps(false, "objects", input, options);
       const severity = steps.find((s) => s.title === "Severity");
-      expect(severity.points).toContain("To change it later, open the box and move the scale.");
+      expect(severity.content).toBe("Rate how much it blocks you, from 1 to 5. You can still change this later by opening the box and adjusting the scale.");
+      expect(severity.points).toEqual([]);
       for (const s of steps) expect(s.content).not.toMatch(/(click|tap) Change/i);
+    }
+  });
+});
+
+// S18 (4 Nov 2026), from pilot participant 4: the first step names the two
+// questions by what they ask. The box panel numbers them.
+describe("Check Each Box without question numbers", () => {
+  // Rans's wording (5 Nov 2026): the path question as an instruction, Not an
+  // object spelled out, and the model, not the contributor, missing an object
+  it("says to answer whether it's on the path, then whether it obstructs, on every contributor tour, within the budget", () => {
+    for (const [input, options] of CONTRIBUTOR_TOURS) {
+      const [check] = buildTourSteps(false, "objects", input, options);
+      const points = check.touchPoints && input === "touch" ? check.touchPoints : check.points;
+      expect(points).toContain(SIDEWALK_QUESTION_COPY.answerWhether);
+      expect(points.some((p) => /^If it's not a real object, (click|tap) Not an object\.$/.test(p))).toBe(true);
+      expect(points.join(" ")).not.toMatch(/[“”"]Not an object/);
+      // The laptop tours end on it. The phone and tablet tour has Add a Box as its own step
+      if (input === "pointer") expect(check.note).toMatch(/^Did we miss an object on the sidewalk or path\? (Click and drag|Tap Add box) to box it, even if it doesn't obstruct\.$/);
+      // No "model" in the contributor tour (Rans, 5 Nov 2026)
+      for (const step of buildTourSteps(false, "objects", input, options)) expect(step.content).not.toMatch(/\bmodel/i);
+      expect(check.content).not.toMatch(/Missed one|Nothing real in it/);
+      expect(points).toContain("Then, answer whether it obstructs the sidewalk or the path for you.");
+      expect(check.content).not.toMatch(/Question [12]/);
+      expect(check.content.split(/\s+/).length).toBeLessThanOrEqual(CONTRIBUTOR_BUDGET.words);
+    }
+  });
+});
+
+// Rans (5 Nov 2026): the phone and tablet tour says it too, in Add a Box,
+// since its Check Each Box has no note about missed objects
+describe("boxing objects that do not obstruct, on phones and tablets", () => {
+  it("says even if it doesn't obstruct in Add a Box, within 18 words", () => {
+    for (const options of [{}, { phone: true }, { tablet: true }]) {
+      const add = buildTourSteps(false, "objects", "touch", options).find((s) => s.title === "Add a Box");
+      expect(add.points[0]).toBe("Tap Add box for any object on the sidewalk or path we missed, even if it doesn't obstruct.");
+      expect(add.points[0].split(/\s+/).length).toBeLessThanOrEqual(CONTRIBUTOR_BUDGET.wordsPerPoint);
     }
   });
 });

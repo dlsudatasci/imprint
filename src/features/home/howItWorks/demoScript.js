@@ -394,6 +394,9 @@ export function freshBoxes(imageIndex) {
     selected: false,
     isRejected: false,
     initialState: { comment: b.comment, mark: { ...b.mark } },
+    // The practice's proposal on Tree #1 (S3, 6 Nov 2026), so the preview
+    // shows the model's hint on Question 2 as the tutorial does
+    ...(typeof b.proposedObstructs === "boolean" ? { proposedObstructs: b.proposedObstructs } : {}),
   }));
 }
 

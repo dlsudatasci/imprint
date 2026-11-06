@@ -38,6 +38,13 @@ export interface IAnnotation<T = IShapeData> {
   /** Contributors (S12): on the sidewalk or the path people walk on. None on Not an object boxes or annotators' boxes. */
   onSidewalk?: boolean;
   confidence?: number | null;
+  /**
+   * The obstruction classifier's proposal (S3), from the image record, once a
+   * trained classifier's proposals are loaded. Shown as a hint on Question 2,
+   * never as an answer. Absent before then and on drawn boxes.
+   */
+  proposedObstructs?: boolean;
+  obstructionProbability?: number;
   initialState?: { comment?: string; mark: T };
   /** A drawn box: when it was drawn, for numbering on screen only. Not submitted. */
   drawnOrder?: number;

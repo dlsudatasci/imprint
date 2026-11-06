@@ -63,10 +63,14 @@
  * which named the button Submit where it reads Next Image.
  */
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
+import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
 
 /**
  * The most a contributor step may say (S16): the intro, the points, `after`
  * and the note together, the question's text counted, and one point on its own.
+ * The sentence on the model's proposal (`pointNote`, S3) is not counted: it is
+ * required wording, and Check Each Box keeps Rans's own words beside it
+ * (decided 6 Nov 2026).
  */
 export const CONTRIBUTOR_BUDGET = Object.freeze({ words: 80, points: 5, wordsPerPoint: 18 });
 
@@ -111,6 +115,13 @@ const checkPoints = (verb) => [
   "Then, answer whether it obstructs the sidewalk or the path for you.",
   `If it's not a real object, ${verb.toLowerCase()} Not an object.`,
 ];
+/**
+ * The sentence on the model's proposal (S3, 6 Nov 2026), right after the
+ * third point's text, the obstruction question, in the same style (Rans).
+ * `after` is the point it follows, counted from 1. Said whether or not
+ * proposals are loaded yet, so the tour does not change on the day they are.
+ */
+const PROPOSAL_POINT_NOTE = Object.freeze({ after: 3, text: PROPOSAL_HINT_COPY.tutorial });
 /**
  * Check Each Box sits right of the photo, and never runs off the screen: no
  * flip to below the photo, and a slide left over the photo where there is no
@@ -162,6 +173,7 @@ const CONTRIBUTOR = [
     title: "Check Each Box",
     points: checkPoints("Click"),
     touchPoints: checkPoints("Tap"),
+    pointNote: PROPOSAL_POINT_NOTE,
     // We missed it, not the contributor (Rans, 5 Nov 2026)
     // Any object on the path we missed, obstructing or not (Rans, 5 Nov 2026)
     note: "Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.",
@@ -300,6 +312,8 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
     {
       title: "Check Each Box",
       points: checkPoints("Tap"),
+      // As on the laptop tour (S3)
+      pointNote: PROPOSAL_POINT_NOTE,
     },
     PATH_STEP,
     {
@@ -494,6 +508,7 @@ function contributorWords(entry, touchWords) {
     points: [...(pick("points", "touchPoints") || [])],
     after: pick("after", "touchAfter"),
     note: pick("note", "touchNote"),
+    pointNote: entry.pointNote,
   };
 }
 
@@ -513,7 +528,10 @@ function contributorWords(entry, touchWords) {
  * A contributor step also carries `intro`, `points` and `note` (S16), and
  * `after` (S16b), which the tutorial page turns into a paragraph, a numbered
  * list (none when `points` is empty), a paragraph and a muted line. Its
- * `content` is the same text as plain sentences, in that order.
+ * `content` is the same text as plain sentences, in that order. `pointNote`
+ * (S3) is a sentence that follows one point's text inside that point,
+ * `{ after, text }`, and comes right after that point in `content`. It is
+ * apart from the point only so the point's own word limit still applies.
  */
 export function buildTourSteps(isAnnotator = false, step = "objects", input = "pointer", { words = "pointer", phone = false, tablet = false } = {}) {
   const { copy, targets, placements } = tourFor(isAnnotator, step, input);
@@ -526,14 +544,18 @@ export function buildTourSteps(isAnnotator = false, step = "objects", input = "p
       else if (input === "touch" && tablet && i === 0) content = `${content} ${TABLET_FULL_SCREEN_SENTENCE}`;
       text = { content };
     } else {
-      const { intro, points, after, note } = contributorWords(entry, touchWords);
+      const { intro, points, after, note, pointNote } = contributorWords(entry, touchWords);
       const fullNote = input === "touch" && (phone || tablet) && i === 0 ? FULL_SCREEN_TIP : note;
+      const sentences = points.flatMap((point, p) =>
+        pointNote && pointNote.after === p + 1 ? [asSentence(point), pointNote.text] : [asSentence(point)]
+      );
       text = {
         ...(intro ? { intro } : {}),
         points,
+        ...(pointNote ? { pointNote: { ...pointNote } } : {}),
         ...(after ? { after } : {}),
         ...(fullNote ? { note: fullNote } : {}),
-        content: [intro, ...points.map(asSentence), after, fullNote].filter(Boolean).join(" "),
+        content: [intro, ...sentences, after, fullNote].filter(Boolean).join(" "),
       };
     }
     return {

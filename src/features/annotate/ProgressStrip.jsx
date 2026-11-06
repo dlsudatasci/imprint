@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from "react";
-import { writeCurrentCount } from "@/util/sessionCache";
+import { requestImage } from "@/util/imageNavigation";
 import { HelpIcon, PauseIcon, StopIcon } from "@/ui/icons";
 
 /**
@@ -20,8 +20,18 @@ import { HelpIcon, PauseIcon, StopIcon } from "@/ui/icons";
  * In the tutorial, `onShowTour` adds a ? button beside Stop Tutorial that runs
  * the tour again (S16b, 3 Nov 2026, in place of the beacons on each point), as
  * the phone's top bar has.
+ *
+ * `reached` (6 Nov 2026, the tutorial and every session): the furthest image
+ * reached. After going back, the images up to it stay as they were: those
+ * before it done, and every one of them can be opened, forward as well as
+ * back. Without it, only the images before the one on screen are done.
+ *
+ * A click asks the annotation tool for the image (imageNavigation.js): the
+ * tool sends the image on screen again first if it was already sent and has
+ * changed since, so no answer is left only in this browser.
  */
-export default function ProgressStrip({ images, current, onPause, onStop, onShowTour, isTutorial = false, deferUpcoming = false }) {
+export default function ProgressStrip({ images, current, reached, onPause, onStop, onShowTour, isTutorial = false, deferUpcoming = false }) {
+  const furthest = Math.max(current, reached ?? current);
   const scrollRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -62,21 +72,10 @@ export default function ProgressStrip({ images, current, onPause, onStop, onShow
     el.scrollBy({ left: direction * cardWidth * 3, behavior: "smooth" });
   };
 
-  const navigateTo = async (index) => {
+  const navigateTo = (index) => {
     const target = index + 1;
-    if (target >= current) return;
-    writeCurrentCount(target);
-    try {
-      await fetch("/api/updateSessionCount", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentAnnotationCount: target }),
-      });
-    } catch (e) {
-      console.error(e);
-    }
-    sessionStorage.setItem("isNavigatingImages", "true");
-    window.location.reload();
+    if (target === current || target > furthest) return;
+    requestImage(target);
   };
 
   const fewImages = images.length <= 7;
@@ -115,9 +114,11 @@ export default function ProgressStrip({ images, current, onPause, onStop, onShow
               cut off the first thumbnails if they ever overflow. */}
           <div className={`flex gap-2 py-1 ${fewImages ? "w-fit mx-auto" : ""}`}>
             {images.map((img, i) => {
-              const isCompleted = i < current - 1;
               const isCurrent = i === current - 1;
-              const canClick = isCompleted;
+              const isCompleted = !isCurrent && i < furthest - 1;
+              // The furthest image, reached but not done, when it is not on screen
+              const isReached = !isCurrent && i === furthest - 1;
+              const canClick = isCompleted || isReached;
 
               return (
                 <button
@@ -130,12 +131,14 @@ export default function ProgressStrip({ images, current, onPause, onStop, onShow
                       ? "border-primary ring-2 ring-primary/30 shadow-md"
                       : isCompleted
                         ? "border-success/50 hover:border-success hover:shadow-md cursor-pointer"
-                        : "border-line opacity-60 cursor-default"
+                        : isReached
+                          ? "border-line hover:border-primary hover:shadow-md cursor-pointer"
+                          : "border-line opacity-60 cursor-default"
                   }`}
                   style={{ width: 140, height: 88 }}
                 >
                   {/* Thumbnail, not yet for an image still to come while the photo loads */}
-                  {!(deferUpcoming && i > current - 1) && (
+                  {!(deferUpcoming && i > furthest - 1) && (
                     <img
                       src={img.url}
                       alt={`Sidewalk ${i + 1}`}
@@ -148,7 +151,7 @@ export default function ProgressStrip({ images, current, onPause, onStop, onShow
 
                   {/* Darkening overlay */}
                   <div className={`absolute inset-0 ${
-                    isCurrent ? "bg-black/20" : isCompleted ? "bg-black/30" : "bg-black/40"
+                    isCurrent ? "bg-black/20" : isCompleted || isReached ? "bg-black/30" : "bg-black/40"
                   }`} />
 
                   {/* Number circle */}
@@ -156,7 +159,7 @@ export default function ProgressStrip({ images, current, onPause, onStop, onShow
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-sm ${
                       isCompleted
                         ? "bg-success text-white"
-                        : isCurrent
+                        : isCurrent || isReached
                           ? "bg-white text-ink"
                           : "bg-white/70 text-muted"
                     }`}>

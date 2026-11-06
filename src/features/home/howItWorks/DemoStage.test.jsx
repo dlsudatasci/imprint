@@ -30,6 +30,22 @@ function show(tick) {
 }
 
 describe("DemoStage", () => {
+  // S3 (6 Nov 2026, Rans): the landing preview shows the model's hint on Tree #1 as the tutorial does
+  it("shows the model's hint on Tree #1's Question 2 only, with neither answer chosen", () => {
+    const panel = show(tickOf("tree-to-yes", "end") - 0.5).querySelector("[data-demo-panel]");
+    expect(panel.querySelector("[data-question-step]").textContent).toBe("Question 2 of 2");
+    expect(panel.querySelector("[data-proposal-hint]").textContent).toBe("The model thinks this obstructs the sidewalk.");
+    expect(panel.querySelector('[data-control="yes"]').getAttribute("aria-pressed")).toBe("false");
+    expect(panel.querySelector('[data-control="no"]').getAttribute("aria-pressed")).toBe("false");
+    act(() => root.unmount());
+    host.remove();
+    // Not at Question 1, and not on Motorcycle #1, which has no proposal
+    expect(show(tickOf("tree-open", "end")).querySelector("[data-proposal-hint]")).toBeNull();
+    act(() => root.unmount());
+    host.remove();
+    expect(show(tickOf("moto-to-no", "end")).querySelector("[data-proposal-hint]")).toBeNull();
+  });
+
   it("draws the first photo, its suggestions in the lists, Step 2 and Next Image", () => {
     const el = show(0);
     expect(el.querySelector('img[src="/images/tutorial/tutorial-1.jpg"]')).not.toBeNull();

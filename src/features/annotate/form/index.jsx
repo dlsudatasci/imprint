@@ -63,6 +63,8 @@ function useMediaQuery(query) {
 export default function AnnotateForm({
   data,
   current,
+  // The tutorial's furthest image reached, for the progress strip (6 Nov 2026). Sessions pass none.
+  reached,
   total,
   allImages,
   isTutorial = false,
@@ -379,6 +381,7 @@ export default function AnnotateForm({
           <ProgressStrip
             images={allImages || []}
             current={current}
+            reached={reached}
             total={total}
             onPause={() => setShowPauseModal(true)}
             onStop={() => setShowAbandonModal(true)}

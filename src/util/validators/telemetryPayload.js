@@ -1,5 +1,6 @@
 import { isNotAnObject, isOffSidewalk } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
+import { isProposal, proposalWasShown } from "@/util/modelProposal";
 import { DEFAULT_TAU } from "@/util/validators/tauSetting.mjs";
 
 const GEOMETRY_TOLERANCE_PX = 3;
@@ -180,8 +181,17 @@ function suggestionDisposition(obj) {
  *
  * msToAnswer (contributors, S10): a function from a suggestion's id to its
  * time to answer. Left out for annotators, whose entries carry no msToAnswer.
+ *
+ * The classifier's proposal (S3, 6 Nov 2026), for the anchoring analysis
+ * (chapter_4.tex lines 355 and 416): `proposedObstructs`, the box's own from
+ * the record or null, and `proposalShown`, true only when it has one and the
+ * box answered Question 1 Yes, so the hint was on screen. Always false for
+ * annotators. The server sets both again from the record.
+ *
+ * @param {Array<object>} annotations
+ * @param {{ msToAnswer?: (id: string) => number | null, isAnnotator?: boolean }} [options]
  */
-function buildSuggestionConfidences(annotations, { msToAnswer } = {}) {
+function buildSuggestionConfidences(annotations, { msToAnswer, isAnnotator = false } = {}) {
   const result = [];
   for (const obj of annotations) {
     if (obj.editable) continue;
@@ -192,6 +202,8 @@ function buildSuggestionConfidences(annotations, { msToAnswer } = {}) {
       confidence: obj.confidence ?? null,
       disposition: suggestionDisposition(obj),
       obstructs: typeof obj.obstructs === "boolean" ? obj.obstructs : null,
+      proposedObstructs: isProposal(obj.proposedObstructs) ? obj.proposedObstructs : null,
+      proposalShown: proposalWasShown(obj, obj, { isAnnotator }),
       ...(typeof msToAnswer === "function" ? { msToAnswer: msToAnswer(obj.id) } : {}),
     });
   }

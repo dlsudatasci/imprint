@@ -4,6 +4,7 @@ import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 import { BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 import { EyeOffIcon } from "../icons";
+import { proposalHintText } from "@/util/modelProposal";
 
 /**
  * The box panel for contributors, Step 1.
@@ -35,6 +36,14 @@ import { EyeOffIcon } from "../icons";
  * S18 (4 Nov 2026, pilot participant 4): each question, the severity
  * panel's and the picker's included, is 16 px semibold ink, the size of the
  * category chooser, and Not an object and Delete box are red outline buttons.
+ *
+ * The classifier's proposal (S3, 6 Nov 2026): once a suggestion's record
+ * proposes that it obstructs, Question 2 shows one small muted line between
+ * the question and Yes and No, "The model thinks this obstructs the
+ * sidewalk." A proposal that it does not obstruct shows nothing (6 Nov
+ * 2026). Only on Question 2: not on Question 1,
+ * the severity picker or panel, a drawn box or a Not an object panel. Neither
+ * button is chosen or moved because of it, and the probability is never shown.
  *
  * Two variants (9 Oct 2026): "floating", the card beside the box on the
  * desktop photo, and "sheet", the same panel in the answers sheet on a phone
@@ -90,6 +99,11 @@ export interface IDefaultInputSection {
   onChangeSeverity?: (severity: number) => void;
   /** False only where no sidewalk question is asked */
   askOnSidewalk?: boolean;
+  /**
+   * The classifier's proposal for a suggestion (S3), from the image record:
+   * true, false, or none. Shown as a hint on Question 2 only, never as an answer.
+   */
+  proposedObstructs?: boolean | null;
 }
 
 export type PanelVariant = "floating" | "sheet";
@@ -343,6 +357,7 @@ const DefaultInputSection = ({
   onSetOnSidewalk = () => undefined,
   onChangeSeverity = () => undefined,
   askOnSidewalk = true,
+  proposedObstructs = null,
 }: IDefaultInputSection) => {
   // A typed-in label opens as the "Other..." field straight away
   const [isCustom, setIsCustom] = useState(() => isCustomLabel(value));
@@ -500,6 +515,10 @@ const DefaultInputSection = ({
     else onSelectObstruction();
   };
 
+  // The classifier's proposal (S3): a suggestion's, at Question 2 for
+  // contributors only. A drawn box has none, whatever it is given.
+  const hint = askOnSidewalk && !editable ? proposalHintText(proposedObstructs) : null;
+
   const onNo = () => {
     if (editable) {
       onSetObstructs(false);
@@ -521,6 +540,7 @@ const DefaultInputSection = ({
       question={<>Does <span className="font-bold">{label}</span> obstruct the sidewalk?</>}
       // Second of the two only when the path question was asked (contributors)
       step={askOnSidewalk ? 2 : undefined}
+      note={hint}
       answer={answer}
       disabled={!hasCategory}
       onYes={onYes}
@@ -607,7 +627,7 @@ function DeleteBoxButton({ variant, onDelete }: { variant: PanelVariant; onDelet
  * or No for the obstruction question, so for contributors a small line above
  * the question says which of the two it is. No line without it.
  */
-function QuestionPanel({ variant, header, onHide, onClose, question, step, answer, disabled, onYes, onNo, control, footer }: {
+function QuestionPanel({ variant, header, onHide, onClose, question, step, note, answer, disabled, onYes, onNo, control, footer }: {
   variant: PanelVariant;
   header: React.ReactNode;
   onHide?: () => void;
@@ -616,6 +636,8 @@ function QuestionPanel({ variant, header, onHide, onClose, question, step, answe
   question: React.ReactNode;
   /** 1 or 2: "Question 1 of 2" above the question */
   step?: 1 | 2;
+  /** A small muted line between the question and Yes and No (S3: the model's proposal). None without it. */
+  note?: string | null;
   answer: "yes" | "no" | null;
   disabled: boolean;
   onYes: () => void;
@@ -633,6 +655,8 @@ function QuestionPanel({ variant, header, onHide, onClose, question, step, answe
 
       {step && <p data-question-step={step} className="text-xs font-semibold text-muted mt-3">{SIDEWALK_QUESTION_COPY.questionOf(step)}</p>}
       <p className={`${QUESTION_TEXT} ${step ? "mt-0.5" : "mt-3"} mb-2`}>{question}</p>
+      {/* Smaller than the question, so it reads as a note (S3) */}
+      {note && <p data-proposal-hint className="text-sm text-muted -mt-1 mb-2">{note}</p>}
       <div className="grid grid-cols-2 gap-2">
         <AnswerButton active={answer === "yes"} disabled={disabled} onClick={onYes} variant={variant} control={control ? `${control}-yes` : "yes"}>Yes</AnswerButton>
         <AnswerButton active={answer === "no"} disabled={disabled} onClick={onNo} variant={variant} control={control ? `${control}-no` : "no"}>No</AnswerButton>

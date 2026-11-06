@@ -153,9 +153,10 @@ const handler = async (req, res) => {
 
       // Both roles (S5, 29 Oct 2026): only this image's suggestions may be
       // submitted, each stored with the record's confidence and initialState,
-      // and drawn boxes with no confidence
+      // and drawn boxes with no confidence. The classifier's proposal and
+      // whether it was shown come from the record too (S3).
       const suggestions = imageRecord.annotationList || [];
-      const matched = applyRecordSuggestions(selectedObjectsID, suggestions);
+      const matched = applyRecordSuggestions(selectedObjectsID, suggestions, { isAnnotator });
       if (!matched.valid) {
         return res.status(422).json({ message: matched.message });
       }
@@ -261,10 +262,11 @@ const handler = async (req, res) => {
         // allowed values, and the browser family comes from the User-Agent
         // header, which is never stored. The quality-check timing (S10) is
         // kept the same way, and only for contributors. Each suggestion's
-        // confidence comes from the image record (S5).
+        // confidence comes from the image record (S5), and so do its
+        // proposal and whether the proposal was shown (S3).
         const sanitized = sanitizeQcTelemetry(sanitizeDeviceTelemetry(telemetry), { isAnnotator });
         // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
-        const { timestamp, ...clientTelemetry } = withRecordConfidences(sanitized, suggestions);
+        const { timestamp, ...clientTelemetry } = withRecordConfidences(sanitized, suggestions, { boxes: selectedObjectsID, isAnnotator });
         await logTelemetryEvent({
           ...clientTelemetry,
           event: "IMAGE_SUBMITTED",

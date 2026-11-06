@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { writeSession, writeTutorialFlag, readSessionData, readTutorialFlag } from "@/util/sessionCache";
+import { writeSession, writeTutorialFlag, readSessionData, readTutorialFlag, readReachedCount, writeReachedCount } from "@/util/sessionCache";
 import { syncCachedSession } from "./syncCachedSession";
 
 // 27 Oct 2026: the dashboard and navbar trusted a saved copy of a session finished on another device
@@ -31,6 +31,17 @@ describe("syncCachedSession", () => {
     expect(await syncCachedSession()).toEqual({ active: true, current: 3, total: 3 });
     expect(readSessionData().imgRecords.map((i) => i._id)).toEqual(["c", "d", "e"]);
     expect(readTutorialFlag()).toBe(false);
+  });
+
+  // 6 Nov 2026: the furthest image reached comes with the replacing session, never the old one's
+  it("takes the furthest image reached from the replacing session", async () => {
+    writeReachedCount(2);
+    server({ isExistingSession: true, currentCount: 1, reachedCount: 3, ...batch("c", "d", "e") });
+    await syncCachedSession();
+    expect(readReachedCount()).toBe(3);
+    server({ isExistingSession: true, currentCount: 2, ...batch("f", "g", "h") });
+    await syncCachedSession();
+    expect(readReachedCount()).toBe(2);
   });
 
   it("changes nothing when the server cannot be asked", async () => {

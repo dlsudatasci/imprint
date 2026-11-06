@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import { writeSession, writeTutorialFlag, readSessionData, readTutorialFlag, readCurrentCount } from "@/util/sessionCache";
+import { writeSession, writeTutorialFlag, readSessionData, readTutorialFlag, readCurrentCount, readReachedCount, writeReachedCount, SESSION_KEYS } from "@/util/sessionCache";
 
 vi.mock("next-auth/react", () => ({ useSession: () => ({ status: "authenticated", data: { user: { username: "rans" } } }) }));
 vi.mock("next/router", () => ({ default: { reload: vi.fn() } }));
@@ -173,5 +173,43 @@ describe("a session started from the picker", () => {
   it("is offered only on the picker", async () => {
     await open({ server: { imgRecords: [], sessionSizes: [5, 10, 20, 40] } });
     expect(typeof seen.picker.onStarted).toBe("function");
+  });
+});
+
+// 6 Nov 2026: the progress strip opens any image up to the furthest reached
+describe("the furthest image reached", () => {
+  it("is passed to the form from the saved copy, after going back", async () => {
+    writeSession({ total: 3, current: 1, data: batch("a", "b", "c"), reached: 3 });
+    await open({ navigating: true });
+    expect(seen.form.current).toBe(1);
+    expect(seen.form.reached).toBe(3);
+  });
+
+  it("is the image on screen for a copy saved without one", async () => {
+    writeSession({ total: 3, current: 2, data: batch("a", "b", "c") });
+    window.localStorage.removeItem(SESSION_KEYS.REACHED_KEY);
+    await open({ navigating: true });
+    expect(seen.form.reached).toBe(2);
+  });
+
+  it("comes from the server on a resume with nothing saved", async () => {
+    await open({ server: { isExistingSession: true, currentCount: 1, reachedCount: 3, ...batch("a", "b", "c") } });
+    expect(seen.form.current).toBe(1);
+    expect(seen.form.reached).toBe(3);
+    expect(readReachedCount()).toBe(3);
+  });
+
+  it("takes a further one the server knows of on a cold visit, from another device", async () => {
+    writeSession({ total: 3, current: 1, data: batch("a", "b", "c"), reached: 1 });
+    await open({ server: { isExistingSession: true, currentCount: 1, reachedCount: 3, ...batch("a", "b", "c") } });
+    expect(readReachedCount()).toBe(3);
+    expect(seen.form.reached).toBe(3);
+  });
+
+  it("is the first image for a session started from the picker", async () => {
+    writeReachedCount(3);
+    await open({ server: { imgRecords: [], sessionSizes: [5] } });
+    await act(async () => seen.picker.onStarted(batch("x", "y")));
+    expect(seen.form.reached).toBe(1);
   });
 });

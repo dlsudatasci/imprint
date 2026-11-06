@@ -137,8 +137,11 @@ import {
   readSessionData,
   writeSession,
   writeCurrentCount,
+  writeReachedCount,
+  reachedFor,
   clearSession,
 } from "@/util/sessionCache";
+import { GO_TO_IMAGE_EVENT, answerSignature, leaveAction, FINISH_BEFORE_LEAVING } from "@/util/imageNavigation";
 import { isSessionChanged } from "@/util/validators/sessionSync";
 import { P } from "../Typography";
 import { H2 } from "../Typography";
@@ -161,6 +164,7 @@ import {
   ShrinkIcon,
 } from '../icons';
 import { buildDisplayLabelsInOrder, orderOfAppearance, formatLabel } from "@/util/buildDisplayLabels";
+import { isProposal } from "@/util/modelProposal";
 
 // Sent with every submit so the analysis can tell marks made on the fixed
 // canvas from those made while .rp-image had a 5px border that put the photo
@@ -301,6 +305,8 @@ interface IReactPictureAnnotationProps {
     onSidewalk?: boolean,
     onSetOnSidewalk?: (onSidewalk: boolean) => void,
     onChangeSeverity?: (severity: number) => void,
+    // The classifier's proposal for a suggestion (S3): true, false or null
+    proposedObstructs?: boolean | null,
   ) => React.ReactElement;
   totalAnnotationCount?: number;
   // Annotators give no severity and answer no scene-level questions (decided
@@ -402,6 +408,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       onSidewalk?: boolean,
       onSetOnSidewalk?: (onSidewalk: boolean) => void,
       onChangeSeverity?: (severity: number) => void,
+      proposedObstructs?: boolean | null,
     ) => (
       <DefaultInputSection
         key={id}
@@ -428,6 +435,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         onSidewalk={onSidewalk}
         onSetOnSidewalk={onSetOnSidewalk}
         onChangeSeverity={onChangeSeverity}
+        proposedObstructs={proposedObstructs}
       />
     ),
     isAnnotator: false,
@@ -463,6 +471,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     severity: undefined as number | null | undefined,
     // Contributors (S12): the open box's answer to the sidewalk question
     onSidewalk: undefined as boolean | undefined,
+    // The open suggestion's proposal from the classifier (S3), null for none
+    proposedObstructs: null as boolean | null,
     canvasScale: 1,
     // Annotators only (4 Oct 2026): Objects, then Obstructions
     annotatorStep: "objects" as AnnotatorStep,
@@ -537,6 +547,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private editsRestored = false;
   // Set from the moment an image is sent until the page moves on
   private submitInFlight = false;
+  // The answers the server has for this image, as an answerSignature (6 Nov
+  // 2026): read once the image's cached answers are restored, kept in the
+  // cache with the edits so a refresh mid-change still knows, and cleared
+  // when the image is sent. Leaving an image already sent with answers that
+  // differ sends it again first, so nothing changed stays only in this browser.
+  private sentSignature: string | null = null;
   private editSaver = createEditSaver(() => this.cacheCurrentImageEdits(), 400);
   private flushEdits = () => this.editSaver.flush();
   private onVisibilityChange = () => {
@@ -897,6 +913,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const currentCanvas = this.canvasRef.current;
     const currentImageCanvas = this.imageCanvasRef.current;
     let savedAnnotatorStep: AnnotatorStep | undefined;
+    let savedSentSignature: string | undefined;
     if (currentCanvas && currentImageCanvas) {
       this.setCanvasDPI();
 
@@ -928,6 +945,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             this.setState({ sceneLevel: toCurrentScale(savedScene, currentRecord.userSceneScale) });
           }
           savedAnnotatorStep = currentRecord.userAnnotatorStep;
+          if (typeof currentRecord.userSentSignature === "string") savedSentSignature = currentRecord.userSentSignature;
           // The cached or stored sidewalk outline (annotationGet copies a
           // stored one into userSidewalkMask)
           const savedMask = currentRecord.userSidewalkMask;
@@ -957,6 +975,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       document.addEventListener("visibilitychange", this.onVisibilityChange);
       // The tutorial moves the answers sheet before its Step 2 step
       window.addEventListener(SHEET_EVENT, this.onSheetRequest);
+      // The progress strip asks for another image (6 Nov 2026)
+      window.addEventListener(GO_TO_IMAGE_EVENT, this.onGoToImageRequest);
       document.addEventListener("scroll", this.onStrayScroll, true);
       // A finger is the primary pointer, so a box selected from a chip shows
       // round corner handles before the photo is ever touched
@@ -972,6 +992,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.observeSheetArea();
     this.lastStage = this.stageSize();
     this.editsRestored = true;
+    // Once the restored answers are on screen: what the server has, unless
+    // the cache says the answers were changed after it was sent
+    this.setState({}, () => {
+      this.sentSignature = savedSentSignature ?? this.answerSignature();
+    });
   };
 
   public componentDidUpdate = (preProps: IReactPictureAnnotationProps, prevState: this["state"]) => {
@@ -1095,6 +1120,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       window.removeEventListener("pagehide", this.flushEdits);
       document.removeEventListener("visibilitychange", this.onVisibilityChange);
       window.removeEventListener(SHEET_EVENT, this.onSheetRequest);
+      window.removeEventListener(GO_TO_IMAGE_EVENT, this.onGoToImageRequest);
       document.removeEventListener("scroll", this.onStrayScroll, true);
     }
   };
@@ -1223,11 +1249,14 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.state.onSidewalk,
       this.onSetOnSidewalk,
       this.onChangeSeverity,
+      this.state.proposedObstructs,
     );
 
     // The canvas, the same in every layout
     const canvasArea = (
-      <div ref={this.canvasWrapperRef} className="w-full overflow-hidden">
+      // Scrolled into view below the message pill at the top of the screen
+      // (6 Nov 2026), so the pill never covers the box it is about
+      <div ref={this.canvasWrapperRef} className="w-full overflow-hidden scroll-mt-[calc(var(--nav-h,64px)+60px)]">
         <div className="relative" style={{
           width: width * canvasScale,
           height: height * canvasScale,
@@ -1366,9 +1395,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
         </div>{/* end flex row */}
 
-        {/* The message (showMessage). Always in the page, so it can arrive and
-            leave the same way (21 Oct 2026): it fades in as its space opens, and
-            out as its space closes, so Next Image glides instead of jumping. */}
+        {/* The message (showMessage): a pill at the top of the screen (6 Nov
+            2026). Always in the page, so it can arrive and leave the same way. */}
         {this.renderDesktopMessage()}
 
         <div className="flex justify-center my-10 gap-4">
@@ -3456,26 +3484,31 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private lastMessage = "";
 
   /**
-   * Desktop: the message above the step's buttons (21 Oct 2026). Its row opens
-   * to the message's height as it fades in, and closes as it fades out, on the
-   * same ease both ways. A plain fade with reduced motion.
+   * Desktop: the message as a dark pill at the top of the screen, under the
+   * top bar, with the phone's red warning sign (6 Nov 2026, Rans): the place
+   * and look of the tutorial's "Click Tour at the top of the page to see the
+   * tour again." It used to be a red box above the step's buttons, which
+   * moved Next Image down as it opened and was off the screen when the page
+   * was scrolled to the photo. Fixed to the screen, so it is in view wherever
+   * the page is, and it moves nothing. It fades in and out over 0.3 s (a
+   * plain fade with reduced motion), and never takes a click.
    */
   private renderDesktopMessage() {
     const shown = Boolean(this.state.error);
     return (
       <div
         aria-hidden={!shown}
-        className={`grid motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-opacity motion-reduce:duration-200 ${shown ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+        data-desktop-message
+        className="pointer-events-none fixed inset-x-0 z-[60] flex justify-center px-4"
+        style={{ top: "calc(var(--nav-h, 64px) + 12px)" }}
       >
-        <div className="min-h-0 overflow-hidden">
-          <div className="flex justify-center pt-6 pb-4">
-            <div className="bg-danger-soft border border-danger-border text-danger px-6 py-3 rounded-control flex items-center gap-2">
-              <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="shrink-0 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-              <span role="alert" className="font-medium">{shown ? this.state.error : this.lastMessage}</span>
-            </div>
-          </div>
+        <div
+          className={`flex max-w-[min(640px,100%)] items-center gap-2 rounded-full bg-ink/85 py-2 pl-3 pr-4 text-xs font-semibold text-white shadow-lg motion-safe:transition-[opacity,transform] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-opacity motion-reduce:duration-200 ${shown ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1"}`}
+        >
+          <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="shrink-0 h-4 w-4 text-danger" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+          <span role="alert" className="leading-snug">{shown ? this.state.error : this.lastMessage}</span>
         </div>
       </div>
     );
@@ -4013,26 +4046,69 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     );
   }
 
-  private onPrevious = async () => {
-    // 1. Check if we are at the start
-    if (this.props.currentAnnotationCount <= 1) return;
+  /** This image's answers, as answerSignature reads them (6 Nov 2026) */
+  private answerSignature() {
+    return answerSignature({
+      boxes: this.tidyMarks(this.currentAnnotationData),
+      scene: this.askScene ? this.state.sceneLevel : null,
+      mask: this.annotatorObjectStep && this.askSidewalk ? this.sidewalkState.mask : null,
+    });
+  }
 
-    // 2. Save User Edits Locally (Just in case they drew something before going back)
+  /** True when the answers on screen differ from what the server has for this image */
+  private hasUnsentChanges() {
+    return this.sentSignature !== null && this.answerSignature() !== this.sentSignature;
+  }
+
+  private onGoToImageRequest = (event: Event) => {
+    const target = (event as CustomEvent).detail;
+    if (typeof target === "number") this.goToImage(target);
+  };
+
+  private onPrevious = () => this.goToImage(this.props.currentAnnotationCount - 1);
+
+  /**
+   * Opens image `target` (1-based) of the session: Previous, and the progress
+   * strip, back or forward up to the furthest image reached (6 Nov 2026).
+   * An image already sent and changed since is sent again first, with the
+   * same checks as Next Image, and then the page goes to `target` rather than
+   * the next image; if something is missing the message says what and the
+   * page stays. An annotator finishes such an image with Next Image first.
+   * Otherwise the edits are kept in the session cache, as Previous always did.
+   */
+  private goToImage = async (target: number) => {
+    if (this.submitInFlight) return;
+    const current = this.props.currentAnnotationCount;
+    const total = this.props.totalAnnotationCount;
+    const action = leaveAction({
+      current,
+      target,
+      reached: reachedFor(current, total ?? Infinity),
+      total,
+      changed: this.hasUnsentChanges(),
+      isAnnotator: this.annotatorObjectStep,
+    });
+    if (action === "stay") return;
+    if (action === "finish") {
+      this.showMessage(FINISH_BEFORE_LEAVING);
+      return;
+    }
+    if (action === "send") {
+      await this.sendImage(target);
+      return;
+    }
+
+    this.editSaver.cancel();
     this.cacheCurrentImageEdits();
+    writeCurrentCount(target);
 
-    // 3. Decrement the counter in Local Storage. From the image on screen, so
-    // a double click lands on the same previous image rather than two back.
-    const newCount = this.props.currentAnnotationCount - 1;
-    writeCurrentCount(newCount);
-
-    // 4. Update the DB Session so logouts resume correctly
+    // The server's copy of the position, so a sign-out resumes on this image
     await fetch("/api/updateSessionCount", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ currentAnnotationCount: newCount }),
+      body: JSON.stringify({ currentAnnotationCount: target }),
     }).catch(err => console.error(err));
 
-    // 5. Reload to fetch the previous image
     sessionStorage.setItem("isNavigatingImages", "true");
     Router.reload();
   };
@@ -4044,7 +4120,16 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * suggestion or a missing surface type is a hole in the dataset that nobody
    * will ever come back to fill.
    */
-  private submit = async () => {
+  /** Next Image: sends the image and opens the next one */
+  private submit = () => this.sendImage(this.props.currentAnnotationCount + 1);
+
+  /**
+   * Sends the image on screen, then opens image `nextCount` (1-based): the
+   * next one for Next Image, any image up to the furthest reached when an
+   * image already sent and changed since is left from the strip or with
+   * Previous (6 Nov 2026).
+   */
+  private sendImage = async (nextCount: number) => {
     // One submit at a time (8 Oct 2026). A double click on Next Image, or Enter
     // and a click, used to send the image twice, and each success moved the
     // position on by one, so the next image was skipped and a 50-image session
@@ -4103,16 +4188,21 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       });
     // From the answers as sent, so an annotator's obstructs is the confirmed
     // one (S6). msToAnswer for contributors only (S10): annotators are not screened.
+    // The proposal and whether it was shown (S3), never for annotators
     const suggestionConfidences = buildSuggestionConfidences(
       answered,
-      objectStep ? {} : { msToAnswer: (id: string) => this.answerClock.msToAnswer(id) }
+      objectStep
+        ? { isAnnotator: true }
+        : { msToAnswer: (id: string) => this.answerClock.msToAnswer(id), isAnnotator: Boolean(this.props.isAnnotator) }
     );
-    // Never shown, so never answered
+    // Never shown, so never answered, and no hint was seen
     const hiddenConfidences = this.hiddenSuggestions.map((s) => ({
       id: s.id,
       confidence: s.confidence ?? null,
       disposition: "hidden_below_tau",
       obstructs: null,
+      proposedObstructs: isProposal(s.proposedObstructs) ? s.proposedObstructs : null,
+      proposalShown: false,
       ...(objectStep ? {} : { msToAnswer: null }),
     }));
     const idleTelemetry = objectStep ? {} : this.idleClock.summarize(submitTime);
@@ -4182,7 +4272,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       ...(objectStep ? { sidewalkMask: submittedMask } : {}),
       selectedObjectsID: selectedObjects,
       newObjects: newObjects,
-      currentAnnotationCount: this.props.currentAnnotationCount + 1,
+      currentAnnotationCount: nextCount,
       canvasVersion: CANVAS_VERSION,
       // Step 2's answers run worst to best, higher is better (22 Oct 2026)
       sceneScale: SCENE_SCALE,
@@ -4206,15 +4296,22 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (res.status === 200) {
       // Fold the current UI state into the cached batch so 'Previous' can
       // restore it without another round trip. An annotator's finished image
-      // reopens at Objects, with the answers as submitted.
+      // reopens at Objects, with the answers as submitted. A waiting edit
+      // save is dropped, so it cannot write over what was sent, and the
+      // image is marked as the server has it (6 Nov 2026).
+      this.editSaver.cancel();
       this.cacheCurrentImageEdits(
-        objectStep ? { annotatorStep: "objects", annotations: answered, sidewalkMask: submittedMask } : {}
+        objectStep ? { annotatorStep: "objects", annotations: answered, sidewalkMask: submittedMask, sent: true } : { sent: true }
       );
 
-      // The image after the one on screen, never one more than whatever the
-      // cache holds: a repeated success then lands on the same image
-      const newCount = this.props.currentAnnotationCount + 1;
+      // The image asked for, from the one on screen, never one more than
+      // whatever the cache holds: a repeated success then lands on the same image
+      const newCount = nextCount;
       writeCurrentCount(newCount);
+      // The image after this one is reached now (6 Nov 2026)
+      const total = this.props.totalAnnotationCount;
+      const reached = Math.max(reachedFor(this.props.currentAnnotationCount, total ?? Infinity), this.props.currentAnnotationCount + 1);
+      writeReachedCount(total ? Math.min(total, reached) : reached);
 
       sessionStorage.setItem("isNavigatingImages", "true");
       Router.reload();
@@ -4260,7 +4357,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     annotatorStep,
     annotations,
     sidewalkMask,
-  }: { annotatorStep?: AnnotatorStep; annotations?: IAnnotation[]; sidewalkMask?: unknown } = {}) => {
+    sent = false,
+  }: { annotatorStep?: AnnotatorStep; annotations?: IAnnotation[]; sidewalkMask?: unknown; sent?: boolean } = {}) => {
     const localData = readSessionData();
     if (!localData || !localData.imgRecords) return;
 
@@ -4278,6 +4376,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       // A half-drawn shape is not cached
       record.userSidewalkMask = this.askSidewalk ? (sidewalkMask ?? this.sidewalkState.mask) : null;
     }
+    // What the server has (6 Nov 2026): none once sent, so the next visit
+    // reads it from the answers it opens with
+    if (sent) delete record.userSentSignature;
+    else if (this.sentSignature !== null) record.userSentSignature = this.sentSignature;
     writeSession({ data: localData });
   };
 
@@ -4471,6 +4573,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       obstructs: data.obstructs,
       severity: data.severity,
       onSidewalk: data.onSidewalk,
+      // The record's proposal (S3), for a contributor's suggestion only.
+      // annotationGet puts the record's on a resumed box too.
+      proposedObstructs: !this.props.isAnnotator && !data.editable && isProposal(data.proposedObstructs)
+        ? data.proposedObstructs!
+        : null,
     });
   }
 

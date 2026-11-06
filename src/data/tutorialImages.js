@@ -25,6 +25,11 @@
  * tutorial shows the same photo credit as a session (PhotoCredit). The three
  * frames are the ATLAS-3 frames excluded from the corpus
  * (pipeline_methodology.md §7h and Section 8), 640 by 360, Las Piñas.
+ * Edited 6 Nov 2026 (S3): the first image's Tree carries `proposedObstructs:
+ * true`, so the practice and the landing previews show the model's hint on
+ * Question 2. The other
+ * two images have no obstruction, and a proposal that something does not
+ * obstruct shows no hint, so they carry none.
  * Source MongoDB IDs saved in: tutorial-image-ids.txt
  */
 
@@ -64,7 +69,12 @@ const TUTORIAL_IMAGES = [
         },
         "selected": false,
         "editable": false,
-        "isRejected": false
+        "isRejected": false,
+        // The practice's one model proposal (S3, 6 Nov 2026), so the hint
+        // on Question 2 is met once before a session. A made-up example, not a
+        // classifier's output, so no probability. The landing previews play
+        // this photo and show the hint too (freshBoxes).
+        "proposedObstructs": true
       },
       {
         "id": "tut1-box3",

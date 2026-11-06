@@ -18,6 +18,8 @@ import {
   toModelDevCandidates,
   pickAnnotatorModelDev,
   leastAnnotatedPipeline,
+  withRecordProposal,
+  reachedCountOf,
 } from "@/util/validators/annotationGet";
 import { SCENE_SCALE, toCurrentScale } from "@/util/validators/sceneScale.mjs";
 import { needsEmailVerification, EMAIL_NOT_VERIFIED_RESPONSE } from "@/util/validators/emailVerification.mjs";
@@ -87,13 +89,14 @@ async function mergeUserAnnotations(db, userId, imgRecords) {
     const annotation = byImageID.get(img.imageID);
     if (!annotation) continue;
 
-    // Their edits win over the original suggestion of the same id
+    // Their edits win over the original suggestion of the same id, with the
+    // record's proposal (S3)
     const edits = new Map(
       (annotation.selectedObjectsID || []).map((box) => [box.id, box])
     );
 
     img.annotationList = [
-      ...(img.annotationList || []).map((box) => edits.get(box.id) || box),
+      ...(img.annotationList || []).map((box) => (edits.has(box.id) ? withRecordProposal(edits.get(box.id), box) : box)),
       ...(annotation.newObjects || []),
     ];
     img.userSliderValue = annotation.accessibilityRating;
@@ -263,6 +266,13 @@ const handler = async (req, res) => {
         imgRecords: sortedImgRecords.map(toClientImage),
         isExistingSession: true,
         currentCount: currentCount,
+        // The furthest image reached (6 Nov 2026), for the progress strip
+        reachedCount: reachedCountOf(
+          sortedImgRecords.map((img) => img.imageID),
+          existingSession.completedImageIDs,
+          currentCount,
+          sortedImgRecords.length
+        ),
         isAnnotator,
         tau,
       });

@@ -1,5 +1,6 @@
 import { SESSION_SIZES_TEXT } from "./taskFacts";
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
+import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
 
 /**
  * Every string the annotation guide shows (16 Oct 2026), so tests can check
@@ -64,6 +65,9 @@ export const GUIDE_COPY = Object.freeze({
         "Dashed yellow boxes are suggested objects. A box is only a suggested object, it doesn't necessarily mean it's on the sidewalk or an obstruction. Click one, or tap it on a phone, to open its panel.",
         `Check the category, then answer Question 1, “${SIDEWALK_QUESTION_COPY.question}”, with Yes or No.`,
         "If it is on the sidewalk, then Question 2 asks “Does it obstruct the sidewalk?” Answer it for yourself if you believe the object obstructs your path or not. If it does obstruct, rate the severity of its obstruction from 1, a minor inconvenience, to 5, impassable.",
+        // The classifier's proposal on Question 2 (S3), said whether or not
+        // proposals are loaded yet, so the guide does not change on the day they are
+        PROPOSAL_HINT_COPY.tutorial,
       ]),
       // What counts as the path, listed under the question (paragraph 2)
       pathPoints: SIDEWALK_QUESTION_COPY.pathPoints,

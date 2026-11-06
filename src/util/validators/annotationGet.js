@@ -107,6 +107,45 @@ export function toClientImage(image) {
 }
 
 /**
+ * The furthest image reached in a resumed session (6 Nov 2026), 1-based: one
+ * past the last image of the session the person has submitted, at least the
+ * image they are on and never past the last. The progress strip can open any
+ * image up to it, so going back does not lose the way forward.
+ * `imageIDs` are the session's images in order (Image.imageID),
+ * `completedImageIDs` the session's submitted ones.
+ */
+export function reachedCountOf(imageIDs, completedImageIDs, currentCount, totalCount) {
+  const done = new Set((Array.isArray(completedImageIDs) ? completedImageIDs : []).map(String));
+  let last = 0;
+  (Array.isArray(imageIDs) ? imageIDs : []).forEach((id, i) => {
+    if (done.has(String(id))) last = i + 1;
+  });
+  const current = Number.isInteger(currentCount) && currentCount > 0 ? currentCount : 1;
+  const reached = Math.max(current, last + 1);
+  return Number.isInteger(totalCount) && totalCount > 0 ? Math.min(totalCount, reached) : reached;
+}
+
+/**
+ * A saved suggestion resumed in place of the record's (S3, 6 Nov 2026), with
+ * the classifier's proposal taken from the record's suggestion of the same
+ * id, never from the saved box: the record's proposals change with each
+ * retraining cycle, and the saved box keeps what was shown in its
+ * initialState only. Without a proposal on the record, the copy has none
+ * either. Neither box is changed.
+ */
+export function withRecordProposal(saved, recordBox) {
+  if (!saved || typeof saved !== "object") return saved;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- replaced from the record
+  const { proposedObstructs, obstructionProbability, ...rest } = saved;
+  if (typeof recordBox?.proposedObstructs !== "boolean") return rest;
+  return {
+    ...rest,
+    proposedObstructs: recordBox.proposedObstructs,
+    ...(typeof recordBox.obstructionProbability === "number" ? { obstructionProbability: recordBox.obstructionProbability } : {}),
+  };
+}
+
+/**
  * Local testing only (6 Oct 2026). With ANNOTATOR_MODEL_DEV_FIRST=true in .env,
  * annotator sessions draw model-development images and skip the reference
  * images, so all three annotator steps (Objects, Sidewalk, Obstructions) can be

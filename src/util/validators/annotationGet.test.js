@@ -14,6 +14,8 @@ import {
   toModelDevCandidates,
   pickAnnotatorModelDev,
   leastAnnotatedPipeline,
+  withRecordProposal,
+  reachedCountOf,
 } from "./annotationGet.js";
 
 describe("session size constants", () => {
@@ -235,6 +237,69 @@ describe("toClientImage", () => {
     expect(toClientImage(plain)).toEqual(plain);
     expect(toClientImage(plain)).not.toBe(plain);
     expect(toClientImage(null)).toBeNull();
+  });
+
+  // S3 (6 Nov 2026): the hint's fields reach the tool
+  it("keeps each suggestion's proposedObstructs and obstructionProbability", () => {
+    const withProposals = { ...image, annotationList: [{ id: "p1", proposedObstructs: true, obstructionProbability: 0.7 }, { id: "p2", proposedObstructs: false, obstructionProbability: 0.1 }] };
+    expect(toClientImage(withProposals).annotationList).toEqual(withProposals.annotationList);
+  });
+});
+
+// 6 Nov 2026: the furthest image reached, for the progress strip on a resume
+describe("reachedCountOf", () => {
+  it("is one past the last image submitted, matching ids as text", () => {
+    expect(reachedCountOf([11, 12, 13, 14], [11, 12], 1, 4)).toBe(3);
+    expect(reachedCountOf([11, 12, 13, 14], ["11", "12", "13"], 2, 4)).toBe(4);
+  });
+
+  it("is at least the image on screen, and never past the last", () => {
+    expect(reachedCountOf([11, 12, 13], [], 2, 3)).toBe(2);
+    expect(reachedCountOf([11, 12, 13], [11, 12, 13], 3, 3)).toBe(3);
+  });
+
+  it("ignores submitted images that are not the session's, and missing lists", () => {
+    expect(reachedCountOf([11, 12, 13], [99], 1, 3)).toBe(1);
+    expect(reachedCountOf(undefined, undefined, undefined, 3)).toBe(1);
+  });
+});
+
+// S3 (6 Nov 2026): a resumed box shows the record's proposal, not the saved box's
+describe("withRecordProposal", () => {
+  const saved = { id: "s1", comment: "car", onSidewalk: true, obstructs: false, initialState: { comment: "car", proposedObstructs: false, obstructionProbability: 0.2 }, proposalShown: true };
+
+  it("takes the proposal from the record's box of the same id", () => {
+    expect(withRecordProposal(saved, { id: "s1", proposedObstructs: true, obstructionProbability: 0.8 })).toEqual({ ...saved, proposedObstructs: true, obstructionProbability: 0.8 });
+  });
+
+  it("replaces one on the saved box, and leaves the saved initialState as it was stored", () => {
+    const out = withRecordProposal({ ...saved, proposedObstructs: false, obstructionProbability: 0.01 }, { proposedObstructs: true, obstructionProbability: 0.6 });
+    expect(out).toMatchObject({ proposedObstructs: true, obstructionProbability: 0.6 });
+    expect(out.initialState).toEqual(saved.initialState);
+  });
+
+  it("gives none when the record has none, even when the saved box carries one", () => {
+    const out = withRecordProposal({ ...saved, proposedObstructs: true, obstructionProbability: 0.9 }, { id: "s1" });
+    expect(out).not.toHaveProperty("proposedObstructs");
+    expect(out).not.toHaveProperty("obstructionProbability");
+    expect(out).toEqual(saved);
+    expect(withRecordProposal(saved, undefined)).toEqual(saved);
+  });
+
+  it("keeps a record proposal with no probability", () => {
+    expect(withRecordProposal(saved, { proposedObstructs: false })).toEqual({ ...saved, proposedObstructs: false });
+  });
+
+  it("changes neither box", () => {
+    const record = { id: "s1", proposedObstructs: true, obstructionProbability: 0.8 };
+    const before = [structuredClone(saved), structuredClone(record)];
+    withRecordProposal(saved, record);
+    expect([saved, record]).toEqual(before);
+  });
+
+  it("passes anything that is not a box through", () => {
+    expect(withRecordProposal(null, { proposedObstructs: true })).toBeNull();
+    expect(withRecordProposal(undefined, { proposedObstructs: true })).toBeUndefined();
   });
 });
 

@@ -248,6 +248,8 @@ const Screen = memo(function Screen({ view, geo, coarse, refs }) {
             obstructs={open.obstructs}
             severity={open.severity}
             onSidewalk={open.onSidewalk}
+            // The model's hint on Question 2 (S3), as in the tool
+            proposedObstructs={open.proposedObstructs}
             variant="sheet"
           />
         )}

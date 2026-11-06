@@ -36,7 +36,7 @@ export const RETRAINING_CSV_KEYS = [
   "obstructs", "onSidewalk", "severity",
   "userMobilityDisability", "userAgeGroup", "userCommuteFrequency",
   "userAccessibilityFamiliarity", "userWalkingFrequency", "userTemporaryMobility",
-  "servedModelVersion", "pseudoUserId",
+  "servedModelVersion", "proposalShown", "pseudoUserId",
 ];
 
 export function pseudonymize(userId) {
@@ -170,6 +170,10 @@ export function buildRetrainingRows({ annotations, userMap, imageMap }) {
         userWalkingFrequency: user?.walkingFrequency ?? "",
         userTemporaryMobility: user?.temporaryMobility ?? "",
         servedModelVersion: ann.servedModelVersion ?? "",
+        // Whether the classifier's proposal was on screen for this box (S3,
+        // 6 Nov 2026). Rows are not filtered by it. Empty for boxes stored
+        // before S3.
+        proposalShown: typeof box.proposalShown === "boolean" ? box.proposalShown : "",
         pseudoUserId: pseudonymize(ann.userId),
       };
 
@@ -183,4 +187,29 @@ export function buildRetrainingRows({ annotations, userMap, imageMap }) {
   }
 
   return { rows, summary };
+}
+
+/**
+ * One box of a `--quality` pair (export-data.mjs), as stored. From S3
+ * (6 Nov 2026) with the classifier's proposal the box was stored with
+ * (`initialState.proposedObstructs` and `obstructionProbability`, null when
+ * it had none) and whether it was shown (`proposalShown`, null for boxes
+ * stored before S3).
+ */
+export function qualityBox(box) {
+  const init = box?.initialState;
+  return {
+    category: box.comment || box.label || "",
+    obstructs: box.obstructs ?? null,
+    // Contributors only (S12, 2 Nov 2026), null for annotators
+    onSidewalk: typeof box.onSidewalk === "boolean" ? box.onSidewalk : null,
+    severity: box.severity ?? null,
+    x: box.mark?.x ?? null,
+    y: box.mark?.y ?? null,
+    w: box.mark?.width ?? null,
+    h: box.mark?.height ?? null,
+    proposedObstructs: typeof init?.proposedObstructs === "boolean" ? init.proposedObstructs : null,
+    obstructionProbability: typeof init?.obstructionProbability === "number" ? init.obstructionProbability : null,
+    proposalShown: typeof box.proposalShown === "boolean" ? box.proposalShown : null,
+  };
 }

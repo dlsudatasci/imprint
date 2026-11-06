@@ -10,6 +10,7 @@ import {
   isBelowMinimumSize,
   MODEL_COPY_SIZE,
   MIN_MODEL_AREA_PX,
+  qualityBox,
 } from "./retrainingExport.mjs";
 import * as boxGeometry from "@/util/boxGeometry";
 import { TAXONOMY_CATEGORIES } from "@/util/taxonomy";
@@ -81,6 +82,57 @@ describe("RETRAINING_CSV_KEYS", () => {
 
   it("has onSidewalk right after obstructs (S12, 2 Nov 2026)", () => {
     expect(RETRAINING_CSV_KEYS[RETRAINING_CSV_KEYS.indexOf("obstructs") + 1]).toBe("onSidewalk");
+  });
+
+  it("has proposalShown right after servedModelVersion (S3, 6 Nov 2026)", () => {
+    expect(RETRAINING_CSV_KEYS[RETRAINING_CSV_KEYS.indexOf("servedModelVersion") + 1]).toBe("proposalShown");
+    expect(RETRAINING_CSV_KEYS.filter((k) => k === "proposalShown")).toHaveLength(1);
+  });
+});
+
+// S3 (6 Nov 2026): whether the classifier's proposal was on screen
+describe("proposalShown in the retraining rows", () => {
+  const rowsFor = (boxes, newObjects = []) =>
+    buildRetrainingRows({ annotations: [makeAnnotation({ servedModelVersion: "v1-xgboost", selectedObjectsID: boxes, newObjects })], userMap: makeUserMap(), imageMap: makeImageMap() }).rows;
+
+  it("passes the stored value through, filtering no row by it", () => {
+    const rows = rowsFor([
+      makeBox({ id: "a", onSidewalk: true, proposalShown: true, initialState: { comment: "tree", mark: { x: 10, y: 20, width: 100, height: 200 }, proposedObstructs: true } }),
+      makeBox({ id: "b", onSidewalk: false, obstructs: false, severity: null, proposalShown: false }),
+    ], [makeBox({ id: "d", editable: true, onSidewalk: true, obstructs: false, severity: null, proposalShown: false })]);
+    expect(rows.map((r) => [r.objectID, r.proposalShown])).toEqual([["a", true], ["b", false], ["d", false]]);
+    const cells = toCsvRow(rows[0], RETRAINING_CSV_KEYS).split(",");
+    expect(cells[RETRAINING_CSV_KEYS.indexOf("servedModelVersion")]).toBe("v1-xgboost");
+    expect(cells[RETRAINING_CSV_KEYS.indexOf("proposalShown")]).toBe("true");
+  });
+
+  it("is empty for a box stored before S3", () => {
+    const [row] = rowsFor([makeBox({ id: "old", onSidewalk: true })]);
+    expect(row.proposalShown).toBe("");
+    expect(toCsvRow(row, RETRAINING_CSV_KEYS).split(",")[RETRAINING_CSV_KEYS.indexOf("proposalShown")]).toBe("");
+  });
+});
+
+// export-data.mjs --quality, one box of a pair
+describe("qualityBox", () => {
+  const mark = { x: 10, y: 20, width: 100, height: 200 };
+
+  it("keeps the fields it had and adds the stored proposal and whether it was shown (S3)", () => {
+    const box = makeBox({ onSidewalk: true, proposalShown: true, initialState: { comment: "tree", mark, proposedObstructs: true, obstructionProbability: 0.74 } });
+    expect(qualityBox(box)).toEqual({
+      category: "tree", obstructs: true, onSidewalk: true, severity: 3, x: 10, y: 20, w: 100, h: 200,
+      proposedObstructs: true, obstructionProbability: 0.74, proposalShown: true,
+    });
+  });
+
+  it("gives null for each when the box has none: a drawn box, a suggestion without a proposal, a box stored before S3", () => {
+    expect(qualityBox(makeBox({ editable: true, proposalShown: false }))).toMatchObject({ proposedObstructs: null, obstructionProbability: null, proposalShown: false });
+    expect(qualityBox(makeBox({ initialState: { comment: "tree", mark } }))).toMatchObject({ proposedObstructs: null, obstructionProbability: null, proposalShown: null });
+    expect(qualityBox(makeBox({ onSidewalk: false, proposalShown: false, initialState: { comment: "tree", mark, proposedObstructs: false } }))).toMatchObject({ onSidewalk: false, proposedObstructs: false, obstructionProbability: null, proposalShown: false });
+  });
+
+  it("gives an annotator's box null onSidewalk, as before", () => {
+    expect(qualityBox(makeBox({ severity: null })).onSidewalk).toBeNull();
   });
 });
 

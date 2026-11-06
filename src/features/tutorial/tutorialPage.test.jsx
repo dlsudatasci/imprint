@@ -2,11 +2,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import { writeSession, writeTutorialFlag, readSessionData, readTutorialFlag } from "@/util/sessionCache";
+import { writeSession, writeTutorialFlag, readSessionData, readTutorialFlag, readCurrentCount, readReachedCount, writeReachedCount } from "@/util/sessionCache";
 
-// One object, as next-auth hands back between renders: a new one each time re-runs the page's effects forever
-const sessionValue = { status: "authenticated", update: async () => {} };
-vi.mock("next-auth/react", () => ({ useSession: () => sessionValue }));
+// One object, as next-auth hands back between renders: a new one each time re-runs the page's effects forever.
+// A test swaps it for one with a new `update`, as a session fetched again gives (6 Nov 2026).
+const sessionHolder = vi.hoisted(() => ({ value: { status: "authenticated", update: async () => {} } }));
+vi.mock("next-auth/react", () => ({ useSession: () => sessionHolder.value }));
 vi.mock("next-auth/next", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/pages/api/auth/[...nextauth]", () => ({ authOptions: {} }));
 vi.mock("@/util/mongodb", () => ({ connectToDatabase: vi.fn() }));
@@ -52,6 +53,8 @@ beforeEach(() => {
   window.localStorage.clear();
   sessionStorage.clear();
   vi.clearAllMocks();
+  joyride.props = null;
+  seen.form = null;
 });
 afterEach(() => {
   act(() => root?.unmount());
@@ -111,5 +114,73 @@ describe("the tour's steps", () => {
       expect(typeof result?.then, step.title).toBe("function");
       await result;
     }
+  });
+});
+
+// 6 Nov 2026: going back in the tutorial, and the tab coming back into view
+describe("the tutorial's place", () => {
+  const PRACTICE = { imgRecords: [{ imageID: "T1", answered: true }, { imageID: "T2", answered: true }, { imageID: "T3" }] };
+  /** Arrives at `current` the way Next Image, Previous and the strip do */
+  function arriveAt(current, reached) {
+    writeSession({ total: 3, current, data: PRACTICE });
+    writeTutorialFlag(true);
+    if (reached) writeReachedCount(reached);
+    sessionStorage.setItem("isNavigatingImages", "true");
+  }
+  const tourWait = () => act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+
+  it("keeps the image and the answers when the session is fetched again, which gives a new update", async () => {
+    arriveAt(3, 3);
+    await open();
+    expect(seen.form.current).toBe(3);
+    // The tab comes back into view: next-auth fetches the session and hands out a new update
+    sessionHolder.value = { ...sessionHolder.value, update: async () => {} };
+    await act(async () => root.render(<TutorialPage />));
+    await act(async () => {});
+    expect(seen.form.current).toBe(3);
+    expect(readCurrentCount()).toBe(3);
+    expect(readSessionData()).toEqual(PRACTICE);
+    expect(seen.form.data).toEqual({ imageID: "T3" });
+  });
+
+  it("passes the furthest image reached to the form, kept when going back", async () => {
+    arriveAt(1, 3);
+    await open();
+    expect(seen.form.current).toBe(1);
+    expect(seen.form.reached).toBe(3);
+    expect(readReachedCount()).toBe(3);
+  });
+
+  it("counts the image on screen as reached, never past the last, and starts again at 1", async () => {
+    arriveAt(2, 1);
+    await open();
+    expect(seen.form.reached).toBe(2);
+    act(() => root.unmount());
+    host.remove();
+
+    // A fresh start: the furthest is the first image again
+    writeReachedCount(3);
+    await open();
+    expect(seen.form.current).toBe(1);
+    expect(seen.form.reached).toBe(1);
+    expect(readReachedCount()).toBe(1);
+  });
+
+  it("runs the tour by itself on a fresh start, not on coming back to the first image", async () => {
+    await open();
+    await tourWait();
+    expect(joyride.props?.run).toBe(true);
+    act(() => root.unmount());
+    host.remove();
+    joyride.props = null;
+
+    arriveAt(1, 3);
+    await open();
+    await tourWait();
+    expect(seen.form.current).toBe(1);
+    expect(joyride.props).toBeNull();
+    // The ? button still runs it
+    await act(async () => seen.form.onShowTour());
+    expect(joyride.props?.run).toBe(true);
   });
 });

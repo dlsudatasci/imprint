@@ -139,7 +139,7 @@ describe("buildSuggestionConfidences", () => {
   });
 
   it("logs accepted for the same category and box", () => {
-    expect(only(car())).toEqual({ id: "s1", confidence: 0.85, disposition: "accepted", obstructs: true });
+    expect(only(car())).toEqual({ id: "s1", confidence: 0.85, disposition: "accepted", obstructs: true, proposedObstructs: null, proposalShown: false });
   });
 
   it("logs relabeled for another of the 18, custom_category for free text", () => {
@@ -235,11 +235,39 @@ describe("buildSuggestionConfidences", () => {
       makeSuggestion({ id: "s2", isRejected: true, selected: false, confidence: 0.3, obstructs: false }),
       makeSuggestion({ id: "s3", comment: "bollard", confidence: 0.6, obstructs: true }),
     ]);
+    // No proposals on these boxes (S3)
     expect(result).toEqual([
-      { id: "s1", confidence: 0.85, disposition: "accepted", obstructs: null },
-      { id: "s2", confidence: 0.3, disposition: "accepted", obstructs: false },
-      { id: "s3", confidence: 0.6, disposition: "relabeled", obstructs: true },
+      { id: "s1", confidence: 0.85, disposition: "accepted", obstructs: null, proposedObstructs: null, proposalShown: false },
+      { id: "s2", confidence: 0.3, disposition: "accepted", obstructs: false, proposedObstructs: null, proposalShown: false },
+      { id: "s3", confidence: 0.6, disposition: "relabeled", obstructs: true, proposedObstructs: null, proposalShown: false },
     ]);
+  });
+
+  // S3 (6 Nov 2026): the classifier's proposal, for the anchoring analysis
+  describe("the classifier's proposal (S3)", () => {
+    const answered = (overrides = {}) => car({ selected: false, isRejected: true, obstructs: false, onSidewalk: true, ...overrides });
+
+    it("logs the box's proposal and proposalShown true when Question 2 was on screen", () => {
+      expect(only(answered({ proposedObstructs: true }))).toMatchObject({ proposedObstructs: true, proposalShown: true });
+      // A proposal of false is logged, never shown (6 Nov 2026)
+      expect(only(answered({ proposedObstructs: false, selected: true, isRejected: false, obstructs: true, severity: 3 }))).toMatchObject({ proposedObstructs: false, proposalShown: false });
+    });
+
+    it("logs proposalShown false off the path, for Not an object and without a proposal", () => {
+      expect(only(answered({ proposedObstructs: true, onSidewalk: false }))).toMatchObject({ disposition: "off_sidewalk", proposedObstructs: true, proposalShown: false });
+      expect(only(answered({ proposedObstructs: false, comment: "not_an_object", onSidewalk: undefined }))).toMatchObject({ disposition: "removed", proposedObstructs: false, proposalShown: false });
+      expect(only(answered())).toMatchObject({ proposedObstructs: null, proposalShown: false });
+    });
+
+    it("logs proposalShown false for annotators, with the proposal kept", () => {
+      const [entry] = buildSuggestionConfidences([answered({ proposedObstructs: true })], { isAnnotator: true });
+      expect(entry).toMatchObject({ proposedObstructs: true, proposalShown: false });
+      expect(entry).not.toHaveProperty("msToAnswer");
+    });
+
+    it("never logs the probability", () => {
+      expect(only(answered({ proposedObstructs: true, obstructionProbability: 0.7 }))).not.toHaveProperty("obstructionProbability");
+    });
   });
 });
 
@@ -444,8 +472,8 @@ describe("buildSuggestionConfidences with msToAnswer (S10)", () => {
       { msToAnswer: (id) => times[id] ?? null }
     );
     expect(result).toEqual([
-      { id: "s1", confidence: 0.85, disposition: "accepted", obstructs: null, msToAnswer: 1200 },
-      { id: "s2", confidence: 0.85, disposition: "removed", obstructs: null, msToAnswer: null },
+      { id: "s1", confidence: 0.85, disposition: "accepted", obstructs: null, proposedObstructs: null, proposalShown: false, msToAnswer: 1200 },
+      { id: "s2", confidence: 0.85, disposition: "removed", obstructs: null, proposedObstructs: null, proposalShown: false, msToAnswer: null },
     ]);
   });
 

@@ -6,6 +6,7 @@ vi.mock("next/dynamic", () => ({ default: () => () => <div data-dynamic /> }));
 import HelpDirectory from "./index";
 import { GUIDE_COPY } from "./guideCopy";
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
+import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
 
 /**
  * The guide after the first two pilot sessions (S16, 3 Nov 2026): a box is
@@ -50,6 +51,21 @@ describe("the guide on the path (S16)", () => {
     expect(text.indexOf("Question 1")).toBeLessThan(text.indexOf("Question 2"));
     // The path list still right after Question 1
     expect(step("answer").pathPointsAfter).toBe(2);
+  });
+
+  // S3 (6 Nov 2026): shown whether or not proposals are loaded yet
+  it("says the model's proposal can be wrong, right after the paragraph on Question 2, and on the guide page", () => {
+    const { paragraphs } = step("answer");
+    expect(paragraphs).toHaveLength(4);
+    expect(paragraphs[2]).toMatch(/^If it is on the sidewalk, then Question 2 asks/);
+    expect(paragraphs[3]).toBe("Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo.");
+    expect(paragraphs[3]).toBe(PROPOSAL_HINT_COPY.tutorial);
+    // Once in the guide, in Answer each suggestion only
+    const all = GUIDE_COPY.steps.flatMap((s) => s.paragraphs);
+    expect(all.filter((p) => p.includes(PROPOSAL_HINT_COPY.tutorial))).toHaveLength(1);
+    const html = decode(renderToStaticMarkup(<HelpDirectory />));
+    const section = html.slice(html.indexOf('id="answer"'), html.indexOf('id="not-an-object"'));
+    expect(section.indexOf(PROPOSAL_HINT_COPY.tutorial)).toBeGreaterThan(section.indexOf("If it is on the sidewalk, then Question 2"));
   });
 
   it("names Question 1 then Question 2 in Mark boxes with nothing in them, then Not an object, in one paragraph", () => {
@@ -101,9 +117,11 @@ describe("the guide after Rans's review of S18 (5 Nov 2026)", () => {
     expect(step("next").paragraphs[0]).toBe("Click Next Image once every object has an answer. Previous takes you back to a photo you already did, to change it.");
   });
 
+  // But for the sentence on the model's proposal (S3, 6 Nov 2026), in Answer each suggestion only
   it("never says model, Change or Go back, and has no em dash or semicolon", () => {
     for (const s of GUIDE_COPY.steps) {
       for (const p of [s.title, ...s.paragraphs]) {
+        if (s.id === "answer" && p === PROPOSAL_HINT_COPY.tutorial) continue;
         expect(p, `${s.id}: ${p}`).not.toMatch(/\bmodel|\b(click|tap|choose) Change\b|Go back/i);
         expect(p).not.toMatch(/[—;]/);
       }

@@ -447,7 +447,8 @@ describe("applyRecordSuggestions", () => {
     );
     expect(result).toEqual({
       valid: true,
-      boxes: [{ id: "a", editable: false, comment: "bollard", obstructs: true, severity: 2, confidence: 0.8, initialState: { comment: "tree", mark: mark(1) }, mark: mark(5) }],
+      // No proposal on the record (S3): none stored, and none shown
+      boxes: [{ id: "a", editable: false, comment: "bollard", obstructs: true, severity: 2, confidence: 0.8, initialState: { comment: "tree", mark: mark(1) }, mark: mark(5), proposalShown: false }],
     });
   });
 
@@ -483,9 +484,10 @@ describe("applyRecordSuggestions", () => {
 describe("clearDrawnModelFields", () => {
   it("gives every drawn box a null confidence and no initialState, keeping the rest", () => {
     const boxes = [{ id: "d1", comment: "tree", confidence: 0.7, initialState: { comment: "car" }, obstructs: true }, { id: "d2" }];
+    // A drawn box has no proposal, so none was shown (S3)
     expect(clearDrawnModelFields(boxes)).toEqual([
-      { id: "d1", comment: "tree", confidence: null, obstructs: true },
-      { id: "d2", confidence: null },
+      { id: "d1", comment: "tree", confidence: null, obstructs: true, proposalShown: false },
+      { id: "d2", confidence: null, proposalShown: false },
     ]);
     expect(boxes[0].confidence).toBe(0.7);
   });
@@ -512,10 +514,11 @@ describe("withRecordConfidences", () => {
     };
     expect(withRecordConfidences(telemetry, list)).toEqual({
       imageDurationMs: 4000,
+      // No proposals on this record, and no submitted boxes (S3)
       suggestionConfidences: [
-        { id: "a", confidence: 0.8, disposition: "accepted" },
-        { id: "2", confidence: 0.1, disposition: "hidden_below_tau" },
-        { id: "c", confidence: null, disposition: "removed" },
+        { id: "a", confidence: 0.8, disposition: "accepted", proposedObstructs: null, proposalShown: false },
+        { id: "2", confidence: 0.1, disposition: "hidden_below_tau", proposedObstructs: null, proposalShown: false },
+        { id: "c", confidence: null, disposition: "removed", proposedObstructs: null, proposalShown: false },
       ],
     });
     expect(telemetry.suggestionConfidences[0].confidence).toBe(0.99);
@@ -529,6 +532,130 @@ describe("withRecordConfidences", () => {
     expect(withRecordConfidences({ imageDurationMs: 1 }, list)).toEqual({ imageDurationMs: 1 });
     expect(withRecordConfidences({ suggestionConfidences: "x" }, list)).toEqual({ suggestionConfidences: "x" });
     expect(withRecordConfidences(undefined, list)).toBeUndefined();
+  });
+});
+
+// S3 (6 Nov 2026): the classifier's proposal, copied from the image record
+describe("the classifier's proposal from the record (S3)", () => {
+  const mark = (x) => ({ type: "RECT", x, y: 10, width: 20, height: 30 });
+  const list = [
+    { id: "yes", comment: "tree", confidence: 0.8, mark: mark(1), proposedObstructs: true, obstructionProbability: 0.71 },
+    { id: "no", comment: "car", confidence: 0.4, mark: mark(2), proposedObstructs: false, obstructionProbability: 0.08 },
+    { id: "none", comment: "bench", confidence: 0.6, mark: mark(3) },
+    { id: "bare", comment: "bench", confidence: 0.6, mark: mark(4), proposedObstructs: true },
+  ];
+  const on = (id, extra = {}) => ({ id, comment: "tree", mark: mark(9), onSidewalk: true, obstructs: false, ...extra });
+  const one = (box, options) => applyRecordSuggestions([box], list, options).boxes[0];
+
+  describe("applyRecordSuggestions", () => {
+    it("stores the record's proposal in initialState and proposalShown true for a box that reached Question 2", () => {
+      expect(one(on("yes"))).toEqual({
+        ...on("yes"),
+        editable: false,
+        confidence: 0.8,
+        initialState: { comment: "tree", mark: mark(1), proposedObstructs: true, obstructionProbability: 0.71 },
+        proposalShown: true,
+      });
+      // A proposal of false is stored but never shown (6 Nov 2026)
+      const no = one(on("no", { obstructs: true, severity: 3 }));
+      expect(no.initialState).toEqual({ comment: "car", mark: mark(2), proposedObstructs: false, obstructionProbability: 0.08 });
+      expect(no.proposalShown).toBe(false);
+    });
+
+    it("stores each field only when the record has it", () => {
+      expect(one(on("bare")).initialState).toEqual({ comment: "bench", mark: mark(4), proposedObstructs: true });
+      expect(one(on("bare")).proposalShown).toBe(true);
+      const none = one(on("none"));
+      expect(none.initialState).toEqual({ comment: "bench", mark: mark(3) });
+      expect(none.proposalShown).toBe(false);
+    });
+
+    it("gives proposalShown false for a box off the path and a Not an object box, with the proposal still stored", () => {
+      const off = one(on("yes", { onSidewalk: false, obstructs: false }));
+      expect(off.proposalShown).toBe(false);
+      expect(off.initialState.proposedObstructs).toBe(true);
+      const notAnObject = one({ id: "no", comment: "not_an_object", isRejected: true, obstructs: false, mark: mark(2) });
+      expect(notAnObject.proposalShown).toBe(false);
+      expect(notAnObject.initialState.proposedObstructs).toBe(false);
+    });
+
+    it("cannot be changed by a tampered request", () => {
+      const tampered = on("none", {
+        proposedObstructs: true,
+        obstructionProbability: 0.99,
+        proposalShown: true,
+        initialState: { comment: "tree", mark: mark(9), proposedObstructs: true, obstructionProbability: 0.99 },
+      });
+      const stored = one(tampered);
+      expect(stored.initialState).toEqual({ comment: "bench", mark: mark(3) });
+      expect(stored.proposalShown).toBe(false);
+      expect(stored).not.toHaveProperty("proposedObstructs");
+      expect(stored).not.toHaveProperty("obstructionProbability");
+
+      // A proposal of true on the record stays true whatever is sent
+      const flipped = one(on("yes", { proposedObstructs: false, proposalShown: false, initialState: { proposedObstructs: false, obstructionProbability: 0.01 } }));
+      expect(flipped.initialState).toEqual({ comment: "tree", mark: mark(1), proposedObstructs: true, obstructionProbability: 0.71 });
+      expect(flipped.proposalShown).toBe(true);
+      expect(flipped).not.toHaveProperty("proposedObstructs");
+    });
+
+    it("gives every annotator box proposalShown false, with the record's proposal stored", () => {
+      const stored = one(on("yes"), { isAnnotator: true });
+      expect(stored.proposalShown).toBe(false);
+      expect(stored.initialState.proposedObstructs).toBe(true);
+    });
+
+    it("does not change the record", () => {
+      const before = JSON.parse(JSON.stringify(list));
+      one(on("yes"));
+      expect(list).toEqual(before);
+    });
+  });
+
+  describe("clearDrawnModelFields", () => {
+    it("drops any proposal sent with a drawn box and stores proposalShown false", () => {
+      const [drawn] = clearDrawnModelFields([{ id: "d", comment: "tree", onSidewalk: true, obstructs: false, proposedObstructs: true, obstructionProbability: 0.9, proposalShown: true, initialState: { proposedObstructs: true } }]);
+      expect(drawn).toEqual({ id: "d", comment: "tree", onSidewalk: true, obstructs: false, confidence: null, proposalShown: false });
+    });
+  });
+
+  describe("withRecordConfidences", () => {
+    const boxes = [on("yes"), on("no", { onSidewalk: false }), on("none"), { id: "bare", comment: "not_an_object", obstructs: false }];
+    const entry = (id, extra = {}) => ({ id, confidence: 0.5, disposition: "accepted", obstructs: false, ...extra });
+
+    it("sets each entry's proposal and whether it was shown from the record and the submitted box", () => {
+      const telemetry = { suggestionConfidences: [entry("yes"), entry("no", { disposition: "off_sidewalk" }), entry("none"), entry("bare", { disposition: "removed" })] };
+      const out = withRecordConfidences(telemetry, list, { boxes });
+      expect(out.suggestionConfidences.map(({ id, proposedObstructs, proposalShown }) => ({ id, proposedObstructs, proposalShown }))).toEqual([
+        { id: "yes", proposedObstructs: true, proposalShown: true },
+        // Off the path: Question 2 never showed
+        { id: "no", proposedObstructs: false, proposalShown: false },
+        { id: "none", proposedObstructs: null, proposalShown: false },
+        // Not an object: no sidewalk answer
+        { id: "bare", proposedObstructs: true, proposalShown: false },
+      ]);
+    });
+
+    it("overwrites tampered fields, and gives an entry with no submitted box (hidden below tau) proposalShown false", () => {
+      const telemetry = {
+        suggestionConfidences: [
+          entry("none", { proposedObstructs: true, proposalShown: true }),
+          entry("yes", { proposedObstructs: false, proposalShown: false }),
+          entry("no", { disposition: "hidden_below_tau", obstructs: null, proposedObstructs: true, proposalShown: true }),
+        ],
+      };
+      const out = withRecordConfidences(telemetry, list, { boxes: [on("none"), on("yes")] });
+      expect(out.suggestionConfidences.map((e) => [e.id, e.proposedObstructs, e.proposalShown])).toEqual([
+        ["none", null, false],
+        ["yes", true, true],
+        ["no", false, false],
+      ]);
+    });
+
+    it("gives annotators proposalShown false", () => {
+      const out = withRecordConfidences({ suggestionConfidences: [entry("yes")] }, list, { boxes, isAnnotator: true });
+      expect(out.suggestionConfidences[0]).toMatchObject({ proposedObstructs: true, proposalShown: false });
+    });
   });
 });
 

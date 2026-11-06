@@ -33,6 +33,14 @@
  * field and column next to obstructs). Annotator boxes and Not an object boxes
  * have none.
  *
+ * From 6 Nov 2026 (S3) each suggestion is stored with the classifier's
+ * proposal it was served with, `initialState.proposedObstructs` and
+ * `initialState.obstructionProbability` (absent when it had none), and
+ * `proposalShown`, true only when that proposal was on screen (Question 2).
+ * Drawn boxes carry `proposalShown: false`. --full exports them as stored,
+ * --quality adds the three to each box (null when absent), and --retraining
+ * adds a proposalShown column after servedModelVersion, filtering no row by it.
+ *
  * Scene answers are exported on the scale where higher is better, in every
  * mode (22 Oct 2026, src/util/validators/sceneScale.mjs): surfaceCondition 1
  * Difficult or dangerous to 3 Easy to traverse, walkability 1 Uncomfortable to
@@ -52,7 +60,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   RETRAINING_CSV_KEYS, RETRAINING_TAXONOMY,
-  buildRetrainingRows, pseudonymize, toCsvRow, writeCsv,
+  buildRetrainingRows, pseudonymize, qualityBox, toCsvRow, writeCsv,
 } from "../src/util/validators/retrainingExport.mjs";
 import { buildSidewalkMaskRows, toJsonl } from "../src/util/validators/sidewalkMaskExport.mjs";
 import { SCENE_SCALE, sceneAnswersOf } from "../src/util/validators/sceneScale.mjs";
@@ -241,17 +249,7 @@ try {
         pseudoUserId: pseudonymize(ann.userId),
         source: ann.source || "contributor",
         groundTruth: groundTruthMap.get(ann.imageID),
-        contributorBoxes: realBoxes.map((box) => ({
-          category: box.comment || box.label || "",
-          obstructs: box.obstructs ?? null,
-          // Contributors only (S12, 2 Nov 2026), null for annotators
-          onSidewalk: typeof box.onSidewalk === "boolean" ? box.onSidewalk : null,
-          severity: box.severity ?? null,
-          x: box.mark?.x ?? null,
-          y: box.mark?.y ?? null,
-          w: box.mark?.width ?? null,
-          h: box.mark?.height ?? null,
-        })),
+        contributorBoxes: realBoxes.map(qualityBox),
         notAnObjectCount,
         sceneLevel: sceneAnswersOf(ann),
       };

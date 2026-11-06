@@ -745,6 +745,69 @@ describe("POST /api/annotationGet", () => {
       ]);
       expect(boxes[0]).toMatchObject({ comment: "car", isRejected: true });
     });
+
+    // 6 Nov 2026: the furthest image reached comes back with a resumed session
+    it("sends the furthest image reached: one past the last submitted, at least the image on screen", async () => {
+      const img = (n) => ({ _id: `img-${n}`, imageID: n, isReference: false, poolStatus: "deployment", annotationList: [] });
+      const mocks = setupMocks({
+        activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: ["img-1", "img-2", "img-3", "img-4"], completedImageIDs: [1, 2], currentCount: 1, totalCount: 4 },
+      });
+      mocks.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([img(3), img(1), img(4), img(2)]) });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+      expect(res._json.currentCount).toBe(1);
+      expect(res._json.reachedCount).toBe(3);
+    });
+
+    // S3 (6 Nov 2026): the hint on a resumed box is the record's proposal,
+    // taken by id, not the contributor's saved box's
+    it("gives a resumed suggestion the record's proposal, and a fresh one its own, through to the client", async () => {
+      const mark = { x: 1, y: 1, width: 40, height: 40 };
+      const image = {
+        _id: "img-1",
+        imageID: 1,
+        isReference: false,
+        poolStatus: "deployment",
+        modelVersion: "v1-xgboost",
+        annotationList: [
+          { id: "s1", comment: "car", mark, confidence: 0.9, proposedObstructs: true, obstructionProbability: 0.8 },
+          { id: "s2", comment: "tree", mark, confidence: 0.8, proposedObstructs: false, obstructionProbability: 0.1 },
+          { id: "s3", comment: "bench", mark, confidence: 0.7 },
+        ],
+      };
+      const mocks = setupMocks({
+        activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: ["img-1"], completedImageIDs: [1], totalCount: 10 },
+      });
+      mocks.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([image]) });
+      mocks.annotationsCol.find.mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([
+          {
+            imageID: 1,
+            sceneLevel: null,
+            selectedObjectsID: [
+              // Saved under an earlier proposal, and with a stray top-level one
+              { id: "s1", comment: "car", mark, editable: false, selected: true, onSidewalk: true, obstructs: true, severity: 2, proposedObstructs: false, initialState: { comment: "car", mark, proposedObstructs: false, obstructionProbability: 0.3 }, proposalShown: true },
+              { id: "s3", comment: "bench", mark, editable: false, isRejected: true, onSidewalk: true, obstructs: false, proposedObstructs: true, proposalShown: false },
+            ],
+            newObjects: [{ id: "d1", comment: "bench", mark, editable: true, onSidewalk: true, obstructs: false, proposalShown: false }],
+          },
+        ]),
+      });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+
+      const boxes = res._json.imgRecords[0].annotationList;
+      expect(boxes.map((b) => [b.id, b.proposedObstructs, b.obstructionProbability])).toEqual([
+        ["s1", true, 0.8],
+        // Not answered yet: the record's own box
+        ["s2", false, 0.1],
+        // No proposal on the record: none, whatever was saved
+        ["s3", undefined, undefined],
+        ["d1", undefined, undefined],
+      ]);
+      // The saved answer and what was stored as shown are kept
+      expect(boxes[0]).toMatchObject({ obstructs: true, severity: 2, initialState: { proposedObstructs: false } });
+    });
   });
 
   // Local testing only (6 Oct 2026): ANNOTATOR_MODEL_DEV_FIRST=true

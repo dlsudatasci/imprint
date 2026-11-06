@@ -2601,21 +2601,33 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
     expect(host.querySelector("[role='alert']")!.closest("[aria-hidden]")!.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("desktop: the message's row opens and closes with it, its words kept while it leaves", () => {
+  // 6 Nov 2026 (Rans): a pill at the top of the screen, as the tutorial's "Click Tour at the top of the page", with the red warning sign
+  it("desktop: the message is a dark pill fixed under the top bar with the red warning sign, moving nothing, its words kept while it leaves", () => {
     const tool = open("annotator");
-    const row = () => host.querySelector("[role='alert']")!.closest("[aria-hidden]") as HTMLElement;
-    // In the page before any message, closed
-    expect(row().getAttribute("aria-hidden")).toBe("true");
-    expect(row().className).toContain("grid-rows-[0fr]");
+    const pill = () => host.querySelector("[data-desktop-message]") as HTMLElement;
+    const card = () => pill().firstElementChild as HTMLElement;
+    // In the page before any message, hidden
+    expect(pill().getAttribute("aria-hidden")).toBe("true");
+    expect(card().className).toContain("opacity-0");
     press();
     const message = tool.state.error!;
-    expect(row().getAttribute("aria-hidden")).toBe("false");
-    expect(row().className).toContain("grid-rows-[1fr]");
+    expect(pill().getAttribute("aria-hidden")).toBe("false");
+    expect(card().className).toContain("opacity-100");
+    expect(pill().querySelector("[role='alert']")!.textContent).toBe(message);
+    // Where and how the tutorial's tour hint is: fixed under the top bar, a dark pill, never taking a click
+    expect(pill().className.split(" ")).toEqual(expect.arrayContaining(["fixed", "pointer-events-none", "z-[60]"]));
+    expect(pill().style.top).toBe("calc(var(--nav-h, 64px) + 12px)");
+    expect(card().className.split(" ")).toEqual(expect.arrayContaining(["rounded-full", "bg-ink/85", "text-white", "text-xs", "font-semibold"]));
+    // The phone's red warning sign
+    expect(card().querySelector("svg")!.getAttribute("class")).toContain("text-danger");
+    // Not in the page's flow above the buttons any more
+    expect(pill().closest(".grid")).toBeNull();
     act(() => vi.advanceTimersByTime(messageVisibleMs(message)));
     expect(tool.state.error).toBeNull();
-    // Closing, with the same words, not cut off
-    expect(row().className).toContain("grid-rows-[0fr]");
-    expect(row().textContent).toContain(message);
+    // Leaving, with the same words, not cut off
+    expect(pill().getAttribute("aria-hidden")).toBe("true");
+    expect(card().className).toContain("opacity-0");
+    expect(pill().textContent).toContain(message);
   });
 
   it("phone: the message floats over the photo, not in the sheet's footer, so the sheet keeps its height", () => {

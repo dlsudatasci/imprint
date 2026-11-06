@@ -38,6 +38,15 @@ const sheet = (el) => el.querySelector("[data-touch-sheet]");
 const photoBoxes = (el) => el.querySelectorAll("[data-demo-photo] svg > g");
 
 describe("TouchStage", () => {
+  // S3 (6 Nov 2026, Rans): the phone preview shows the model's hint on Tree #1 as the tutorial does
+  it("shows the model's hint on Tree #1's Question 2 in the sheet", () => {
+    const el = show(touchTickOf("tree-to-yes", "end") - 0.5);
+    expect(el.querySelector("[data-demo-panel] [data-question-step]").textContent).toBe("Question 2 of 2");
+    expect(el.querySelector("[data-demo-panel] [data-proposal-hint]").textContent).toBe("The model thinks this obstructs the sidewalk.");
+    expect(el.querySelector('[data-demo-panel] [data-control="yes"]').getAttribute("aria-pressed")).toBe("false");
+    expect(show(touchTickOf("tree-open", "end")).querySelector("[data-proposal-hint]")).toBeNull();
+  });
+
   it("draws the tool's phone screen at rest: the photo, Add box, the top of the sheet and Next Image, without the top bar", () => {
     const el = show(0);
     expect(el.querySelector('img[src="/images/tutorial/tutorial-1.jpg"]')).not.toBeNull();

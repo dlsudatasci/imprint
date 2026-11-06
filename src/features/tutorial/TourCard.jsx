@@ -25,8 +25,12 @@ export function TourStepBody({ step }) {
   if (step.points.length > 0) {
     parts.push((gap) => (
       <ol key="points" className={`list-decimal pl-5 space-y-1${gap ? ` ${gap}` : ""}`}>
-        {step.points.map((point) => (
-          <li key={point}>{point}</li>
+        {step.points.map((point, i) => (
+          <li key={point}>
+            {point}
+            {/* The sentence on the model's proposal, right after its point's text in the same style (S3, Rans) */}
+            {step.pointNote?.after === i + 1 && <> <span data-point-note>{step.pointNote.text}</span></>}
+          </li>
         ))}
       </ol>
     ));

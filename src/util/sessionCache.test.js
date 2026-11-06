@@ -11,6 +11,9 @@ import {
   hasCachedSession,
   writeTutorialFlag,
   readTutorialFlag,
+  readReachedCount,
+  writeReachedCount,
+  reachedFor,
   SESSION_KEYS,
 } from "./sessionCache.js";
 
@@ -173,5 +176,54 @@ describe("hasCachedSession", () => {
   it("returns false when current is missing", () => {
     writeSession({ total: 10, data: {} });
     expect(hasCachedSession()).toBe(false);
+  });
+});
+
+// The furthest image reached (6 Nov 2026)
+describe("the reached count", () => {
+  it("is set with every whole session: the one given, else the image it starts on, never past the last", () => {
+    writeReachedCount(5);
+    writeSession({ total: 3, current: 1, data: { imgRecords: [] } });
+    expect(readReachedCount()).toBe(1);
+    writeSession({ total: 3, current: 2, data: { imgRecords: [] }, reached: 3 });
+    expect(readReachedCount()).toBe(3);
+    writeSession({ total: 3, current: 2, data: { imgRecords: [] }, reached: 9 });
+    expect(readReachedCount()).toBe(3);
+    // Behind the image it starts on: that image
+    writeSession({ total: 3, current: 2, data: { imgRecords: [] }, reached: 1 });
+    expect(readReachedCount()).toBe(2);
+  });
+
+  it("is left alone by a write of the counter or the batch alone", () => {
+    writeSession({ total: 3, current: 1, data: { imgRecords: [] }, reached: 3 });
+    writeSession({ current: 2 });
+    writeSession({ data: { imgRecords: [{}] } });
+    writeCurrentCount(1);
+    expect(readReachedCount()).toBe(3);
+  });
+
+  it("reachedFor: the saved one, never behind the image on screen or past the last, and the image on screen without one", () => {
+    expect(reachedFor(2, 5)).toBe(2);
+    writeReachedCount(4);
+    expect(reachedFor(2, 5)).toBe(4);
+    expect(reachedFor(5, 5)).toBe(5);
+    expect(reachedFor(1, 3)).toBe(3);
+    expect(reachedFor(2, Infinity)).toBe(4);
+  });
+
+  it("reads back what was written, and null when nothing or junk is stored", () => {
+    expect(readReachedCount()).toBeNull();
+    writeReachedCount(3);
+    expect(readReachedCount()).toBe(3);
+    expect(window.localStorage.getItem(SESSION_KEYS.REACHED_KEY)).toBe("3");
+    window.localStorage.setItem(SESSION_KEYS.REACHED_KEY, "x");
+    expect(readReachedCount()).toBeNull();
+  });
+
+  it("is dropped with the rest of the session", () => {
+    writeSession({ total: 3, current: 2, data: { imgRecords: [] } });
+    writeReachedCount(3);
+    clearSession();
+    expect(readReachedCount()).toBeNull();
   });
 });

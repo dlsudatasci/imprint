@@ -289,7 +289,8 @@ describe("POST /api/annotationSubmit", () => {
     const second = logTelemetryEvent.mock.calls[0][0];
     expect(second).not.toHaveProperty("msLongestIdle");
     expect(second).not.toHaveProperty("msFromLastIdleToSubmit");
-    expect(second.suggestionConfidences).toEqual([{ id: "c1", confidence: 0.91, disposition: "accepted" }]);
+    // No proposal on this record (S3)
+    expect(second.suggestionConfidences).toEqual([{ id: "c1", confidence: 0.91, disposition: "accepted", proposedObstructs: null, proposalShown: false }]);
   });
 
   it("does not call logTelemetryEvent when telemetry is absent", async () => {
@@ -453,7 +454,7 @@ describe("POST /api/annotationSubmit", () => {
       expect(logged.msObjectStep).toBe(4000);
       expect(logged).not.toHaveProperty("msLongestIdle");
       expect(logged).not.toHaveProperty("msFromLastIdleToSubmit");
-      expect(logged.suggestionConfidences).toEqual([{ id: "p1", confidence: null, disposition: "accepted" }]);
+      expect(logged.suggestionConfidences).toEqual([{ id: "p1", confidence: null, disposition: "accepted", proposedObstructs: null, proposalShown: false }]);
     });
 
     it("allows a suggestion hidden by the confidence threshold to be missing", async () => {
@@ -917,9 +918,119 @@ describe("POST /api/annotationSubmit stores the image record's model values", ()
     };
     await submit({ body: { ...validBody, selectedObjectsID: [tampered()], telemetry } });
     expect(logTelemetryEvent.mock.calls[0][0].suggestionConfidences).toEqual([
-      { id: "c1", confidence: 0.91, disposition: "accepted", obstructs: false },
-      { id: "c3", confidence: 0.2, disposition: "hidden_below_tau", obstructs: null },
+      { id: "c1", confidence: 0.91, disposition: "accepted", obstructs: false, proposedObstructs: null, proposalShown: false },
+      { id: "c3", confidence: 0.2, disposition: "hidden_below_tau", obstructs: null, proposedObstructs: null, proposalShown: false },
     ]);
+  });
+});
+
+// The classifier's proposal and whether it was shown come from the image
+// record, never the browser (S3, 6 Nov 2026)
+describe("POST /api/annotationSubmit stores the classifier's proposal from the record", () => {
+  const RECORD = {
+    city: "makati",
+    width: 1280,
+    height: 960,
+    modelVersion: "v1-xgboost",
+    annotationList: [
+      { id: "c1", comment: "tree", confidence: 0.91, mark: rect(100, 100, 80, 200), proposedObstructs: true, obstructionProbability: 0.74 },
+      { id: "c2", comment: "car", confidence: 0.64, mark: rect(400, 300, 200, 120), proposedObstructs: false, obstructionProbability: 0.11 },
+      { id: "c3", comment: "bench", confidence: 0.5, mark: rect(700, 600, 40, 40), proposedObstructs: true, obstructionProbability: 0.4 },
+      { id: "c4", comment: "tree", confidence: 0.6, mark: rect(900, 600, 40, 80) },
+    ],
+  };
+  // On the path, off the path, Not an object, and no proposal
+  const BOXES = [
+    { id: "c1", comment: "tree", onSidewalk: true, obstructs: true, severity: 3, mark: rect(100, 100, 80, 200) },
+    { id: "c2", comment: "car", onSidewalk: false, obstructs: false, isRejected: true, mark: rect(400, 300, 200, 120) },
+    { id: "c3", comment: "not_an_object", obstructs: false, isRejected: true, mark: rect(700, 600, 40, 40) },
+    { id: "c4", comment: "tree", onSidewalk: true, obstructs: false, isRejected: true, mark: rect(900, 600, 40, 80) },
+  ];
+  const DRAWN = { id: "d1", editable: true, comment: "bollard", onSidewalk: true, obstructs: false, mark: rect(50, 50, 30, 90) };
+  // Every field a request could use to change what is stored
+  const tamper = (box) => ({
+    ...box,
+    proposedObstructs: !RECORD.annotationList.find((e) => e.id === box.id)?.proposedObstructs,
+    obstructionProbability: 0.5,
+    proposalShown: !(box.onSidewalk === true),
+    initialState: { comment: "x", mark: rect(0, 0, 5, 5), proposedObstructs: false, obstructionProbability: 0.01 },
+  });
+
+  async function submit(body, { role = "user" } = {}) {
+    const mocks = setupMocks({ userRole: role });
+    mocks.imageCol.findOne.mockResolvedValue(RECORD);
+    const res = createMockRes();
+    await handler(createMockReq({ body: { ...validBody, ...body } }), res);
+    const $set = mocks.annotationsCol.updateOne.mock.calls[0]?.[1].$set;
+    return { res, $set };
+  }
+  const summary = (boxes) => boxes.map((b) => ({
+    id: b.id,
+    proposedObstructs: b.initialState?.proposedObstructs,
+    obstructionProbability: b.initialState?.obstructionProbability,
+    proposalShown: b.proposalShown,
+  }));
+  const EXPECTED = [
+    { id: "c1", proposedObstructs: true, obstructionProbability: 0.74, proposalShown: true },
+    // Off the path: Question 2 never showed
+    { id: "c2", proposedObstructs: false, obstructionProbability: 0.11, proposalShown: false },
+    // Not an object: no sidewalk answer
+    { id: "c3", proposedObstructs: true, obstructionProbability: 0.4, proposalShown: false },
+    // No proposal on the record
+    { id: "c4", proposedObstructs: undefined, obstructionProbability: undefined, proposalShown: false },
+  ];
+
+  it("stores initialState.proposedObstructs, obstructionProbability and proposalShown from the record", async () => {
+    const { res, $set } = await submit({ selectedObjectsID: BOXES, newObjects: [DRAWN] });
+    expect(res._status).toBe(200);
+    expect(summary($set.selectedObjectsID)).toEqual(EXPECTED);
+    expect($set.selectedObjectsID[0].initialState).toEqual({ comment: "tree", mark: rect(100, 100, 80, 200), proposedObstructs: true, obstructionProbability: 0.74 });
+    expect($set.selectedObjectsID[3].initialState).toEqual({ comment: "tree", mark: rect(900, 600, 40, 80) });
+    // A drawn box: none shown
+    expect($set.newObjects[0].proposalShown).toBe(false);
+    expect($set.newObjects[0]).not.toHaveProperty("initialState");
+  });
+
+  it("stores the same whatever a tampered body says", async () => {
+    const { res, $set } = await submit({
+      selectedObjectsID: BOXES.map(tamper),
+      newObjects: [{ ...DRAWN, proposedObstructs: true, obstructionProbability: 0.9, proposalShown: true }],
+    });
+    expect(res._status).toBe(200);
+    expect(summary($set.selectedObjectsID)).toEqual(EXPECTED);
+    for (const box of [...$set.selectedObjectsID, ...$set.newObjects]) {
+      expect(box).not.toHaveProperty("proposedObstructs");
+      expect(box).not.toHaveProperty("obstructionProbability");
+    }
+    expect($set.newObjects[0].proposalShown).toBe(false);
+  });
+
+  it("logs each suggestion's proposal and whether it was shown from the record, over tampered values", async () => {
+    const entry = (id, extra = {}) => ({ id, confidence: 0.99, disposition: "accepted", obstructs: false, proposedObstructs: true, proposalShown: true, ...extra });
+    const telemetry = { suggestionConfidences: [entry("c1"), entry("c2", { disposition: "off_sidewalk" }), entry("c3", { disposition: "removed" }), entry("c4", { proposedObstructs: false })] };
+    await submit({ selectedObjectsID: BOXES.map(tamper), newObjects: [DRAWN], telemetry });
+    const logged = logTelemetryEvent.mock.calls[0][0].suggestionConfidences;
+    expect(logged.map((e) => [e.id, e.proposedObstructs, e.proposalShown])).toEqual([
+      ["c1", true, true],
+      ["c2", false, false],
+      ["c3", true, false],
+      ["c4", null, false],
+    ]);
+  });
+
+  it("stores the record's proposal for an annotator, never shown", async () => {
+    const body = {
+      imageID: 42,
+      currentAnnotationCount: 1,
+      selectedObjectsID: RECORD.annotationList.map((e) => ({
+        id: e.id, editable: false, selected: true, isRejected: false, comment: e.comment, obstructs: false, onSidewalk: true, mark: e.mark,
+      })),
+      newObjects: [],
+    };
+    const { res, $set } = await submit(body, { role: "annotator" });
+    expect(res._status).toBe(200);
+    expect($set.selectedObjectsID.map((b) => b.proposalShown)).toEqual([false, false, false, false]);
+    expect($set.selectedObjectsID[0].initialState.proposedObstructs).toBe(true);
   });
 });
 

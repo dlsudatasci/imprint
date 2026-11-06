@@ -11,6 +11,7 @@ import {
   CONTRIBUTOR_BUDGET,
 } from "./tourSteps";
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
+import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
 
 // A contributor step's words: intro, points, after (S16b) and note (S16)
 const wordsOf = (step) => [step.intro, ...step.points, step.after, step.note].filter(Boolean);
@@ -132,6 +133,8 @@ describe("tour steps", () => {
       "Then, answer whether it obstructs the sidewalk or the path for you.",
       "If it's not a real object, click Not an object.",
     ]);
+    // The proposal sentence (S3) under the third point, not a point of its own
+    expect(check.pointNote).toEqual({ after: 3, text: PROPOSAL_HINT_COPY.tutorial });
     expect(check).not.toHaveProperty("after");
     expect(check.note).toBe("Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.");
   });
@@ -173,11 +176,12 @@ describe("tour steps", () => {
   it("keeps the joined text as `content`: the intro, the points as sentences, after, then the note", () => {
     for (const [input, options] of CONTRIBUTOR_TOURS) {
       for (const s of buildTourSteps(false, "objects", input, options)) {
-        const sentences = s.points.map((p) => (/[.?!”]$/.test(p) ? p : `${p}.`));
+        const sentences = s.points.flatMap((p, i) => [/[.?!”]$/.test(p) ? p : `${p}.`, ...(s.pointNote?.after === i + 1 ? [s.pointNote.text] : [])]);
         expect(s.content).toBe([s.intro, ...sentences, s.after, s.note].filter(Boolean).join(" "));
       }
     }
-    expect(buildTourSteps(false)[0].content).toBe("Click a box and check its label. Answer whether it's on the sidewalk or the path people walk on. Then, answer whether it obstructs the sidewalk or the path for you. If it's not a real object, click Not an object. Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.");
+    // The sentence on the model's proposal right after the third point (S3, 6 Nov 2026)
+    expect(buildTourSteps(false)[0].content).toBe("Click a box and check its label. Answer whether it's on the sidewalk or the path people walk on. Then, answer whether it obstructs the sidewalk or the path for you. Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo. If it's not a real object, click Not an object. Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.");
     expect(buildTourSteps(false)[2].content).toBe("Every answer goes into a list under the photo.");
   });
 
@@ -389,6 +393,8 @@ describe("the touch tour", () => {
     const [check, path, add, answers, severity, , next] = buildTourSteps(false, "objects", "touch");
     const desktop = buildTourSteps(false);
     expect(check.points).toEqual(desktop[0].points.map((p) => p.replace("Click", "Tap").replace("click", "tap")));
+    // The proposal sentence under the third point as on the laptop (S3), and no note
+    expect(check.pointNote).toEqual({ after: 3, text: PROPOSAL_HINT_COPY.tutorial });
     for (const key of ["after", "note"]) expect(check).not.toHaveProperty(key);
     expect(path.points).toEqual(desktop[1].points);
     expect(add.points).toEqual([
@@ -478,6 +484,7 @@ describe("the pointer tours with touch wording", () => {
     expect(steps[0].points[3]).toBe("If it's not a real object, tap Not an object.");
     // A finger cannot draw by dragging: Add box
     expect(steps[0].note).toBe("Did we miss an object on the sidewalk or path? Tap Add box to box it, even if it doesn't obstruct.");
+    expect(steps[0].pointNote).toEqual({ after: 3, text: PROPOSAL_HINT_COPY.tutorial });
     expect(steps[2]).not.toHaveProperty("after");
     expect(steps[3].content).toBe("Rate how much it blocks you, from 1 to 5. You can still change this later by opening the box and adjusting the scale.");
     expect(steps[5].after).toMatch(/^Tap Next Image once/);
@@ -656,6 +663,35 @@ describe("changing a severity later", () => {
 
 // S18 (4 Nov 2026), from pilot participant 4: the first step names the two
 // questions by what they ask. The box panel numbers them.
+// S3 (6 Nov 2026): the sentence on the model's proposal, under the obstruction question
+describe("the sentence on the model's proposal", () => {
+  it("sits under the third point of Check Each Box on every contributor tour, and nowhere else", () => {
+    for (const [input, options] of CONTRIBUTOR_TOURS) {
+      const steps = buildTourSteps(false, "objects", input, options);
+      const [check, ...rest] = steps;
+      expect(check.pointNote).toEqual({ after: 3, text: "Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo." });
+      expect(check.points[2]).toMatch(/obstructs/);
+      // Right after the third point in the plain text
+      expect(check.content).toContain(`${check.points[2]} ${PROPOSAL_HINT_COPY.tutorial} ${check.points[3]}`);
+      for (const s of rest) {
+        expect(s).not.toHaveProperty("pointNote");
+        expect(s.content).not.toContain(PROPOSAL_HINT_COPY.tutorial);
+      }
+    }
+    for (const step of ["objects", "sidewalk", "obstructions"]) {
+      for (const s of buildTourSteps(true, step)) expect(s.content).not.toContain(PROPOSAL_HINT_COPY.tutorial);
+    }
+  });
+
+  it("is the only part of a contributor step outside the budget", () => {
+    for (const [input, options] of CONTRIBUTOR_TOURS) {
+      const [check] = buildTourSteps(false, "objects", input, options);
+      expect(countWords(wordsOf(check).join(" "))).toBeLessThanOrEqual(CONTRIBUTOR_BUDGET.words);
+      expect(wordsOf(check).join(" ")).not.toContain(PROPOSAL_HINT_COPY.tutorial);
+    }
+  });
+});
+
 describe("Check Each Box without question numbers", () => {
   // Rans's wording (5 Nov 2026): the path question as an instruction, Not an
   // object spelled out, and the model, not the contributor, missing an object
@@ -668,12 +704,17 @@ describe("Check Each Box without question numbers", () => {
       expect(points.join(" ")).not.toMatch(/[“”"]Not an object/);
       // The laptop tours end on it. The phone and tablet tour has Add a Box as its own step
       if (input === "pointer") expect(check.note).toMatch(/^Did we miss an object on the sidewalk or path\? (Click and drag|Tap Add box) to box it, even if it doesn't obstruct\.$/);
-      // No "model" in the contributor tour (Rans, 5 Nov 2026)
-      for (const step of buildTourSteps(false, "objects", input, options)) expect(step.content).not.toMatch(/\bmodel/i);
+      // No "model" in the contributor tour (Rans, 5 Nov 2026), but for the
+      // sentence on the model's proposal (S3, 6 Nov 2026), on Check Each Box only
+      expect(check.pointNote).toEqual({ after: 3, text: PROPOSAL_HINT_COPY.tutorial });
+      for (const step of buildTourSteps(false, "objects", input, options)) {
+        expect(step.content.replace(PROPOSAL_HINT_COPY.tutorial, "")).not.toMatch(/\bmodel/i);
+      }
       expect(check.content).not.toMatch(/Missed one|Nothing real in it/);
       expect(points).toContain("Then, answer whether it obstructs the sidewalk or the path for you.");
       expect(check.content).not.toMatch(/Question [12]/);
-      expect(check.content.split(/\s+/).length).toBeLessThanOrEqual(CONTRIBUTOR_BUDGET.words);
+      // Within the budget, the proposal sentence apart (decided 6 Nov 2026)
+      expect(check.content.replace(PROPOSAL_HINT_COPY.tutorial, "").split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(CONTRIBUTOR_BUDGET.words);
     }
   });
 });

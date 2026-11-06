@@ -6,7 +6,7 @@ import Router from "next/router";
 import Page from "@/ui/page";
 import AnnotateForm from "@/features/annotate/form";
 import TUTORIAL_IMAGES from "@/data/tutorialImages";
-import { clearSession, writeSession, writeTutorialFlag, readSessionData, readCurrentCount, hasCachedSession, readTutorialFlag } from "@/util/sessionCache";
+import { clearSession, writeSession, writeTutorialFlag, readSessionData, readCurrentCount, hasCachedSession, readTutorialFlag, readReachedCount, writeReachedCount } from "@/util/sessionCache";
 import ContentSkeleton from "@/features/layout/contentSkeleton";
 import { useAnnotateLayout } from "@/hooks/useAnnotateLayout";
 import { useIsPhone } from "@/hooks/useIsPhone";
@@ -105,7 +105,21 @@ export default function TutorialPage({ isAnnotator = false }) {
 
   const [current, setCurrent] = useState(null);
   const [data, setData] = useState(null);
+  // The furthest image reached (6 Nov 2026): after going back, the images
+  // already done stay done in the progress strip, and can be opened from it
+  const [reached, setReached] = useState(null);
   const completingRef = useRef(false);
+  // The practice batch is read once per page load (6 Nov 2026). The load
+  // effect runs again whenever next-auth hands out a new `update`, as it does
+  // when the session is fetched again on the tab coming back into view. By
+  // then the moving-between-images flag is used up, so a second run started
+  // the tutorial again from a fresh first image, losing every answer.
+  const loadedRef = useRef(false);
+  // True when this page load started the tutorial afresh, false when it came
+  // from another of its images (Next Image, Previous or the strip). The tours
+  // run by themselves on a fresh start only, so going back to the first
+  // image does not open the tour again (6 Nov 2026).
+  const freshStartRef = useRef(false);
 
   // "touring" = the tooltip open, "idle" = closed until the ? button
   const [tourMode, setTourMode] = useState(null);
@@ -164,7 +178,7 @@ export default function TutorialPage({ isAnnotator = false }) {
   const handleAnnotatorStepChange = useCallback((step) => {
     setAnnotatorStep(step);
     setJoyrideKey((k) => k + 1);
-    if (step !== "objects" && currentRef.current === 1 && !autoTouredRef.current.has(step)) {
+    if (step !== "objects" && currentRef.current === 1 && freshStartRef.current && !autoTouredRef.current.has(step)) {
       autoTouredRef.current.add(step);
       setTourMode("touring");
     } else {
@@ -189,8 +203,9 @@ export default function TutorialPage({ isAnnotator = false }) {
       if (target) {
         clearInterval(interval);
         // Walk them through it once on the first image; after that they've seen
-        // the explanations, and the ? button shows them again
-        setTourMode(current === 1 ? "touring" : "idle");
+        // the explanations, and the ? button shows them again. Not when they
+        // come back to the first image (6 Nov 2026).
+        setTourMode(current === 1 && freshStartRef.current ? "touring" : "idle");
         setJoyrideKey((k) => k + 1);
         setDomReady(true);
       }
@@ -305,6 +320,39 @@ export default function TutorialPage({ isAnnotator = false }) {
     if (tourStatus === "finished" || tourStatus === "skipped") endTour();
   }, [endTour]);
 
+  // The tutorial deliberately reuses the real annotate form rather than a
+  // parallel copy, so the two can't drift apart. The catch is that the form
+  // posts to the live endpoints, so we shim fetch for the life of the page
+  // and hand back canned 200s for the three writes. Its own effect from
+  // 6 Nov 2026, so the load below can run once without losing it.
+  //
+  // Guarded against double-wrapping: React 18 StrictMode runs effects twice
+  // in development, and re-wrapping our own wrapper would leave the original
+  // fetch unreachable after cleanup.
+  useEffect(() => {
+    const originalFetch = window.fetch;
+    if (originalFetch.__imprintTutorialShim) return undefined;
+
+    const shim = async (...args) => {
+      const [input] = args;
+      const url = typeof input === "string" ? input : input?.url;
+
+      if (MOCKED_ENDPOINTS.some((endpoint) => url?.startsWith(endpoint))) {
+        return new Response(JSON.stringify({ message: "Mock success" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return originalFetch(...args);
+    };
+    shim.__imprintTutorialShim = true;
+    window.fetch = shim;
+
+    return () => {
+      if (window.fetch === shim) window.fetch = originalFetch;
+    };
+  }, []);
+
   // Main data loading effect
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -313,6 +361,9 @@ export default function TutorialPage({ isAnnotator = false }) {
     // re-runs this effect. Without this guard the re-run would re-write
     // the session and tutorial flag after clearSession() already removed them.
     if (completingRef.current) return;
+
+    // Once per page load (see loadedRef)
+    if (loadedRef.current) return;
 
     // A real session is saved on this device (the tutorial is offered only
     // without one, but Back or the address bar still reach it): its copy is
@@ -324,35 +375,8 @@ export default function TutorialPage({ isAnnotator = false }) {
       return;
     }
 
-    // The tutorial deliberately reuses the real annotate form rather than a
-    // parallel copy, so the two can't drift apart. The catch is that the form
-    // posts to the live endpoints, so we shim fetch for the duration of the
-    // page and hand back canned 200s for the three writes.
-    //
-    // Guarded against double-wrapping: React 18 StrictMode runs effects twice
-    // in development, and re-wrapping our own wrapper would leave the original
-    // fetch unreachable after cleanup.
-    const originalFetch = window.fetch;
-
-    if (!originalFetch.__imprintTutorialShim) {
-      const shim = async (...args) => {
-        const [input] = args;
-        const url = typeof input === "string" ? input : input?.url;
-
-        if (MOCKED_ENDPOINTS.some((endpoint) => url?.startsWith(endpoint))) {
-          return new Response(JSON.stringify({ message: "Mock success" }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        return originalFetch(...args);
-      };
-      shim.__imprintTutorialShim = true;
-      window.fetch = shim;
-    }
-
+    loadedRef.current = true;
     const isNavigating = sessionStorage.getItem("isNavigatingImages") === "true";
-
 
     let currentCount = 1;
     let currentData = { imgRecords: TUTORIAL_IMAGES };
@@ -360,6 +384,7 @@ export default function TutorialPage({ isAnnotator = false }) {
     if (!isNavigating) {
       writeSession({ current: 1, total: TUTORIAL_IMAGE_COUNT, data: currentData });
       writeTutorialFlag(true);
+      freshStartRef.current = true;
     } else {
       sessionStorage.removeItem("isNavigatingImages");
       const savedCount = readCurrentCount();
@@ -374,7 +399,7 @@ export default function TutorialPage({ isAnnotator = false }) {
       if (currentCount > TUTORIAL_IMAGE_COUNT) {
         completingRef.current = true;
         try {
-          await originalFetch("/api/user/completeTutorial", { method: "POST" });
+          await window.fetch("/api/user/completeTutorial", { method: "POST" });
           await update({ tutorialCompleted: true });
         } catch (error) {
           console.error("Failed to update tutorial completion status:", error);
@@ -386,15 +411,18 @@ export default function TutorialPage({ isAnnotator = false }) {
         return;
       }
 
+      // The furthest image reached: the first on a fresh start, else at least the one on screen
+      const reachedCount = Math.min(
+        TUTORIAL_IMAGE_COUNT,
+        Math.max(isNavigating ? (readReachedCount() ?? 1) : 1, currentCount)
+      );
+      writeReachedCount(reachedCount);
+      setReached(reachedCount);
       setCurrent(currentCount);
       setData(currentData);
     };
 
     handleState();
-
-    return () => {
-      window.fetch = originalFetch;
-    };
   }, [status, update]);
 
   // No `typeof window` branch here: rendering different trees on the server and
@@ -420,6 +448,7 @@ export default function TutorialPage({ isAnnotator = false }) {
       <AnnotateForm
         data={singleImage}
         current={current}
+        reached={reached}
         total={TUTORIAL_IMAGE_COUNT}
         allImages={data.imgRecords}
         isTutorial

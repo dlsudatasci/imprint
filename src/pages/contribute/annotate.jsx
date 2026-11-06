@@ -16,6 +16,9 @@ import {
   writeSession,
   writeTutorialFlag,
   clearSession,
+  reachedFor,
+  readReachedCount,
+  writeReachedCount,
 } from "@/util/sessionCache";
 import { cachedSessionCheck } from "@/util/validators/sessionSync";
 
@@ -54,6 +57,8 @@ export default function AnnotatePage() {
     annotationTotalCount: null,
     annotationCurrentCount: null,
     annotationSetData: null,
+    // The furthest image reached (6 Nov 2026), for the progress strip
+    annotationReachedCount: null,
   });
 
   // True until we know whether a session exists — locally or on the server.
@@ -103,9 +108,18 @@ export default function AnnotatePage() {
           .then((res) => (res.ok ? res.json() : null))
           .then((server) => {
             const decision = cachedSessionCheck(localData, server);
-            if (decision === "keep") return;
+            if (decision === "keep") {
+              // The server may know of images reached on another device (6 Nov 2026)
+              const local = readReachedCount() ?? localCurrent;
+              if (Number.isInteger(server.reachedCount) && server.reachedCount > local) {
+                const reached = Math.min(server.reachedCount, localTotal);
+                writeReachedCount(reached);
+                setState((prevState) => ({ ...prevState, annotationReachedCount: Math.max(reached, prevState.annotationCurrentCount ?? 1) }));
+              }
+              return;
+            }
             if (decision === "replace") {
-              writeSession({ total: server.imgRecords.length, current: server.currentCount || 1, data: server });
+              writeSession({ total: server.imgRecords.length, current: server.currentCount || 1, data: server, reached: server.reachedCount });
               writeTutorialFlag(false);
             } else {
               clearSession();
@@ -125,6 +139,7 @@ export default function AnnotatePage() {
           annotationCurrentCount: localCurrent,
           annotationTotalCount: localTotal,
           annotationSetData: localData,
+          annotationReachedCount: reachedFor(localCurrent, localTotal),
         };
       });
     } else if (status === "authenticated" && session?.user?.username) {
@@ -143,7 +158,7 @@ export default function AnnotatePage() {
             const currentCount = data.currentCount || 1;
 
             // Restore session locally, strictly trusting the server's accurate progress index
-            writeSession({ total: totalCount, current: currentCount, data });
+            writeSession({ total: totalCount, current: currentCount, data, reached: data.reachedCount });
             // Over the tutorial's practice photos, if they were there
             writeTutorialFlag(false);
 
@@ -156,6 +171,7 @@ export default function AnnotatePage() {
               annotationCurrentCount: currentCount,
               annotationTotalCount: totalCount,
               annotationSetData: data,
+              annotationReachedCount: reachedFor(currentCount, totalCount),
             });
           }
         })
@@ -222,6 +238,7 @@ export default function AnnotatePage() {
       annotationCurrentCount: 1,
       annotationTotalCount: json.imgRecords.length,
       annotationSetData: json,
+      annotationReachedCount: 1,
     });
   }, []);
 
@@ -267,6 +284,7 @@ export default function AnnotatePage() {
         <AnnotateForm
           data={singleImage}
           current={state.annotationCurrentCount}
+          reached={state.annotationReachedCount ?? state.annotationCurrentCount}
           total={state.annotationTotalCount}
           allImages={data.imgRecords}
           isAnnotator={data.isAnnotator === true}

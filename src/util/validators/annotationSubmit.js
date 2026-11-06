@@ -1,6 +1,7 @@
 import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
 import { normalizeMark, clampMark, markArea } from "@/util/boxGeometry";
+import { isProposal, recordProbability, proposalWasShown } from "@/util/modelProposal";
 
 export const MAX_BOXES_PER_IMAGE = 300;
 export const SIDEWALK_WIDTH_OPTIONS = ["no_sidewalk", "one_person", "two_people", "three_or_more"];
@@ -202,7 +203,29 @@ export function hasEmptyBox(boxes) {
  * analysis of trust and anchoring and the retraining rows, so they are taken
  * from the image record by id, never from the browser: a stale tab, a bug or
  * a crafted request could send anything (found 16 Oct 2026).
+ *
+ * The classifier's proposal (S3, 6 Nov 2026) is copied the same way. The
+ * record's proposals change after each retraining cycle, so the stored
+ * annotation is the only lasting record of what the contributor saw
+ * (chapter_4.tex line 170).
  */
+
+/** The fields of a proposal a request may not set: each comes from the record or is worked out here. */
+const PROPOSAL_KEYS = ["proposedObstructs", "obstructionProbability", "proposalShown"];
+
+function withoutProposal(box) {
+  const out = { ...box };
+  for (const key of PROPOSAL_KEYS) delete out[key];
+  return out;
+}
+
+/** The record suggestion's proposal for initialState: each field only when the record has it. */
+function recordProposal(entry) {
+  return {
+    ...(isProposal(entry?.proposedObstructs) ? { proposedObstructs: entry.proposedObstructs } : {}),
+    ...(recordProbability(entry) !== null ? { obstructionProbability: recordProbability(entry) } : {}),
+  };
+}
 
 /** A record suggestion's confidence, or null when it has none. */
 function recordConfidence(entry) {
@@ -219,8 +242,14 @@ function recordById(annotationList) {
  * and mark) replaced by the record's. Every entry of selectedObjectsID is a
  * suggestion, so editable is false. A suggestion with an id the record does
  * not have is refused. Gives { valid, message } or { valid, boxes }.
+ *
+ * S3: initialState also carries the record's `proposedObstructs` and
+ * `obstructionProbability` when the record has them, and `proposalShown` is
+ * true only when the record has a proposal and the box answered Question 1
+ * Yes (proposalWasShown). Any of the three sent in the request is dropped.
+ * Annotators' boxes are always `proposalShown: false`.
  */
-export function applyRecordSuggestions(selectedObjectsID, annotationList) {
+export function applyRecordSuggestions(selectedObjectsID, annotationList, { isAnnotator = false } = {}) {
   if (!Array.isArray(selectedObjectsID)) return { valid: true, boxes: selectedObjectsID };
   const byId = recordById(annotationList);
   const boxes = [];
@@ -228,23 +257,24 @@ export function applyRecordSuggestions(selectedObjectsID, annotationList) {
     const entry = box && byId.get(String(box.id));
     if (!entry) return { valid: false, message: "A suggested box does not belong to this image." };
     boxes.push({
-      ...box,
+      ...withoutProposal(box),
       editable: false,
       confidence: recordConfidence(entry),
-      initialState: { comment: entry.comment ?? null, mark: entry.mark ? { ...entry.mark } : null },
+      initialState: { comment: entry.comment ?? null, mark: entry.mark ? { ...entry.mark } : null, ...recordProposal(entry) },
+      proposalShown: proposalWasShown(entry, box, { isAnnotator }),
     });
   }
   return { valid: true, boxes };
 }
 
-/** Both roles: drawn boxes have no confidence and no model state. */
+/** Both roles: drawn boxes have no confidence, no model state and no proposal, so none was shown. */
 export function clearDrawnModelFields(newObjects) {
   if (!Array.isArray(newObjects)) return newObjects;
   return newObjects.map((box) => {
     if (!box || typeof box !== "object") return box;
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
-    const { initialState, ...rest } = box;
-    return { ...rest, confidence: null };
+    const { initialState, ...rest } = withoutProposal(box);
+    return { ...rest, confidence: null, proposalShown: false };
   });
 }
 
@@ -252,14 +282,27 @@ export function clearDrawnModelFields(newObjects) {
  * A copy of the telemetry with each suggestionConfidences entry's confidence,
  * the hidden ones' included, taken from the image record by id. An entry
  * whose id the record does not have is dropped. Other fields pass through.
+ *
+ * S3: each entry's `proposedObstructs` (the record's, or null) and
+ * `proposalShown` are set the same way, `proposalShown` by the rule the
+ * stored box follows, read against `boxes`, the submitted suggestions of the
+ * same ids. An entry with no submitted box (one hidden below tau) was never
+ * shown. A tampered body cannot change either.
  */
-export function withRecordConfidences(telemetry, annotationList) {
+export function withRecordConfidences(telemetry, annotationList, { boxes = [], isAnnotator = false } = {}) {
   if (!telemetry || typeof telemetry !== "object" || !Array.isArray(telemetry.suggestionConfidences)) return telemetry;
   const byId = recordById(annotationList);
+  const submitted = new Map((Array.isArray(boxes) ? boxes : []).filter(Boolean).map((box) => [String(box.id), box]));
   const suggestionConfidences = [];
   for (const entry of telemetry.suggestionConfidences) {
     const record = entry && typeof entry === "object" ? byId.get(String(entry.id)) : undefined;
-    if (record) suggestionConfidences.push({ ...entry, confidence: recordConfidence(record) });
+    if (!record) continue;
+    suggestionConfidences.push({
+      ...entry,
+      confidence: recordConfidence(record),
+      proposedObstructs: isProposal(record.proposedObstructs) ? record.proposedObstructs : null,
+      proposalShown: proposalWasShown(record, submitted.get(String(entry.id)), { isAnnotator }),
+    });
   }
   return { ...telemetry, suggestionConfidences };
 }

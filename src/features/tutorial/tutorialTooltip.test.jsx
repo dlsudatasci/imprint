@@ -12,11 +12,16 @@ const decode = (html) => html.replace(/&#x27;/g, "'").replace(/&amp;/g, "&").rep
 const body = (step) => decode(renderToStaticMarkup(<TourStepBody step={step} />));
 
 describe("a tour step's text", () => {
-  it("renders a contributor step as its numbered list, then its note", () => {
+  it("renders a contributor step as its numbered list, the proposal sentence right after the third point's text, then its note", () => {
     const check = buildTourSteps(false)[0];
     const html = body(check);
     expect(html).toMatch(/^<ol class="list-decimal pl-5 space-y-1">/);
-    expect([...html.matchAll(/<li>([^<]+)<\/li>/g)].map((m) => m[1])).toEqual(check.points);
+    const items = [...html.matchAll(/<li>(.*?)<\/li>/g)].map((m) => m[1]);
+    expect(items.map((item) => item.replace(/ <span[^>]*>.*<\/span>/, ""))).toEqual(check.points);
+    // The sentence on the model's proposal (S3, 6 Nov 2026), right after the third point's text, in the same
+    // style: no class of its own, not muted, not a paragraph of its own (Rans)
+    expect(items[2]).toBe(`${check.points[2]} <span data-point-note="true">Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo.</span>`);
+    expect(items.filter((item) => item.includes("data-point-note"))).toHaveLength(1);
     expect(html).toMatch(/<\/ol><p class="mt-2 text-muted">Did we miss an object on the sidewalk or path\? Click and drag to box it, even if it doesn't obstruct\.<\/p>$/);
   });
 

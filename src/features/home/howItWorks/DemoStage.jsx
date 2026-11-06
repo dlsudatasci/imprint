@@ -245,6 +245,8 @@ function DemoPanel({ box, picker, dropdown, scale }) {
           obstructs={box.obstructs}
           severity={box.severity}
           onSidewalk={box.onSidewalk}
+          // The model's hint on Question 2 (S3), as in the tool
+          proposedObstructs={box.proposedObstructs}
         />
       )}
       {dropdown && <DemoCategoryList highlighted={dropdown.highlighted} />}

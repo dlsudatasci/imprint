@@ -33,7 +33,7 @@ export async function syncCachedSession() {
   }
   if (decision === "replace") {
     const current = server.currentCount || 1;
-    writeSession({ total: server.imgRecords.length, current, data: server });
+    writeSession({ total: server.imgRecords.length, current, data: server, reached: server.reachedCount });
     writeTutorialFlag(false);
     return { active: true, current, total: server.imgRecords.length };
   }

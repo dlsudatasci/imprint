@@ -17,6 +17,10 @@ const TOTAL_KEY = "annotationTotalCount";
 const CURRENT_KEY = "annotationCurrentCount";
 const DATA_KEY = "annotationSetData";
 const TUTORIAL_KEY = "annotationIsTutorial";
+// The furthest image reached (6 Nov 2026, the tutorial, then every session
+// the same day): going back keeps the later images done, and the progress
+// strip can open any image up to it, forward as well as back
+const REACHED_KEY = "annotationReachedCount";
 
 const hasStorage = () => typeof window !== "undefined" && !!window.localStorage;
 
@@ -41,15 +45,43 @@ export function readCount(key) {
 
 export const readTotalCount = () => readCount(TOTAL_KEY);
 export const readCurrentCount = () => readCount(CURRENT_KEY);
+export const readReachedCount = () => readCount(REACHED_KEY);
+
+/** The furthest image reached (6 Nov 2026). */
+export function writeReachedCount(reached) {
+  if (!hasStorage()) return;
+  window.localStorage.setItem(REACHED_KEY, String(reached));
+}
+
+/**
+ * The furthest image reached for an image on screen: the saved one, never
+ * behind the image on screen and never past the last. A copy saved before
+ * 6 Nov 2026 has none, so it is the image on screen, as the strip was.
+ */
+export function reachedFor(current, total) {
+  const saved = readReachedCount();
+  const reached = Math.max(current, saved ?? current);
+  return Number.isFinite(total) && total > 0 ? Math.min(total, reached) : reached;
+}
 
 /**
  * Writes any subset of the cached session. Fields left out are untouched, so
  * callers can update just the counter or just the batch.
  *
- * @param {{ total?: number, current?: number, data?: unknown }} fields
+ * A whole session (one written with its `total`) always gets its furthest
+ * image reached: `reached` when given (annotationGet's `reachedCount` on a
+ * resume), else the image it starts on. So a new or replaced session never
+ * keeps an earlier one's (6 Nov 2026).
+ *
+ * @param {{ total?: number, current?: number, data?: unknown, reached?: number }} fields
  */
-export function writeSession({ total = undefined, current = undefined, data = undefined } = {}) {
+export function writeSession({ total = undefined, current = undefined, data = undefined, reached = undefined } = {}) {
   if (!hasStorage()) return;
+  if (total !== undefined) {
+    const start = Number.isInteger(current) && current > 0 ? current : 1;
+    const furthest = Number.isInteger(reached) && reached >= start ? Math.min(reached, total) : start;
+    window.localStorage.setItem(REACHED_KEY, String(furthest));
+  }
   if (total !== undefined) window.localStorage.setItem(TOTAL_KEY, String(total));
   if (current !== undefined) window.localStorage.setItem(CURRENT_KEY, String(current));
   if (data !== undefined) window.localStorage.setItem(DATA_KEY, JSON.stringify(data));
@@ -67,6 +99,7 @@ export function clearSession() {
   window.localStorage.removeItem(CURRENT_KEY);
   window.localStorage.removeItem(DATA_KEY);
   window.localStorage.removeItem(TUTORIAL_KEY);
+  window.localStorage.removeItem(REACHED_KEY);
 }
 
 /** True when a usable batch is cached locally. */
@@ -88,4 +121,4 @@ export function readTutorialFlag() {
   return window.localStorage.getItem(TUTORIAL_KEY) === "true";
 }
 
-export const SESSION_KEYS = { TOTAL_KEY, CURRENT_KEY, DATA_KEY, TUTORIAL_KEY };
+export const SESSION_KEYS = { TOTAL_KEY, CURRENT_KEY, DATA_KEY, TUTORIAL_KEY, REACHED_KEY };

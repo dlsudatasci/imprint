@@ -19,6 +19,7 @@ import {
 } from "@/util/validators/annotationSubmit";
 import { DEFAULT_MODEL_VERSION } from "@/util/validators/annotationGet";
 import { filterAnnotationsByTau } from "@/util/validators/telemetryPayload";
+import { capPosition, completedCount, sessionTotal, wasSent } from "@/util/validators/sessionPosition";
 import { sessionTau } from "@/util/validators/tauSetting.mjs";
 import { sanitizeDeviceTelemetry, sanitizeQcTelemetry, classifyBrowser } from "@/util/validators/deviceTelemetry";
 import {
@@ -238,14 +239,35 @@ const handler = async (req, res) => {
 
       // $addToSet, not $push — clicking Previous and resubmitting must not add
       // the same image to the completed list twice, or the abandon path would
-      // over-count it
-      await db.collection("sessions").updateOne(
-        { userId: userId, status: "active" },
-        {
-          $addToSet: { completedImageIDs: imageID },
-          $set: { currentCount: currentAnnotationCount }
-        }
+      // over-count it.
+      //
+      // S20 (7 Nov 2026): one atomic update that adds the photo and returns
+      // the session as it was before, so a photo already sent in this session
+      // is known to be a resend (logged as IMAGE_RESUBMITTED below, so every
+      // per-photo figure counts it once), and the position is then capped at
+      // the next unfinished photo (validators/sessionPosition.js). No active
+      // session by now: nothing to update, and not a resend.
+      const sessionFilter = { userId: userId, status: "active" };
+      const sessionBefore = await db.collection("sessions").findOneAndUpdate(
+        sessionFilter,
+        { $addToSet: { completedImageIDs: imageID } },
+        { returnDocument: "before", projection: { completedImageIDs: 1, imageIDs: 1, totalCount: 1 } }
       );
+      const isResend = wasSent(sessionBefore, imageID);
+      if (sessionBefore) {
+        const completedAfter = { completedImageIDs: [...(sessionBefore.completedImageIDs || []), imageID] };
+        const position = Number(currentAnnotationCount);
+        if (Number.isInteger(position) && position >= 0) {
+          await db.collection("sessions").updateOne(sessionFilter, {
+            $set: {
+              currentCount: capPosition(position, {
+                total: sessionTotal(sessionBefore),
+                completedCount: completedCount(completedAfter),
+              }),
+            },
+          });
+        }
+      }
 
       // Timing and edit counts, used for the dashboard's speed and streak
       // stats. Best-effort: logTelemetryEvent swallows its own errors so a
@@ -263,13 +285,16 @@ const handler = async (req, res) => {
         // header, which is never stored. The quality-check timing (S10) is
         // kept the same way, and only for contributors. Each suggestion's
         // confidence comes from the image record (S5), and so do its
-        // proposal and whether the proposal was shown (S3).
+        // proposal and whether the proposal was shown (S3). A photo sent again
+        // in the same session is IMAGE_RESUBMITTED with the same payload (S20):
+        // its timing runs from when it was reopened, and every reader of
+        // IMAGE_SUBMITTED counts one event per photo.
         const sanitized = sanitizeQcTelemetry(sanitizeDeviceTelemetry(telemetry), { isAnnotator });
         // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
         const { timestamp, ...clientTelemetry } = withRecordConfidences(sanitized, suggestions, { boxes: selectedObjectsID, isAnnotator });
         await logTelemetryEvent({
           ...clientTelemetry,
-          event: "IMAGE_SUBMITTED",
+          event: isResend ? "IMAGE_RESUBMITTED" : "IMAGE_SUBMITTED",
           userId,
           username,
           imageID,

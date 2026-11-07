@@ -13,7 +13,9 @@ import { connectToDatabase } from "@/util/mongodb";
  *   - The schema is open by design. Callers pass whatever fields their event
  *     needs, with `event` naming the type (SESSION_START, IMAGE_SUBMITTED,
  *     SESSION_END). Treat every field as optional when reading — older rows
- *     predate later additions.
+ *     predate later additions. A photo sent again in the same session is
+ *     IMAGE_RESUBMITTED (S20, 7 Nov 2026), with IMAGE_SUBMITTED's fields, so
+ *     a reader of IMAGE_SUBMITTED counts each photo once.
  *   - It never throws. Logging is a side effect of someone's real work, so a
  *     failure here must not cost them the annotation they just submitted;
  *     errors are recorded to the console and swallowed. That also means gaps

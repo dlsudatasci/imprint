@@ -134,3 +134,39 @@ describe("GET /api/admin/quality/degenerate", () => {
     expect(filter.status).toBe("completed");
   });
 });
+
+// S20 (7 Nov 2026): a photo sent again is IMAGE_RESUBMITTED, which this check does not read
+describe("GET /api/admin/quality/degenerate with photos sent again", () => {
+  it("does not flag as impossibly fast a contributor whose photos each have one normal send and one short resend", async () => {
+    const annotations = Array.from({ length: 12 }, (_, i) => ({
+      userId: FLAGGED_USER,
+      imageID: `img${i}`,
+      status: "completed",
+      selectedObjectsID: [{ obstructs: i % 2 === 0, severity: i % 2 === 0 ? (i % 5) + 1 : null }],
+      newObjects: [],
+      sceneLevel: { sidewalkWidth: i % 2 ? "two_people" : "one_person", surfaceCondition: (i % 3) + 1, walkability: 3, overallAccessibility: 3 },
+    }));
+    const telemetry = Array.from({ length: 12 }, (_, i) => [
+      { userId: FLAGGED_USER, event: "IMAGE_SUBMITTED", imageID: `img${i}`, imageDurationMs: 8000 },
+      { userId: FLAGGED_USER, event: "IMAGE_RESUBMITTED", imageID: `img${i}`, imageDurationMs: 500 },
+    ]).flat();
+    setupAdminMocks({
+      contributors: [{ _id: FLAGGED_USER, count: 12 }],
+      annotations,
+      userDocs: [{ _id: new ObjectId(FLAGGED_USER), username: "careful_user" }],
+    });
+    // The collection answers the query as MongoDB would: only the event asked for
+    const { db } = await import("@/util/mongodb").then((m) => m.connectToDatabase());
+    const find = vi.fn((query) => ({ toArray: vi.fn().mockResolvedValue(telemetry.filter((e) => e.event === query.event)) }));
+    db.collection("telemetry_logs").find = find;
+
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+
+    expect(find).toHaveBeenCalledWith(expect.objectContaining({ event: "IMAGE_SUBMITTED" }));
+    expect(res._status).toBe(200);
+    expect(res._json.flaggedContributors).toEqual([]);
+    // Both events together would have been a mean of 4250 ms, under the 5000 ms threshold
+    expect((8000 + 500) / 2).toBeLessThan(5000);
+  });
+});

@@ -151,12 +151,22 @@ export default function TutorialPage({ isAnnotator = false }) {
   // tour waits: one that would start in full screen starts on leaving it.
   const [fullScreen, setFullScreen] = useState(false);
   useEffect(() => () => clearTimeout(tourHintTimerRef.current), []);
+  // The laptop's message pill sits where the hint does (S20, 7 Nov 2026). A
+  // message matters more: the hint hides at once when one shows, and does not
+  // come up while one shows.
+  const messageShownRef = useRef(false);
+  const onDesktopMessage = useCallback((shown) => {
+    messageShownRef.current = shown;
+    if (!shown) return;
+    clearTimeout(tourHintTimerRef.current);
+    setTourHint(false);
+  }, []);
 
   /** A tour ended: finished, dismissed with ×, or a tap on the overlay. */
   const endTour = useCallback(() => {
     setTourMode("idle");
     setJoyrideKey((k) => k + 1);
-    if (!tourHintShownRef.current) {
+    if (!tourHintShownRef.current && !messageShownRef.current) {
       tourHintShownRef.current = true;
       setTourHint(true);
       clearTimeout(tourHintTimerRef.current);
@@ -454,6 +464,7 @@ export default function TutorialPage({ isAnnotator = false }) {
         isTutorial
         isAnnotator={isAnnotator}
         onAnnotatorStepChange={handleAnnotatorStepChange}
+        onDesktopMessage={onDesktopMessage}
         // The ? button that replays the tour: the top bar on a phone, the
         // progress strip on a laptop (S16b, in place of the laptop's beacons)
         onShowTour={showTour}

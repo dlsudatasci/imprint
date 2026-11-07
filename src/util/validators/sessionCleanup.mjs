@@ -11,6 +11,8 @@
 export const SESSION_EVENTS = Object.freeze([
   "SESSION_START",
   "IMAGE_SUBMITTED",
+  // A photo sent again in the same session (S20, 7 Nov 2026)
+  "IMAGE_RESUBMITTED",
   "SESSION_END",
   "SESSION_COMPLETE",
   "POOL_EXHAUSTION",

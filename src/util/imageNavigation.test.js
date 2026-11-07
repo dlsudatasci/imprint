@@ -44,6 +44,15 @@ describe("answerSignature", () => {
     for (const v of variants) expect(answerSignature({ scene: { sidewalkWidth: "one_person" }, ...v })).not.toBe(base);
   });
 
+  // S20 (7 Nov 2026): the panel turns a label into the option's value when it opens
+  it("reads a category written as its value, its label or in lower case as one, and a typed-in one as written", () => {
+    const as = (comment) => answerSignature({ boxes: [{ ...no("a"), comment }] });
+    expect(as("Utility Post")).toBe(as("utility_post"));
+    expect(as("utility post")).toBe(as("utility_post"));
+    expect(as("jeepney stop")).not.toBe(as("Jeepney Stop"));
+    expect(as("jeepney stop")).not.toBe(as("utility_post"));
+  });
+
   it("does not change for a box moved by a fraction of a pixel", () => {
     expect(answerSignature({ boxes: [{ ...no("a"), mark: { ...mark(1), x: 1.0001 } }] })).toBe(answerSignature({ boxes: [no("a")] }));
   });

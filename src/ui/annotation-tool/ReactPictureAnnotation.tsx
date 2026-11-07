@@ -182,6 +182,8 @@ export const SESSION_CHANGED_RELOAD_MS = 3000;
 
 /** The tutorial moves the answers sheet with this window event, detail "collapsed", "half" or "full" (9 Oct 2026). */
 export const SHEET_EVENT = "imprint:answer-sheet";
+// Room kept under Step 2's heading on a laptop for it to count as in view (S20)
+const SCENE_HEADING_ROOM_PX = 160;
 
 /** Copy for the full-screen photo on phones (12 Oct 2026). */
 export const FOCUS_COPY = Object.freeze({
@@ -332,6 +334,10 @@ interface IReactPictureAnnotationProps {
   // AnnotateForm holds the progress strip's upcoming thumbnails until then,
   // and then fetches the next photos
   onPhotoReady?: () => void;
+  // Told when the laptop's message pill shows and goes (S20, 7 Nov 2026):
+  // the tutorial hides its "Click Tour at the top of the page" hint, which
+  // sits in the same place, while a message shows
+  onDesktopMessage?: (shown: boolean) => void;
 }
 
 type AnnotatorStep = "objects" | "sidewalk" | "obstructions";
@@ -1002,6 +1008,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   public componentDidUpdate = (preProps: IReactPictureAnnotationProps, prevState: this["state"]) => {
     const { image } = this.props;
     if (prevState) this.timeMessage(prevState);
+    if (prevState && !this.isSheet && Boolean(prevState.error) !== Boolean(this.state.error)) {
+      this.props.onDesktopMessage?.(Boolean(this.state.error));
+    }
     // Contributors' Step 2 answers are saved as they change, like the boxes
     if (prevState && prevState.sceneLevel !== this.state.sceneLevel) this.scheduleEditSave();
     // A switch between the desktop and sheet layouts (an iPad rotated) builds
@@ -2373,6 +2382,24 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.scrollSheetTo("#scene-level-section");
   }
 
+  /**
+   * Laptop, a message about Step 2 (S20, 7 Nov 2026): Step 2's heading is
+   * brought into view below the message pill when it is under the pill, above
+   * the screen or low on it. Its section's top scroll margin (SceneQuestions)
+   * is the photo's, so it lands where the photo does. Left where it is when
+   * it is already in view below the pill.
+   */
+  private revealSceneOnDesktop() {
+    if (typeof document === "undefined") return;
+    const section = document.getElementById("scene-level-section");
+    if (!section) return;
+    const margin = parseFloat(getComputedStyle(section).scrollMarginTop) || 0;
+    const top = section.getBoundingClientRect().top;
+    if (top >= margin && top <= window.innerHeight - SCENE_HEADING_ROOM_PX) return;
+    const reduced = matches("(prefers-reduced-motion: reduce)");
+    section.scrollIntoView?.({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  }
+
   /** The Step 2 line at the top of the sheet: pull the sheet up to Step 2. */
   private showSceneSection = () => {
     this.showSection("scene");
@@ -2384,7 +2411,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * the Still to decide line and its Next button are in view.
    */
   private showSection(section?: string) {
-    if (!this.isSheet) return;
+    if (!this.isSheet) {
+      if (section === "scene") this.revealSceneOnDesktop();
+      return;
+    }
     if (this.state.showInput) {
       this.lastPanelId = null;
       this.closePanel();
@@ -3505,7 +3535,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         <div
           className={`flex max-w-[min(640px,100%)] items-center gap-2 rounded-full bg-ink/85 py-2 pl-3 pr-4 text-xs font-semibold text-white shadow-lg motion-safe:transition-[opacity,transform] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-opacity motion-reduce:duration-200 ${shown ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1"}`}
         >
-          <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="shrink-0 h-4 w-4 text-danger" viewBox="0 0 20 20" fill="currentColor">
+          {/* red-400 on the dark pill (S20): text-danger was 2.4:1 against it
+              over a light page. The phone card keeps text-danger. */}
+          <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="shrink-0 h-4 w-4 text-red-400" viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
           </svg>
           <span role="alert" className="leading-snug">{shown ? this.state.error : this.lastMessage}</span>

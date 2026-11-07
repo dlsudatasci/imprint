@@ -206,6 +206,18 @@ describe("POST /api/annotationGet", () => {
     expect(call.intervalSincePreviousSessionMs).toBeGreaterThan(0);
   });
 
+  // S20 (7 Nov 2026): a day spent fixing photos already sent is a day of work
+  it("counts active days from both IMAGE_SUBMITTED and IMAGE_RESUBMITTED", async () => {
+    const mocks = setupMocks();
+    mocks.imageCol.aggregate.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: "img-1", imageID: 1, isReference: false, poolStatus: "served", annotationList: [] }]),
+    });
+    await handler(createMockReq({ body: { annotationTotalCount: 5 } }), createMockRes());
+    const pipelines = mocks.telemetryCol.aggregate.mock.calls.map(([pipeline]) => pipeline);
+    const activeDays = pipelines.find((p) => p.some((stage) => stage.$group?._id?.$dateToString));
+    expect(activeDays[0].$match).toEqual({ userId: MOCK_USER_ID, event: { $in: ["IMAGE_SUBMITTED", "IMAGE_RESUBMITTED"] } });
+  });
+
   it("sorts images by annotationCount ascending in aggregate pipeline", async () => {
     const mocks = setupMocks();
     const req = createMockReq({ body: { annotationTotalCount: 5 } });
@@ -757,6 +769,32 @@ describe("POST /api/annotationGet", () => {
       await handler(createMockReq({ body: {} }), res);
       expect(res._json.currentCount).toBe(1);
       expect(res._json.reachedCount).toBe(3);
+    });
+
+    // S20 (7 Nov 2026): a position stored before the cap, or photos sent out of order, never open photos past the next unfinished one
+    it("serves a stored position and a furthest reached capped at the next unfinished photo", async () => {
+      const img = (n) => ({ _id: `img-${n}`, imageID: n, isReference: false, poolStatus: "deployment", annotationList: [] });
+      const mocks = setupMocks({
+        // Photos 1 and 4 sent (out of order, by a hand-made request), a position of 4 stored
+        activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: ["img-1", "img-2", "img-3", "img-4"], completedImageIDs: [1, 4], currentCount: 4, totalCount: 4 },
+      });
+      mocks.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([img(1), img(2), img(3), img(4)]) });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+      expect(res._json.currentCount).toBe(3);
+      expect(res._json.reachedCount).toBe(3);
+    });
+
+    it("still serves the finished screen of a session whose every photo is sent", async () => {
+      const img = (n) => ({ _id: `img-${n}`, imageID: n, isReference: false, poolStatus: "deployment", annotationList: [] });
+      const mocks = setupMocks({
+        activeSession: { userId: MOCK_USER_ID, status: "active", imageIDs: ["img-1", "img-2"], completedImageIDs: [1, 2], currentCount: 3, totalCount: 2 },
+      });
+      mocks.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([img(1), img(2)]) });
+      const res = createMockRes();
+      await handler(createMockReq({ body: {} }), res);
+      expect(res._json.currentCount).toBe(3);
+      expect(res._json.reachedCount).toBe(2);
     });
 
     // S3 (6 Nov 2026): the hint on a resumed box is the record's proposal,

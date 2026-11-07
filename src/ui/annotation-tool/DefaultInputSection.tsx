@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { NOT_AN_OBJECT, getSuggestionPanelMode } from "@/util/suggestionJudgment";
-import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
+import { CATEGORY_OPTIONS, matchCategory } from "@/util/categoryOptions";
 import { BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 import { EyeOffIcon } from "../icons";
@@ -372,21 +372,16 @@ const DefaultInputSection = ({
       return;
     }
 
-    const exactMatch = CATEGORY_OPTIONS.find((opt) => opt.value === value);
+    // One rule with answerSignature (S20, categoryOptions.js matchCategory)
+    const match = matchCategory(value);
 
-    if (exactMatch) {
+    if (match && match.value === value) {
       setIsCustom(false);
       return;
     }
 
-    const fuzzyMatch = CATEGORY_OPTIONS.find(
-      (opt) =>
-        opt.label.toLowerCase() === value.toLowerCase() ||
-        opt.value.replace(/_/g, " ") === value.toLowerCase()
-    );
-
-    if (fuzzyMatch) {
-      onChange(fuzzyMatch.value);
+    if (match) {
+      onChange(match.value);
       setIsCustom(false);
     } else if (value && value !== "---") {
       setIsCustom(true);
@@ -694,10 +689,7 @@ function PanelFooter({ editable, variant, onDelete, onMarkNotAnObject }: {
 /** A label typed in with "Other...": not empty, not Not an object, and not one of the categories. */
 function isCustomLabel(value: string) {
   if (!value || value === "---" || value === NOT_AN_OBJECT) return false;
-  const lower = value.toLowerCase();
-  return !CATEGORY_OPTIONS.some(
-    (opt) => opt.value === value || opt.label.toLowerCase() === lower || opt.value.replace(/_/g, " ") === lower
-  );
+  return !matchCategory(value);
 }
 
 const translateValue = (value: string) => {

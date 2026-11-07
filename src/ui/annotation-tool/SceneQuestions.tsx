@@ -70,7 +70,8 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
   ];
 
   return (
-    <div id="scene-level-section" className={sheet ? "px-4 pt-4 pb-6" : "mb-6"}>
+    // On a laptop, scrolled into view below the message pill, as the photo is (S20)
+    <div id="scene-level-section" className={sheet ? "px-4 pt-4 pb-6" : "mb-6 scroll-mt-[calc(var(--nav-h,64px)+60px)]"}>
       <H2 className="text-lg font-bold text-ink mb-1">Step 2: Rate the Sidewalk</H2>
       <P className="text-body text-sm mb-4">
         Rate the following aspects of the sidewalk scene based on what you see in the image.

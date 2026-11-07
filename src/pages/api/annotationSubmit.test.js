@@ -1128,3 +1128,82 @@ describe("POST /api/annotationSubmit email verification", () => {
     );
   });
 });
+
+// S20 (7 Nov 2026): a photo sent again in the same session is IMAGE_RESUBMITTED,
+// and the stored position never passes the next unfinished photo
+describe("POST /api/annotationSubmit, a photo sent again", () => {
+  const telemetry = { imageDurationMs: 1200, msObjectStep: 900, suggestionConfidences: [{ id: "c1", confidence: 0.5, disposition: "accepted" }] };
+  // A five-photo session, photo 42 the second, photos before `sent` already sent
+  function sessionBefore(sentIds) {
+    return { imageIDs: ["i1", "i2", "i3", "i4", "i5"], completedImageIDs: sentIds, totalCount: 5 };
+  }
+  async function submit({ before, count = 3 } = {}) {
+    const mocks = setupMocks();
+    mocks.sessionsCol.findOneAndUpdate = vi.fn().mockResolvedValue(before);
+    const res = createMockRes();
+    await handler(createMockReq({ body: { ...validBody, currentAnnotationCount: count, telemetry } }), res);
+    return { mocks, res, logged: logTelemetryEvent.mock.calls[0]?.[0] };
+  }
+  const storedPosition = (mocks) => mocks.sessionsCol.updateOne.mock.calls.find(([, u]) => u.$set && "currentCount" in u.$set)?.[1].$set.currentCount;
+
+  it("adds the photo and reads the session as it was before, in one update", async () => {
+    const { mocks } = await submit({ before: sessionBefore([7]) });
+    expect(mocks.sessionsCol.findOneAndUpdate).toHaveBeenCalledWith(
+      { userId: MOCK_USER_ID, status: "active" },
+      { $addToSet: { completedImageIDs: 42 } },
+      { returnDocument: "before", projection: { completedImageIDs: 1, imageIDs: 1, totalCount: 1 } }
+    );
+  });
+
+  it("logs a first send as IMAGE_SUBMITTED", async () => {
+    const { res, logged } = await submit({ before: sessionBefore([7]) });
+    expect(res._status).toBe(200);
+    expect(logged.event).toBe("IMAGE_SUBMITTED");
+  });
+
+  it("logs a second send of the same photo as IMAGE_RESUBMITTED with the same payload, ids compared as text", async () => {
+    const first = (await submit({ before: sessionBefore([7]) })).logged;
+    vi.clearAllMocks();
+    const { res, logged } = await submit({ before: sessionBefore([7, "42"]) });
+    expect(res._status).toBe(200);
+    expect(logged.event).toBe("IMAGE_RESUBMITTED");
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- only the name differs
+    const { event: a, ...restFirst } = first;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- only the name differs
+    const { event: b, ...restSecond } = logged;
+    expect(restSecond).toEqual(restFirst);
+    expect(logged).toMatchObject({ imageDurationMs: 1200, msObjectStep: 900, imageID: 42, tauThreshold: expect.any(Number), cumulativeAnnotationsToDate: 5 });
+  });
+
+  it("logs IMAGE_SUBMITTED and sets no position when there is no active session by then", async () => {
+    const { mocks, logged } = await submit({ before: null });
+    expect(logged.event).toBe("IMAGE_SUBMITTED");
+    expect(storedPosition(mocks)).toBeUndefined();
+  });
+
+  it("replaces the annotation either way", async () => {
+    for (const before of [sessionBefore([7]), sessionBefore([7, 42])]) {
+      vi.clearAllMocks();
+      const { mocks } = await submit({ before });
+      expect(mocks.annotationsCol.updateOne).toHaveBeenCalledWith({ imageID: 42, userId: MOCK_USER_ID }, expect.any(Object), { upsert: true });
+    }
+  });
+
+  it("stores the position asked for up to the next unfinished photo, counting the photo just sent", async () => {
+    // Photos 7 and 42 sent after this one: the next unfinished is the third
+    expect(storedPosition((await submit({ before: sessionBefore([7]), count: 3 })).mocks)).toBe(3);
+    vi.clearAllMocks();
+    expect(storedPosition((await submit({ before: sessionBefore([7]), count: 5 })).mocks)).toBe(3);
+    vi.clearAllMocks();
+    // A resend going back: passes through
+    expect(storedPosition((await submit({ before: sessionBefore([7, 42, 8]), count: 1 })).mocks)).toBe(1);
+    vi.clearAllMocks();
+    // A resend does not count the photo twice
+    expect(storedPosition((await submit({ before: sessionBefore([7, 42]), count: 5 })).mocks)).toBe(3);
+  });
+
+  it("stores the finished screen after the last photo", async () => {
+    const { mocks } = await submit({ before: sessionBefore([1, 2, 3, 4]), count: 6 });
+    expect(storedPosition(mocks)).toBe(6);
+  });
+});

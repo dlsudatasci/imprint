@@ -133,9 +133,10 @@ type MountOptions = {
   onEnterFocus?: () => void;
   onExitFocus?: () => void;
   tau?: number;
+  onDesktopMessage?: (shown: boolean) => void;
 };
 
-function element({ isAnnotator = false, current = 1, layout = "desktop", askSidewalk, focus, onEnterFocus, onExitFocus, tau }: MountOptions = {}) {
+function element({ isAnnotator = false, current = 1, layout = "desktop", askSidewalk, focus, onEnterFocus, onExitFocus, tau, onDesktopMessage }: MountOptions = {}) {
   const data = readSessionData();
   const rec = data.imgRecords[current - 1];
   return (
@@ -159,6 +160,7 @@ function element({ isAnnotator = false, current = 1, layout = "desktop", askSide
       onEnterFocus={onEnterFocus}
       onExitFocus={onExitFocus}
       tau={tau}
+      onDesktopMessage={onDesktopMessage}
     />
   );
 }
@@ -2618,8 +2620,9 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
     expect(pill().className.split(" ")).toEqual(expect.arrayContaining(["fixed", "pointer-events-none", "z-[60]"]));
     expect(pill().style.top).toBe("calc(var(--nav-h, 64px) + 12px)");
     expect(card().className.split(" ")).toEqual(expect.arrayContaining(["rounded-full", "bg-ink/85", "text-white", "text-xs", "font-semibold"]));
-    // The phone's red warning sign
-    expect(card().querySelector("svg")!.getAttribute("class")).toContain("text-danger");
+    // A red warning sign, red-400 on the dark pill so it reads against it (S20)
+    expect(card().querySelector("svg")!.getAttribute("class")).toContain("text-red-400");
+    expect(card().querySelector("svg")!.getAttribute("class")).not.toContain("text-danger");
     // Not in the page's flow above the buttons any more
     expect(pill().closest(".grid")).toBeNull();
     act(() => vi.advanceTimersByTime(messageVisibleMs(message)));
@@ -2628,6 +2631,61 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
     expect(pill().getAttribute("aria-hidden")).toBe("true");
     expect(card().className).toContain("opacity-0");
     expect(pill().textContent).toContain(message);
+  });
+
+  // S20 (7 Nov 2026)
+  it("phone: the card keeps text-danger for its warning sign", () => {
+    coarse = true;
+    open("contributor", { layout: "sheet" });
+    press();
+    const alert = host.querySelector("[role='alert']")!;
+    expect(alert.parentElement!.querySelector("svg")!.parentElement!.className).toContain("text-danger");
+    expect(host.querySelector(".text-red-400")).toBeNull();
+  });
+
+  it("desktop: tells the page when the pill shows and goes, and the phone never", () => {
+    const told: boolean[] = [];
+    const tool = open("contributor", { onDesktopMessage: (shown) => told.push(shown) });
+    press();
+    expect(told).toEqual([true]);
+    // The same message again, still showing: nothing new to tell
+    press();
+    expect(told).toEqual([true]);
+    act(() => vi.advanceTimersByTime(messageVisibleMs(tool.state.error!)));
+    expect(told).toEqual([true, false]);
+    unmount();
+
+    coarse = true;
+    const phone: boolean[] = [];
+    open("contributor", { layout: "sheet", onDesktopMessage: (shown) => phone.push(shown) });
+    press();
+    expect(phone).toEqual([]);
+  });
+
+  it("desktop: a message about Step 2 brings its heading below the pill when it is out of view, and leaves it when in view", () => {
+    const tool = open("contributor");
+    act(() => {
+      for (const id of ["a-car", "b-pole", "c-tree"]) {
+        tool.selectBoxById(id);
+        tool.onSetOnSidewalk(true);
+        tool.onUnselectObstruction();
+      }
+      tool.onClose();
+    });
+    const section = host.querySelector("#scene-level-section") as HTMLElement;
+    expect(section.className).toContain("scroll-mt-[calc(var(--nav-h,64px)+60px)]");
+    const scroll = vi.fn();
+    section.scrollIntoView = scroll;
+    // Above the screen: brought in
+    section.getBoundingClientRect = () => ({ top: -300 }) as DOMRect;
+    press();
+    expect(tool.state.error).toBe("Please select the sidewalk width category.");
+    expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ block: "start" }));
+    // In view below the pill (jsdom reads no scroll margin, so 0): left alone
+    scroll.mockClear();
+    section.getBoundingClientRect = () => ({ top: 200 }) as DOMRect;
+    press();
+    expect(scroll).not.toHaveBeenCalled();
   });
 
   it("phone: the message floats over the photo, not in the sheet's footer, so the sheet keeps its height", () => {

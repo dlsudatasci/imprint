@@ -48,9 +48,12 @@ export default async function handler(req, res) {
 
         const avgTimePerImageMs = imageMetrics.length > 0 ? imageMetrics[0].avgImageDurationMs : 0;
 
-        // Active streak — consecutive days with at least one IMAGE_SUBMITTED event
+        // Active streak — consecutive days with at least one photo sent. A day
+        // spent going back to fix photos counts too (IMAGE_RESUBMITTED, S20,
+        // 7 Nov 2026), as annotationGet's active days do. The average above
+        // stays on IMAGE_SUBMITTED, one event per photo.
         const uniqueDatesCursor = await db.collection("telemetry_logs").aggregate([
-            { $match: { ...matchUser, event: "IMAGE_SUBMITTED" } },
+            { $match: { ...matchUser, event: { $in: ["IMAGE_SUBMITTED", "IMAGE_RESUBMITTED"] } } },
             {
                 $project: {
                     dateString: {

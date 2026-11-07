@@ -1,3 +1,5 @@
+import { categoryKey } from "@/util/categoryOptions";
+
 /**
  * Moving between a session's images from the progress strip (6 Nov 2026).
  *
@@ -24,7 +26,10 @@ const round = (n) => (typeof n === "number" && Number.isFinite(n) ? Math.round(n
  * same: every answered or drawn box (its category, place and answers) and,
  * where they are asked, Step 2's answers and the sidewalk outline. Box order
  * does not count (the tool reorders boxes on every click), nor do suggestions
- * not answered yet, which are never sent.
+ * not answered yet, which are never sent. A category is read as its option's
+ * value (S20, categoryKey), so "Utility Post" and `utility_post`, which the
+ * panel turns into each other when it opens, are one category. One typed in
+ * with Other... is compared as written.
  */
 export function answerSignature({ boxes = [], scene = null, mask = null } = {}) {
   const answered = (Array.isArray(boxes) ? boxes : [])
@@ -32,7 +37,7 @@ export function answerSignature({ boxes = [], scene = null, mask = null } = {}) 
     .map((b) => [
       String(b.id),
       Boolean(b.editable),
-      b.comment ?? null,
+      typeof b.comment === "string" ? categoryKey(b.comment) : null,
       b.mark ? [round(b.mark.x), round(b.mark.y), round(b.mark.width), round(b.mark.height)] : null,
       Boolean(b.selected),
       Boolean(b.isRejected),

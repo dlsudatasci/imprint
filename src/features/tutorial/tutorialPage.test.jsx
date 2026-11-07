@@ -184,3 +184,31 @@ describe("the tutorial's place", () => {
     expect(joyride.props?.run).toBe(true);
   });
 });
+
+// S20 (7 Nov 2026): the laptop's message pill and the tour hint sit in the same place
+describe("the tour hint and the message pill", () => {
+  const hint = () => Array.from(host.querySelectorAll("[role='status']")).find((el) => /see the tour again/.test(el.textContent));
+  async function endTour() {
+    await open();
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+    await act(async () => joyride.props.callback({ status: "finished" }));
+  }
+
+  it("hides the hint at once when a message shows", async () => {
+    await endTour();
+    expect(hint()).toBeTruthy();
+    await act(async () => seen.form.onDesktopMessage(true));
+    expect(hint()).toBeUndefined();
+    // Gone for good: the message going does not bring it back
+    await act(async () => seen.form.onDesktopMessage(false));
+    expect(hint()).toBeUndefined();
+  });
+
+  it("does not show the hint while a message shows", async () => {
+    await open();
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+    await act(async () => seen.form.onDesktopMessage(true));
+    await act(async () => joyride.props.callback({ status: "finished" }));
+    expect(hint()).toBeUndefined();
+  });
+});

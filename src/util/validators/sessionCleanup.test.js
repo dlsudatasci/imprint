@@ -44,6 +44,8 @@ describe("what is removed", () => {
 
   it("removes session telemetry only, keeping the admin's own actions", () => {
     expect(SESSION_EVENTS).toContain("IMAGE_SUBMITTED");
+    // A photo sent again in the same session (S20, 7 Nov 2026)
+    expect(SESSION_EVENTS).toContain("IMAGE_RESUBMITTED");
     for (const kept of ["ROLE_CHANGED", "ACCOUNT_DELETED", "MODEL_PREDICTIONS_UPDATED"]) expect(SESSION_EVENTS).not.toContain(kept);
   });
 });

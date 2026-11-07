@@ -25,6 +25,7 @@ import { SCENE_SCALE, toCurrentScale } from "@/util/validators/sceneScale.mjs";
 import { needsEmailVerification, EMAIL_NOT_VERIFIED_RESPONSE } from "@/util/validators/emailVerification.mjs";
 import { readTau, sessionTau } from "@/util/validators/tauSetting.mjs";
 import { serverTimer } from "@/util/serverTiming";
+import { capPosition, completedCount as sentCount } from "@/util/validators/sessionPosition";
 
 /**
  * POST /api/annotationGet — gives the annotate page a batch of images to work
@@ -253,8 +254,12 @@ const handler = async (req, res) => {
       // sitting on an image they've already submitted, so counting completions
       // would jump them forward again. Falling back to "one past the last
       // completed" covers sessions saved before currentCount was tracked.
-      const currentCount = existingSession.currentCount
-        || Math.min(completedCount + 1, existingSession.totalCount);
+      // Never past the next unfinished photo (S20, 7 Nov 2026), also for a
+      // position stored before the server capped it, or a furthest reached
+      // from photos sent out of order by a hand-made request
+      const cap = (n) => capPosition(n, { total: sortedImgRecords.length, completedCount: sentCount(existingSession) });
+      const currentCount = cap(existingSession.currentCount
+        || Math.min(completedCount + 1, existingSession.totalCount));
 
       // referenceGroundTruth (other annotators' answers, the contributors'
       // answer key) never leaves the server (6 Oct 2026, both roles), nor
@@ -267,12 +272,12 @@ const handler = async (req, res) => {
         isExistingSession: true,
         currentCount: currentCount,
         // The furthest image reached (6 Nov 2026), for the progress strip
-        reachedCount: reachedCountOf(
+        reachedCount: cap(reachedCountOf(
           sortedImgRecords.map((img) => img.imageID),
           existingSession.completedImageIDs,
           currentCount,
           sortedImgRecords.length
-        ),
+        )),
         isAnnotator,
         tau,
       });
@@ -485,7 +490,8 @@ const handler = async (req, res) => {
       db
         .collection("telemetry_logs")
         .aggregate([
-          { $match: { userId, event: "IMAGE_SUBMITTED" } },
+          // A day spent fixing photos already sent counts too (S20)
+          { $match: { userId, event: { $in: ["IMAGE_SUBMITTED", "IMAGE_RESUBMITTED"] } } },
           { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Manila" } } } },
           { $count: "count" },
         ])

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CATEGORY_OPTIONS } from "./categoryOptions.js";
+import { CATEGORY_OPTIONS, matchCategory, categoryKey } from "./categoryOptions.js";
 import { TAXONOMY_CATEGORIES } from "./taxonomy.js";
 
 describe("CATEGORY_OPTIONS", () => {
@@ -25,5 +25,28 @@ describe("CATEGORY_OPTIONS", () => {
 
   it("has no em dash or semicolon in any label", () => {
     for (const o of CATEGORY_OPTIONS) expect(o.label).not.toMatch(/[—;]/);
+  });
+});
+
+// S20 (7 Nov 2026): one rule for a category written two ways
+describe("matchCategory and categoryKey", () => {
+  it("read a value, its label in any case, and the value with spaces as the same option", () => {
+    for (const written of ["utility_post", "Utility Post", "utility post", "UTILITY POST"]) {
+      expect(matchCategory(written)?.value).toBe("utility_post");
+      expect(categoryKey(written)).toBe("utility_post");
+    }
+  });
+
+  it("leave a category typed in with Other..., Not an object and an empty value as written", () => {
+    expect(matchCategory("jeepney stop")).toBeNull();
+    expect(categoryKey("jeepney stop")).toBe("jeepney stop");
+    expect(categoryKey("Jeepney Stop")).toBe("Jeepney Stop");
+    expect(categoryKey("not_an_object")).toBe("not_an_object");
+    expect(categoryKey("")).toBe("");
+    expect(matchCategory(undefined)).toBeNull();
+  });
+
+  it("do not match a value in another case: only labels are read without case", () => {
+    expect(matchCategory("Utility_Post")).toBeNull();
   });
 });

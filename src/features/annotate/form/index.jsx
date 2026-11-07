@@ -72,6 +72,8 @@ export default function AnnotateForm({
   // The batch's suggestion threshold from annotationGet (S2). The tutorial sends none.
   tau,
   onAnnotatorStepChange,
+  // Told when the laptop's message pill shows and goes (S20): the tutorial hides its tour hint
+  onDesktopMessage,
   // The tutorial: shows the step's tour again (the ? button in the top bar on a
   // phone or tablet, in the progress strip on a laptop, S16b)
   onShowTour,
@@ -343,6 +345,7 @@ export default function AnnotateForm({
       // shows it to annotators, so they practise it (6 Oct 2026).
       askSidewalk={isAnnotator && (isTutorial || requiresSidewalkMask(data))}
       onAnnotatorStepChange={onAnnotatorStepChange}
+      onDesktopMessage={onDesktopMessage}
       layout={layout}
       focus={focus}
       onEnterFocus={canFocus ? enterFocus : undefined}

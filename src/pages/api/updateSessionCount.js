@@ -1,6 +1,7 @@
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
+import { capPosition, completedCount, sessionTotal } from "@/util/validators/sessionPosition";
 
 /**
  * POST /api/updateSessionCount — records how far through a batch a contributor
@@ -9,6 +10,13 @@ import { authOptions } from "./auth/[...nextauth]";
  * Storing the position on the server is what lets someone sign out partway
  * through, come back later or on another device, and resume on the same image
  * rather than starting the batch again.
+ *
+ * The position is capped (S20, 7 Nov 2026): never past the next unfinished
+ * photo of the active session (validators/sessionPosition.js), so a
+ * hand-made request cannot open the strip to photos never seen. A request
+ * over the cap is clamped, not refused, so a page with an old cache keeps
+ * working, and the stored value is returned as `currentCount`. With no
+ * active session nothing is stored, as before.
  */
 const handler = async (req, res) => {
     if (req.method !== "POST") {
@@ -33,11 +41,20 @@ const handler = async (req, res) => {
     try {
         const { db } = await connectToDatabase();
 
-        await db.collection("sessions").updateOne(
-            { userId: session.user._id, status: "active" },
-            { $set: { currentCount: currentAnnotationCount } }
-        );
-        return res.status(200).json({ message: "Session count updated." });
+        const filter = { userId: session.user._id, status: "active" };
+        const active = await db.collection("sessions").findOne(filter, {
+            projection: { imageIDs: 1, completedImageIDs: 1, totalCount: 1 },
+        });
+        if (!active) {
+            return res.status(200).json({ message: "Session count updated.", currentCount: null });
+        }
+
+        const currentCount = capPosition(currentAnnotationCount, {
+            total: sessionTotal(active),
+            completedCount: completedCount(active),
+        });
+        await db.collection("sessions").updateOne(filter, { $set: { currentCount } });
+        return res.status(200).json({ message: "Session count updated.", currentCount });
     } catch (e) {
         console.error("Failed to update session count:", e);
         return res.status(500).json({ message: "Internal Server Error" });

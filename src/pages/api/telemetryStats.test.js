@@ -73,3 +73,14 @@ describe("GET /api/telemetryStats", () => {
     expect(res._status).toBe(405);
   });
 });
+
+// S20 (7 Nov 2026): a day spent fixing photos counts toward the streak, but not the average
+describe("GET /api/telemetryStats with photos sent again", () => {
+  it("counts streak days from IMAGE_SUBMITTED and IMAGE_RESUBMITTED, and the average from IMAGE_SUBMITTED only", async () => {
+    const { telemetryCol } = setupMocks();
+    await handler(createMockReq({ method: "GET" }), createMockRes());
+    const [average, streak] = telemetryCol.aggregate.mock.calls.map(([pipeline]) => pipeline[0].$match);
+    expect(average).toEqual({ userId: MOCK_USER_ID, event: "IMAGE_SUBMITTED" });
+    expect(streak).toEqual({ userId: MOCK_USER_ID, event: { $in: ["IMAGE_SUBMITTED", "IMAGE_RESUBMITTED"] } });
+  });
+});

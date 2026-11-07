@@ -34,3 +34,23 @@ const LABELS = {
 export const CATEGORY_OPTIONS = Object.freeze(
   TAXONOMY_CATEGORIES.map((value) => Object.freeze({ value, label: LABELS[value] }))
 );
+
+/**
+ * The category option a value names, or null (S20, 7 Nov 2026): the value
+ * itself (`utility_post`), its label in any case ("Utility Post", "utility
+ * post") or the value with spaces for underscores. The box panel turns such a
+ * value into the option's value when it opens, and answerSignature reads both
+ * as one category, so a category written two ways is not a change.
+ */
+export function matchCategory(value) {
+  if (typeof value !== "string" || !value) return null;
+  const lower = value.toLowerCase();
+  return CATEGORY_OPTIONS.find(
+    (opt) => opt.value === value || opt.label.toLowerCase() === lower || opt.value.replace(/_/g, " ") === lower
+  ) ?? null;
+}
+
+/** The option's value for a value that names one, otherwise the value as given (a category typed in with Other...) */
+export function categoryKey(value) {
+  return matchCategory(value)?.value ?? value;
+}

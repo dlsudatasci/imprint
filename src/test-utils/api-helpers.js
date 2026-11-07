@@ -40,6 +40,8 @@ export function createMockCollection(overrides = {}) {
       toArray: vi.fn().mockResolvedValue([]),
     }),
     updateOne: vi.fn().mockResolvedValue({ modifiedCount: 1 }),
+    // Driver 7 returns the document itself, or null when nothing matched (S20)
+    findOneAndUpdate: vi.fn().mockResolvedValue(null),
     updateMany: vi.fn().mockResolvedValue({ modifiedCount: 0 }),
     countDocuments: vi.fn().mockResolvedValue(0),
     insertOne: vi.fn().mockResolvedValue({ insertedId: "mock-id" }),

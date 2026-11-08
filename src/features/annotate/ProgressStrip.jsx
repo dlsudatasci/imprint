@@ -30,7 +30,7 @@ import { HelpIcon, PauseIcon, StopIcon } from "@/ui/icons";
  * tool sends the image on screen again first if it was already sent and has
  * changed since, so no answer is left only in this browser.
  */
-export default function ProgressStrip({ images, current, reached, onPause, onStop, onShowTour, isTutorial = false, deferUpcoming = false }) {
+export default function ProgressStrip({ images, current, reached, onPause, onStop, onShowTour, tourButton = null, isTutorial = false, deferUpcoming = false }) {
   const furthest = Math.max(current, reached ?? current);
   const scrollRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -200,11 +200,12 @@ export default function ProgressStrip({ images, current, reached, onPause, onSto
           // eslint-disable-next-line react/forbid-elements -- the same pill as Pause and Stop beside it
           <button
             onClick={onShowTour}
-            title="Show the tour"
+            // The tutorial's first image names it Practice: it does the practice again (S19)
+            title={tourButton?.title ?? "Show the tour"}
             className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-body transition-colors px-3 py-1.5 rounded-control border border-line hover:border-primary/30 bg-surface"
           >
             <HelpIcon size={14} />
-            Tour
+            {tourButton?.label ?? "Tour"}
           </button>
         )}
         {!isTutorial && (

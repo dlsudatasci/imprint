@@ -79,6 +79,13 @@ export default function AnnotateForm({
   onShowTour,
   // Told when the full-screen photo starts and ends (the tutorial holds its tour meanwhile)
   onFocusChange,
+  // The tutorial's first image: { label, title } for the button that runs
+  // onShowTour, which does the practice again there (S19). The tour's otherwise.
+  tourButton,
+  // The tutorial's practice on its first photo (S19), passed to the tool as they are
+  onPracticeEvent,
+  practiceLock,
+  practiceHighlight,
 }) {
   const onSelect = () => { };
   const onChange = () => { };
@@ -351,6 +358,9 @@ export default function AnnotateForm({
       onEnterFocus={canFocus ? enterFocus : undefined}
       onExitFocus={exitFocus}
       onPhotoReady={onPhotoReady}
+      onPracticeEvent={onPracticeEvent}
+      practiceLock={practiceLock}
+      practiceHighlight={practiceHighlight}
     />
   );
 
@@ -375,6 +385,7 @@ export default function AnnotateForm({
             onPause={() => setShowPauseModal(true)}
             onStop={() => setShowAbandonModal(true)}
             onShowTour={onShowTour}
+            tourButton={tourButton}
             isTutorial={isTutorial}
           />
         )
@@ -389,6 +400,7 @@ export default function AnnotateForm({
             onPause={() => setShowPauseModal(true)}
             onStop={() => setShowAbandonModal(true)}
             onShowTour={onShowTour}
+            tourButton={tourButton}
             isTutorial={isTutorial}
             deferUpcoming={!photoReady}
           />

@@ -28,8 +28,10 @@ export default class DraggingAnnotationState implements IAnnotationState {
   };
 
   public onMouseUp = () => {
-    const { setAnnotationState } = this.context;
+    const { setAnnotationState, shapes } = this.context;
     setAnnotationState(new DefaultAnnotationState(this.context));
+    // A drawn box moved (the tutorial's practice matches it to the white post, S19)
+    this.context.notePracticeGeometry(shapes[shapes.length - 1]?.getAnnotationData().id);
   };
 
   public onMouseLeave = () => this.onMouseUp();

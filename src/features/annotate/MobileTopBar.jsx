@@ -11,7 +11,7 @@ import { PauseIcon, StopIcon, HelpIcon } from "@/ui/icons";
  * In the tutorial it also has a ? button (12 Oct 2026) that shows the step's
  * tour again, since the touch tours have no beacons to tap.
  */
-export default function MobileTopBar({ current, total, onPause, onStop, onShowTour, isTutorial = false }) {
+export default function MobileTopBar({ current, total, onPause, onStop, onShowTour, tourButton = null, isTutorial = false }) {
   const done = total > 0 ? Math.min(1, Math.max(0, (current - 1) / total)) : 0;
   const stopLabel = isTutorial ? "Stop Tutorial" : "Stop Session";
   return (
@@ -36,7 +36,8 @@ export default function MobileTopBar({ current, total, onPause, onStop, onShowTo
           </div>
         </div>
         {onShowTour && (
-          <IconButton aria-label="Show the tour" title="Show the tour" onClick={onShowTour}>
+          // The tutorial's first image: the same ?, which does the practice again (S19)
+          <IconButton aria-label={tourButton?.title ?? "Show the tour"} title={tourButton?.title ?? "Show the tour"} onClick={onShowTour}>
             <HelpIcon size={20} />
           </IconButton>
         )}

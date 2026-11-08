@@ -6,6 +6,12 @@ import { sceneAnswersOf } from "@/util/validators/sceneScale.mjs";
  * Quality-control metrics: IoU-based box matching, precision/recall/F1,
  * obstruction agreement, severity MAE, scene-level agreement, degenerate
  * behavior detection, and pairwise inter-annotator agreement.
+ *
+ * Contributors' recall on reference images counts only the answer-key objects
+ * within their task (S21, 8 Nov 2026, pipeline_methodology.md 7x, spec
+ * S21_quality_recall_in_task.md): see inTaskObjects and scoreAgainstStandard.
+ * computeReferencePerformance and computePairwiseAgreement still count recall
+ * over every object, since annotators boxed everything.
  */
 export const IOU_THRESHOLD = 0.5;
 export const DEGENERATE_MIN_IMAGES = 10;
@@ -268,6 +274,11 @@ export function detectDegenerateFlags(annotations, telemetryEvents) {
  * passed to buildReferenceStandard and kept on the answer key, so the
  * contributor side is filtered the same way. When it is unknown every box is
  * kept, as before.
+ *
+ * Each answer-key object also carries obstructsYes (S21, 8 Nov 2026,
+ * pipeline_methodology.md 7x): how many of its members (votes) answered
+ * obstructs === true, as stored in referenceGroundTruth. It feeds the second
+ * condition of inTaskObjects. Nothing else in the merge depends on it.
  * ------------------------------------------------------------------------- */
 
 /** The boxes that count for scoring: allBoxes without those under the minimum size. */
@@ -355,19 +366,80 @@ export function buildReferenceStandard(annotatorAnnotations, threshold = IOU_THR
       uncertain.push({ mark, votes, reason: "category_tie" });
       continue;
     }
-    objects.push({ mark, comment: leaders[0][0], votes });
+    const obstructsYes = members.filter((m) => m.obstructs === true).length;
+    objects.push({ mark, comment: leaders[0][0], votes, obstructsYes });
   }
 
   return { annotatorCount, objects, uncertain, ties, belowMinimumSize, imageSize };
 }
 
 /**
+ * Which answer-key objects were part of one contributor's task (S21, 8 Nov
+ * 2026, pipeline_methodology.md 7x). Annotators boxed every object anywhere
+ * in a reference photo, but contributors only answer the suggestions they are
+ * shown and box missed objects on the nearest sidewalk or path, so recall is
+ * counted on these objects only. An object is in the task when either:
+ *   (a) bySuggestion: its box has IoU at least 0.5 with the model's own box
+ *       (initialState.mark) of any suggestion in the contributor's
+ *       selectedObjectsID, whatever its category and whatever the contributor
+ *       answered (Not an object and not on the path included). "Shown" is
+ *       exactly the saved suggestions, so tau and the suggestions hidden below
+ *       it need no handling. A suggestion saved before S5 (29 Oct 2026) has no
+ *       initialState.mark and uses its own mark, counted in
+ *       suggestionsWithoutInitialState;
+ *   (b) byObstruction: more than half of its members said it obstructs
+ *       (obstructsYes * 2 > votes). false, null and a missing answer are not a
+ *       yes but stay in the total. This reads obstructs as stored, so after the
+ *       far-side review's write-back (D19, 7an) it reads the reviewed answers.
+ *
+ * Gives { objects, suggestionsWithoutInitialState }, objects holding
+ * { inTask, bySuggestion, byObstruction } for each standard.objects entry, in
+ * the same order.
+ */
+/** Condition (b) of inTaskObjects: more than half of the object's members said it obstructs. */
+export function mostlyObstructs(object) {
+  return (object?.obstructsYes ?? 0) * 2 > (object?.votes ?? 0);
+}
+
+export function inTaskObjects(standard, contributorAnnotation, threshold = IOU_THRESHOLD) {
+  let suggestionsWithoutInitialState = 0;
+  const shown = [];
+  for (const s of contributorAnnotation?.selectedObjectsID || []) {
+    if (!s) continue;
+    if (s.initialState?.mark) {
+      shown.push(s.initialState.mark);
+    } else {
+      suggestionsWithoutInitialState++;
+      if (s.mark) shown.push(s.mark);
+    }
+  }
+
+  const objects = standard.objects.map((o) => {
+    const bySuggestion = shown.some((mark) => computeIoU(o.mark, mark) >= threshold);
+    const byObstruction = mostlyObstructs(o);
+    return { inTask: bySuggestion || byObstruction, bySuggestion, byObstruction };
+  });
+
+  return { objects, suggestionsWithoutInitialState };
+}
+
+const round4 = (v) => +v.toFixed(4);
+
+/**
  * Objective layer against the merged answer key (chapter_4.tex line 339): a
  * contributor box is a true positive when its IoU with an answer-key object is
- * at least 0.5 and its category matches. Unmatched contributor boxes on an
- * uncertain object are ignored, as are contributor boxes under the minimum
- * size for the answer key's image. An image where both the answer key and the
- * contributor have no boxes gives null scores (nothing to score), not zero.
+ * at least 0.5 and its category matches (one to one, strongest overlaps
+ * first). Unmatched contributor boxes on an uncertain object are ignored, as
+ * are contributor boxes under the minimum size for the answer key's image.
+ *
+ * From S21 (8 Nov 2026, pipeline_methodology.md 7x) recall counts only the
+ * objects in the contributor's task (inTaskObjects): in-task objects matched
+ * over in-task objects. Precision is unchanged: every scorable box counts, and
+ * a box matching any answer-key object, in the task or not, is a true
+ * positive. F1 is 2PR / (P + R) from those two. With no in-task objects,
+ * recall and F1 are null and precision is computed when the contributor has
+ * boxes. With no boxes either, all three are null. falseNegatives counts the
+ * in-task objects left unmatched.
  */
 export function scoreAgainstStandard(contributorAnnotation, standard, threshold = IOU_THRESHOLD) {
   const pred = scorableBoxes(contributorAnnotation, standard.imageSize);
@@ -396,14 +468,47 @@ export function scoreAgainstStandard(contributorAnnotation, standard, threshold 
     else falsePositives++;
   });
   const truePositives = usedP.size;
-  const falseNegatives = standard.objects.length - usedO.size;
+  const predictions = truePositives + falsePositives;
 
-  const empty = truePositives + falsePositives === 0 && falseNegatives === 0;
-  const prf1 = empty
-    ? { precision: null, recall: null, f1: null }
-    : computePRF1(truePositives, truePositives + falsePositives, standard.objects.length);
+  const task = inTaskObjects(standard, contributorAnnotation, threshold);
+  let inTask = 0, bySuggestion = 0, byObstruction = 0, matchedInTask = 0;
+  task.objects.forEach((t, oi) => {
+    if (t.bySuggestion) bySuggestion++;
+    if (t.byObstruction) byObstruction++;
+    if (!t.inTask) return;
+    inTask++;
+    if (usedO.has(oi)) matchedInTask++;
+  });
+  const falseNegatives = inTask - matchedInTask;
 
-  return { ...prf1, truePositives, falsePositives, falseNegatives, ignoredOnUncertain: ignored };
+  let precision, recall, f1;
+  if (inTask === 0) {
+    precision = predictions === 0 ? null : round4(truePositives / predictions);
+    recall = null;
+    f1 = null;
+  } else {
+    const p = predictions === 0 ? 0 : truePositives / predictions;
+    const r = matchedInTask / inTask;
+    precision = round4(p);
+    recall = round4(r);
+    f1 = p + r === 0 ? 0 : round4((2 * p * r) / (p + r));
+  }
+
+  return {
+    precision,
+    recall,
+    f1,
+    truePositives,
+    falsePositives,
+    falseNegatives,
+    ignoredOnUncertain: ignored,
+    inTaskObjects: inTask,
+    inTaskBySuggestion: bySuggestion,
+    inTaskByObstruction: byObstruction,
+    outOfTaskObjects: standard.objects.length - inTask,
+    truePositivesOutOfTask: truePositives - matchedInTask,
+    suggestionsWithoutInitialState: task.suggestionsWithoutInitialState,
+  };
 }
 
 function meanOrNull(values) {

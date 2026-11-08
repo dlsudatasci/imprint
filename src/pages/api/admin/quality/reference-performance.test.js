@@ -130,7 +130,9 @@ describe("GET /api/admin/quality/reference-performance", () => {
       }],
       annotations: [{
         imageID: "img1", userId: USER_A, source: "contributor", status: "completed",
-        sceneLevel: null, selectedObjectsID: [], newObjects: [b(0, "bench")],
+        sceneLevel: null, newObjects: [],
+        // Shown as a suggestion, so the bench is in the task (S21)
+        selectedObjectsID: [{ ...b(0, "bench"), initialState: { comment: "bench", mark: b(0).mark } }],
       }],
       userDocs: [{ _id: new ObjectId(USER_A), username: "alice" }],
     });
@@ -139,7 +141,7 @@ describe("GET /api/admin/quality/reference-performance", () => {
     expect(res._status).toBe(200);
     expect(res._json.contributors[0].avgF1).toBe(1);
     expect(res._json.answerKey).toEqual({
-      objects: 1, uncertain: 0, categoryTies: 0, boxesBelowMinimumSize: 0, annotatorsPerImage: { min: 3, max: 3 },
+      objects: 1, objectsMostlyObstructing: 0, uncertain: 0, categoryTies: 0, boxesBelowMinimumSize: 0, annotatorsPerImage: { min: 3, max: 3 },
     });
   });
 
@@ -157,11 +159,13 @@ describe("GET /api/admin/quality/reference-performance", () => {
       annotations: [
         {
           imageID: "img1", userId: USER_A, source: "contributor", status: "completed",
-          sceneLevel: null, selectedObjectsID: [], newObjects: [b(0, 100, "bench")], // skipped the small tree
+          sceneLevel: null, newObjects: [], // skipped the small tree, shown the bench (S21)
+          selectedObjectsID: [{ ...b(0, 100, "bench"), initialState: { comment: "bench", mark: b(0, 100).mark } }],
         },
         {
           imageID: "img1", userId: USER_B, source: "contributor", status: "completed",
-          sceneLevel: null, selectedObjectsID: [], newObjects: [b(0, 100, "bench"), b(800, 30, "tree")],
+          sceneLevel: null, newObjects: [b(800, 30, "tree")],
+          selectedObjectsID: [{ ...b(0, 100, "bench"), initialState: { comment: "bench", mark: b(0, 100).mark } }],
         },
       ],
       userDocs: [{ _id: new ObjectId(USER_A), username: "alice" }, { _id: new ObjectId(USER_B), username: "bob" }],
@@ -174,6 +178,69 @@ describe("GET /api/admin/quality/reference-performance", () => {
     expect(byName.alice).toMatchObject({ avgRecall: 1, avgF1: 1 });
     expect(byName.bob).toMatchObject({ avgPrecision: 1, avgF1: 1 });
     expect(res._json.answerKey).toMatchObject({ objects: 1, uncertain: 0, boxesBelowMinimumSize: 3 });
+  });
+
+  it("scores recall on in-task objects only, with the new sums and recallRule (S21, 8 Nov 2026)", async () => {
+    const b = (x, comment, extra = {}) => ({ mark: { x, y: 0, width: 100, height: 100 }, comment, obstructs: false, ...extra });
+    const entry = (userId, boxes) => ({
+      userId, source: "annotator", submittedAt: "2026-11-08T00:00:00Z", sceneLevel: null, selectedObjectsID: [], newObjects: boxes,
+    });
+    // img1: a tree two of three annotators said obstructs, a car, a bench far down the road. img2: only that bench.
+    const img1 = ["ann1", "ann2", "ann3"].map((id, i) =>
+      entry(id, [b(0, "tree", { obstructs: i < 2 }), b(300, "car"), b(900, "bench")]));
+    const img2 = ["ann1", "ann2", "ann3"].map((id) => entry(id, [b(900, "bench")]));
+    const shown = (x, comment, extra = {}) => ({ ...b(x, comment, extra), initialState: { comment, mark: b(x).mark } });
+    setupAdminMocks({
+      refImages: [
+        { imageID: "img1", width: 1280, height: 960, referenceGroundTruth: img1 },
+        { imageID: "img2", width: 1280, height: 960, referenceGroundTruth: img2 },
+      ],
+      annotations: [
+        {
+          // Shown the car and answered it, missed the obstructing tree, drew the far bench
+          imageID: "img1", userId: USER_A, source: "contributor", status: "completed", sceneLevel: null,
+          selectedObjectsID: [shown(300, "car")], newObjects: [b(900, "bench")],
+        },
+        {
+          // Nothing in the task here: one suggestion saved before S5 (no initialState), marked Not an object
+          imageID: "img2", userId: USER_A, source: "contributor", status: "completed", sceneLevel: null,
+          selectedObjectsID: [{ ...b(500, "not_an_object") }], newObjects: [],
+        },
+      ],
+      userDocs: [{ _id: new ObjectId(USER_A), username: "alice" }],
+    });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(res._status).toBe(200);
+    expect(res._json.recallRule).toBe("in-task");
+    expect(res._json.answerKey).toMatchObject({ objects: 4, objectsMostlyObstructing: 1 });
+
+    const [alice] = res._json.contributors;
+    expect(alice).toMatchObject({
+      referenceImagesScored: 2,
+      inTaskObjects: 2, // the tree (most said it obstructs) and the car (shown)
+      outOfTaskObjects: 2, // the bench on both images
+      truePositivesOutOfTask: 1,
+      imagesWithoutInTaskObjects: 1,
+      suggestionsWithoutInitialState: 1,
+      avgPrecision: 1, // img1 only: img2 has no boxes, so its precision is null
+      avgRecall: 0.5, // img1 only: 1 of 2 in-task objects. The old rule gave 2 of 3.
+      avgF1: 0.6667,
+    });
+    expect(Object.keys(alice).sort()).toEqual([
+      "avgF1", "avgObstructionAgreement", "avgPrecision", "avgRecall", "boxesOnUncertainObjects",
+      "imagesWithoutInTaskObjects", "inTaskObjects", "outOfTaskObjects", "referenceImagesScored",
+      "suggestionsWithoutInitialState", "truePositivesOutOfTask", "userId", "username",
+    ]);
+    // No annotator ids or other names in the response
+    expect(JSON.stringify(res._json)).not.toMatch(/ann[123]/);
+  });
+
+  it("says which recall rule made an empty response too", async () => {
+    setupAdminMocks({ refImages: [] });
+    const res = createMockRes();
+    await handler(createMockReq({ method: "GET" }), res);
+    expect(res._json.recallRule).toBe("in-task");
   });
 
   it("returns 403 for non-admin", async () => {

@@ -440,6 +440,14 @@ describe("scene answers on two scales", () => {
 const ann = (boxes, sceneLevel = null) => ({ selectedObjectsID: [], newObjects: boxes, sceneLevel });
 const tree = (x, extra = {}) => box(x, 0, 100, 100, { comment: "tree", obstructs: false, ...extra });
 const car = (x, extra = {}) => box(x, 0, 100, 100, { comment: "car", obstructs: false, ...extra });
+// The contributor's boxes as suggestions they were shown at those places (S21:
+// recall counts only objects in the task, and these tests are about scoring
+// objects that were in it)
+const shownAnn = (boxes, sceneLevel = null) => ({
+  selectedObjectsID: boxes.map((b) => ({ ...b, initialState: { comment: b.comment, mark: { ...b.mark } } })),
+  newObjects: [],
+  sceneLevel,
+});
 
 describe("computeIoU on normalized marks (4 Oct 2026)", () => {
   it("gives the same result for boxes stored with negative sizes once normalized", () => {
@@ -464,7 +472,7 @@ describe("buildReferenceStandard", () => {
     ]);
     expect(std.annotatorCount).toBe(3);
     expect(std.objects).toHaveLength(1);
-    expect(std.objects[0]).toEqual({ mark: { x: 10, y: 0, width: 100, height: 100 }, comment: "tree", votes: 3 });
+    expect(std.objects[0]).toEqual({ mark: { x: 10, y: 0, width: 100, height: 100 }, comment: "tree", votes: 3, obstructsYes: 0 });
     expect(std.uncertain).toHaveLength(0);
   });
 
@@ -515,21 +523,21 @@ describe("scoreAgainstStandard", () => {
   ]); // tree(0) and car(300) are in the key, tree(600) is uncertain
 
   it("counts a box as correct only when it overlaps and has the same category", () => {
-    const r = scoreAgainstStandard(ann([tree(0), tree(300)]), std);
+    const r = scoreAgainstStandard(shownAnn([tree(0), tree(300)]), std);
     expect(r).toMatchObject({ truePositives: 1, falsePositives: 1, falseNegatives: 1, ignoredOnUncertain: 0 });
     expect(r.precision).toBe(0.5);
     expect(r.recall).toBe(0.5);
   });
 
   it("neither rewards nor penalizes a box on an uncertain object", () => {
-    const r = scoreAgainstStandard(ann([tree(0), car(300), tree(600)]), std);
+    const r = scoreAgainstStandard(shownAnn([tree(0), car(300), tree(600)]), std);
     expect(r).toMatchObject({ truePositives: 2, falsePositives: 0, falseNegatives: 0, ignoredOnUncertain: 1 });
     expect(r.f1).toBe(1);
   });
 
   it("credits a contributor who boxed what most annotators boxed but the first one missed", () => {
     const key = buildReferenceStandard([ann([]), ann([tree(0)]), ann([tree(0)])]);
-    expect(scoreAgainstStandard(ann([tree(0)]), key).f1).toBe(1);
+    expect(scoreAgainstStandard(shownAnn([tree(0)]), key).f1).toBe(1);
   });
 
   it("returns null scores when neither side has anything to score", () => {
@@ -547,7 +555,7 @@ describe("computeReferencePerformanceAgainstTeam", () => {
       ann([tree(0, { obstructs: true, severity: 3 })], scene(1)),
       ann([tree(0, { obstructs: false })], scene(2)),
     ];
-    const contributor = ann([car(0, { obstructs: true, severity: 5 })], scene(1));
+    const contributor = shownAnn([car(0, { obstructs: true, severity: 5 })], scene(1));
     const r = computeReferencePerformanceAgainstTeam(contributor, team);
     expect(r.obstructionAgreement).toBe(0.5); // agrees with the first annotator, not the second
     expect(r.f1).toBe(0); // the category does not match the answer key
@@ -560,7 +568,7 @@ describe("computeReferencePerformanceAgainstTeam", () => {
       ann([tree(0, { obstructs: true, severity: null })]),
       ann([tree(0, { obstructs: false, severity: null })]),
     ];
-    const contributor = ann([tree(0, { obstructs: true, severity: 3 })], scene(1));
+    const contributor = shownAnn([tree(0, { obstructs: true, severity: 3 })], scene(1));
     const r = computeReferencePerformanceAgainstTeam(contributor, team);
     expect(r.obstructionAgreement).toBe(0.5);
     expect(r.f1).toBe(1);
@@ -571,7 +579,7 @@ describe("computeReferencePerformanceAgainstTeam", () => {
       ann([tree(0, { obstructs: null }), car(300, { obstructs: null })]),
       ann([tree(0, { obstructs: null }), car(300, { obstructs: null })]),
     ];
-    const contributor = ann([tree(0, { obstructs: true, severity: 3 }), car(300, { obstructs: false })], scene(1));
+    const contributor = shownAnn([tree(0, { obstructs: true, severity: 3 }), car(300, { obstructs: false })], scene(1));
     const r = computeReferencePerformanceAgainstTeam(contributor, team);
     expect(r.obstructionAgreement).toBeNull();
     expect(r.f1).toBe(1);
@@ -628,7 +636,7 @@ describe("minimum box size in the answer key (6 Oct 2026)", () => {
 
   it("does not lower the recall of a contributor who left the small object unboxed", () => {
     const std = buildReferenceStandard(team(), IOU_THRESHOLD, size);
-    const r = scoreAgainstStandard(ann([car(0)]), std);
+    const r = scoreAgainstStandard(shownAnn([car(0)]), std);
     expect(r).toMatchObject({ truePositives: 1, falseNegatives: 0, recall: 1 });
   });
 

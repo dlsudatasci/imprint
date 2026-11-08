@@ -15,6 +15,18 @@
  * size, the retraining export's rule) are left out on both sides from 6 Oct
  * 2026, so the image's width and height are loaded. answerKey.boxesBelowMinimumSize
  * counts the annotator boxes left out.
+ *
+ * Recall counts only the answer-key objects within each contributor's task
+ * from 8 Nov 2026 (S21, pipeline_methodology.md 7x): those overlapping a
+ * suggestion the contributor was shown, and those most of their annotators
+ * said obstruct. Precision still counts every box, and F1 comes from the two.
+ * The response says so with recallRule: "in-task". Per contributor it sums
+ * inTaskObjects, outOfTaskObjects, truePositivesOutOfTask (boxes that matched
+ * an object outside the task, counted for precision only),
+ * imagesWithoutInTaskObjects (recall and F1 null there) and
+ * suggestionsWithoutInitialState (suggestions saved before S5, matched by
+ * their own box). answerKey.objectsMostlyObstructing counts the objects most
+ * annotators said obstruct, which does not depend on the contributor.
  */
 import { requireAdmin } from "@/util/adminAuth";
 import { ObjectId } from "mongodb";
@@ -23,7 +35,12 @@ import {
   buildReferenceStandard,
   computeReferencePerformanceAgainstTeam,
   latestAnnotatorEntries,
+  mostlyObstructs,
 } from "@/util/validators/qualityMetrics";
+
+const RECALL_RULE = "in-task";
+
+const sum = (scores, key) => scores.reduce((n, s) => n + (s[key] ?? 0), 0);
 
 const mean = (values) => {
   const v = values.filter((x) => x != null);
@@ -50,18 +67,19 @@ export default async function handler(req, res) {
 
   const refImageIDs = refImages.map((img) => img.imageID);
   if (refImageIDs.length === 0) {
-    return res.status(200).json({ contributors: [], referenceImageCount: 0, imagesWithGroundTruth: 0, answerKey: null });
+    return res.status(200).json({ contributors: [], referenceImageCount: 0, imagesWithGroundTruth: 0, answerKey: null, recallRule: RECALL_RULE });
   }
 
   // Answer key per image, built once from every annotator who annotated it.
   const teamByImage = new Map();
-  let objects = 0, uncertain = 0, ties = 0, belowMinimumSize = 0, minAnnotators = Infinity, maxAnnotators = 0;
+  let objects = 0, mostlyObstructing = 0, uncertain = 0, ties = 0, belowMinimumSize = 0, minAnnotators = Infinity, maxAnnotators = 0;
   for (const img of refImages) {
     const entries = latestAnnotatorEntries(img.referenceGroundTruth);
     if (entries.length === 0) continue;
     const standard = buildReferenceStandard(entries, IOU_THRESHOLD, { width: img.width, height: img.height });
     teamByImage.set(img.imageID, { entries, standard });
     objects += standard.objects.length;
+    mostlyObstructing += standard.objects.filter(mostlyObstructs).length;
     uncertain += standard.uncertain.length;
     ties += standard.ties;
     belowMinimumSize += standard.belowMinimumSize;
@@ -113,7 +131,12 @@ export default async function handler(req, res) {
       avgRecall: mean(scores.map((s) => s.recall)),
       avgF1: mean(scores.map((s) => s.f1)),
       avgObstructionAgreement: mean(scores.map((s) => s.obstructionAgreement)),
-      boxesOnUncertainObjects: scores.reduce((n, s) => n + s.ignoredOnUncertain, 0),
+      boxesOnUncertainObjects: sum(scores, "ignoredOnUncertain"),
+      inTaskObjects: sum(scores, "inTaskObjects"),
+      outOfTaskObjects: sum(scores, "outOfTaskObjects"),
+      truePositivesOutOfTask: sum(scores, "truePositivesOutOfTask"),
+      imagesWithoutInTaskObjects: scores.filter((s) => s.inTaskObjects === 0).length,
+      suggestionsWithoutInitialState: sum(scores, "suggestionsWithoutInitialState"),
     });
   }
 
@@ -125,10 +148,12 @@ export default async function handler(req, res) {
     imagesWithGroundTruth: teamByImage.size,
     answerKey: {
       objects,
+      objectsMostlyObstructing: mostlyObstructing,
       uncertain,
       categoryTies: ties,
       boxesBelowMinimumSize: belowMinimumSize,
       annotatorsPerImage: teamByImage.size ? { min: minAnnotators, max: maxAnnotators } : null,
     },
+    recallRule: RECALL_RULE,
   });
 }

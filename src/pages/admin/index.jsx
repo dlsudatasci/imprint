@@ -362,6 +362,10 @@ function QualityTab() {
     impossibly_fast: "Impossibly fast submissions",
   };
 
+  // Suggestions saved before S5 (29 Oct 2026) have no model box, so recall's task used their saved box (S21)
+  const refSuggestionsWithoutModelBox = (refData?.contributors || [])
+    .reduce((n, c) => n + (c.suggestionsWithoutInitialState ?? 0), 0);
+
   return (
     <div className="space-y-8">
       {/* How far each annotator is through the reference images (8 Oct 2026) */}
@@ -487,6 +491,16 @@ function QualityTab() {
             </>
           )}
         </p>
+        <p className="text-muted text-sm mb-3">
+          Recall counts only the reference objects within the contributor&apos;s task: those overlapping a suggestion
+          they were shown, and those most annotators said obstruct. Precision counts every box.
+          {refSuggestionsWithoutModelBox > 0 && (
+            <>
+              {" "}{refSuggestionsWithoutModelBox} suggestions were saved without the model&apos;s own box, so their
+              saved box was used instead.
+            </>
+          )}
+        </p>
         {refData?.contributors?.length > 0 ? (
           <Card padding="none">
             <div className="overflow-x-auto">
@@ -495,6 +509,7 @@ function QualityTab() {
                   <tr className="border-b border-line text-left">
                     <th className="px-4 py-3 font-semibold text-muted">Username</th>
                     <th className="px-4 py-3 font-semibold text-muted text-right">Ref. Images</th>
+                    <th className="px-4 py-3 font-semibold text-muted text-right">In-task objects</th>
                     <th className="px-4 py-3 font-semibold text-muted text-right">Precision</th>
                     <th className="px-4 py-3 font-semibold text-muted text-right">Recall</th>
                     <th className="px-4 py-3 font-semibold text-muted text-right">F1</th>
@@ -506,6 +521,7 @@ function QualityTab() {
                     <tr key={c.userId} className="border-b border-line-card last:border-0">
                       <td className="px-4 py-3 font-medium text-ink">{c.username}</td>
                       <td className="px-4 py-3 text-right text-body">{c.referenceImagesScored}</td>
+                      <td className="px-4 py-3 text-right text-body">{c.inTaskObjects ?? "-"}</td>
                       <td className="px-4 py-3 text-right text-body">{c.avgPrecision != null ? `${(c.avgPrecision * 100).toFixed(1)}%` : "-"}</td>
                       <td className="px-4 py-3 text-right text-body">{c.avgRecall != null ? `${(c.avgRecall * 100).toFixed(1)}%` : "-"}</td>
                       <td className="px-4 py-3 text-right font-bold text-ink">{c.avgF1 != null ? `${(c.avgF1 * 100).toFixed(1)}%` : "-"}</td>

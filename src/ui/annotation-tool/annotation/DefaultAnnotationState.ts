@@ -47,8 +47,12 @@ export class DefaultAnnotationState implements IAnnotationState {
     // cursor rather than taking the first hit.
     // A box hidden on the photo (Step 1, 8 Oct 2026) cannot be clicked, so a
     // box can be drawn or fitted underneath it. Nor can a contributor's box
-    // answered not on the sidewalk (S12), unless its panel is open.
-    const hidden = (i: number) => this.context.isOffPhoto(shapes[i].getAnnotationData().id);
+    // answered not on the sidewalk (S12), unless its panel is open. Nor, in
+    // the tutorial's practice (S19), a box not yet at its step.
+    const hidden = (i: number) => {
+      const id = shapes[i].getAnnotationData().id;
+      return this.context.isOffPhoto(id) || !this.context.canOpenBox(id);
+    };
     const intersectingShapes = [];
     for (let i = shapes.length - 1; i >= 0; i--) {
       if (hidden(i)) continue;
@@ -93,6 +97,16 @@ export class DefaultAnnotationState implements IAnnotationState {
       selectedShape.onDragStart(positionX, positionY);
       onShapeChange();
       setState(new DraggingAnnotationState(this.context));
+      return;
+    }
+
+    // The practice before its drawing step (S19): a press on empty photo
+    // only closes an open panel, as a click there does, and draws nothing
+    if (!this.context.canDrawBox) {
+      if (this.context.selectedId !== null) {
+        this.context.selectedId = null;
+        onShapeChange();
+      }
       return;
     }
 

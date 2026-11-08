@@ -112,3 +112,22 @@ describe("the progress strip with the furthest image reached", () => {
     expect([...host.querySelectorAll("[data-index]")].map((b) => !b.disabled)).toEqual([false, true, true]);
   });
 });
+
+// S19 (8 Nov 2026): on the tutorial's first image the button does the practice again
+describe("the tutorial's button by Stop Tutorial", () => {
+  const tourButton = () => [...host.querySelectorAll("button")].find((b) => /Tour|Practice/.test(b.textContent));
+
+  it("reads Tour, or the label it is given", () => {
+    mount({ current: 2, onShowTour: () => {} });
+    expect(tourButton().textContent.trim()).toBe("Tour");
+    expect(tourButton().title).toBe("Show the tour");
+    act(() => root.unmount());
+    host.remove();
+    const onShowTour = vi.fn();
+    mount({ current: 1, onShowTour, tourButton: { label: "Practice", title: "Redo the practice" } });
+    expect(tourButton().textContent.trim()).toBe("Practice");
+    expect(tourButton().title).toBe("Redo the practice");
+    act(() => tourButton().click());
+    expect(onShowTour).toHaveBeenCalledTimes(1);
+  });
+});

@@ -18,6 +18,18 @@ import {
 } from "@/features/tutorial/tourSteps";
 import TourCard, { TourStepBody } from "@/features/tutorial/TourCard";
 import { fitBesideTarget, whenStill } from "@/features/tutorial/tourFit";
+import {
+  PRACTICE_STEP_COUNT,
+  PRACTICE_STEPS,
+  PRACTICE_CONFIRM_MS,
+  nextPracticeStep,
+  practiceLockFor,
+  practiceStepDone,
+  practiceStepFor,
+  practiceTargets,
+} from "@/features/tutorial/practiceSteps";
+import { PRACTICE_COPY, practiceLine, practiceNote } from "@/features/tutorial/practiceCopy";
+import PracticeGuide from "@/features/tutorial/PracticeGuide";
 import { SHEET_EVENT } from "@/ui/annotation-tool/index";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
@@ -38,6 +50,17 @@ const SHEET_DOWN_SETTLE_MS = 400;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // How long "Tap ? to see the tour again." stays up
 const TOUR_HINT_MS = 4000;
+// The first image's boxes as they start, read before the tool changes them:
+// doing the practice again puts them back (S19, 8 Nov 2026)
+const PRACTICE_IMAGE_JSON = JSON.stringify(TUTORIAL_IMAGES[0]);
+// How long "Click the Practice button ... to redo the practice." stays up after Skip practice
+const SKIP_HINT_MS = 6000;
+// How long the practice's reminder stays up on image 2 (S19). A full sentence
+// from 8 Nov 2026, so longer than the 6 seconds the spec gave the short one.
+const REMINDER_HINT_MS = 8000;
+// Set as the practice reaches its last step, read on image 2 for the reminder (S19)
+export const PRACTICE_DONE_KEY = "imprintPracticeDone";
+const prefersReducedMotion = () => Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
 
 
 // How many images the walkthrough runs through. Referenced by the step counter,
@@ -75,6 +98,19 @@ const MOCKED_ENDPOINTS = [
  *
  * Pulsing beacons on every point marked the idle tour on a laptop until
  * 3 Nov 2026 (S16b, Rans): now both layouts have the ? button.
+ *
+ * Contributors practise instead of touring on the first image (S19, 7 Nov
+ * 2026, from pilot participant 4): a fresh start of the tutorial runs the
+ * practice guide (PracticeGuide, practiceSteps.js), ten steps that each wait
+ * for the contributor to do one thing on the photo, while the tool keeps
+ * everything else locked (practiceLock). The tool tells the page each change
+ * with its state (onPracticeEvent), which decides each step. Skip practice
+ * unlocks it all and leaves the ? button. The practice lives in this page's
+ * state only, so a reload starts it again from its first step, on the first
+ * image's boxes as they were (a reload is a fresh start). After its last
+ * step, image 2 opens with no tour and no practice, and a one-time line
+ * says where the tips are. Annotators tour as before, and the tour's cards
+ * stay for the ? button on every image.
  *
  * The tour library is rebuilt on every mode change, because it keeps internal
  * step state that can't otherwise be reset partway through.
@@ -120,6 +156,8 @@ export default function TutorialPage({ isAnnotator = false }) {
   // run by themselves on a fresh start only, so going back to the first
   // image does not open the tour again (6 Nov 2026).
   const freshStartRef = useRef(false);
+  // The practice runs once per page load (S19)
+  const practiceStartedRef = useRef(false);
 
   // "touring" = the tooltip open, "idle" = closed until the ? button
   const [tourMode, setTourMode] = useState(null);
@@ -141,7 +179,8 @@ export default function TutorialPage({ isAnnotator = false }) {
   currentRef.current = current;
   // Once a tour ends nothing on the screen points at it, so the first time it
   // ends the page says how to see it again, under the top bar or the navbar
-  const [tourHint, setTourHint] = useState(false);
+  // null, "tour" (how to see it again) or "reminder" (after the practice, S19)
+  const [tourHint, setTourHint] = useState(null);
   const tourHintShownRef = useRef(false);
   const tourHintTimerRef = useRef(null);
   // When the sheet last went back down after a step that pulled it up
@@ -151,6 +190,109 @@ export default function TutorialPage({ isAnnotator = false }) {
   // tour waits: one that would start in full screen starts on leaving it.
   const [fullScreen, setFullScreen] = useState(false);
   useEffect(() => () => clearTimeout(tourHintTimerRef.current), []);
+
+  // The practice on the first image (S19): the step on screen (0-based), or
+  // null when there is none or it was skipped
+  const [practiceStep, setPracticeStep] = useState(null);
+  // The check mark on the new step's card, for a moment after a step is done
+  const [practiceDone, setPracticeDone] = useState(false);
+  // The tool's state from its last practice event
+  const [practiceState, setPracticeState] = useState(null);
+  const practiceStateRef = useRef(null);
+  // Counts presses outside the card, which pulse the target once more
+  const [practicePulse, setPracticePulse] = useState(0);
+  const practiceTimerRef = useRef(null);
+  const practiceOn = practiceStep !== null;
+  useEffect(() => () => clearTimeout(practiceTimerRef.current), []);
+
+  const onPracticeEvent = useCallback((event) => {
+    practiceStateRef.current = event.state;
+    setPracticeState(event.state);
+  }, []);
+
+  // Skip practice: everything unlocked, and a line saying the button at the
+  // top does the practice again (Rans, 8 Nov 2026), unless a message shows there
+  const skipPractice = useCallback(() => {
+    clearTimeout(practiceTimerRef.current);
+    setPracticeDone(false);
+    setPracticeStep(null);
+    if (messageShownRef.current) return;
+    setTourHint("practice");
+    clearTimeout(tourHintTimerRef.current);
+    tourHintTimerRef.current = setTimeout(() => setTourHint(null), SKIP_HINT_MS);
+  }, []);
+
+  // The practice again from its first step, on the first image's boxes as
+  // they start (Rans, 8 Nov 2026: the button at the top on the first image,
+  // in place of the tour). The form is taken off the page first, as the tool
+  // saves its edits to the session copy as it goes; then the first image's
+  // copy is put back as it started, the other images' kept, and the form
+  // comes back with it.
+  const [formKey, setFormKey] = useState(0);
+  const [redoing, setRedoing] = useState(false);
+  const dataRef = useRef(null);
+  const redoPractice = useCallback(() => {
+    clearTimeout(tourHintTimerRef.current);
+    setTourHint(null);
+    setTourMode("idle");
+    setRedoing(true);
+  }, []);
+  useEffect(() => {
+    if (!redoing) return;
+    const saved = readSessionData() ?? dataRef.current;
+    const fresh = { ...saved, imgRecords: saved.imgRecords.map((record, i) => (i === 0 ? JSON.parse(PRACTICE_IMAGE_JSON) : record)) };
+    writeSession({ data: fresh });
+    setData(fresh);
+    practiceStateRef.current = null;
+    setPracticeState(null);
+    setPracticeDone(false);
+    setPracticeStep(0);
+    setFormKey((k) => k + 1);
+    setRedoing(false);
+  }, [redoing]);
+
+  // Each step waits for its action, then the next line comes at once, with a
+  // check mark on the card for a moment (none with reduced motion). It waited
+  // half a second on the old line until 8 Nov 2026, when Rans found the wait
+  // from step 3 to step 5 a drag: the card went back to the closed tree
+  // meanwhile. Step 4 is skipped after a No at step 3, and step 7 goes back
+  // to step 6 if the drawn box goes.
+  useEffect(() => {
+    if (practiceStep === null) return;
+    const stay = practiceStepFor(practiceStep, practiceState);
+    if (stay !== practiceStep) {
+      setPracticeStep(stay);
+      return;
+    }
+    if (!practiceStepDone(practiceStep, practiceState)) return;
+    setPracticeStep(nextPracticeStep(practiceStep, practiceState));
+    if (prefersReducedMotion()) return;
+    setPracticeDone(true);
+    clearTimeout(practiceTimerRef.current);
+    practiceTimerRef.current = setTimeout(() => setPracticeDone(false), PRACTICE_CONFIRM_MS);
+  }, [practiceStep, practiceState]);
+
+  // At its last step, the next page load (image 2) shows where the tips are
+  useEffect(() => {
+    if (practiceStep !== PRACTICE_STEP_COUNT - 1) return;
+    try {
+      sessionStorage.setItem(PRACTICE_DONE_KEY, "true");
+    } catch {
+      // No storage: no reminder
+    }
+  }, [practiceStep]);
+
+  // A press anywhere but the card: nothing happens there, and the target
+  // pulses once more. No message.
+  useEffect(() => {
+    if (!practiceOn) return undefined;
+    const onPress = (event) => {
+      if (event.target?.closest?.("[data-practice-card]")) return;
+      setPracticePulse((n) => n + 1);
+    };
+    document.addEventListener("pointerdown", onPress, true);
+    return () => document.removeEventListener("pointerdown", onPress, true);
+  }, [practiceOn]);
   // The laptop's message pill sits where the hint does (S20, 7 Nov 2026). A
   // message matters more: the hint hides at once when one shows, and does not
   // come up while one shows.
@@ -159,7 +301,7 @@ export default function TutorialPage({ isAnnotator = false }) {
     messageShownRef.current = shown;
     if (!shown) return;
     clearTimeout(tourHintTimerRef.current);
-    setTourHint(false);
+    setTourHint(null);
   }, []);
 
   /** A tour ended: finished, dismissed with ×, or a tap on the overlay. */
@@ -168,9 +310,9 @@ export default function TutorialPage({ isAnnotator = false }) {
     setJoyrideKey((k) => k + 1);
     if (!tourHintShownRef.current && !messageShownRef.current) {
       tourHintShownRef.current = true;
-      setTourHint(true);
+      setTourHint("tour");
       clearTimeout(tourHintTimerRef.current);
-      tourHintTimerRef.current = setTimeout(() => setTourHint(false), TOUR_HINT_MS);
+      tourHintTimerRef.current = setTimeout(() => setTourHint(null), TOUR_HINT_MS);
     }
   }, []);
 
@@ -180,7 +322,7 @@ export default function TutorialPage({ isAnnotator = false }) {
     // panel instead while a box is open: close it and collapse the sheet first
     // (the event is only heard on the sheet layout)
     moveSheet("collapsed");
-    setTourHint(false);
+    setTourHint(null);
     setTourMode("touring");
     setJoyrideKey((k) => k + 1);
   }, []);
@@ -214,15 +356,22 @@ export default function TutorialPage({ isAnnotator = false }) {
         clearInterval(interval);
         // Walk them through it once on the first image; after that they've seen
         // the explanations, and the ? button shows them again. Not when they
-        // come back to the first image (6 Nov 2026).
-        setTourMode(current === 1 && freshStartRef.current ? "touring" : "idle");
+        // come back to the first image (6 Nov 2026). Contributors practise
+        // there instead (S19).
+        const firstVisit = current === 1 && freshStartRef.current;
+        const practise = firstVisit && !isAnnotator;
+        setTourMode(firstVisit && !practise ? "touring" : "idle");
+        if (practise && !practiceStartedRef.current) {
+          practiceStartedRef.current = true;
+          setPracticeStep(0);
+        }
         setJoyrideKey((k) => k + 1);
         setDomReady(true);
       }
     }, 100);
 
     return () => clearInterval(interval);
-  }, [current]);
+  }, [current, isAnnotator]);
 
   const CustomTooltip = ({
     index,
@@ -391,10 +540,20 @@ export default function TutorialPage({ isAnnotator = false }) {
     let currentCount = 1;
     let currentData = { imgRecords: TUTORIAL_IMAGES };
 
+    // The practice's reminder (S19): set at its last step, read once here
+    let practiceDone = false;
+    try {
+      practiceDone = sessionStorage.getItem(PRACTICE_DONE_KEY) === "true";
+      sessionStorage.removeItem(PRACTICE_DONE_KEY);
+    } catch {
+      practiceDone = false;
+    }
+
     if (!isNavigating) {
       writeSession({ current: 1, total: TUTORIAL_IMAGE_COUNT, data: currentData });
       writeTutorialFlag(true);
       freshStartRef.current = true;
+      practiceDone = false;
     } else {
       sessionStorage.removeItem("isNavigatingImages");
       const savedCount = readCurrentCount();
@@ -430,6 +589,13 @@ export default function TutorialPage({ isAnnotator = false }) {
       setReached(reachedCount);
       setCurrent(currentCount);
       setData(currentData);
+      // Image 2 straight after the practice: where the tips are, once, by the ? button
+      if (practiceDone && currentCount === 2 && !messageShownRef.current) {
+        tourHintShownRef.current = true;
+        setTourHint("reminder");
+        clearTimeout(tourHintTimerRef.current);
+        tourHintTimerRef.current = setTimeout(() => setTourHint(null), REMINDER_HINT_MS);
+      }
     };
 
     handleState();
@@ -441,7 +607,19 @@ export default function TutorialPage({ isAnnotator = false }) {
   if (loading || layout === null) return <Page title="Tutorial - Imprint Contribute" contribute><ContentSkeleton /></Page>;
   if (!current || !data) return <Page title="Loading Tutorial..." contribute><ContentSkeleton /></Page>;
 
+  dataRef.current = data;
   const singleImage = data.imgRecords[current - 1];
+  // A contributor's first image: the button at the top does the practice
+  // again, in place of the tour (Rans, 8 Nov 2026). The tour stays on the
+  // other images, and for annotators.
+  const practiceButton = !isAnnotator && current === 1;
+  const practice = practiceOn
+    ? {
+      step: PRACTICE_STEPS[practiceStep],
+      lock: practiceLockFor(practiceStep),
+      targets: practiceTargets(practiceStep, practiceState, tourWords),
+    }
+    : null;
 
   return (
     <Page
@@ -455,7 +633,8 @@ export default function TutorialPage({ isAnnotator = false }) {
         </span>
       </div>
 
-      <AnnotateForm
+      {!redoing && <AnnotateForm
+        key={formKey}
         data={singleImage}
         current={current}
         reached={reached}
@@ -466,20 +645,48 @@ export default function TutorialPage({ isAnnotator = false }) {
         onAnnotatorStepChange={handleAnnotatorStepChange}
         onDesktopMessage={onDesktopMessage}
         // The ? button that replays the tour: the top bar on a phone, the
-        // progress strip on a laptop (S16b, in place of the laptop's beacons)
-        onShowTour={showTour}
+        // progress strip on a laptop (S16b, in place of the laptop's beacons).
+        // Not during the practice (S19): Skip practice brings it. On a
+        // contributor's first image it does the practice again.
+        onShowTour={practice ? undefined : practiceButton ? redoPractice : showTour}
+        tourButton={practiceButton ? { label: PRACTICE_COPY.redoButton, title: PRACTICE_COPY.redoTitle } : null}
         onFocusChange={setFullScreen}
-      />
+        onPracticeEvent={practice ? onPracticeEvent : undefined}
+        practiceLock={practice ? practice.lock : null}
+        practiceHighlight={practice?.targets.highlight ? { ...practice.targets.highlight, pulse: practicePulse } : null}
+      />}
+
+      {practice && domReady && !redoing && (
+        <PracticeGuide
+          step={practiceStep + 1}
+          total={PRACTICE_STEP_COUNT}
+          // A step with a fallback (Step 2 on touch) says to tap the Step 2
+          // line only until the sheet is up, then the laptop's line
+          line={practiceLine(practice.step.key, practice.targets.fallback ? "pointer" : tourWords)}
+          fallbackLine={practice.targets.fallback ? practiceLine(practice.step.key, tourWords) : undefined}
+          note={practiceNote(practice.step.key)}
+          done={practiceDone}
+          targets={practice.targets}
+          onSkip={skipPractice}
+          layout={layout}
+          reducedMotion={prefersReducedMotion()}
+        />
+      )}
 
       {tourHint && !fullScreen && (
         <p
           role="status"
-          className="pointer-events-none fixed left-1/2 -translate-x-1/2 z-[60] px-3 py-2 rounded-full bg-ink/85 text-white text-xs font-semibold whitespace-nowrap"
+          // The practice's reminder is a sentence (8 Nov 2026): it wraps on a small phone
+          className={`pointer-events-none fixed left-1/2 -translate-x-1/2 z-[60] px-3 py-2 bg-ink/85 text-white text-xs font-semibold ${tourHint === "reminder" || tourHint === "practice" ? "w-max max-w-[calc(100vw-32px)] text-center rounded-card" : "whitespace-nowrap rounded-full"}`}
           style={{ top: tourInput === "touch" ? "calc(env(safe-area-inset-top) + 56px)" : "calc(var(--nav-h, 64px) + 12px)" }}
         >
           {/* On a laptop the tour ends scrolled down, with the strip's Tour
               button out of view at the top of the page */}
-          {tourInput === "touch" ? "Tap ? to see the tour again." : "Click Tour at the top of the page to see the tour again."}
+          {tourHint === "reminder"
+            ? (tourWords === "touch" ? PRACTICE_COPY.touchReminder : PRACTICE_COPY.reminder)
+            : tourHint === "practice"
+              ? (tourWords === "touch" ? PRACTICE_COPY.touchSkipHint : PRACTICE_COPY.skipHint)
+              : tourInput === "touch" ? "Tap ? to see the tour again." : "Click Tour at the top of the page to see the tour again."}
         </p>
       )}
 

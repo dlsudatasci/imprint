@@ -259,6 +259,79 @@ const matches = (query: string) =>
 
 const prefersReducedMotion = () => matches("(prefers-reduced-motion: reduce)");
 
+/** How far the practice's outline sits outside its box, stage px (S19) */
+const PRACTICE_OUTLINE_GAP = 4;
+function practiceOutlineStyle(rect: { x: number; y: number; width: number; height: number }, unit: "" | "px" = "") {
+  const value = (n: number) => (unit ? `${n}px` : n);
+  return {
+    left: value(rect.x - PRACTICE_OUTLINE_GAP),
+    top: value(rect.y - PRACTICE_OUTLINE_GAP),
+    width: value(rect.width + 2 * PRACTICE_OUTLINE_GAP),
+    height: value(rect.height + 2 * PRACTICE_OUTLINE_GAP),
+  } as Record<string, string | number>;
+}
+
+/**
+ * The tutorial's practice on its first photo (S19, 7 Nov 2026), and only
+ * there: the tool says what changed, after each change, with its state
+ * (onPracticeEvent), and the practice locks what is not yet its step
+ * (practiceLock) and outlines what is (practiceHighlight). Without these
+ * props the tool is exactly as before.
+ */
+export type PracticeEventType =
+  | "open" | "close" | "onSidewalk" | "obstructs" | "severity" | "notAnObject"
+  | "restore" | "category" | "drawn" | "deleted" | "scene";
+
+/** The tool's state as the practice reads it: plain copies of the boxes, the open box and Step 2's answers */
+export interface PracticeToolState {
+  boxes: {
+    id: string;
+    comment?: string;
+    editable: boolean;
+    mark: { x: number; y: number; width: number; height: number } | null;
+    onSidewalk?: boolean;
+    obstructs?: boolean | null;
+    severity: number | null;
+    selected: boolean;
+    isRejected: boolean;
+  }[];
+  openId: string | null;
+  scene: SceneLevel;
+}
+
+export interface PracticeEvent {
+  type: PracticeEventType;
+  id: string | null;
+  value?: unknown;
+  state: PracticeToolState;
+}
+
+/** Which answers the box panel allows: null for any. A question named allows only that answer, and Not an object is off unless named. */
+export type PracticeAnswers = { onSidewalk?: boolean; obstructs?: boolean; notAnObject?: boolean } | null;
+
+export interface PracticeLock {
+  /** The boxes that open, by id, or all. A drawn box opens whenever drawing is allowed. */
+  openable: string[] | "all";
+  canDraw: boolean;
+  /** False: Next Image does nothing. Absent: it works. */
+  canSubmit?: boolean;
+  allowAnswers: PracticeAnswers;
+}
+
+/**
+ * An outline on the photo: boxes by id, or a dashed rectangle in image px.
+ * `pulse` restarts its pulse when it changes. `avoidBoxIds` are boxes marked
+ * on the page with no outline, for the practice's card to keep clear of
+ * (the open box while its panel is the step).
+ */
+export interface PracticeHighlight {
+  boxId?: string;
+  boxIds?: string[];
+  rect?: { x: number; y: number; width: number; height: number };
+  avoidBoxIds?: string[];
+  pulse?: number;
+}
+
 interface IReactPictureAnnotationProps {
   annotationData?: IAnnotation[];
   selectedId?: string | null;
@@ -309,6 +382,8 @@ interface IReactPictureAnnotationProps {
     onChangeSeverity?: (severity: number) => void,
     // The classifier's proposal for a suggestion (S3): true, false or null
     proposedObstructs?: boolean | null,
+    // The tutorial's practice (S19): the answers allowed, null for any
+    allowAnswers?: PracticeAnswers,
   ) => React.ReactElement;
   totalAnnotationCount?: number;
   // Annotators give no severity and answer no scene-level questions (decided
@@ -338,6 +413,10 @@ interface IReactPictureAnnotationProps {
   // the tutorial hides its "Click Tour at the top of the page" hint, which
   // sits in the same place, while a message shows
   onDesktopMessage?: (shown: boolean) => void;
+  // The tutorial's practice on its first photo (S19), see PracticeLock
+  onPracticeEvent?: (event: PracticeEvent) => void;
+  practiceLock?: PracticeLock | null;
+  practiceHighlight?: PracticeHighlight | null;
 }
 
 type AnnotatorStep = "objects" | "sidewalk" | "obstructions";
@@ -415,6 +494,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       onSetOnSidewalk?: (onSidewalk: boolean) => void,
       onChangeSeverity?: (severity: number) => void,
       proposedObstructs?: boolean | null,
+      allowAnswers?: PracticeAnswers,
     ) => (
       <DefaultInputSection
         key={id}
@@ -442,6 +522,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         onSetOnSidewalk={onSetOnSidewalk}
         onChangeSeverity={onChangeSeverity}
         proposedObstructs={proposedObstructs}
+        allowAnswers={allowAnswers}
       />
     ),
     isAnnotator: false,
@@ -520,9 +601,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // the whole box, so clicking it (or its chip in the list) started a resize
     // instead of selecting it, and its panel never opened. A new handle set is
     // made for the newly selected box (DefaultAnnotationState, onShapeChange).
-    if (value !== this.selectedIdTrueValue) this.currentTransformer = null;
+    const previous = this.selectedIdTrueValue;
+    if (value !== previous) this.currentTransformer = null;
     this.selectedIdTrueValue = value;
     onSelect(value);
+    // The practice hears a box opening and closing (S19)
+    if ((value ?? null) !== (previous ?? null)) this.notePractice(value ? "open" : "close", value ?? previous ?? null);
   }
 
   get selectedId() {
@@ -1259,13 +1343,15 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.onSetOnSidewalk,
       this.onChangeSeverity,
       this.state.proposedObstructs,
+      this.props.practiceLock ? this.props.practiceLock.allowAnswers : null,
     );
 
     // The canvas, the same in every layout
     const canvasArea = (
       // Scrolled into view below the message pill at the top of the screen
-      // (6 Nov 2026), so the pill never covers the box it is about
-      <div ref={this.canvasWrapperRef} className="w-full overflow-hidden scroll-mt-[calc(var(--nav-h,64px)+60px)]">
+      // (6 Nov 2026), so the pill never covers the box it is about.
+      // data-photo-area: the photo the tutorial's practice lights up (S19).
+      <div ref={this.canvasWrapperRef} data-photo-area className="w-full overflow-hidden scroll-mt-[calc(var(--nav-h,64px)+60px)]">
         <div className="relative" style={{
           width: width * canvasScale,
           height: height * canvasScale,
@@ -1299,6 +1385,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
               onPointerCancel={this.onPointerCancel}
               onContextMenu={touch ? this.preventContextMenu : undefined}
             />
+            {this.renderPracticeHighlight()}
             {showInput && !this.isSheet && (
               <div
                 ref={this.floatingPanelRef}
@@ -1510,7 +1597,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.markSceneStepStart();
     this.setState({
       sceneLevel: { ...this.state.sceneLevel, ...updates },
-    });
+    }, () => this.notePractice("scene", null, updates));
   };
 
   // ── Phones and tablets (contributors, 9 Oct 2026, IMPRINT_contributor_mobile.md) ──
@@ -2432,7 +2519,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * four corners showing. Dragging a finger on empty photo never draws a box.
    */
   public addBoxFromButton = () => {
-    if (!this.touchEnabled || !this.inBoxStep) return;
+    if (!this.touchEnabled || !this.inBoxStep || !this.canDrawBox) return;
     const { width: iw, height: ih } = this.imageSize();
     const stage = this.stageSize();
     const topLeft = this.calculateMousePosition(0, 0);
@@ -2463,6 +2550,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.inputTypesUsed.add("touch");
     this.inputMode = "touch";
     this.selectBoxById(id);
+    this.notePracticeGeometry(id);
     this.setState({ addBoxHintId: id, addBoxHintFading: false });
     // It fades on its own after a few seconds, as well as on the first drag
     window.clearTimeout(this.addBoxHintTimer);
@@ -2546,7 +2634,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * Hidden boxes are skipped.
    */
   private touchBoxAt(point: Point): string | null {
-    return this.boxAtAmong(point, (id) => !this.isOffPhoto(id));
+    return this.boxAtAmong(point, (id) => !this.isOffPhoto(id) && this.canOpenBox(id));
   }
 
   /** The box hidden by the annotator under a finger at this point (image px), as touchBoxAt picks. */
@@ -2957,6 +3045,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     this.hideLoupe();
     this.onShapeChange();
+    this.notePracticeGeometry(shape?.getAnnotationData().id);
   }
 
   /** One finger on empty photo pans, when zoomed in. */
@@ -3218,6 +3307,130 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     return isBelowMinimumSize(box.mark, width, height);
   }
 
+  // ── The tutorial's practice on its first photo (S19, 7 Nov 2026) ──
+
+  /** Whether a box opens. Always, without the practice's lock. A drawn box opens whenever drawing is allowed. */
+  public canOpenBox = (id: string) => {
+    const lock = this.props.practiceLock;
+    if (!lock || lock.openable === "all" || lock.openable.includes(id)) return true;
+    const box = this.shapes.find((shape) => shape.getAnnotationData().id === id)?.getAnnotationData();
+    return Boolean(box?.editable && lock.canDraw);
+  };
+
+  /** Whether a new box can be drawn or added. Always, without the practice's lock. */
+  public get canDrawBox() {
+    const lock = this.props.practiceLock;
+    return !lock || lock.canDraw;
+  }
+
+  /** Whether the practice allows this answer in the box panel. The panel shows the others disabled. */
+  private practiceAllows(question: "onSidewalk" | "obstructs" | "notAnObject", value = true) {
+    const allow = this.props.practiceLock?.allowAnswers;
+    if (!allow) return true;
+    if (question === "notAnObject") return allow.notAnObject === true;
+    const only = allow[question];
+    return only === undefined || only === value;
+  }
+
+  /** The tool's state for the practice: plain copies, so a later change here cannot change one handed over */
+  private practiceState(): PracticeToolState {
+    return {
+      boxes: this.shapes.map((shape) => {
+        const box = shape.getAnnotationData();
+        return {
+          id: box.id,
+          comment: box.comment,
+          editable: Boolean(box.editable),
+          mark: box.mark ? { x: box.mark.x, y: box.mark.y, width: box.mark.width, height: box.mark.height } : null,
+          onSidewalk: box.onSidewalk,
+          obstructs: box.obstructs,
+          severity: box.severity ?? null,
+          selected: Boolean(box.selected),
+          isRejected: Boolean(box.isRejected),
+        };
+      }),
+      openId: this.selectedId ?? null,
+      scene: { ...this.state.sceneLevel },
+    };
+  }
+
+  /** Tells the practice what changed, with the state after it. Nothing without onPracticeEvent. */
+  public notePractice = (type: PracticeEventType, id: string | null, value?: unknown) => {
+    const listener = this.props.onPracticeEvent;
+    if (!listener) return;
+    listener({ type, id, value, state: this.practiceState() });
+  };
+
+  /** A drawn box drawn, added, moved or fitted: "drawn" to the practice. Suggestions say nothing. */
+  public notePracticeGeometry = (id: string | null | undefined) => {
+    if (!id || !this.props.onPracticeEvent) return;
+    const box = this.shapes.find((shape) => shape.getAnnotationData().id === id)?.getAnnotationData();
+    if (box?.editable) this.notePractice("drawn", id);
+  };
+
+  /**
+   * The practice's outlines on the photo, stage px, with their keys: a box id,
+   * "rect", or "avoid:" and a box id for a box only marked for the card
+   */
+  private practiceHighlightRects() {
+    const highlight = this.props.practiceHighlight;
+    if (!highlight) return [];
+    const rects: { key: string; x: number; y: number; width: number; height: number }[] = [];
+    const boxRect = (id: string, key: string) => {
+      if (this.isOffPhoto(id)) return;
+      const mark = this.shapes.find((shape) => shape.getAnnotationData().id === id)?.getAnnotationData().mark;
+      if (mark) rects.push({ key, ...this.calculateShapePosition(normalizeMark(mark)) });
+    };
+    for (const id of [...(highlight.boxId ? [highlight.boxId] : []), ...(highlight.boxIds ?? [])]) boxRect(id, id);
+    if (highlight.rect) rects.push({ key: "rect", ...this.calculateShapePosition(highlight.rect) });
+    for (const id of highlight.avoidBoxIds ?? []) boxRect(id, `avoid:${id}`);
+    return rects;
+  }
+
+  private practiceHighlightRef = React.createRef<HTMLDivElement>();
+
+  /**
+   * The practice's outlines, over the photo and under the box panel. They let
+   * every press through to the photo. They pulse for as long as they show,
+   * from the start again on a press elsewhere (a new `pulse`), and stay as a
+   * steady outline with reduced motion (motion-safe).
+   */
+  private renderPracticeHighlight() {
+    const highlight = this.props.practiceHighlight;
+    if (!highlight) return null;
+    return (
+      <div ref={this.practiceHighlightRef} aria-hidden="true" className="pointer-events-none absolute inset-0">
+        {this.practiceHighlightRects().map((rect) => rect.key.startsWith("avoid:") ? (
+          // Nothing to see: where the open box is, for the card to keep clear of
+          <div key={rect.key} data-practice-avoid={rect.key} className="absolute" style={practiceOutlineStyle(rect)} />
+        ) : (
+          <div
+            key={`${rect.key}-${highlight.pulse ?? 0}`}
+            data-practice-highlight={rect.key}
+            // Pulsing for as long as it shows (8 Nov 2026), from the start
+            // again on a press elsewhere. The white post's outline is
+            // dashed: there is no box there yet.
+            className={`absolute rounded-control border-[3px] border-primary${rect.key === "rect" ? " border-dashed" : ""} motion-safe:animate-practice-pulse`}
+            style={practiceOutlineStyle(rect)}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  /** Moves the outlines with the photo (a zoom, a pan, a box fitted), which repaints without a render */
+  private positionPracticeHighlight() {
+    const host = this.practiceHighlightRef.current;
+    if (!host) return;
+    const rects = this.practiceHighlightRects();
+    for (const element of Array.from(host.children) as HTMLElement[]) {
+      const key = element.dataset.practiceHighlight ?? element.dataset.practiceAvoid;
+      const rect = rects.find((r) => r.key === key);
+      element.style.display = rect ? "" : "none";
+      if (rect) Object.assign(element.style, practiceOutlineStyle(rect, "px"));
+    }
+  }
+
   /**
    * What a press on a box does to select it: it becomes the selected box, gets
    * resize handles, and moves to the end of the list so it paints on top (and
@@ -3243,6 +3456,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   public selectBoxById = (id: string) => {
     const index = this.shapes.findIndex((shape) => shape.getAnnotationData().id === id);
     if (index < 0) return;
+    // The practice's boxes not yet at their step stay shut (S19)
+    if (!this.canOpenBox(id)) return;
     // Opening a hidden object shows its box again
     if (this.state.hiddenBoxIds.includes(id)) {
       this.setState({ hiddenBoxIds: withoutHiddenId(this.state.hiddenBoxIds, id) }, () => this.selectBoxById(id));
@@ -4153,7 +4368,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * will ever come back to fill.
    */
   /** Next Image: sends the image and opens the next one */
-  private submit = () => this.sendImage(this.props.currentAnnotationCount + 1);
+  private submit = () => {
+    // The practice keeps Next Image for its last step (S19)
+    if (this.props.practiceLock?.canSubmit === false) return;
+    return this.sendImage(this.props.currentAnnotationCount + 1);
+  };
 
   /**
    * Sends the image on screen, then opens image `nextCount` (1-based): the
@@ -4569,6 +4788,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // Every box edit is saved shortly after it stops (8 Oct 2026). A quiet
     // repaint is a pointer moving over the sidewalk outline, not an edit.
     if (!quiet) this.scheduleEditSave();
+    this.positionPracticeHighlight();
   };
 
   /**
@@ -4697,12 +4917,14 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     if (deleteTarget >= 0) {
       if (this.shapes[deleteTarget].getAnnotationData().editable) {
+        const deletedId = this.shapes[deleteTarget].getAnnotationData().id;
         this.shapes.splice(deleteTarget, 1);
         // Clear the selection, which also drops the deleted box's resize
         // handles. Left in place, they swallowed the next press where the box
         // had been (found 8 Oct 2026).
         this.selectedId = null;
         this.onShapeChange();
+        this.notePractice("deleted", deletedId);
       }
     }
   };
@@ -4711,7 +4933,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   // guards make sure an annotator box can never get an obstruction answer
   // through an old path.
   private onSelectObstruction = () => {
-    if (this.annotatorObjectStep) return;
+    if (this.annotatorObjectStep || !this.practiceAllows("obstructs", true)) return;
     const selectTarget = this.shapes.findIndex(
       (shape) => shape.getAnnotationData().id === this.selectedId
     );
@@ -4739,6 +4961,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           ...(this.askSeverity ? {} : { severity: null }),
         });
         this.onShapeChange();
+        this.notePractice("obstructs", data.id, true);
       }
       // A drawn box: the check button and Enter only confirm the category and
       // close the panel. Yes or No is answered separately (onSetObstructs).
@@ -4750,7 +4973,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   private onUnselectObstruction = () => {
-    if (this.annotatorObjectStep) return;
+    if (this.annotatorObjectStep || !this.practiceAllows("obstructs", false)) return;
     const selectTarget = this.shapes.findIndex(
       (shape) => shape.getAnnotationData().id === this.selectedId
     );
@@ -4765,6 +4988,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         data.severity = null;
         this.setState({ selected: false, isRejected: true, obstructs: false, severity: null });
         this.onShapeChange();
+        this.notePractice("obstructs", data.id, false);
       }
     }
 
@@ -4772,6 +4996,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   private onMarkNotAnObject = () => {
+    if (!this.practiceAllows("notAnObject")) return;
     const selectTarget = this.shapes.findIndex(
       (shape) => shape.getAnnotationData().id === this.selectedId
     );
@@ -4787,6 +5012,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       delete data.onSidewalk;
       this.setState({ selected: false, isRejected: true, obstructs: patch.obstructs, severity: null, onSidewalk: undefined, inputComment: NOT_AN_OBJECT });
       this.onShapeChange();
+      this.notePractice("notAnObject", data.id);
     }
 
     this.closePanel();
@@ -4829,7 +5055,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   };
 
   private onSetObstructs = (obstructs: boolean) => {
-    if (this.annotatorObjectStep) return;
+    if (this.annotatorObjectStep || !this.practiceAllows("obstructs", obstructs)) return;
     const selectTarget = this.shapes.findIndex(
       (shape) => shape.getAnnotationData().id === this.selectedId
     );
@@ -4842,6 +5068,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       if (!obstructs || !this.askSeverity) data.severity = null;
       this.setState({ obstructs, severity: data.severity ?? null });
       this.onShapeChange();
+      this.notePractice("obstructs", data.id, obstructs);
     }
   };
 
@@ -4859,6 +5086,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       data.obstructs = true;
       this.setState({ severity, obstructs: true });
       this.onShapeChange();
+      this.notePractice("severity", data.id, severity);
 
       // The first severity comes from the severity picker's Confirm, which
       // finishes the box, so the panel closes for suggestions and drawn boxes
@@ -4881,6 +5109,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     data.obstructs = true;
     this.setState({ severity, obstructs: true });
     this.onShapeChange();
+    this.notePractice("severity", data.id, severity);
   };
 
   /**
@@ -4901,6 +5130,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     this.setState({ obstructs: undefined, severity: null, selected: data.selected || false, isRejected: data.isRejected || false });
     this.onShapeChange();
+    this.notePractice("obstructs", data.id, undefined);
   };
 
   /**
@@ -4912,7 +5142,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * open on the obstruction question, which gives the time to answer.
    */
   private onSetOnSidewalk = (onSidewalk: boolean) => {
-    if (this.annotatorObjectStep) return;
+    if (this.annotatorObjectStep || !this.practiceAllows("onSidewalk", onSidewalk)) return;
     const target = this.shapes.find((shape) => shape.getAnnotationData().id === this.selectedId);
     if (!target) return;
     const data = target.getAnnotationData();
@@ -4929,6 +5159,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       isRejected: data.isRejected || false,
     });
     this.onShapeChange();
+    this.notePractice("onSidewalk", data.id, onSidewalk);
     if (!onSidewalk) this.closePanel();
   };
 
@@ -4952,6 +5183,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     delete data.onSidewalk;
     this.setState({ inputComment: comment, selected: false, isRejected: false, obstructs: undefined, severity: null, onSidewalk: undefined });
     this.onShapeChange();
+    this.notePractice("restore", data.id);
   };
 
   private setCanvasDPI = () => {
@@ -4983,6 +5215,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       item.getAnnotationData()
     );
     this.setState({ inputComment: comment });
+    this.notePractice("category", this.selectedId, comment);
   };
 
   private cleanImage = () => {

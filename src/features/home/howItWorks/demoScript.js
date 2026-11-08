@@ -40,8 +40,8 @@ export const DEMO_IMAGE_SIZE = Object.freeze({ width: 640, height: 360 });
 
 export const DRAWN_ID = "demo-drawn-1";
 /** Where the drawn box starts and ends, in image px: the white post on the sidewalk */
-const DRAW_FROM = Object.freeze([428, 96]);
-const DRAW_TO = Object.freeze([450, 216]);
+export const DRAW_FROM = Object.freeze([428, 96]);
+export const DRAW_TO = Object.freeze([450, 216]);
 
 /**
  * Cursor targets. The stage turns each into a point (see DemoStage).

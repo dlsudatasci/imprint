@@ -104,6 +104,13 @@ export interface IDefaultInputSection {
    * true, false, or none. Shown as a hint on Question 2 only, never as an answer.
    */
   proposedObstructs?: boolean | null;
+  /**
+   * The tutorial's practice on its first photo (S19): the answers allowed,
+   * null for any. A question named (onSidewalk, obstructs) has only that
+   * answer enabled, and the other shown disabled. Not an object is disabled
+   * unless named. Nothing else about the panel changes.
+   */
+  allowAnswers?: { onSidewalk?: boolean; obstructs?: boolean; notAnObject?: boolean } | null;
 }
 
 export type PanelVariant = "floating" | "sheet";
@@ -358,7 +365,14 @@ const DefaultInputSection = ({
   onChangeSeverity = () => undefined,
   askOnSidewalk = true,
   proposedObstructs = null,
+  allowAnswers = null,
 }: IDefaultInputSection) => {
+  // The practice's allowed answers (S19): which of Yes and No each question leaves enabled
+  const allowed = (question: "onSidewalk" | "obstructs") => {
+    const only = allowAnswers ? allowAnswers[question] : undefined;
+    return { yes: only === undefined || only === true, no: only === undefined || only === false };
+  };
+  const notAnObjectAllowed = !allowAnswers || allowAnswers.notAnObject === true;
   // A typed-in label opens as the "Other..." field straight away
   const [isCustom, setIsCustom] = useState(() => isCustomLabel(value));
   // Back to Question 1 or 2 (S17): which earlier question is on screen, or
@@ -427,7 +441,7 @@ const DefaultInputSection = ({
   const hasCategory = Boolean(value) && value !== "---";
   const label = hasCategory ? translateValue(value) : "this object";
   const header = <CategoryField value={value} isCustom={isCustom} setIsCustom={setIsCustom} onChange={onChange} variant={variant} />;
-  const footer = <PanelFooter editable={editable} variant={variant} onDelete={onDelete} onMarkNotAnObject={onMarkNotAnObject} />;
+  const footer = <PanelFooter editable={editable} variant={variant} onDelete={onDelete} onMarkNotAnObject={onMarkNotAnObject} notAnObjectDisabled={!notAnObjectAllowed} />;
 
   // "sidewalk": the first question (S12). Answered No, the box is reopened
   // from its chip under Not obstructions, so No shows chosen. No close button
@@ -445,6 +459,7 @@ const DefaultInputSection = ({
         disabled={!hasCategory}
         onYes={() => onSetOnSidewalk(true)}
         onNo={() => onSetOnSidewalk(false)}
+        allowed={allowed("onSidewalk")}
         control="on-sidewalk"
         footer={footer}
       />
@@ -479,6 +494,7 @@ const DefaultInputSection = ({
         disabled={!hasCategory}
         onYes={() => setBack(null)}
         onNo={() => onSetOnSidewalk(false)}
+        allowed={allowed("onSidewalk")}
         control="on-sidewalk"
         footer={footer}
       />
@@ -540,6 +556,7 @@ const DefaultInputSection = ({
       disabled={!hasCategory}
       onYes={onYes}
       onNo={onNo}
+      allowed={allowed("obstructs")}
       // Contributors: Back to Question 1, and no Not an object past Question 1
       // (S17). Without the path question the footer is as it was.
       footer={askOnSidewalk ? <><BackButton to={1} variant={variant} onClick={() => setBack(1)} />{deleteBox}</> : footer}
@@ -622,7 +639,7 @@ function DeleteBoxButton({ variant, onDelete }: { variant: PanelVariant; onDelet
  * or No for the obstruction question, so for contributors a small line above
  * the question says which of the two it is. No line without it.
  */
-function QuestionPanel({ variant, header, onHide, onClose, question, step, note, answer, disabled, onYes, onNo, control, footer }: {
+function QuestionPanel({ variant, header, onHide, onClose, question, step, note, answer, disabled, onYes, onNo, allowed, control, footer }: {
   variant: PanelVariant;
   header: React.ReactNode;
   onHide?: () => void;
@@ -637,6 +654,8 @@ function QuestionPanel({ variant, header, onHide, onClose, question, step, note,
   disabled: boolean;
   onYes: () => void;
   onNo: () => void;
+  /** The tutorial's practice (S19): which of the two are enabled. Both without it. */
+  allowed?: { yes: boolean; no: boolean };
   control?: string;
   footer: React.ReactNode;
 }) {
@@ -653,8 +672,8 @@ function QuestionPanel({ variant, header, onHide, onClose, question, step, note,
       {/* Smaller than the question, so it reads as a note (S3) */}
       {note && <p data-proposal-hint className="text-sm text-muted -mt-1 mb-2">{note}</p>}
       <div className="grid grid-cols-2 gap-2">
-        <AnswerButton active={answer === "yes"} disabled={disabled} onClick={onYes} variant={variant} control={control ? `${control}-yes` : "yes"}>Yes</AnswerButton>
-        <AnswerButton active={answer === "no"} disabled={disabled} onClick={onNo} variant={variant} control={control ? `${control}-no` : "no"}>No</AnswerButton>
+        <AnswerButton active={answer === "yes"} disabled={disabled || allowed?.yes === false} onClick={onYes} variant={variant} control={control ? `${control}-yes` : "yes"}>Yes</AnswerButton>
+        <AnswerButton active={answer === "no"} disabled={disabled || allowed?.no === false} onClick={onNo} variant={variant} control={control ? `${control}-no` : "no"}>No</AnswerButton>
       </div>
 
       <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-2">
@@ -665,11 +684,13 @@ function QuestionPanel({ variant, header, onHide, onClose, question, step, note,
 }
 
 /** Question 1's footer (S17: and the obstruction question's without the path question): Delete box for a drawn box, Not an object for a suggestion */
-function PanelFooter({ editable, variant, onDelete, onMarkNotAnObject }: {
+function PanelFooter({ editable, variant, onDelete, onMarkNotAnObject, notAnObjectDisabled = false }: {
   editable: boolean;
   variant: PanelVariant;
   onDelete: () => void;
   onMarkNotAnObject: () => void;
+  /** The tutorial's practice (S19) before its open step */
+  notAnObjectDisabled?: boolean;
 }) {
   return editable ? (
     <>
@@ -679,7 +700,12 @@ function PanelFooter({ editable, variant, onDelete, onMarkNotAnObject }: {
   ) : (
     <>
       <span className="text-xs text-muted">No real object in this box?</span>
-      <button className={dangerButton(variant)} onClick={() => onMarkNotAnObject()}>
+      <button
+        // Disabled only in the tutorial's practice, its look otherwise unchanged (S18)
+        className={notAnObjectDisabled ? `${dangerButton(variant)} opacity-50 cursor-not-allowed` : dangerButton(variant)}
+        disabled={notAnObjectDisabled}
+        onClick={() => onMarkNotAnObject()}
+      >
         Not an object
       </button>
     </>

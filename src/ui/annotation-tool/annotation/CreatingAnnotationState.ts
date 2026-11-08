@@ -82,6 +82,7 @@ export default class CreatingAnnotationState implements IAnnotationState {
       // corner over a smaller box (a car box over the foot of a pole) opened
       // the pole's panel instead of its own.
       this.context.selectBoxById(id);
+      this.context.notePracticeGeometry(id);
     }
   };
 

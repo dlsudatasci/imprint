@@ -1,0 +1,422 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
+import React, { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import ReactPictureAnnotation, { type PracticeEvent, type PracticeLock, type PracticeHighlight } from "./ReactPictureAnnotation";
+import { writeSession } from "@/util/sessionCache";
+import TUTORIAL_IMAGES from "@/data/tutorialImages";
+import { ids } from "@/features/home/howItWorks/demoScript";
+import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
+
+/**
+ * The tutorial's practice on its first photo (S19, 7 Nov 2026): the tool says
+ * what changed, with its state (onPracticeEvent), locks what is not yet the
+ * practice's step (practiceLock) and outlines what is (practiceHighlight).
+ * Without those props it behaves exactly as before, for contributors and
+ * annotators. Same stand-in canvas as ReactPictureAnnotation.panel.test.tsx.
+ */
+type Box = { id: string; comment?: string; editable?: boolean; onSidewalk?: boolean; obstructs?: boolean; severity?: number | null; mark: { x: number; y: number; width: number; height: number } };
+type Tool = {
+  shapes: { getAnnotationData(): Box }[];
+  selectedId: string | null;
+  currentImageElement: { width: number; height: number };
+  selectBoxById(id: string): void;
+  addBoxFromButton(): void;
+  onMouseDown(event: { nativeEvent: { offsetX: number; offsetY: number } }): void;
+  onMouseMove(event: { nativeEvent: { offsetX: number; offsetY: number } }): void;
+  onMouseUp(): void;
+  onSetOnSidewalk(v: boolean): void;
+  onMarkNotAnObject(): void;
+  onSceneAnswer(updates: Record<string, unknown>): void;
+  submit(): Promise<void> | undefined;
+  state: { showInput: boolean; sceneLevel: Record<string, unknown>; error: string | null };
+};
+
+const PHOTO = TUTORIAL_IMAGES[0];
+const boxesOf = () => JSON.parse(JSON.stringify(PHOTO.annotationList));
+const markOf = (id: string) => PHOTO.annotationList.find((b) => b.id === id)!.mark;
+const centre = (id: string): [number, number] => {
+  const m = markOf(id);
+  return [m.x + m.width / 2, m.y + m.height / 2];
+};
+// Empty photo, clear of every box (scale 1 in jsdom, no photo loaded)
+const EMPTY: [number, number] = [580, 300];
+
+beforeAll(() => {
+  const g = globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean; ResizeObserver: unknown };
+  g.IS_REACT_ACT_ENVIRONMENT = true;
+  g.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+  const store: Record<string | symbol, unknown> = {};
+  const ctx = new Proxy(store, {
+    get: (target, prop) => (prop in target ? target[prop] : prop === "measureText" ? () => ({ width: 40 }) : () => undefined),
+    set: (target, prop, value) => {
+      target[prop] = value;
+      return true;
+    },
+  });
+  HTMLCanvasElement.prototype.getContext = (() => ctx) as unknown as HTMLCanvasElement["getContext"];
+});
+
+let root: Root | null = null;
+let host: HTMLDivElement;
+let ref: React.RefObject<ReactPictureAnnotation | null>;
+
+type Props = {
+  isAnnotator?: boolean;
+  onPracticeEvent?: (event: PracticeEvent) => void;
+  practiceLock?: PracticeLock | null;
+  practiceHighlight?: PracticeHighlight | null;
+};
+let lastProps: Props = {};
+
+function render(props: Props) {
+  lastProps = props;
+  act(() => {
+    root!.render(
+      <ReactPictureAnnotation
+        ref={ref}
+        image="/images/tutorial/tutorial-1.jpg"
+        onSelect={() => undefined}
+        onChange={() => undefined}
+        width={960}
+        height={600}
+        annotationData={boxes}
+        imageID="TUTORIAL-001"
+        city="laspinas"
+        currentAnnotationCount={1}
+        totalAnnotationCount={3}
+        username="test"
+        {...props}
+      />
+    );
+  });
+}
+let boxes: ReturnType<typeof boxesOf> = [];
+
+function mount(props: Props = {}): Tool {
+  window.localStorage.clear();
+  window.sessionStorage.clear();
+  boxes = boxesOf();
+  writeSession({ total: 3, current: 1, data: { imgRecords: [{ ...PHOTO, annotationList: boxesOf() }], isAnnotator: props.isAnnotator ?? false } });
+  ref = React.createRef<ReactPictureAnnotation>();
+  host = document.createElement("div");
+  document.body.appendChild(host);
+  root = createRoot(host);
+  render(props);
+  const tool = ref.current as unknown as Tool;
+  tool.currentImageElement = { width: 640, height: 360 };
+  return tool;
+}
+
+const at = (x: number, y: number) => ({ nativeEvent: { offsetX: x, offsetY: y } });
+const press = (tool: Tool, path: Array<[number, number]>) =>
+  act(() => {
+    tool.onMouseDown(at(...path[0]));
+    for (const p of path.slice(1)) tool.onMouseMove(at(...p));
+    tool.onMouseUp();
+  });
+const button = (control: string) => host.querySelector(`[data-control='${control}']`) as HTMLButtonElement | null;
+const buttonByText = (text: string) => Array.from(host.querySelectorAll("button")).find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined;
+const click = (element: HTMLElement | null | undefined) => {
+  expect(element).toBeTruthy();
+  act(() => element!.click());
+};
+const choose = (select: HTMLSelectElement | null, value: string) => {
+  expect(select).toBeTruthy();
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+    setter.call(select, value);
+    select!.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+};
+const boxIn = (tool: Tool, id: string) => tool.shapes.find((s) => s.getAnnotationData().id === id)!.getAnnotationData();
+const drawnBoxes = (tool: Tool) => tool.shapes.map((s) => s.getAnnotationData()).filter((b) => b.editable);
+
+afterEach(() => {
+  act(() => root?.unmount());
+  root = null;
+  host?.remove();
+  vi.restoreAllMocks();
+});
+
+const OPEN: PracticeLock = { openable: "all", canDraw: true, allowAnswers: null };
+
+describe("onPracticeEvent", () => {
+  it("fires after each change, of every type, with the tool's state after it", () => {
+    const events: PracticeEvent[] = [];
+    const tool = mount({ onPracticeEvent: (e) => events.push(e) });
+    const last = () => events[events.length - 1];
+    const types = () => events.map((e) => e.type);
+
+    // open, onSidewalk, obstructs, severity, close: the tree, Yes, Yes, severity 2
+    press(tool, [centre(ids.tree)]);
+    expect(last()).toMatchObject({ type: "open", id: ids.tree });
+    expect(last().state.openId).toBe(ids.tree);
+    click(button("on-sidewalk-yes"));
+    expect(events.find((e) => e.type === "onSidewalk")).toMatchObject({ id: ids.tree, value: true });
+    expect(events.find((e) => e.type === "onSidewalk")!.state.boxes.find((b) => b.id === ids.tree)!.onSidewalk).toBe(true);
+    click(button("yes"));
+    expect(last()).toMatchObject({ type: "obstructs", id: ids.tree, value: true });
+    click(button("confirm"));
+    const severity = events.find((e) => e.type === "severity")!;
+    expect(severity).toMatchObject({ id: ids.tree, value: 3 });
+    expect(severity.state.boxes.find((b) => b.id === ids.tree)).toMatchObject({ obstructs: true, severity: 3 });
+    expect(last()).toMatchObject({ type: "close", id: ids.tree });
+    expect(last().state.openId).toBeNull();
+
+    // notAnObject and restore: the motorcycle
+    act(() => tool.selectBoxById(ids.moto));
+    click(buttonByText("Not an object"));
+    expect(events.find((e) => e.type === "notAnObject")).toMatchObject({ id: ids.moto });
+    expect(events.find((e) => e.type === "notAnObject")!.state.boxes.find((b) => b.id === ids.moto)!.comment).toBe(NOT_AN_OBJECT);
+    act(() => tool.selectBoxById(ids.moto));
+    click(buttonByText("Restore"));
+    expect(last()).toMatchObject({ type: "restore", id: ids.moto });
+
+    // drawn, category, deleted: a box around the white post
+    press(tool, [[428, 96], [450, 216]]);
+    const drawn = events.find((e) => e.type === "drawn")!;
+    expect(drawn).toBeTruthy();
+    const drawnId = drawn.id!;
+    expect(drawn.state.boxes.find((b) => b.id === drawnId)).toMatchObject({ editable: true, mark: { x: 428, y: 96, width: 22, height: 120 } });
+    choose(host.querySelector("select[data-control='category']"), "lamp_post");
+    expect(last()).toMatchObject({ type: "category", id: drawnId, value: "lamp_post" });
+    click(buttonByText("Delete box"));
+    expect(events.find((e) => e.type === "deleted")).toMatchObject({ id: drawnId });
+    expect(events.find((e) => e.type === "deleted")!.state.boxes.some((b) => b.id === drawnId)).toBe(false);
+
+    // scene: Step 2's state comes with it
+    act(() => tool.onSceneAnswer({ sidewalkWidth: "moderate" }));
+    expect(last()).toMatchObject({ type: "scene", value: { sidewalkWidth: "moderate" } });
+    expect(last().state.scene.sidewalkWidth).toBe("moderate");
+
+    expect(new Set(types())).toEqual(new Set(["open", "close", "onSidewalk", "obstructs", "severity", "notAnObject", "restore", "category", "drawn", "deleted", "scene"]));
+  });
+
+  it("sends a drawn box fitted again, and a No, with their state", () => {
+    const events: PracticeEvent[] = [];
+    const tool = mount({ onPracticeEvent: (e) => events.push(e) });
+    act(() => tool.selectBoxById(ids.car));
+    click(button("on-sidewalk-no"));
+    expect(events.find((e) => e.type === "onSidewalk")).toMatchObject({ id: ids.car, value: false });
+    expect(events.find((e) => e.type === "onSidewalk")!.state.boxes.find((b) => b.id === ids.car)).toMatchObject({ onSidewalk: false, obstructs: false });
+    act(() => tool.selectBoxById(ids.moto));
+    click(button("on-sidewalk-yes"));
+    click(button("no"));
+    expect(events.filter((e) => e.type === "obstructs").pop()).toMatchObject({ id: ids.moto, value: false });
+  });
+
+  it("is never called without the prop, and nothing fails", () => {
+    const tool = mount();
+    press(tool, [centre(ids.tree)]);
+    click(button("on-sidewalk-yes"));
+    expect(boxIn(tool, ids.tree).onSidewalk).toBe(true);
+  });
+});
+
+describe("practiceLock", () => {
+  const TREE_ONLY: PracticeLock = { openable: [ids.tree], canDraw: false, canSubmit: false, allowAnswers: { onSidewalk: true } };
+
+  it("keeps every other box shut, from the photo and from the lists", () => {
+    const tool = mount({ practiceLock: TREE_ONLY });
+    press(tool, [centre(ids.car)]);
+    expect(tool.selectedId).toBeNull();
+    expect(tool.state.showInput).toBe(false);
+    act(() => tool.selectBoxById(ids.moto));
+    expect(tool.selectedId).toBeNull();
+    // The car's name in the list under the photo
+    const chip = Array.from(host.querySelectorAll("#box-review-section button")).find((b) => /^Car/.test(b.textContent?.trim() ?? "")) as HTMLButtonElement;
+    click(chip);
+    expect(tool.selectedId).toBeNull();
+    // The tree opens
+    press(tool, [centre(ids.tree)]);
+    expect(tool.selectedId).toBe(ids.tree);
+    expect(tool.state.showInput).toBe(true);
+  });
+
+  it("draws nothing before drawing is allowed, and a press on empty photo still closes the panel", () => {
+    const tool = mount({ practiceLock: TREE_ONLY });
+    press(tool, [centre(ids.tree)]);
+    expect(tool.state.showInput).toBe(true);
+    press(tool, [EMPTY, [EMPTY[0] + 40, EMPTY[1] + 40]]);
+    expect(drawnBoxes(tool)).toEqual([]);
+    expect(tool.selectedId).toBeNull();
+    expect(tool.state.showInput).toBe(false);
+    act(() => tool.addBoxFromButton());
+    expect(drawnBoxes(tool)).toEqual([]);
+    // Allowed: the box is drawn and its panel opens, though no box is openable by id
+    render({ practiceLock: { openable: [], canDraw: true, allowAnswers: {} } });
+    press(tool, [[428, 96], [450, 216]]);
+    expect(drawnBoxes(tool)).toHaveLength(1);
+    expect(tool.selectedId).toBe(drawnBoxes(tool)[0].id);
+    expect(tool.state.showInput).toBe(true);
+  });
+
+  it("disables the answer not allowed, and the tool refuses it too", () => {
+    const tool = mount({ practiceLock: TREE_ONLY });
+    act(() => tool.selectBoxById(ids.tree));
+    expect(button("on-sidewalk-yes")!.disabled).toBe(false);
+    expect(button("on-sidewalk-no")!.disabled).toBe(true);
+    expect(buttonByText("Not an object")!.disabled).toBe(true);
+    act(() => tool.onSetOnSidewalk(false));
+    act(() => tool.onMarkNotAnObject());
+    expect(boxIn(tool, ids.tree).onSidewalk).toBeUndefined();
+    expect(boxIn(tool, ids.tree).comment).toBe("tree");
+    // Question 2 is the contributor's own: both enabled, and the model's line shows
+    click(button("on-sidewalk-yes"));
+    expect(button("yes")!.disabled).toBe(false);
+    expect(button("no")!.disabled).toBe(false);
+    expect(host.querySelector("[data-proposal-hint]")?.textContent).toBe("The model thinks this obstructs the sidewalk.");
+  });
+
+  it("directs No for the car, with Yes disabled", () => {
+    const tool = mount({ practiceLock: { openable: [ids.car], canDraw: false, canSubmit: false, allowAnswers: { onSidewalk: false } } });
+    act(() => tool.selectBoxById(ids.car));
+    expect(button("on-sidewalk-yes")!.disabled).toBe(true);
+    expect(button("on-sidewalk-no")!.disabled).toBe(false);
+    click(button("on-sidewalk-yes"));
+    expect(boxIn(tool, ids.car).onSidewalk).toBeUndefined();
+    click(button("on-sidewalk-no"));
+    expect(boxIn(tool, ids.car).onSidewalk).toBe(false);
+  });
+
+  it("keeps Next Image for the step that allows it", async () => {
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const tool = mount({ practiceLock: TREE_ONLY });
+    await act(async () => {
+      await tool.submit();
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(tool.state.error).toBeNull();
+    // Allowed: the tool goes on to check the image, which says what is missing
+    render({ practiceLock: { ...OPEN, canSubmit: true } });
+    await act(async () => {
+      await tool.submit();
+    });
+    expect(tool.state.error).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("without the practice's props, nothing changes", () => {
+  /** The same answers as the S12 panel tests: the tree Yes, Yes, severity; the car No */
+  function run(props: Props) {
+    const tool = mount(props);
+    const panels: string[] = [];
+    press(tool, [centre(ids.tree)]);
+    panels.push(host.querySelector(".rp-selected-input")!.innerHTML);
+    click(button("on-sidewalk-yes"));
+    panels.push(host.querySelector(".rp-selected-input")!.innerHTML);
+    click(button("yes"));
+    panels.push(host.querySelector(".rp-selected-input")!.innerHTML);
+    click(button("confirm"));
+    act(() => tool.selectBoxById(ids.car));
+    panels.push(host.querySelector(".rp-selected-input")!.innerHTML);
+    click(button("on-sidewalk-no"));
+    press(tool, [[428, 96], [450, 216]]);
+    const result = {
+      panels,
+      boxes: tool.shapes.map((s) => {
+        const { id, comment, onSidewalk, obstructs, severity, editable } = s.getAnnotationData();
+        return { id: editable ? "drawn" : id, comment, onSidewalk, obstructs, severity };
+      }),
+      highlights: host.querySelectorAll("[data-practice-highlight]").length,
+    };
+    act(() => root?.unmount());
+    host.remove();
+    return result;
+  }
+
+  it("gives a contributor the same panels and answers with no lock and with a lock that allows everything", () => {
+    const without = run({});
+    const withOpen = run({ practiceLock: OPEN });
+    expect(withOpen).toEqual(without);
+    expect(without.highlights).toBe(0);
+    expect(without.boxes.find((b) => b.id === ids.tree)).toMatchObject({ onSidewalk: true, obstructs: true, severity: 3 });
+  });
+
+  it("gives an annotator the same panel with no lock and with an open one", () => {
+    const panel = (props: Props) => {
+      const tool = mount({ isAnnotator: true, ...props });
+      act(() => tool.selectBoxById(ids.tree));
+      const html = host.querySelector(".rp-selected-input")?.innerHTML;
+      act(() => root?.unmount());
+      host.remove();
+      return html;
+    };
+    const without = panel({});
+    expect(without).toBeTruthy();
+    expect(panel({ practiceLock: OPEN })).toBe(without);
+  });
+});
+
+describe("practiceHighlight", () => {
+  it("outlines a box where it is on the photo, and a rectangle in image px", () => {
+    mount({ practiceHighlight: { boxId: ids.tree } });
+    const outline = host.querySelector(`[data-practice-highlight='${ids.tree}']`) as HTMLElement;
+    expect(outline).toBeTruthy();
+    const m = markOf(ids.tree);
+    // 4 px outside the box, at scale 1
+    expect(outline.style.left).toBe(`${m.x - 4}px`);
+    expect(outline.style.top).toBe(`${m.y - 4}px`);
+    expect(outline.style.width).toBe(`${m.width + 8}px`);
+    expect(outline.closest(".rp-stage")).toBeTruthy();
+    expect(outline.parentElement!.className).toMatch(/pointer-events-none/);
+
+    render({ practiceHighlight: { rect: { x: 428, y: 96, width: 22, height: 120 } } });
+    const rect = host.querySelector("[data-practice-highlight='rect']") as HTMLElement;
+    expect(rect.style.left).toBe("424px");
+    expect(rect.style.height).toBe("128px");
+    // Dashed: no box there yet. A box's outline is solid.
+    expect(rect.className).toMatch(/border-dashed/);
+    expect(outline.className).not.toMatch(/border-dashed/);
+  });
+
+  it("outlines two boxes at once, and pulses only where motion is allowed", () => {
+    mount({ practiceHighlight: { boxIds: [ids.moto, ids.lamp] } });
+    const outlines = host.querySelectorAll("[data-practice-highlight]");
+    expect(outlines).toHaveLength(2);
+    for (const outline of Array.from(outlines)) {
+      expect(outline.className).toMatch(/motion-safe:animate-practice-pulse\b/);
+      expect(outline.className).not.toMatch(/(^|\s)animate-/);
+    }
+    // A press elsewhere: the pulse from the start again, a new element, still pulsing (8 Nov 2026: for as long as it shows)
+    const before = host.querySelector("[data-practice-highlight]");
+    render({ practiceHighlight: { boxIds: [ids.moto, ids.lamp], pulse: 1 } });
+    const after = host.querySelector("[data-practice-highlight]")!;
+    expect(after).not.toBe(before);
+    expect(after.className).toMatch(/motion-safe:animate-practice-pulse\b/);
+  });
+
+  it("marks the open box for the card with nothing drawn", () => {
+    mount({ practiceHighlight: { avoidBoxIds: [ids.tree] } });
+    expect(host.querySelector("[data-practice-highlight]")).toBeNull();
+    const mark = host.querySelector(`[data-practice-avoid='avoid:${ids.tree}']`) as HTMLElement;
+    expect(mark).toBeTruthy();
+    expect(mark.className).not.toMatch(/border/);
+    expect(mark.style.left).toBe(`${markOf(ids.tree).x - 4}px`);
+  });
+
+  it("marks the photo the practice lights up, with the outlines inside it", () => {
+    mount({ practiceHighlight: { boxId: ids.tree } });
+    const photo = host.querySelector("[data-photo-area]");
+    expect(photo).toBeTruthy();
+    expect(photo!.contains(host.querySelector("[data-practice-highlight]"))).toBe(true);
+    expect(photo!.querySelector("canvas.rp-shapes")).toBeTruthy();
+  });
+
+  it("lets presses through to the photo", () => {
+    const tool = mount({ practiceHighlight: { boxId: ids.tree } });
+    press(tool, [centre(ids.tree)]);
+    expect(tool.selectedId).toBe(ids.tree);
+  });
+
+  it("draws nothing for a box off the photo", () => {
+    const tool = mount({ practiceHighlight: { boxId: ids.car } });
+    act(() => tool.selectBoxById(ids.car));
+    click(button("on-sidewalk-no"));
+    render({ ...lastProps });
+    expect(host.querySelector(`[data-practice-highlight='${ids.car}']`)).toBeNull();
+  });
+});

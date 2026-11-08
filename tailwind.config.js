@@ -101,9 +101,19 @@ module.exports = {
           from: { transform: "scale(.92)", opacity: ".4" },
           to: { transform: "none", opacity: "1" },
         },
+        // The tutorial practice's outline on what to do next (S19, 7 Nov
+        // 2026): it pulses for as long as it shows (Rans, 8 Nov 2026), by
+        // its opacity only, so its size, which the card is placed by, never
+        // changes. Used as motion-safe:animate-practice-pulse, so reduced
+        // motion keeps the outline still.
+        "practice-pulse": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: ".3" },
+        },
       },
       animation: {
         "tray-land": "tray-land 180ms ease-out both",
+        "practice-pulse": "practice-pulse 1200ms ease-in-out infinite",
       },
     },
   },

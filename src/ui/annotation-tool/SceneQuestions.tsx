@@ -78,7 +78,7 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
       </P>
       <div className="space-y-2">
         {/* Item 1 — Sidewalk Width */}
-        <div className="bg-surface-subtle p-3 rounded-card border border-line">
+        <div data-scene-question="sidewalkWidth" className="bg-surface-subtle p-3 rounded-card border border-line">
           <p className="text-sm font-semibold text-ink mb-0.5">Sidewalk Width</p>
           <p className={prompt}>How much usable walking space does this sidewalk have?</p>
           <div className="grid grid-cols-4 gap-1.5">
@@ -119,7 +119,7 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
         {/* Item 2 — Surface Condition (disabled when no sidewalk) */}
         {/* Ground cross-section profiles — visual language: the surface itself.
             3-level functional scale per Wolf et al. (2007) and Project Sidewalk reliability data. */}
-        <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
+        <div data-scene-question="surfaceCondition" className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
           <p className="text-sm font-semibold text-ink mb-0.5">Surface Condition</p>
           <p className={prompt}>
             {disabled ? notApplicable : "How does the walking surface affect movement?"}
@@ -150,7 +150,7 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
         {/* Face expressions — visual language: how the scene *feels*.
             Reframed from undefined "walkability" to concrete "comfort" per Mehta (2008).
             3-level scale per Kim et al. (2025) stability findings. */}
-        <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
+        <div data-scene-question="walkability" className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
           <p className="text-sm font-semibold text-ink mb-0.5">Walking Comfort</p>
           <p className={prompt}>
             {disabled ? notApplicable : "How comfortable does this sidewalk look for walking?"}
@@ -185,7 +185,7 @@ export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQ
             psychometric properties; Project Sidewalk uses 1-5 severity; finer scale
             captures person-dependent variation that IS the signal (thesis core argument).
             Can be collapsed to 3 levels for reporting if needed. */}
-        <div className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
+        <div data-scene-question="overallAccessibility" className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
           <p className="text-sm font-semibold text-ink mb-0.5">Accessible to Me</p>
           <p className={prompt}>
             {disabled ? notApplicable : "Could you personally navigate this sidewalk?"}

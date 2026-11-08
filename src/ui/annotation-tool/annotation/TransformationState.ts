@@ -34,6 +34,7 @@ export default class TransformationState implements IAnnotationState {
       const { mark } = shape.getAnnotationData();
       Object.assign(mark, normalizeMark(mark));
       onShapeChange();
+      this.context.notePracticeGeometry(shape.getAnnotationData().id);
     }
 
     setAnnotationState(new DefaultAnnotationState(this.context));

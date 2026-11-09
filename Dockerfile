@@ -19,6 +19,10 @@ COPY . .
 # build still needs to not crash on a missing MONGODB_URI at import time.
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# The homepage map's tile key is written into the build (NEXT_PUBLIC_), so it
+# comes in as a build argument (Coolify passes build-time variables this way).
+ARG NEXT_PUBLIC_CARTO_KEY
+ENV NEXT_PUBLIC_CARTO_KEY=$NEXT_PUBLIC_CARTO_KEY
 RUN yarn build
 
 # ---- runtime ----------------------------------------------------------------

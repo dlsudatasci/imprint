@@ -1,0 +1,51 @@
+# IMPRINT on Coolify (9 Nov 2026): the app, MongoDB 8 and nginx, as on the VM.
+# In Coolify: build pack "Docker Compose", compose location
+# /deploy/coolify/docker-compose.yml, the domain on the `web` service (port 80).
+# Values come from Coolify's environment variables; nothing secret is in git.
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CARTO_KEY: ${NEXT_PUBLIC_CARTO_KEY}
+    environment:
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      MONGODB_URI: mongodb://imprint_app:${MONGO_APP_PASSWORD}@mongo:27017/imprint?authSource=imprint
+      MONGODB_DB: imprint
+      EMAIL_SERVICE: ${EMAIL_SERVICE}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
+      GOOGLE_ID: ${GOOGLE_ID}
+      GOOGLE_SECRET: ${GOOGLE_SECRET}
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      # Only so the one-time createUser command can read it (see the runbook)
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+      - backups:/backups
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/coolify/nginx.Dockerfile
+    volumes:
+      - corpus:/srv/imprint-images/corpus:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  backups:
+  corpus:

@@ -5,6 +5,7 @@ import DefaultInputSection, { SeverityPicker } from "@/ui/annotation-tool/Defaul
 import ObjectTrays from "@/ui/annotation-tool/ObjectTrays";
 import SceneQuestions from "@/ui/annotation-tool/SceneQuestions";
 import Step1Card from "@/ui/annotation-tool/Step1Card";
+import SidewalkPresence from "@/ui/annotation-tool/SidewalkPresence";
 import { boxLabelColors, boxLineStyle, boxStrokeColor, defaultShapeStyle } from "@/ui/annotation-tool/Shape";
 import { panelPosition } from "@/ui/annotation-tool/panelPosition";
 import { MOUSE_HANDLE_DOT_PX } from "@/ui/annotation-tool/Transformer";
@@ -89,6 +90,8 @@ export function findTarget(root, target, boxes) {
   if (control) return root.querySelector(`[data-demo-panel] [data-control="${control}"]`);
   if (target.name === "option") return root.querySelector(`[data-demo-option="${target.value}"]`);
   if (target.name === "scene") return root.querySelector(`[data-scene-option="${target.field}:${target.value}"]`);
+  // Step 1 (S15), the card above the photo's
+  if (target.name === "presence") return root.querySelector(`[data-presence-option="${target.value}"]`);
   if (target.name === "next") return root.querySelector('[data-demo="next"] button');
   return null;
 }
@@ -255,7 +258,7 @@ function DemoPanel({ box, picker, dropdown, scale }) {
 }
 
 const Screen = memo(function Screen({ view, photoWidth }) {
-  const { imageIndex, boxes, selectedId, draft, picker, dropdown, scene, saving } = view;
+  const { imageIndex, boxes, selectedId, draft, picker, dropdown, scene, saving, hasSidewalk = null } = view;
   const image = DEMO_IMAGES[imageIndex];
   const scale = photoWidth / DEMO_IMAGE_SIZE.width;
   const labels = buildDisplayLabels(boxes);
@@ -266,6 +269,10 @@ const Screen = memo(function Screen({ view, photoWidth }) {
     <>
       <div className="flex flex-row gap-6">
         <div style={{ flex: "65 1 0%" }} className="min-w-0">
+          {/* Step 1 (S15), its own card above Step 2's, as in the tool */}
+          <div data-demo-region="presence">
+            <SidewalkPresence value={hasSidewalk} variant="desktop" onAnswer={noop} />
+          </div>
           <Step1Card
             data-demo-region="step1"
             // Drawn several times on the guide's page: no id
@@ -518,9 +525,11 @@ export default function DemoStage({ frame, instant = false, captionRef = null })
       dropdown: frame.dropdown,
       scene: frame.scene,
       saving: frame.saving,
+      // Step 1 (S15)
+      hasSidewalk: frame.hasSidewalk ?? null,
     }),
     // Compared by content: demoFrame makes a new object on every scroll step
-    [JSON.stringify([frame.imageIndex, frame.boxes, frame.selectedId, frame.draft, frame.picker, frame.dropdown, frame.scene, frame.saving])]
+    [JSON.stringify([frame.imageIndex, frame.boxes, frame.selectedId, frame.draft, frame.picker, frame.dropdown, frame.scene, frame.saving, frame.hasSidewalk])]
   );
 
   // The photo fills the Step 1 card's well: 65% of the row, less the card's padding and border
@@ -585,7 +594,7 @@ export default function DemoStage({ frame, instant = false, captionRef = null })
       // (Step 2's questions while the cursor answers them)
       if (name === "overview" && vp.w < COMPACT_VIEW) {
         const heading = frame.cursor.to?.name;
-        name = heading === "scene" ? "scene" : heading === "next" && frame.imageIndex === 0 ? "actions" : "step1";
+        name = heading === "scene" ? "scene" : heading === "presence" ? "presence" : heading === "next" && frame.imageIndex === 0 ? "actions" : "step1";
       }
       if (name === "overview") return whole;
       // On a small screen the whole photo is too small to read the panel, so

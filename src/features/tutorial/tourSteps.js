@@ -79,7 +79,11 @@ export const CONTRIBUTOR_BUDGET = Object.freeze({ words: 80, points: 5, wordsPer
 // path step (S16) pointed at Step 1's instructions above the photo until
 // 5 Nov 2026, when Rans found that confusing: it points at the photo, as
 // Check Each Box does, with its card on the photo's right.
+// S15 (9 Nov 2026): Step 1 first, the card asking whether there is a
+// sidewalk, above the photo.
+const PRESENCE_SECTION = "#sidewalk-presence-section";
 const CONTRIBUTOR_TARGETS = Object.freeze([
+  PRESENCE_SECTION,
   ".rp-stage",
   ".rp-stage",
   "#box-review-section",
@@ -100,7 +104,7 @@ const ANNOTATOR_TARGETS = Object.freeze([
 // Check Each Box to the right of the photo (S16b): below it, the card could not
 // be read without scrolling. Where there is no room on the right it slides over
 // the photo's right side (CHECK_FLOATING), never below the photo.
-const CONTRIBUTOR_PLACEMENTS = ["right", "right", "top", "bottom", "top", "top"];
+const CONTRIBUTOR_PLACEMENTS = ["bottom", "right", "right", "top", "bottom", "top", "top"];
 const ANNOTATOR_PLACEMENTS = ["bottom", "left", "top", "top"];
 
 // ---- Contributors (S16, 3 Nov 2026): short numbered steps ----
@@ -129,6 +133,14 @@ const PROPOSAL_POINT_NOTE = Object.freeze({ after: 3, text: PROPOSAL_HINT_COPY.t
  */
 const CHECK_FLOATING = Object.freeze({ flipOptions: false, shiftOptions: { crossAxis: true } });
 
+// Step 1 (S15, 9 Nov 2026): whether there is a sidewalk, before the objects.
+// The path's own rule is taught here in words, as every tutorial photo has a sidewalk.
+const PRESENCE_STEP = {
+  title: "Is There a Sidewalk?",
+  intro: "First, say whether the photo has a sidewalk raised on a curb, or only a path for people to walk on.",
+  points: ["With only a path, each object asks only whether it obstructs it."],
+};
+
 const PATH_STEP = {
   title: "What Counts as the Path",
   points: SIDEWALK_QUESTION_COPY.pathPoints,
@@ -142,12 +154,19 @@ const SEVERITY_STEP = {
 };
 
 // Rated on the same sidewalk as Question 1, so a photo with two sidewalks is
-// rated on one (Rans, 3 Nov 2026). The four questions keep their wording.
+// rated on one (Rans, 3 Nov 2026). From S15 (9 Nov 2026) the six questions
+// of Step 3, two of them for a path.
 const SCENE_STEP = {
   title: "Scene-Level Assessment",
   intro: "Then rate the sidewalk nearest you as a whole:",
-  points: ["Its width", "Its surface condition", "How comfortable it looks for walking", "Whether you could get along it yourself"],
-  note: "No sidewalk? Choose None and the other three are skipped.",
+  points: [
+    "Its width as built",
+    "How easy it is to get through, from unobstructed to fully obstructed",
+    "How even it is along its length",
+    "What its surface is made of, and whether it is cracked or broken",
+    "Whether anything stands between it and the road",
+  ],
+  note: "With only a path, you answer just the second and third.",
 };
 
 // The submit button reads Next Image, or Finish Session on the last image, and
@@ -169,6 +188,7 @@ const ANNOTATOR_SUBMIT_STEP = {
 };
 
 const CONTRIBUTOR = [
+  PRESENCE_STEP,
   {
     title: "Check Each Box",
     points: checkPoints("Click"),
@@ -281,7 +301,8 @@ const CONTRIBUTOR_TOUR = Object.freeze({
 // the bottom of the screen, whose top part (#box-review-section-peek) is always
 // in view. Step 2 is in the part pulled up: the tutorial moves the sheet up
 // before that step. Seven steps from 3 Nov 2026 (S16), in the same short
-// format as the pointer tour, with the path step second.
+// format as the pointer tour, with the path step second. Eight from S15
+// (9 Nov 2026), Step 1 first, at the top of the sheet.
 //
 // Your Answers (S16b) pulls the sheet up and highlights the lists there, from
 // their Still to decide line down to the Obstructions card. Its target is
@@ -292,6 +313,8 @@ const CONTRIBUTOR_TOUR = Object.freeze({
 const SCENE_SECTION = "#scene-level-section";
 const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
   targets: Object.freeze([
+    // Step 1 (S15), at the top of the sheet
+    PRESENCE_SECTION,
     ".rp-stage",
     ".rp-stage",
     "#add-box-button",
@@ -307,8 +330,9 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
   // and Your Answers point at their targets (S16b): their cards slide up or
   // down into the screen (buildTourSteps) and are no taller than the room
   // beside the target (the tutorial page's fitBesideTarget).
-  placements: ["center", "center", "top", "top", "top", "center", "top"],
+  placements: ["bottom", "center", "center", "top", "top", "top", "center", "top"],
   copy: [
+    PRESENCE_STEP,
     {
       title: "Check Each Box",
       points: checkPoints("Tap"),

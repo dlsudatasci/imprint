@@ -4,14 +4,29 @@ import {
   validateObjectStep,
   validateObstructionStep,
   validateSidewalkStep,
+  PRESENCE_MISSING,
+  SCENE_MISSING,
 } from "./clientAnnotation.js";
+import { SCENE_KEYS, SIDEWALK_ONLY_KEYS } from "./sceneQuestions.mjs";
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 
+// Step 3 for a sidewalk (S15): the six answers
 const validSceneLevel = {
   sidewalkWidth: "two_people",
-  surfaceCondition: 2,
-  walkability: 2,
   overallAccessibility: 1,
+  surfaceEvenness: 2,
+  surfaceType: "tiles",
+  surfaceCondition: 2,
+  roadBarrier: true,
+};
+// Step 3 for a path: two answers, the four sidewalk-only ones null
+const pathSceneLevel = {
+  sidewalkWidth: null,
+  overallAccessibility: 4,
+  surfaceEvenness: 1,
+  surfaceType: null,
+  surfaceCondition: null,
+  roadBarrier: null,
 };
 
 function makeInput(overrides = {}) {
@@ -20,6 +35,7 @@ function makeInput(overrides = {}) {
     newObjects: [{ onSidewalk: true, comment: "pole", obstructs: true, severity: 3 }],
     selectedObjects: [{ onSidewalk: true, comment: "tree", obstructs: false }],
     sceneLevel: { ...validSceneLevel },
+    hasSidewalk: true,
     ...overrides,
   };
 }
@@ -99,10 +115,10 @@ describe("validateAnnotationForSubmit", () => {
 
   it("fails when sidewalkWidth is not selected", () => {
     const result = validateAnnotationForSubmit(
-      makeInput({ sceneLevel: { ...validSceneLevel, sidewalkWidth: "" } })
+      makeInput({ sceneLevel: { ...validSceneLevel, sidewalkWidth: null } })
     );
     expect(result.valid).toBe(false);
-    expect(result.error).toContain("sidewalk width");
+    expect(result.error).toBe("Please choose the sidewalk width.");
   });
 
   it("fails when surfaceCondition is null with sidewalk present", () => {
@@ -110,39 +126,7 @@ describe("validateAnnotationForSubmit", () => {
       makeInput({ sceneLevel: { ...validSceneLevel, surfaceCondition: null } })
     );
     expect(result.valid).toBe(false);
-    expect(result.error).toContain("surface condition");
-  });
-
-  it("passes with no sidewalk and the other three questions left empty (2 Oct 2026)", () => {
-    const result = validateAnnotationForSubmit(
-      makeInput({
-        sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null },
-      })
-    );
-    expect(result.valid).toBe(true);
-  });
-
-  it("asks for surface, walking comfort and accessibility once a sidewalk width is chosen", () => {
-    const empty = { sidewalkWidth: "one_person", surfaceCondition: 1, walkability: 1, overallAccessibility: 1 };
-    expect(validateAnnotationForSubmit(makeInput({ sceneLevel: { ...empty, surfaceCondition: undefined } })).error).toContain("surface condition");
-    expect(validateAnnotationForSubmit(makeInput({ sceneLevel: { ...empty, walkability: undefined } })).error).toContain("walking comfort");
-    expect(validateAnnotationForSubmit(makeInput({ sceneLevel: { ...empty, overallAccessibility: undefined } })).error).toContain("accessibility");
-  });
-
-  it("fails when walkability is null", () => {
-    const result = validateAnnotationForSubmit(
-      makeInput({ sceneLevel: { ...validSceneLevel, walkability: null } })
-    );
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("walking comfort");
-  });
-
-  it("fails when overallAccessibility is null", () => {
-    const result = validateAnnotationForSubmit(
-      makeInput({ sceneLevel: { ...validSceneLevel, overallAccessibility: null } })
-    );
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("accessibility");
+    expect(result.error).toBe("Please rate the surface condition.");
   });
 
   it("passes when a suggestion is marked not an object", () => {
@@ -189,14 +173,10 @@ describe("validateAnnotationForSubmit", () => {
     for (const input of failures) expect(validateAnnotationForSubmit(input).section).toBe("objects");
   });
 
-  it("names the scene section for a failure about Step 2", () => {
-    const failures = [
-      makeInput({ sceneLevel: { ...validSceneLevel, sidewalkWidth: null } }),
-      makeInput({ sceneLevel: { ...validSceneLevel, surfaceCondition: null } }),
-      makeInput({ sceneLevel: { ...validSceneLevel, walkability: null } }),
-      makeInput({ sceneLevel: { ...validSceneLevel, overallAccessibility: null } }),
-    ];
-    for (const input of failures) expect(validateAnnotationForSubmit(input).section).toBe("scene");
+  it("names the scene section for a failure about Step 3", () => {
+    for (const key of SCENE_KEYS) {
+      expect(validateAnnotationForSubmit(makeInput({ sceneLevel: { ...validSceneLevel, [key]: null } })).section).toBe("scene");
+    }
   });
 });
 
@@ -345,7 +325,7 @@ describe("validateAnnotationForSubmit for drawn boxes (both roles)", () => {
   it("still requires the scene battery from a contributor (isAnnotator defaults to false)", () => {
     const result = validateAnnotationForSubmit(makeInput({ sceneLevel: null }));
     expect(result.valid).toBe(false);
-    expect(result.error).toContain("sidewalk width");
+    expect(result.error).toBe("Please choose the sidewalk width.");
   });
 });
 
@@ -358,6 +338,7 @@ describe("validateAnnotationForSubmit, the sidewalk question", () => {
     newObjects: existing.filter((b) => b.editable),
     selectedObjects: existing.filter((b) => !b.editable && (b.selected || b.isRejected)),
     sceneLevel: { ...validSceneLevel },
+    hasSidewalk: true,
   });
   const offSuggestion = box("s1", { editable: false, onSidewalk: false, obstructs: false, severity: null, selected: false, isRejected: true });
   const offDrawn = box("d1", { editable: true, onSidewalk: false, obstructs: false, severity: null });
@@ -455,12 +436,13 @@ describe("validateSidewalkStep", () => {
 // 21 Oct 2026: a failure about boxes lists them, so the tool opens one to finish
 describe("the boxes a failed check is about", () => {
   const box = (id, extra) => ({ id, mark: { x: 0, y: 0, width: 10, height: 10 }, ...extra });
-  const scene = { sidewalkWidth: "wide", surfaceCondition: 1, walkability: 1, overallAccessibility: 1 };
+  const scene = { ...validSceneLevel };
   const contributor = (existing) => ({
     existingAnnotations: existing,
     newObjects: existing.filter((b) => b.editable),
     selectedObjects: existing.filter((b) => !b.editable && (b.selected || b.isRejected)),
     sceneLevel: scene,
+    hasSidewalk: true,
   });
 
   it("annotators: every suggestion still to decide, then every box with no category", () => {
@@ -487,10 +469,91 @@ describe("the boxes a failed check is about", () => {
     expect(result.boxIds).toEqual(["s3", "d3"]);
   });
 
-  it("lists no boxes for Step 2", () => {
+  it("lists no boxes for Step 3", () => {
     const yes = box("s2", { onSidewalk: true, editable: false, selected: true, comment: "car", obstructs: true, severity: 3 });
     const result = validateAnnotationForSubmit({ ...contributor([yes]), sceneLevel: { ...scene, sidewalkWidth: null } });
     expect(result.section).toBe("scene");
     expect(result.boxIds).toBeUndefined();
+  });
+});
+
+// S15 (9 Nov 2026): Step 1 first, then the boxes, then Step 3's six questions,
+// or two with only a path, whose boxes have no sidewalk answer
+describe("validateAnnotationForSubmit, Step 1 and Step 3 (S15)", () => {
+  const box = (id, extra) => ({ id, comment: "tree", mark: { x: 0, y: 0, width: 10, height: 10 }, ...extra });
+  const contributor = (existing, more = {}) => ({
+    existingAnnotations: existing,
+    newObjects: existing.filter((b) => b.editable),
+    selectedObjects: existing.filter((b) => !b.editable && (b.selected || b.isRejected)),
+    sceneLevel: { ...validSceneLevel },
+    hasSidewalk: true,
+    ...more,
+  });
+
+  it("asks for Step 1 before anything else, in the presence section", () => {
+    const untouched = box("s1", { editable: false, selected: false, isRejected: false });
+    for (const hasSidewalk of [null, undefined, "true", 1]) {
+      const result = validateAnnotationForSubmit(contributor([untouched], { hasSidewalk, sceneLevel: null }));
+      expect(result).toEqual({ valid: false, section: "presence", error: PRESENCE_MISSING });
+    }
+    expect(PRESENCE_MISSING).toBe("Please say whether there is a sidewalk.");
+    // Annotators have no Step 1
+    expect(validateAnnotationForSubmit({ existingAnnotations: [], newObjects: [], selectedObjects: [], sceneLevel: null, isAnnotator: true })).toEqual({ valid: true });
+  });
+
+  it("asks each of the six questions in order for a sidewalk, with its own message", () => {
+    const messages = [
+      "Please choose the sidewalk width.",
+      "Please rate how easy it is to get through.",
+      "Please rate how even the surface is.",
+      "Please choose what the surface is made of.",
+      "Please rate the surface condition.",
+      "Please say whether anything separates the sidewalk from the road.",
+    ];
+    expect(SCENE_KEYS.map((key) => SCENE_MISSING[key])).toEqual(messages);
+    const empty = Object.fromEntries(SCENE_KEYS.map((key) => [key, null]));
+    let scene = { ...empty };
+    for (const [i, key] of SCENE_KEYS.entries()) {
+      expect(validateAnnotationForSubmit(contributor([], { sceneLevel: scene }))).toEqual({ valid: false, section: "scene", error: messages[i] });
+      scene = { ...scene, [key]: validSceneLevel[key] };
+    }
+    expect(validateAnnotationForSubmit(contributor([], { sceneLevel: scene }))).toEqual({ valid: true });
+    for (const key of SCENE_KEYS) {
+      expect(validateAnnotationForSubmit(contributor([], { sceneLevel: { ...validSceneLevel, [key]: undefined } })).error).toBe(SCENE_MISSING[key]);
+    }
+  });
+
+  it("counts roadBarrier false as an answer", () => {
+    expect(validateAnnotationForSubmit(contributor([], { sceneLevel: { ...validSceneLevel, roadBarrier: false } }))).toEqual({ valid: true });
+  });
+
+  it("asks only Ease of Navigation and Evenness for a path", () => {
+    expect(validateAnnotationForSubmit(contributor([], { hasSidewalk: false, sceneLevel: pathSceneLevel }))).toEqual({ valid: true });
+    expect(validateAnnotationForSubmit(contributor([], { hasSidewalk: false, sceneLevel: { ...pathSceneLevel, overallAccessibility: null } })).error)
+      .toBe(SCENE_MISSING.overallAccessibility);
+    expect(validateAnnotationForSubmit(contributor([], { hasSidewalk: false, sceneLevel: { ...pathSceneLevel, surfaceEvenness: undefined } })).error)
+      .toBe(SCENE_MISSING.surfaceEvenness);
+    // The four sidewalk-only questions are never asked for a path
+    for (const key of SIDEWALK_ONLY_KEYS) expect(pathSceneLevel[key]).toBeNull();
+  });
+
+  it("takes a path's boxes as complete without a sidewalk answer", () => {
+    const yes = box("s1", { editable: false, selected: true, isRejected: false, obstructs: true, severity: 4 });
+    const no = box("s2", { editable: false, selected: false, isRejected: true, obstructs: false, severity: null });
+    const nao = box("s3", { editable: false, selected: false, isRejected: true, comment: "not_an_object", obstructs: false, severity: null });
+    const drawnNo = box("d1", { editable: true, comment: "bench", obstructs: false, severity: null });
+    expect(validateAnnotationForSubmit(contributor([yes, no, nao, drawnNo], { hasSidewalk: false, sceneLevel: pathSceneLevel }))).toEqual({ valid: true });
+    // The same boxes for a sidewalk need their sidewalk answer
+    expect(validateAnnotationForSubmit(contributor([yes, no, nao, drawnNo])).error).toBe(SIDEWALK_QUESTION_COPY.incomplete);
+  });
+
+  it("still needs a path's boxes answered Yes or No, with a severity on a Yes, and says path", () => {
+    const untouched = box("s1", { editable: false, selected: false, isRejected: false });
+    const noSeverity = box("s2", { editable: false, selected: true, obstructs: true, severity: null });
+    const drawnUnanswered = box("d1", { editable: true, comment: "bench" });
+    const path = (boxes) => validateAnnotationForSubmit(contributor(boxes, { hasSidewalk: false, sceneLevel: pathSceneLevel }));
+    expect(path([untouched])).toMatchObject({ valid: false, section: "objects", error: "Please answer Yes or No for every object before submitting.", boxIds: ["s1"] });
+    expect(path([noSeverity]).error).toContain("severity");
+    expect(path([drawnUnanswered])).toMatchObject({ valid: false, error: "Please indicate whether each object obstructs the path.", boxIds: ["d1"] });
   });
 });

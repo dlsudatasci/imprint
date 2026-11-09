@@ -22,7 +22,7 @@ describe("PROPOSAL_HINT_COPY", () => {
 
   // 6 Nov 2026: a proposal that it does not obstruct shows nothing
   it("has no line for a proposal that it does not obstruct", () => {
-    expect(Object.keys(PROPOSAL_HINT_COPY).sort()).toEqual(["obstructs", "tutorial"]);
+    expect(Object.keys(PROPOSAL_HINT_COPY).sort()).toEqual(["obstructs", "obstructsPath", "tutorial"]);
     expect(Object.values(PROPOSAL_HINT_COPY).join(" ")).not.toMatch(/does not obstruct/);
   });
 

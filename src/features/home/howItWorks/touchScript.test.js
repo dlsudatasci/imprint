@@ -7,7 +7,7 @@ import {
   touchFrame,
   touchTickOf,
 } from "./touchScript";
-import { CHAPTERS, DEMO_IMAGE_SIZE, DRAWN_ID, LAST_TICK, TICKS, demoFrame, tickOf } from "./demoScript";
+import { CHAPTERS, DEMO_IMAGE_SIZE, DRAWN_ID, HOLD_END, LAST_TICK, TICKS, demoFrame, tickOf } from "./demoScript";
 import {
   ADD_BOX_MIN_SIDE_PX,
   TOUCH_MIN_SIDE_PX,
@@ -30,12 +30,24 @@ const answers = (frame) =>
 const PHOTO_WIDTHS = [320, 348, 390, 430, 770, 1180, 1400];
 
 describe("touchScript", () => {
-  it("gives exactly the laptop preview's answers, to every object and to Step 2", () => {
+  it("gives exactly the laptop preview's answers, to Step 1, every object and Step 3 (S15)", () => {
     const phone = at(touchTickOf("next"));
     const laptop = demoFrame(tickOf("next") / TICKS);
     expect(answers(phone)).toEqual(answers(laptop));
     expect(phone.scene).toEqual(laptop.scene);
-    expect(phone.scene).toEqual({ sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 3, overallAccessibility: 5 });
+    expect(phone.scene).toEqual({ sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 3, roadBarrier: true });
+    expect(phone.hasSidewalk).toBe(true);
+    expect(laptop.hasSidewalk).toBe(true);
+  });
+
+  it("answers Step 1 Yes at the top of the sheet before the first box (S15)", () => {
+    expect(at(0).hasSidewalk).toBeNull();
+    expect(TOUCH_STEPS.find((s) => s.name === "to-presence").to).toEqual({ kind: "ui", name: "presence", value: true });
+    expect(touchTickOf("to-presence")).toBeGreaterThanOrEqual(HOLD_END);
+    expect(at(touchTickOf("presence", "end")).hasSidewalk).toBe(true);
+    expect(touchTickOf("presence", "end")).toBeLessThan(touchTickOf("to-tree"));
+    expect(at(touchTickOf("presence", "end")).snap).toBe("collapsed");
+    expect(at(TICKS).hasSidewalk).toBeNull();
   });
 
   it("taps Tree #1 on the photo, then opens the rest with Next in the tool's order: Lamp Post #1, Car #1, Motorcycle #1", () => {
@@ -104,7 +116,7 @@ describe("touchScript", () => {
     expect(at(0).hint).toBe(false);
   });
 
-  it("rests the sheet where the tool does: the panel while a box is open, full for Step 2, down otherwise", () => {
+  it("rests the sheet where the tool does: the panel while a box is open, full for Step 3, down otherwise", () => {
     expect(at(0).snap).toBe("collapsed");
     expect(at(touchTickOf("tree-open", "end")).snap).toBe("panel");
     expect(at(touchTickOf("tree-confirm", "end")).snap).toBe("collapsed");
@@ -116,9 +128,10 @@ describe("touchScript", () => {
     expect(at(TICKS).imageIndex).toBe(1);
   });
 
-  it("scrolls Step 2 to the answer the finger is going to", () => {
+  it("scrolls Step 3 to the answer the finger is going to", () => {
     expect(at(touchTickOf("scene-open", "end")).sceneFocus).toBeNull();
-    expect(at(touchTickOf("to-walkability") + 1).sceneFocus).toEqual({ field: "walkability", value: 3 });
+    expect(at(touchTickOf("to-surfaceEvenness") + 1).sceneFocus).toEqual({ field: "surfaceEvenness", value: 3 });
+    expect(at(touchTickOf("to-roadBarrier") + 1).sceneFocus).toEqual({ field: "roadBarrier", value: true });
     expect(TOUCH_STEPS.find((s) => s.name === "to-scene").to).toEqual({ kind: "ui", name: "scene-line" });
   });
 

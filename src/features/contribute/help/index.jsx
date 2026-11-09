@@ -3,7 +3,7 @@ import { Container, H1, H2, P } from "@/ui";
 import GuideStill from "./GuideStill";
 import SessionPickerStill from "./SessionPickerStill";
 import { GUIDE_COPY as COPY } from "./guideCopy";
-import { CATEGORY_GROUPS, SCENE_QUESTIONS, SEVERITY_SCALE } from "./taskFacts";
+import { CATEGORY_GROUPS, SCENE_QUESTIONS, SEVERITY_SCALE, PATH_NOT_ASKED } from "./taskFacts";
 
 /**
  * The annotation guide, at /demo for anyone and /contribute/help for
@@ -70,6 +70,13 @@ export default function HelpDirectory() {
                       <dt className="text-sm font-semibold text-ink">{q.name}</dt>
                       <dd className="mt-0.5 text-sm text-muted">{q.prompt}</dd>
                       <dd className="mt-2 text-sm text-body">{q.answers.join(", ")}</dd>
+                      {/* What each answer means (S15), one line each */}
+                      <dd>
+                        <ul data-scene-meanings className="mt-2 space-y-1 text-sm text-body">
+                          {q.meanings.map((m) => <li key={m}>{m}</li>)}
+                        </ul>
+                      </dd>
+                      {q.sidewalkOnly && <dd data-path-not-asked className="mt-2 text-xs text-muted">{PATH_NOT_ASKED}</dd>}
                     </div>
                   ))}
                 </dl>

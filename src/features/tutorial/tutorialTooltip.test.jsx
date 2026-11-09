@@ -13,7 +13,8 @@ const body = (step) => decode(renderToStaticMarkup(<TourStepBody step={step} />)
 
 describe("a tour step's text", () => {
   it("renders a contributor step as its numbered list, the proposal sentence right after the third point's text, then its note", () => {
-    const check = buildTourSteps(false)[0];
+    // Check Each Box, after Step 1 (S15)
+    const check = buildTourSteps(false)[1];
     const html = body(check);
     expect(html).toMatch(/^<ol class="list-decimal pl-5 space-y-1">/);
     const items = [...html.matchAll(/<li>(.*?)<\/li>/g)].map((m) => m[1]);
@@ -25,20 +26,25 @@ describe("a tour step's text", () => {
     expect(html).toMatch(/<\/ol><p class="mt-2 text-muted">Did we miss an object on the sidewalk or path\? Click and drag to box it, even if it doesn't obstruct\.<\/p>$/);
   });
 
+  it("renders Step 1 (S15) as its intro, then its one point as a list", () => {
+    const presence = buildTourSteps(false)[0];
+    expect(body(presence)).toBe(`<p>${presence.intro}</p><ol class="list-decimal pl-5 space-y-1 mt-2"><li>${presence.points[0]}</li></ol>`);
+  });
+
   it("renders the intro first and `after` between the list and the note", () => {
     const html = body({ intro: "Intro.", points: ["One."], after: "After.", note: "Note." });
     expect(html).toBe('<p>Intro.</p><ol class="list-decimal pl-5 space-y-1 mt-2"><li>One.</li></ol><p class="mt-2">After.</p><p class="mt-2 text-muted">Note.</p>');
   });
 
   it("renders a step with no points as its paragraphs, with no list", () => {
-    const answers = buildTourSteps(false)[2];
+    const answers = buildTourSteps(false)[3];
     expect(body(answers)).toBe(`<p>${answers.intro}</p>`);
     // Severity, one paragraph from 5 Nov 2026 (Rans)
-    const severity = buildTourSteps(false)[3];
+    const severity = buildTourSteps(false)[4];
     expect(body(severity)).toBe(`<p>${severity.intro}</p>`);
     const next = buildTourSteps(false).at(-1);
     expect(body(next)).toBe(`<p>${next.after}</p>`);
-    expect(body(buildTourSteps(false, "objects", "touch")[3])).not.toContain("<ol");
+    expect(body(buildTourSteps(false, "objects", "touch")[4])).not.toContain("<ol");
   });
 
   it("renders a step with no intro or note as the list alone", () => {

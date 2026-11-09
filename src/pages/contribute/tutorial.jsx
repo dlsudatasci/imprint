@@ -101,7 +101,7 @@ const MOCKED_ENDPOINTS = [
  *
  * Contributors practise instead of touring on the first image (S19, 7 Nov
  * 2026, from pilot participant 4): a fresh start of the tutorial runs the
- * practice guide (PracticeGuide, practiceSteps.js), ten steps that each wait
+ * practice guide (PracticeGuide, practiceSteps.js), eleven steps from S15 (Step 1 first) that each wait
  * for the contributor to do one thing on the photo, while the tool keeps
  * everything else locked (practiceLock). The tool tells the page each change
  * with its state (onPracticeEvent), which decides each step. Skip practice

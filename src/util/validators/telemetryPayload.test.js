@@ -133,6 +133,18 @@ describe("buildSuggestionConfidences", () => {
     }
   });
 
+  // Only a path (S15): the hint is on the one question, so it was shown on every answered suggestion but Not an object
+  it("marks the proposal shown for a path's suggestion without a sidewalk answer", () => {
+    const path = (overrides) => buildSuggestionConfidences([car({ proposedObstructs: true, ...overrides })], { hasSidewalk: false })[0];
+    expect(path({ selected: true, isRejected: false, obstructs: true, severity: 3 }).proposalShown).toBe(true);
+    expect(path({ selected: false, isRejected: true, obstructs: false }).proposalShown).toBe(true);
+    expect(path({ selected: false, isRejected: true, comment: "not_an_object", obstructs: false }).proposalShown).toBe(false);
+    expect(buildSuggestionConfidences([car({ proposedObstructs: false, selected: true })], { hasSidewalk: false })[0].proposalShown).toBe(false);
+    // The same box for a sidewalk, never asked Question 1, saw no hint
+    expect(buildSuggestionConfidences([car({ proposedObstructs: true, selected: true })])[0].proposalShown).toBe(false);
+    expect(buildSuggestionConfidences([car({ proposedObstructs: true, selected: true })], { hasSidewalk: false, isAnnotator: true })[0].proposalShown).toBe(false);
+  });
+
   it("logs Not an object as removed, whatever its box", () => {
     expect(only(car({ selected: false, isRejected: true, comment: "not_an_object", obstructs: false }))).toMatchObject({ disposition: "removed", obstructs: false });
     expect(only(car({ selected: false, isRejected: true, comment: "not_an_object", obstructs: null, mark: { ...baseMark, x: 90 } }))).toMatchObject({ disposition: "removed", obstructs: null });

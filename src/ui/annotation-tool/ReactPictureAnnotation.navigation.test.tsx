@@ -4,6 +4,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import ReactPictureAnnotation from "./ReactPictureAnnotation";
 import { readSessionData, writeSession, readCurrentCount, readReachedCount } from "@/util/sessionCache";
+import { emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
 import { requestImage, FINISH_BEFORE_LEAVING } from "@/util/imageNavigation";
 
 vi.mock("next/router", () => ({ default: { reload: vi.fn() } }));
@@ -30,9 +31,10 @@ type Tool = {
 };
 
 const mark = (x: number, y: number, w: number, h: number) => ({ x, y, width: w, height: h, type: "RECT" });
-const NO_SIDEWALK = { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null };
+// A complete Step 3 for a sidewalk (S15), roadBarrier false counting as an answer
+const COMPLETE_SCENE = { sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 3, roadBarrier: false };
 const suggestion = (id: string, comment: string, m: ReturnType<typeof mark>) => ({ id, comment, mark: m, editable: false, selected: false, isRejected: false });
-/** An image as it comes back once sent: every suggestion answered No on the path, and Step 2 answered */
+/** An image as it comes back once sent: Step 1 answered Yes, every suggestion answered No on the path, and Step 3 answered */
 const sentRecord = (n: number) => ({
   imageID: `IMG-${n}`,
   url: `/photo-${n}.jpg`,
@@ -41,14 +43,16 @@ const sentRecord = (n: number) => ({
     { ...suggestion("a-car", "car", mark(100, 100, 200, 120)), isRejected: true, onSidewalk: true, obstructs: false, initialState: { comment: "car", mark: mark(100, 100, 200, 120) } },
     { ...suggestion("c-tree", "tree", mark(400, 50, 80, 200)), isRejected: true, onSidewalk: true, obstructs: false, initialState: { comment: "tree", mark: mark(400, 50, 80, 200) } },
   ],
-  userSceneLevel: NO_SIDEWALK,
+  userSceneLevel: COMPLETE_SCENE,
   userSceneScale: 2,
+  userHasSidewalk: true,
 });
-/** An image not sent yet */
+/** An image not sent yet, Step 1 answered Yes and saved (S15), so its boxes open */
 const freshRecord = (n: number) => ({
   imageID: `IMG-${n}`,
   url: `/photo-${n}.jpg`,
   city: "manila",
+  userHasSidewalk: true,
   annotationList: [suggestion("a-car", "car", mark(100, 100, 200, 120)), suggestion("c-tree", "tree", mark(400, 50, 80, 200))],
 });
 
@@ -187,7 +191,7 @@ describe("moving between images (6 Nov 2026)", () => {
   it("stays, with the message, when the changed image is missing an answer", async () => {
     session({ current: 1, reached: 3 });
     const tool = mount({ current: 1 });
-    act(() => tool.setState({ sceneLevel: { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null } }));
+    act(() => tool.setState({ sceneLevel: emptySceneLevel() }));
     await go(tool, 3);
     expect(calls("/api/annotationSubmit")).toHaveLength(0);
     expect(calls("/api/updateSessionCount")).toHaveLength(0);
@@ -254,7 +258,7 @@ describe("moving between images (6 Nov 2026)", () => {
         tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
-      tool.setState({ sceneLevel: NO_SIDEWALK });
+      tool.setState({ sceneLevel: COMPLETE_SCENE });
     });
     await act(async () => { await tool.submit(); });
     expect(sentBody().currentAnnotationCount).toBe(2);

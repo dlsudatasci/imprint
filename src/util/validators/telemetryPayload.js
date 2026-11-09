@@ -186,12 +186,14 @@ function suggestionDisposition(obj) {
  * (chapter_4.tex lines 355 and 416): `proposedObstructs`, the box's own from
  * the record or null, and `proposalShown`, true only when it has one and the
  * box answered Question 1 Yes, so the hint was on screen. Always false for
- * annotators. The server sets both again from the record.
+ * annotators. The server sets both again from the record. With only a path
+ * (S15, hasSidewalk false) the hint is on the one question, so it was shown
+ * for every answered suggestion proposed to obstruct but Not an object.
  *
  * @param {Array<object>} annotations
- * @param {{ msToAnswer?: (id: string) => number | null, isAnnotator?: boolean }} [options]
+ * @param {{ msToAnswer?: (id: string) => number | null, isAnnotator?: boolean, hasSidewalk?: boolean | null }} [options]
  */
-function buildSuggestionConfidences(annotations, { msToAnswer, isAnnotator = false } = {}) {
+function buildSuggestionConfidences(annotations, { msToAnswer, isAnnotator = false, hasSidewalk = true } = {}) {
   const result = [];
   for (const obj of annotations) {
     if (obj.editable) continue;
@@ -203,7 +205,7 @@ function buildSuggestionConfidences(annotations, { msToAnswer, isAnnotator = fal
       disposition: suggestionDisposition(obj),
       obstructs: typeof obj.obstructs === "boolean" ? obj.obstructs : null,
       proposedObstructs: isProposal(obj.proposedObstructs) ? obj.proposedObstructs : null,
-      proposalShown: proposalWasShown(obj, obj, { isAnnotator }),
+      proposalShown: proposalWasShown(obj, obj, { isAnnotator, hasSidewalk }),
       ...(typeof msToAnswer === "function" ? { msToAnswer: msToAnswer(obj.id) } : {}),
     });
   }

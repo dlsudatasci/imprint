@@ -6,7 +6,8 @@ import { chartColumns, chartSummary, MAX_CHART_COLUMNS } from "./sessionChart";
  * One row in the dashboard's session history.
  *
  * Renders two ways. A finished session shows its results: an obstruction
- * chart and the average "Accessible to Me" answer. The active session shows
+ * chart and the average Ease of Navigation answer ("Accessible to Me" before
+ * S15, the same field). The active session shows
  * how far it got and a link back into it.
  *
  * There is at most one active session, and /api/recentSessions puts it first.
@@ -15,8 +16,9 @@ import { chartColumns, chartSummary, MAX_CHART_COLUMNS } from "./sessionChart";
  * - The chart counted every box ruled on, No and Not an object included. It
  *   now counts obstructions, boxes answered Yes (countObstructions).
  * - "Avg Score" did not say which question it averaged, and on a scale where
- *   1 is best the number read backwards. It is now "Accessible to me" with
- *   the nearest answer word ("Mostly accessible"), still color-coded
+ *   1 is best the number read backwards. It is now "Ease of navigation" (S15,
+ *   "Accessible to me" before) with the nearest answer word ("Slightly
+ *   obstructed"), still color-coded
  *   (chapter_5.tex).
  * - The active row repeated the page's own Resume and Stop buttons. It now
  *   shows its progress and a Resume link. Stopping is done once, at the top
@@ -37,8 +39,8 @@ import { chartColumns, chartSummary, MAX_CHART_COLUMNS } from "./sessionChart";
  *   one of their sessions. Then the chart takes its space. A session without
  *   it, in a list with it, says why.
  * - The chart (10 rem) and the answer (8 rem) keep the same width down the list.
- * - Accessible to me runs 1 Not accessible to 5 Easily accessible from 22 Oct
- *   2026 (validators/sceneScale.mjs), so the darkest tile is now the highest.
+ * - Ease of navigation runs 1 Fully obstructed to 5 Unobstructed, higher is
+ *   better from 22 Oct 2026 (validators/sceneScale.mjs), so the darkest tile is the highest.
  *
  * Proportioned 22 Oct 2026 (Rans: the thumbnails and Accessible to me looked
  * small beside the chart, and out of line with it): the thumbnails up to 72
@@ -180,14 +182,14 @@ function SessionChart({ counts }) {
 }
 
 /**
- * The average Accessible to Me answer: the number on its color, and the
+ * The average Ease of Navigation answer (S15, Accessible to Me before): the number on its color, and the
  * answer word nearest it under it, both centred in the column.
  */
 function Access({ averageScore }) {
   const numericScore = parseFloat(averageScore);
   const has = averageScore != null && numericScore > 0;
   const word = has ? accessWord(numericScore) : null;
-  // 5 is Easily accessible and 1 Not accessible, so higher is better (22 Oct 2026)
+  // 5 is Unobstructed and 1 Fully obstructed, so higher is better (22 Oct 2026, S15)
   let scoreClass = "bg-surface-subtle text-subtle";
   if (has && numericScore >= 4) scoreClass = "bg-primary text-white";
   else if (has && numericScore >= 2.5) scoreClass = "bg-primary-100 text-primary";

@@ -21,6 +21,16 @@
  * without it is on the old scale. Everything that reads the answers reads them
  * through toCurrentScale, so old and new rows agree. The database is a
  * testing one, so old rows are left as they are rather than rewritten.
+ *
+ * S15 (9 Nov 2026) renames the answers and changes what is asked, now Step 3
+ * (validators/sceneQuestions.mjs): no_sidewalk and walkability are no longer
+ * asked (whether there is a sidewalk is Step 1, hasSidewalk), surfaceCondition
+ * keeps its name and its 1 to 3 scale with redefined answers (Broken, Cracked,
+ * Intact), and overallAccessibility its 1 to 5 scale as Ease of Navigation.
+ * Three fields are added: surfaceEvenness (1 to 3, born higher is better, so
+ * never in SCENE_SCALE_TOP and never turned round), surfaceType (a word) and
+ * roadBarrier (true or false), which flipAnswer leaves as they are. The labels
+ * above are kept as history.
  */
 export const SCENE_SCALE = 2;
 

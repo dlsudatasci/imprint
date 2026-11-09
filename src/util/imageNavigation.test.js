@@ -44,6 +44,22 @@ describe("answerSignature", () => {
     for (const v of variants) expect(answerSignature({ scene: { sidewalkWidth: "one_person" }, ...v })).not.toBe(base);
   });
 
+  // S15 (9 Nov 2026): changing Step 1 is a change when moving between images
+  it("changes with Step 1's answer, a path box with no sidewalk answer included", () => {
+    const scene = { sidewalkWidth: null, overallAccessibility: 4, surfaceEvenness: 1, surfaceType: null, surfaceCondition: null, roadBarrier: null };
+    const yes = answerSignature({ boxes, scene, hasSidewalk: true });
+    const pathSig = answerSignature({ boxes, scene, hasSidewalk: false });
+    const none = answerSignature({ boxes, scene, hasSidewalk: null });
+    expect(new Set([yes, pathSig, none]).size).toBe(3);
+    expect(answerSignature({ boxes, scene })).toBe(none);
+    expect(answerSignature({ boxes, scene, hasSidewalk: false })).toBe(pathSig);
+    // A path box has no onSidewalk, read as null as a missing one always was
+    const pathBox = { id: "p", comment: "tree", mark: mark(1), editable: false, isRejected: true, obstructs: false };
+    expect(answerSignature({ boxes: [pathBox], hasSidewalk: false })).toBe(answerSignature({ boxes: [{ ...pathBox, onSidewalk: null }], hasSidewalk: false }));
+    // roadBarrier false and true differ
+    expect(answerSignature({ scene: { roadBarrier: false } })).not.toBe(answerSignature({ scene: { roadBarrier: true } }));
+  });
+
   // S20 (7 Nov 2026): the panel turns a label into the option's value when it opens
   it("reads a category written as its value, its label or in lower case as one, and a typed-in one as written", () => {
     const as = (comment) => answerSignature({ boxes: [{ ...no("a"), comment }] });

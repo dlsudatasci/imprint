@@ -15,8 +15,10 @@ import {
   cardFadedAt,
   replay,
   initialState,
+  STEP3_ANSWERS,
 } from "./demoScript";
 import { buildTrays } from "@/features/annotate/objectTrays";
+import { SCENE_KEYS, emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
 import { buildDisplayLabels } from "@/util/buildDisplayLabels";
 import { getSuggestionPanelMode } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
@@ -61,7 +63,7 @@ describe("the preview script", () => {
     expect(f.chapter).toBe(0);
   });
 
-  it("shows the whole page, still, while it slides in and pins, then goes close in a short scroll later", () => {
+  it("shows the whole page, still, while it slides in and pins, answers Step 1 there, then goes close in", () => {
     // About a twelfth of a screen after it pins (250 ticks a screen)
     expect(HOLD_END).toBeGreaterThan(ENTRANCE_END);
     expect(HOLD_END - ENTRANCE_END).toBeLessThanOrEqual(25);
@@ -69,13 +71,21 @@ describe("the preview script", () => {
       expect(cameraAt(tick)).toBe("overview");
       expect(at(tick).cursor.visible).toBe(false);
     }
-    expect(cameraAt(HOLD_END)).toBe("photo");
-    expect(tickOf("to-tree")).toBeGreaterThan(HOLD_END);
+    // Step 1 (S15) in the whole-page shot, from the moment it pins: Step 1's
+    // card is above the photo's, out of the close shot
+    expect(tickOf("to-presence")).toBe(HOLD_END);
+    for (const tick of [HOLD_END, tickOf("presence")]) expect(cameraAt(tick)).toBe("overview");
+    expect(at(tickOf("presence") - 0.1).hasSidewalk).toBeNull();
+    expect(at(tickOf("presence", "end")).hasSidewalk).toBe(true);
+    expect(cameraAt(tickOf("presence", "end"))).toBe("photo");
+    // A short scroll: no more than a fifth of a screen
+    expect(tickOf("presence", "end") - HOLD_END).toBeLessThanOrEqual(50);
+    expect(tickOf("to-tree")).toBeGreaterThan(tickOf("presence", "end"));
     expect(at(tickOf("to-tree") + 1).cursor.visible).toBe(true);
   });
 
   it("stays close in on the photo from Tree #1 to Lamp Post #2's severity, with no zoom out between", () => {
-    for (let tick = HOLD_END; tick <= tickOf("drawn-confirm", "end"); tick += 1) expect(cameraAt(tick)).toBe("photo");
+    for (let tick = tickOf("presence", "end"); tick <= tickOf("drawn-confirm", "end"); tick += 1) expect(cameraAt(tick)).toBe("photo");
     expect(CAMERA.map((c) => c.region)).toEqual(["overview", "photo", "overview"]);
   });
 
@@ -167,9 +177,23 @@ describe("the preview script", () => {
     expect(trayIds(f).toDecide).toEqual([]);
   });
 
-  it("answers the four Step 2 questions in order", () => {
-    expect(at(tickOf("sidewalkWidth", "end")).scene).toMatchObject({ sidewalkWidth: "two_people", surfaceCondition: null });
-    expect(at(tickOf("overallAccessibility", "end")).scene).toEqual({ sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 3, overallAccessibility: 5 });
+  it("answers the six Step 3 questions in order (S15)", () => {
+    const answered = STEPS.filter((s) => s.type === "press" && SCENE_KEYS.includes(s.name)).map((s) => s.name);
+    expect(answered).toEqual([...SCENE_KEYS]);
+    expect(at(tickOf("sidewalkWidth", "end")).scene).toMatchObject({ sidewalkWidth: "two_people", overallAccessibility: null });
+    expect(at(tickOf("roadBarrier", "end")).scene).toEqual({
+      sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 3, roadBarrier: true,
+    });
+    expect(STEP3_ANSWERS.map(([key]) => key)).toEqual([...SCENE_KEYS]);
+    // All of Step 3 before Next Image
+    expect(tickOf("roadBarrier", "end")).toBeLessThan(tickOf("to-next"));
+  });
+
+  it("starts each photo with Step 1 unanswered and Step 3 empty (S15)", () => {
+    expect(at(0).hasSidewalk).toBeNull();
+    expect(at(0).scene).toEqual(emptySceneLevel());
+    expect(demoFrame(1).hasSidewalk).toBeNull();
+    expect(demoFrame(1).scene).toEqual(emptySceneLevel());
   });
 
   it("saves, then shows the second photo, fresh", () => {

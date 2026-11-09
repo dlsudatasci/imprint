@@ -81,7 +81,7 @@ describe("GET /api/admin/quality/degenerate", () => {
       status: "completed",
       selectedObjectsID: [{ obstructs: true, severity: 3 }],
       newObjects: [],
-      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false },
     }));
 
     setupAdminMocks({
@@ -144,7 +144,7 @@ describe("GET /api/admin/quality/degenerate with photos sent again", () => {
       status: "completed",
       selectedObjectsID: [{ obstructs: i % 2 === 0, severity: i % 2 === 0 ? (i % 5) + 1 : null }],
       newObjects: [],
-      sceneLevel: { sidewalkWidth: i % 2 ? "two_people" : "one_person", surfaceCondition: (i % 3) + 1, walkability: 3, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: i % 2 ? "two_people" : "one_person", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: (i % 3) + 1, roadBarrier: true },
     }));
     const telemetry = Array.from({ length: 12 }, (_, i) => [
       { userId: FLAGGED_USER, event: "IMAGE_SUBMITTED", imageID: `img${i}`, imageDurationMs: 8000 },

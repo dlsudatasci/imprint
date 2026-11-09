@@ -31,7 +31,9 @@
  * A box answered No has obstructs: false and stays in every mode (--full
  * exports the boxes as stored, --quality and --retraining add an onSidewalk
  * field and column next to obstructs). Annotator boxes and Not an object boxes
- * have none.
+ * have none. From S15 (9 Nov 2026) a contributor whose Step 1 says there is
+ * only a path (hasSidewalk: false) is never asked it, so a path's boxes have
+ * no onSidewalk either, and --retraining adds a hasSidewalk column after it.
  *
  * From 6 Nov 2026 (S3) each suggestion is stored with the classifier's
  * proposal it was served with, `initialState.proposedObstructs` and
@@ -42,11 +44,20 @@
  * adds a proposalShown column after servedModelVersion, filtering no row by it.
  *
  * Scene answers are exported on the scale where higher is better, in every
- * mode (22 Oct 2026, src/util/validators/sceneScale.mjs): surfaceCondition 1
- * Difficult or dangerous to 3 Easy to traverse, walkability 1 Uncomfortable to
- * 3 Comfortable, overallAccessibility 1 Not accessible to 5 Easily accessible.
- * Answers saved before then ran the other way and are turned round here, so
- * every exported row with answers says sceneScale: 2.
+ * mode (22 Oct 2026, src/util/validators/sceneScale.mjs). Answers saved before
+ * then ran the other way and are turned round here, so every exported row
+ * with answers says sceneScale: 2.
+ *
+ * From S15 (9 Nov 2026, src/util/validators/sceneQuestions.mjs) a contributor
+ * row carries hasSidewalk (Step 1: true a sidewalk, false only a path) beside
+ * a sceneLevel of exactly six keys: sidewalkWidth (one_person, two_people,
+ * three_or_more), overallAccessibility (Ease of Navigation, 1 Fully obstructed
+ * to 5 Unobstructed), surfaceEvenness (1 Uneven, 2 Sloped,
+ * 3 Flat), surfaceType (concrete, tiles, pavers, unpaved),
+ * surfaceCondition (1 Broken, 2 Cracked, 3 Intact) and roadBarrier (true or
+ * false). For a path only overallAccessibility and surfaceEvenness are
+ * answered and the other four are null. --full spreads the whole row, so
+ * hasSidewalk passes through, and --quality adds it to each pair.
  *
  * Usage:
  *   node --env-file=.env scripts/export-data.mjs --retraining
@@ -251,6 +262,8 @@ try {
         groundTruth: groundTruthMap.get(ann.imageID),
         contributorBoxes: realBoxes.map(qualityBox),
         notAnObjectCount,
+        // Contributors' Step 1 (S15), null for a row without one
+        hasSidewalk: ann.hasSidewalk ?? null,
         sceneLevel: sceneAnswersOf(ann),
       };
     });

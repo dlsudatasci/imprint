@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import Step1Card from "./Step1Card";
+import Step1Card, { STEP2_PARAGRAPH, step2PathParagraph } from "./Step1Card";
 import { TRAY_COPY } from "@/features/annotate/objectTrays";
 
 /**
@@ -11,7 +11,7 @@ import { TRAY_COPY } from "@/features/annotate/objectTrays";
  * without "Question 1" and "Question 2", which pilot participant 4 found wordy.
  */
 const decode = (html: string) => html.replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/&quot;/g, '"');
-const render = (props: { instructionsId?: string | null } = {}) =>
+const render = (props: { instructionsId?: string | null; pathOnly?: boolean; touch?: boolean } = {}) =>
   decode(renderToStaticMarkup(<Step1Card photo={<div data-photo />} answers={<div data-answers />} {...props} />));
 const PARAGRAPH = "The dashed yellow boxes are suggested objects. Click each one, check its label, then answer whether it's on the sidewalk and whether it's an obstruction. If the photo shows two sidewalks, only the one nearest you counts. You can also drag your mouse to box objects on the sidewalk or path that we missed, whether or not they obstruct. Leave out objects that are not on the sidewalk.";
 
@@ -51,5 +51,27 @@ describe("Step1Card", () => {
   it("no longer says to review objects on or beside the sidewalk, and has no em dash or semicolon", () => {
     expect(render()).not.toContain("on or beside the sidewalk");
     expect(render()).not.toMatch(/[—;]/);
+  });
+});
+
+// S15 (9 Nov 2026): Step 1 asks whether there is a sidewalk, so this card is Step 2
+describe("Step1Card as Step 2", () => {
+  it("is headed Step 2", () => {
+    expect(TRAY_COPY.stepHeading).toBe("Step 2: Identify Objects and Obstructions");
+    expect(render()).toContain("Step 2: Identify Objects and Obstructions");
+    expect(STEP2_PARAGRAPH).toBe(PARAGRAPH);
+  });
+
+  it("says the path paragraph once Step 1 is answered Only a path, with the mouse's or the finger's words", () => {
+    const pointer = "The dashed yellow boxes are suggested objects. Click each one, check its label, then answer whether it obstructs the path. You can also drag your mouse to box objects on the path that we missed, whether or not they obstruct.";
+    const touch = "The dashed yellow boxes are suggested objects. Tap each one, check its label, then answer whether it obstructs the path. You can also tap Add box to box objects on the path that we missed, whether or not they obstruct.";
+    expect(step2PathParagraph()).toBe(pointer);
+    expect(step2PathParagraph(true)).toBe(touch);
+    expect(render({ pathOnly: true })).toContain(pointer);
+    expect(render({ pathOnly: true })).not.toContain("on the sidewalk");
+    expect(render({ pathOnly: true, touch: true })).toContain(touch);
+    // A sidewalk, or Step 1 not answered yet: the paragraph above, whatever the input
+    expect(render({ touch: true })).toContain(PARAGRAPH);
+    for (const words of [pointer, touch]) expect(words).not.toMatch(/[—;]/);
   });
 });

@@ -19,13 +19,17 @@ const CONTRIBUTOR_SUGGESTIONS = [
   { id: "c1", comment: "tree", confidence: 0.91, mark: rect(100, 100, 80, 200) },
 ];
 
+// A contributor's image with a sidewalk (S15): Step 1 and the six Step 3 answers
 const validBody = {
   imageID: 42,
+  hasSidewalk: true,
   sceneLevel: {
     sidewalkWidth: "two_people",
-    surfaceCondition: 2,
-    walkability: 3,
     overallAccessibility: 3,
+    surfaceEvenness: 2,
+    surfaceType: "tiles",
+    surfaceCondition: 2,
+    roadBarrier: true,
   },
   selectedObjectsID: [{ id: "c1", onSidewalk: true, obstructs: true, severity: 3 }],
   newObjects: [{ onSidewalk: true, obstructs: false }],
@@ -388,6 +392,8 @@ describe("POST /api/annotationSubmit", () => {
       const mocks = setupAnnotator();
       const body = annotatorBody();
       body.sceneLevel = validBody.sceneLevel;
+      // Annotators have no Step 1 (S15): one sent is not stored
+      body.hasSidewalk = true;
       body.selectedObjectsID[0] = { ...body.selectedObjectsID[0], severity: 4 };
       body.newObjects[0] = { ...body.newObjects[0], severity: 2 };
       const res = createMockRes();
@@ -396,6 +402,7 @@ describe("POST /api/annotationSubmit", () => {
       expect(res._status).toBe(200);
       const $set = storedSet(mocks);
       expect($set.sceneLevel).toBeNull();
+      expect($set).not.toHaveProperty("hasSidewalk");
       expect($set.selectedObjectsID[0]).toMatchObject({ obstructs: false, severity: null });
       expect($set.newObjects[0]).toMatchObject({ obstructs: true, severity: null });
     });
@@ -556,6 +563,7 @@ describe("POST /api/annotationSubmit", () => {
 
     const $set = mocks.annotationsCol.updateOne.mock.calls[0][1].$set;
     expect($set.sceneLevel).toEqual(validBody.sceneLevel);
+    expect($set.hasSidewalk).toBe(true);
     expect($set.selectedObjectsID).toHaveLength(1);
     expect($set.selectedObjectsID[0]).toMatchObject(validBody.selectedObjectsID[0]);
   });
@@ -1205,5 +1213,102 @@ describe("POST /api/annotationSubmit, a photo sent again", () => {
   it("stores the finished screen after the last photo", async () => {
     const { mocks } = await submit({ before: sessionBefore([1, 2, 3, 4]), count: 6 });
     expect(storedPosition(mocks)).toBe(6);
+  });
+});
+
+// S15 (9 Nov 2026): Step 1 (hasSidewalk), Step 3's six questions, and a path's
+// boxes with no sidewalk answer
+describe("POST /api/annotationSubmit, Step 1 and Step 3 (S15)", () => {
+  const PATH_SCENE = { sidewalkWidth: null, overallAccessibility: 4, surfaceEvenness: 1, surfaceType: null, surfaceCondition: null, roadBarrier: null };
+  const pathBody = {
+    ...validBody,
+    hasSidewalk: false,
+    sceneLevel: PATH_SCENE,
+    selectedObjectsID: [{ id: "c1", obstructs: true, severity: 3 }],
+    newObjects: [{ obstructs: false }],
+  };
+  const send = async (body) => {
+    const mocks = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body }), res);
+    const call = mocks.annotationsCol.updateOne.mock.calls[0];
+    return { res, mocks, $set: call ? call[1].$set : null };
+  };
+
+  it("stores a sidewalk's hasSidewalk and its six answers", async () => {
+    const { res, $set } = await send(validBody);
+    expect(res._status).toBe(200);
+    expect($set.hasSidewalk).toBe(true);
+    expect($set.sceneLevel).toEqual(validBody.sceneLevel);
+    expect(Object.keys($set.sceneLevel)).toEqual(["sidewalkWidth", "overallAccessibility", "surfaceEvenness", "surfaceType", "surfaceCondition", "roadBarrier"]);
+  });
+
+  it("stores a path's two answers with the four others null, and its boxes without onSidewalk", async () => {
+    const { res, $set } = await send({ ...pathBody, sceneLevel: { overallAccessibility: 4, surfaceEvenness: 1 } });
+    expect(res._status).toBe(200);
+    expect($set.hasSidewalk).toBe(false);
+    expect($set.sceneLevel).toEqual(PATH_SCENE);
+    expect($set.selectedObjectsID[0]).not.toHaveProperty("onSidewalk");
+    expect($set.newObjects[0]).not.toHaveProperty("onSidewalk");
+  });
+
+  it("stores the normalised answers, not the request's", async () => {
+    const { $set } = await send({ ...validBody, sceneLevel: { ...validBody.sceneLevel, overallAccessibility: "4" } });
+    expect($set.sceneLevel.overallAccessibility).toBe(4);
+  });
+
+  it("refuses a contributor's body with no Step 1 answer, asking for a reload", async () => {
+    for (const hasSidewalk of [undefined, null, "true", 1]) {
+      const { res, $set } = await send({ ...validBody, hasSidewalk });
+      expect(res._status).toBe(422);
+      expect(res._json.message).toBe("IMPRINT was updated. Please reload the page to see the new questions.");
+      expect($set).toBeNull();
+    }
+  });
+
+  it("refuses walkability, no_sidewalk, a missing key, a sidewalk-only answer on a path, a string roadBarrier and an unknown surfaceType", async () => {
+    const refused = [
+      { ...validBody, sceneLevel: { ...validBody.sceneLevel, walkability: 2 } },
+      { ...validBody, sceneLevel: { ...validBody.sceneLevel, sidewalkWidth: "no_sidewalk" } },
+      { ...validBody, sceneLevel: { ...validBody.sceneLevel, surfaceEvenness: null } },
+      { ...pathBody, sceneLevel: { ...PATH_SCENE, roadBarrier: false } },
+      { ...pathBody, sceneLevel: { ...PATH_SCENE, sidewalkWidth: "one_person" } },
+      { ...validBody, sceneLevel: { ...validBody.sceneLevel, roadBarrier: "true" } },
+      { ...validBody, sceneLevel: { ...validBody.sceneLevel, surfaceType: "marble" } },
+    ];
+    for (const body of refused) {
+      const { res, $set } = await send(body);
+      expect(res._status).toBe(422);
+      expect($set).toBeNull();
+    }
+  });
+
+  it("refuses a path's box with a sidewalk answer", async () => {
+    const { res, $set } = await send({ ...pathBody, newObjects: [{ onSidewalk: true, obstructs: false }] });
+    expect(res._status).toBe(422);
+    expect(res._json.message).toBe("With only a path, objects have no sidewalk answer.");
+    expect($set).toBeNull();
+  });
+
+  it("still refuses a sidewalk's box without a sidewalk answer", async () => {
+    const { res } = await send({ ...validBody, newObjects: [{ obstructs: false }] });
+    expect(res._status).toBe(422);
+  });
+
+  it("logs hasSidewalk with IMAGE_SUBMITTED, from the checked body", async () => {
+    await send({ ...pathBody, telemetry: { imageDurationMs: 5000, hasSidewalk: true } });
+    expect(logTelemetryEvent.mock.calls[0][0]).toMatchObject({ event: "IMAGE_SUBMITTED", hasSidewalk: false });
+    vi.clearAllMocks();
+    await send({ ...validBody, telemetry: { imageDurationMs: 5000 } });
+    expect(logTelemetryEvent.mock.calls[0][0]).toMatchObject({ event: "IMAGE_SUBMITTED", hasSidewalk: true });
+  });
+
+  it("records proposalShown for a path's suggestion proposed to obstruct", async () => {
+    const mocks = setupMocks();
+    mocks.imageCol.findOne.mockResolvedValue({ city: "makati", annotationList: [{ ...CONTRIBUTOR_SUGGESTIONS[0], proposedObstructs: true }] });
+    const res = createMockRes();
+    await handler(createMockReq({ body: pathBody }), res);
+    expect(res._status).toBe(200);
+    expect(mocks.annotationsCol.updateOne.mock.calls[0][1].$set.selectedObjectsID[0].proposalShown).toBe(true);
   });
 });

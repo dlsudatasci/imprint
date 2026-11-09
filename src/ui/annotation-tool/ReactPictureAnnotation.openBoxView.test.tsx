@@ -84,7 +84,7 @@ afterEach(() => {
 /** The tool on a phone, the photo laid out at rest */
 function mount(): Tool {
   window.localStorage.clear();
-  writeSession({ total: 5, current: 1, data: { imgRecords: [{ imageID: "IMG", url: "/p.jpg", annotationList: boxes }], isAnnotator: false } });
+  writeSession({ total: 5, current: 1, data: { imgRecords: [{ imageID: "IMG", url: "/p.jpg", annotationList: boxes, userHasSidewalk: true }], isAnnotator: false } });
   const ref = React.createRef<ReactPictureAnnotation>();
   host = document.createElement("div");
   document.body.appendChild(host);

@@ -5,7 +5,7 @@ import { BOX_VISIBILITY_COPY } from "@/features/annotate/boxVisibility";
 import { EyeIcon, EyeOffIcon } from "../icons";
 
 /**
- * Contributor Step 1: the answers under the photo (7 Oct 2026).
+ * Contributor Step 2 (Step 1 until S15): the answers under the photo (7 Oct 2026).
  *
  * The objects still to decide, then two lists side by side, Not obstructions
  * and Obstructions, then any boxes marked Not an object. Each object is a chip
@@ -34,6 +34,8 @@ import { EyeIcon, EyeOffIcon } from "../icons";
  * marked Not an object (S17, 4 Nov 2026), listed under Not an object, where
  * its panel's Restore brings it back.
  *
+ * With only a path (S15, `pathOnly`) the empty-image line says "on the path".
+ *
  * Presentational: ReactPictureAnnotation passes the lists from buildTrays.
  * Keeps the box-review-section id, which the tutorial points at.
  */
@@ -58,6 +60,8 @@ export interface ObjectTraysProps {
   stacked?: boolean;
   /** The ids the touch tour points at, when there is no answers sheet to carry them (a tablet held sideways) */
   tourIds?: boolean;
+  /** Step 1 answered Only a path (S15) */
+  pathOnly?: boolean;
 }
 
 type ChipActions = Pick<ObjectTraysProps, "selectedId" | "onOpen" | "onToggleHidden"> & { hidden: Set<string> };
@@ -233,7 +237,7 @@ function AnswerList({ tray, trays, actions, tourId }: {
   );
 }
 
-export default function ObjectTrays({ trays, selectedId, hiddenIds = [], onOpen, onToggleHidden, onShowAll, onHideAll, stacked = false, tourIds = false }: ObjectTraysProps) {
+export default function ObjectTrays({ trays, selectedId, hiddenIds = [], onOpen, onToggleHidden, onShowAll, onHideAll, stacked = false, tourIds = false, pathOnly = false }: ObjectTraysProps) {
   const { toDecide, notObstructions, obstructions, removed, total } = trays;
   const hidden = new Set(hiddenIds);
   const actions: ChipActions = { selectedId, onOpen, onToggleHidden, hidden };
@@ -263,7 +267,7 @@ export default function ObjectTrays({ trays, selectedId, hiddenIds = [], onOpen,
           ) : total > 0 || removed.length > 0 ? (
             <span className="text-sm font-semibold text-success">{TRAY_COPY.allAnswered}</span>
           ) : (
-            <span className="text-sm text-muted">{TRAY_COPY.noObjects}</span>
+            <span className="text-sm text-muted">{pathOnly ? TRAY_COPY.noObjectsPath : TRAY_COPY.noObjects}</span>
           )}
           {((hiddenCount > 0 && onShowAll) || showHideAll) && (
             <span data-hidden-summary className="ml-auto inline-flex items-center gap-3 pl-2 text-xs text-muted whitespace-nowrap">
@@ -381,15 +385,17 @@ export interface ObjectTraysPeekProps {
   onOpen(id: string): void;
   /** Open the first object still to decide */
   onNext(): void;
-  /** "Step 2: Rate the Sidewalk, 1 of 4 answered" */
+  /** "Step 3: Rate the Sidewalk, 1 of 6 answered" (S15) */
   sceneLine: string;
-  /** Show Step 2 */
+  /** Show Step 3 */
   onShowScene(): void;
   /** Ids of boxes hidden on the photo, for the first row's Show all (14 Oct 2026) */
   hiddenIds?: string[];
   /** With onHideAll, the first row: the step's name with Show all and Hide all (14 Oct 2026) */
   onShowAll?(): void;
   onHideAll?(): void;
+  /** Step 1 answered Only a path (S15) */
+  pathOnly?: boolean;
 }
 
 // A chip's tag at the top of the sheet: red for what is left, as on the
@@ -447,11 +453,11 @@ function PeekChips({ peek, selectedId, onOpen }: { peek: Peek; selectedId: strin
  * view, like the driver card in Grab: how many objects are still to decide with
  * Next, every object as a chip in one row with what is left first (21 Oct
  * 2026; before, the Not obstructions and Obstructions lists as two rows), and
- * a line saying Step 2 is further up. Every row has a fixed height, so the
+ * a line saying Step 3 is further up (Step 2 until S15). Every row has a fixed height, so the
  * sheet's collapsed height, and with it the photo's, does not change as
  * objects are answered. The touch tour points at it (box-review-section-peek).
  */
-export function ObjectTraysPeek({ trays, peek, selectedId, onOpen, onNext, sceneLine, onShowScene, hiddenIds = [], onShowAll, onHideAll }: ObjectTraysPeekProps) {
+export function ObjectTraysPeek({ trays, peek, selectedId, onOpen, onNext, sceneLine, onShowScene, hiddenIds = [], onShowAll, onHideAll, pathOnly = false }: ObjectTraysPeekProps) {
   const { toDecide, total, removed } = trays;
   // As in ObjectTrays: no box off the photo (S12, S17)
   const everyItem = [...toDecide, ...trays.notObstructions, ...trays.obstructions].filter((item) => !item.offSidewalk);
@@ -478,7 +484,7 @@ export function ObjectTraysPeek({ trays, peek, selectedId, onOpen, onNext, scene
         ) : total > 0 || removed.length > 0 ? (
           <span className="text-sm font-semibold text-success">{TRAY_COPY.allAnswered}</span>
         ) : (
-          <span className="text-xs text-muted line-clamp-2">{TRAY_COPY.noObjectsTouch}</span>
+          <span className="text-xs text-muted line-clamp-2">{pathOnly ? TRAY_COPY.noObjectsTouchPath : TRAY_COPY.noObjectsTouch}</span>
         )}
       </div>
       <PeekChips peek={peek} selectedId={selectedId} onOpen={onOpen} />

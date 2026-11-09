@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { TRAYS, TRAY_COPY, PEEK_STATUS, PEEK_TAG, trayOf, buildTrays, buildPeekChips, peekStatus, ghostSlotCount, sceneProgress, sceneProgressLine } from "./objectTrays";
+import * as objectTrays from "./objectTrays";
+import { TRAYS, TRAY_COPY, PEEK_STATUS, PEEK_TAG, trayOf, buildTrays, buildPeekChips, peekStatus, ghostSlotCount, sceneProgressLine } from "./objectTrays";
 
 // Contributor Step 1: lists of answers under the photo (7 Oct 2026)
 const mark = { x: 0, y: 0, width: 50, height: 50, type: "RECT" };
@@ -186,21 +187,79 @@ describe("TRAY_COPY", () => {
   });
 });
 
-// The Step 2 line at the top of the answers sheet on a phone (9 Oct 2026)
-describe("sceneProgress", () => {
-  it("counts the four answers, and only the width when there is no sidewalk", () => {
-    expect(sceneProgress(null)).toEqual({ answered: 0, required: 4 });
-    expect(sceneProgress({ sidewalkWidth: "two_people", surfaceCondition: 2, walkability: null, overallAccessibility: null })).toEqual({ answered: 2, required: 4 });
-    expect(sceneProgress({ sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null })).toEqual({ answered: 1, required: 1 });
+// The Step 3 line at the top of the answers sheet on a phone (9 Oct 2026, S15)
+describe("sceneProgressLine", () => {
+  const six = { sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3, roadBarrier: true };
+
+  it("counts six questions for a sidewalk, 0 of 6 to 6 of 6", () => {
+    expect(sceneProgressLine(null)).toBe("Step 3: Rate the Sidewalk, 0 of 6 answered");
+    expect(sceneProgressLine({ sidewalkWidth: "one_person" }, true)).toBe("Step 3: Rate the Sidewalk, 1 of 6 answered");
+    expect(sceneProgressLine(six, true)).toBe("Step 3: Rate the Sidewalk, 6 of 6 answered");
+    // Before Step 1 is answered, six as for a sidewalk
+    expect(sceneProgressLine(six, null)).toBe("Step 3: Rate the Sidewalk, 6 of 6 answered");
   });
 
-  it("reads as a line with no em dash or semicolon", () => {
-    expect(sceneProgressLine({ sidewalkWidth: "one_person" })).toBe("Step 2: Rate the Sidewalk, 1 of 4 answered");
+  it("counts roadBarrier false as an answer", () => {
+    expect(sceneProgressLine({ ...six, roadBarrier: false }, true)).toBe("Step 3: Rate the Sidewalk, 6 of 6 answered");
+    expect(sceneProgressLine({ roadBarrier: false }, true)).toBe("Step 3: Rate the Sidewalk, 1 of 6 answered");
+  });
+
+  it("counts two for a path, 2 of 2", () => {
+    const path = { sidewalkWidth: null, overallAccessibility: 2, surfaceEvenness: 1, surfaceType: null, surfaceCondition: null, roadBarrier: null };
+    expect(sceneProgressLine(path, false)).toBe("Step 3: Rate the Sidewalk, 2 of 2 answered");
+    expect(sceneProgressLine({ overallAccessibility: 2 }, false)).toBe("Step 3: Rate the Sidewalk, 1 of 2 answered");
+  });
+
+  it("reads as a line with no em dash or semicolon, and the trays keep no sceneProgress of their own", () => {
     expect(sceneProgressLine(null)).not.toMatch(/[—;]/);
+    expect(objectTrays).not.toHaveProperty("sceneProgress");
   });
 
   it("says tap, not click, on touch", () => {
     expect(TRAY_COPY.noObjectsTouch).toContain("Tap Add box");
     expect(TRAY_COPY.noObjectsTouch.toLowerCase()).not.toContain("click");
+  });
+
+  it("says path, not sidewalk, with only a path (S15)", () => {
+    expect(TRAY_COPY.noObjectsTouchPath).toBe("No suggestions in this image. Tap Add box for any object on the path we missed.");
+    expect(TRAY_COPY.noObjectsPath).toBe("No suggestions in this image. Draw a box around any object on the path we missed.");
+    expect(TRAY_COPY.stepHeading).toBe("Step 2: Identify Objects and Obstructions");
+  });
+});
+
+// Only a path (S15, 9 Nov 2026): no box has a sidewalk answer, so a box goes
+// by its obstruction answer
+describe("trayOf, buildTrays and the chips with only a path", () => {
+  const pathSuggestion = (id, extra = {}) => ({ id, mark, comment: "tree", editable: false, selected: false, initialState: { comment: "tree", mark }, ...extra });
+  const pathDrawn = (id, extra = {}) => ({ id, mark, comment: "bollard", editable: true, selected: false, ...extra });
+  const path = { pathOnly: true };
+
+  it("places a box with no sidewalk answer by its obstruction answer", () => {
+    expect(trayOf(pathSuggestion("a"), path)).toBe(TRAYS.toDecide);
+    expect(trayOf(pathSuggestion("a", { selected: true, obstructs: true, severity: 2 }), path)).toBe(TRAYS.obstructions);
+    expect(trayOf(pathSuggestion("a", { isRejected: true, obstructs: false }), path)).toBe(TRAYS.notObstructions);
+    expect(trayOf(pathSuggestion("a", { comment: "not_an_object", isRejected: true, obstructs: false }), path)).toBe(TRAYS.removed);
+    expect(trayOf(pathDrawn("d", { obstructs: true }), path)).toBe(TRAYS.obstructions);
+    expect(trayOf(pathDrawn("d", { obstructs: false }), path)).toBe(TRAYS.notObstructions);
+    expect(trayOf(pathDrawn("d"), path)).toBe(TRAYS.toDecide);
+    // For a sidewalk the same boxes wait for their sidewalk answer
+    expect(trayOf(pathSuggestion("a", { selected: true, obstructs: true, severity: 2 }))).toBe(TRAYS.toDecide);
+    expect(trayOf(pathDrawn("d", { obstructs: false }))).toBe(TRAYS.toDecide);
+  });
+
+  it("passes it through buildTrays, peekStatus and buildPeekChips", () => {
+    const boxes = [pathSuggestion("a", { selected: true, obstructs: true, severity: null }), pathSuggestion("b", { isRejected: true, obstructs: false }), pathDrawn("d")];
+    const trays = buildTrays(boxes, path);
+    expect(trays.obstructions.map((i) => i.id)).toEqual(["a"]);
+    expect(trays.notObstructions.map((i) => i.id)).toEqual(["b"]);
+    expect(trays.toDecide.map((i) => i.id)).toEqual(["d"]);
+    expect(trays.answered).toBe(2);
+    expect(buildTrays(boxes).answered).toBe(0);
+    expect(peekStatus(boxes[0], path)).toBe(PEEK_STATUS.noSeverity);
+    expect(peekStatus(boxes[1], path)).toBe(PEEK_STATUS.notObstruction);
+    const chips = buildPeekChips(boxes, path);
+    expect(chips.left).toBe(2);
+    expect(chips.nextId).toBe("a");
+    expect(buildPeekChips(boxes).left).toBe(3);
   });
 });

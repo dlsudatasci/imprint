@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { normalizeMark } from "@/util/boxGeometry";
+import { SCENE_KEYS } from "./sceneQuestions.mjs";
 import {
   IOU_THRESHOLD,
   computeIoU,
@@ -183,47 +184,59 @@ describe("computeSeverityMAE", () => {
   });
 });
 
+// S15 (9 Nov 2026): Step 1 as its own field, then each of the six questions
+// both people answered
 describe("computeSceneLevelAgreement", () => {
+  const sidewalk = { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false };
+  const path = { sidewalkWidth: null, overallAccessibility: 3, surfaceEvenness: 2, surfaceType: null, surfaceCondition: null, roadBarrier: null };
+  const both = (a, b) => ({ a, b });
+
   it("returns null for missing scenes", () => {
     expect(computeSceneLevelAgreement(null, null).overallRate).toBeNull();
+    expect(computeSceneLevelAgreement(sidewalk, null, both(true, true)).overallRate).toBeNull();
   });
 
-  it("computes perfect agreement", () => {
-    const scene = { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 };
-    const result = computeSceneLevelAgreement(scene, scene);
+  it("compares two sidewalks on Step 1 and all six questions", () => {
+    const result = computeSceneLevelAgreement(sidewalk, { ...sidewalk }, both(true, true));
+    expect(Object.keys(result.fields)).toEqual(["hasSidewalk", ...SCENE_KEYS]);
     expect(result.overallRate).toBe(1);
   });
 
-  it("computes partial agreement", () => {
-    const a = { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 };
-    const b = { sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 3, overallAccessibility: 5 };
-    const result = computeSceneLevelAgreement(a, b);
-    expect(result.overallRate).toBe(0.5);
+  it("computes partial agreement, the words and the booleans compared as they are", () => {
+    const b = { ...sidewalk, surfaceType: "tiles", roadBarrier: true, surfaceCondition: 3 };
+    const result = computeSceneLevelAgreement(sidewalk, b, both(true, true));
+    expect(result.overallRate).toBe(+(4 / 7).toFixed(4));
+    expect(result.fields.surfaceType).toEqual({ a: "concrete", b: "tiles", match: false });
+    expect(result.fields.roadBarrier).toEqual({ a: false, b: true, match: false });
     expect(result.fields.sidewalkWidth.match).toBe(true);
-    expect(result.fields.surfaceCondition.match).toBe(false);
   });
 
-  it("compares the sidewalk width answer (2 Oct 2026)", () => {
-    const a = { sidewalkWidth: "one_person", surfaceCondition: 2, walkability: 1, overallAccessibility: 1 };
-    const b = { ...a, sidewalkWidth: "three_or_more" };
-    const result = computeSceneLevelAgreement(a, b);
-    expect(result.fields.sidewalkWidth).toEqual({ a: "one_person", b: "three_or_more", match: false });
-    expect(result.overallRate).toBe(0.75);
+  it("compares two paths on Step 1, Ease of Navigation and Evenness only", () => {
+    const result = computeSceneLevelAgreement(path, { ...path, surfaceEvenness: 1 }, both(false, false));
+    expect(Object.keys(result.fields)).toEqual(["hasSidewalk", "overallAccessibility", "surfaceEvenness"]);
+    expect(result.fields.hasSidewalk).toEqual({ a: false, b: false, match: true });
+    expect(result.overallRate).toBe(+(2 / 3).toFixed(4));
   });
 
-  it("counts None against a sidewalk once, and skips the questions only one of them answered", () => {
-    const none = { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null };
-    const narrow = { sidewalkWidth: "one_person", surfaceCondition: 2, walkability: 1, overallAccessibility: 1 };
-    const result = computeSceneLevelAgreement(none, narrow);
-    expect(Object.keys(result.fields)).toEqual(["sidewalkWidth"]);
-    expect(result.overallRate).toBe(0);
+  it("counts a sidewalk against a path once on Step 1, and skips the questions only one of them answered", () => {
+    const result = computeSceneLevelAgreement(sidewalk, path, both(true, false));
+    expect(Object.keys(result.fields)).toEqual(["hasSidewalk", "overallAccessibility", "surfaceEvenness"]);
+    expect(result.fields.hasSidewalk.match).toBe(false);
+    // Step 1 disagrees, Ease agrees (3 and 3), Evenness does not (3 and 2)
+    expect(result.overallRate).toBe(+(1 / 3).toFixed(4));
   });
 
-  it("treats two None answers as full agreement", () => {
-    const none = { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null };
-    const result = computeSceneLevelAgreement(none, { ...none });
+  it("leaves Step 1 out when a row has none", () => {
+    const result = computeSceneLevelAgreement(sidewalk, sidewalk);
+    expect(result.fields).not.toHaveProperty("hasSidewalk");
     expect(result.overallRate).toBe(1);
-    expect(Object.keys(result.fields)).toEqual(["sidewalkWidth"]);
+  });
+
+  it("is passed each row's hasSidewalk by the pairwise and reference scores", () => {
+    const a = { selectedObjectsID: [], newObjects: [], sceneLevel: sidewalk, sceneScale: 2, hasSidewalk: true };
+    const b = { selectedObjectsID: [], newObjects: [], sceneLevel: path, sceneScale: 2, hasSidewalk: false };
+    expect(computePairwiseAgreement(a, b).sceneLevelAgreement.fields.hasSidewalk).toEqual({ a: true, b: false, match: false });
+    expect(computeReferencePerformance(a, b).sceneLevelAgreement.fields.hasSidewalk).toEqual({ a: true, b: false, match: false });
   });
 });
 
@@ -232,12 +245,12 @@ describe("computeReferencePerformance", () => {
     const contributor = {
       selectedObjectsID: [box(0, 0, 100, 100, { obstructs: true, severity: 3, comment: "tree" })],
       newObjects: [],
-      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false },
     };
     const groundTruth = {
       selectedObjectsID: [box(0, 0, 100, 100, { obstructs: true, severity: 4, comment: "tree" })],
       newObjects: [],
-      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false },
     };
 
     const result = computeReferencePerformance(contributor, groundTruth);
@@ -266,7 +279,7 @@ describe("detectDegenerateFlags", () => {
     return Array.from({ length: count }, () => ({
       selectedObjectsID: [{ obstructs: true, severity: 3, ...boxOverrides }],
       newObjects: [],
-      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false },
     }));
   }
 
@@ -295,6 +308,16 @@ describe("detectDegenerateFlags", () => {
     expect(flags.some((f) => f.type === "identical_scene_ratings")).toBe(true);
   });
 
+  it("flags identical Step 1 and scene answers, and not when only Step 1 varies (S15)", () => {
+    const same = makeAnnotations(12).map((a) => ({ ...a, hasSidewalk: true }));
+    expect(detectDegenerateFlags(same, []).some((f) => f.type === "identical_scene_ratings")).toBe(true);
+    const varied = same.map((a, i) => ({ ...a, hasSidewalk: i % 2 === 0 }));
+    expect(detectDegenerateFlags(varied, []).some((f) => f.type === "identical_scene_ratings")).toBe(false);
+    // roadBarrier alone varying is a different pattern too
+    const barrier = same.map((a, i) => ({ ...a, sceneLevel: { ...a.sceneLevel, roadBarrier: i % 2 === 0 } }));
+    expect(detectDegenerateFlags(barrier, []).some((f) => f.type === "identical_scene_ratings")).toBe(false);
+  });
+
   it("does not flag identical scene ratings when only the sidewalk width varies (2 Oct 2026)", () => {
     const widths = ["one_person", "two_people", "three_or_more"];
     const annotations = makeAnnotations(12).map((a, i) => ({
@@ -316,11 +339,15 @@ describe("detectDegenerateFlags", () => {
     const annotations = Array.from({ length: 12 }, (_, i) => ({
       selectedObjectsID: [{ obstructs: i % 2 === 0, severity: (i % 5) + 1 }],
       newObjects: [],
+      // A path every third image (S15), its four sidewalk-only answers null
+      hasSidewalk: i % 3 !== 0,
       sceneLevel: {
-        sidewalkWidth: i % 3 === 0 ? "no_sidewalk" : "two_people",
+        sidewalkWidth: i % 3 === 0 ? null : "two_people",
+        overallAccessibility: (i % 2) + 2,
+        surfaceEvenness: (i % 3) + 1,
+        surfaceType: i % 3 === 0 ? null : "tiles",
         surfaceCondition: i % 3 === 0 ? null : (i % 3) + 1,
-        walkability: i % 3 === 0 ? null : (i % 2) + 1,
-        overallAccessibility: i % 3 === 0 ? null : (i % 2) + 2,
+        roadBarrier: i % 3 === 0 ? null : i % 2 === 0,
       },
     }));
     const events = Array.from({ length: 12 }, () => ({ imageDurationMs: 30000 }));
@@ -363,11 +390,15 @@ describe("not-an-object exclusion", () => {
         { comment: "not_an_object", obstructs: false },
       ],
       newObjects: [],
+      // A path every third image (S15), its four sidewalk-only answers null
+      hasSidewalk: i % 3 !== 0,
       sceneLevel: {
-        sidewalkWidth: i % 3 === 0 ? "no_sidewalk" : "two_people",
+        sidewalkWidth: i % 3 === 0 ? null : "two_people",
+        overallAccessibility: (i % 2) + 2,
+        surfaceEvenness: (i % 3) + 1,
+        surfaceType: i % 3 === 0 ? null : "tiles",
         surfaceCondition: i % 3 === 0 ? null : (i % 3) + 1,
-        walkability: i % 3 === 0 ? null : (i % 2) + 1,
-        overallAccessibility: i % 3 === 0 ? null : (i % 2) + 2,
+        roadBarrier: i % 3 === 0 ? null : i % 2 === 0,
       },
     }));
     const flags = detectDegenerateFlags(annotations, []);
@@ -398,12 +429,12 @@ describe("computePairwiseAgreement", () => {
     const a = {
       selectedObjectsID: [box(0, 0, 100, 100, { obstructs: true })],
       newObjects: [],
-      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false },
     };
     const b = {
       selectedObjectsID: [box(5, 5, 100, 100, { obstructs: true })],
       newObjects: [],
-      sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+      sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false },
     };
     const result = computePairwiseAgreement(a, b);
     expect(result.f1).toBeGreaterThan(0);
@@ -415,8 +446,9 @@ describe("computePairwiseAgreement", () => {
 // 22 Oct 2026: Step 2 runs worst to best. A row without sceneScale 2 was
 // answered the other way round, and is compared as the same answer turned round
 describe("scene answers on two scales", () => {
-  const oldScale = { sidewalkWidth: "two_people", surfaceCondition: 1, walkability: 1, overallAccessibility: 2 };
-  const newScale = { sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 3, overallAccessibility: 4 };
+  // surfaceEvenness was never on the old scale, so it is never turned round (S15)
+  const oldScale = { sidewalkWidth: "two_people", overallAccessibility: 2, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 1, roadBarrier: true };
+  const newScale = { sidewalkWidth: "two_people", overallAccessibility: 4, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3, roadBarrier: true };
 
   it("agrees when the same answers were given before and after the change", () => {
     const a = { selectedObjectsID: [], newObjects: [], sceneLevel: oldScale };
@@ -424,7 +456,7 @@ describe("scene answers on two scales", () => {
     expect(computePairwiseAgreement(a, b).sceneLevelAgreement.overallRate).toBe(1);
     expect(computeReferencePerformance(a, b).sceneLevelAgreement.overallRate).toBe(1);
     // Marked as new, the old numbers mean the opposite and do not agree
-    expect(computePairwiseAgreement({ ...a, sceneScale: 2 }, b).sceneLevelAgreement.overallRate).toBe(0.25);
+    expect(computePairwiseAgreement({ ...a, sceneScale: 2 }, b).sceneLevelAgreement.overallRate).toBe(+(4 / 6).toFixed(4));
   });
 
   it("counts the same answers before and after the change as one pattern", () => {
@@ -548,7 +580,7 @@ describe("scoreAgainstStandard", () => {
 });
 
 describe("computeReferencePerformanceAgainstTeam", () => {
-  const scene = (w) => ({ sidewalkWidth: "two_people", surfaceCondition: 1, walkability: w, overallAccessibility: 1 });
+  const scene = (w) => ({ sidewalkWidth: "two_people", overallAccessibility: 1, surfaceEvenness: w, surfaceType: "concrete", surfaceCondition: 1, roadBarrier: false });
 
   it("averages obstruction agreement across annotators, pairing objects regardless of category", () => {
     const team = [

@@ -4,6 +4,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import ReactPictureAnnotation, { SESSION_CHANGED_MESSAGE, SESSION_CHANGED_RELOAD_MS, ADD_BOX_COPY, ADD_BOX_HINT_MS } from "./ReactPictureAnnotation";
 import { readSessionData, writeSession, readCurrentCount, writeCurrentCount } from "@/util/sessionCache";
+import { emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
 import { LOUPE_SIZE_PX, LOUPE_BOX_GAP_PX, LOUPE_MARGIN_PX, LOUPE_FINGER_CLEAR_PX } from "./loupe";
 import { PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
 import { messageVisibleMs } from "@/features/annotate/stepMessage";
@@ -99,10 +100,14 @@ type Tool = {
 };
 
 const mark = (x: number, y: number, w: number, h: number) => ({ x, y, width: w, height: h, type: "RECT" });
+// A complete Step 3 for a sidewalk (S15)
+const COMPLETE_SCENE = { sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 3, roadBarrier: false };
 const record = () => ({
   imageID: "IMG-1",
   url: "/photo.jpg",
   city: "manila",
+  // Step 1 answered Yes (S15), so the boxes open
+  userHasSidewalk: true,
   annotationList: [
     { id: "a-car", comment: "car", mark: mark(100, 100, 200, 120), editable: false, selected: false, isRejected: false },
     { id: "b-pole", comment: "utility_post", mark: mark(120, 110, 20, 80), editable: false, selected: false, isRejected: false },
@@ -230,16 +235,17 @@ describe("saving unsubmitted edits (8 Oct 2026)", () => {
   // no userSceneScale and its answers ran the other way
   it("marks the answers it saves, and turns a cached answer from before the change round", () => {
     const tool = mount();
-    act(() => tool.setState({ sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 2, overallAccessibility: 5 } }));
+    act(() => tool.setState({ sceneLevel: COMPLETE_SCENE }));
     act(() => vi.advanceTimersByTime(500));
     expect(saved().userSceneScale).toBe(2);
     unmount();
-    expect(mount().state.sceneLevel).toEqual({ sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 2, overallAccessibility: 5 });
+    expect(mount().state.sceneLevel).toEqual(COMPLETE_SCENE);
     unmount();
 
-    const old = { ...record(), userSceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 1, walkability: 2, overallAccessibility: 1 } };
+    // Old-scale numbers are turned round, surfaceEvenness (born higher is better, S15) never
+    const old = { ...record(), userSceneLevel: { ...COMPLETE_SCENE, overallAccessibility: 1, surfaceCondition: 1, surfaceEvenness: 1 } };
     writeSession({ total: 1, current: 1, data: { imgRecords: [old], isAnnotator: false } });
-    expect(mount().state.sceneLevel).toEqual({ sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 2, overallAccessibility: 5 });
+    expect(mount().state.sceneLevel).toEqual({ ...COMPLETE_SCENE, overallAccessibility: 5, surfaceCondition: 3, surfaceEvenness: 1 });
   });
 
   it("saves a waiting edit at once when the page is left", () => {
@@ -491,7 +497,7 @@ describe("the sidewalk question (S12, 2 Nov 2026)", () => {
       tool.selectBoxById("c-tree");
       tool.onMarkNotAnObject();
     });
-    act(() => tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } }));
+    act(() => tool.setState({ sceneLevel: COMPLETE_SCENE }));
     await act(async () => {
       await tool.submit();
     });
@@ -610,7 +616,7 @@ describe("moving on from an image (8 Oct 2026)", () => {
         tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
-      tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+      tool.setState({ sceneLevel: COMPLETE_SCENE });
     });
   }
 
@@ -811,7 +817,7 @@ describe("the timing two quality checks need (S10, 28 Oct 2026)", () => {
     tool.onUnselectObstruction();
   });
   const noSidewalk = (tool: Tool) => act(() => {
-    tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+    tool.setState({ sceneLevel: COMPLETE_SCENE });
   });
   const interact = (type: "pointerdown" | "keydown" | "touchstart") => act(() => {
     const event = type === "keydown" ? new KeyboardEvent(type, { bubbles: true }) : new Event(type, { bubbles: true });
@@ -960,7 +966,7 @@ describe("what was done to each suggestion, in the manuscript's names (S6, 29 Oc
     act(() => {
       tool.selectBoxById("c-tree");
       tool.onMarkNotAnObject();
-      tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+      tool.setState({ sceneLevel: COMPLETE_SCENE });
     });
     const entries = await sentEntries(tool);
     expect(entries.get("a-car")).toMatchObject({ disposition: "accepted", obstructs: false });
@@ -1017,7 +1023,7 @@ describe("the batch's suggestion threshold (S2, 29 Oct 2026)", () => {
         tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
-      tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+      tool.setState({ sceneLevel: COMPLETE_SCENE });
     });
     const fetchMock = vi.fn(async () => ({ status: 200, ok: true, json: async () => ({}) }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -1216,7 +1222,7 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
         tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
-      tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+      tool.setState({ sceneLevel: COMPLETE_SCENE });
     });
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -1235,7 +1241,7 @@ describe("keeping boxes on the photo (8 Oct 2026)", () => {
         tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
-      tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+      tool.setState({ sceneLevel: COMPLETE_SCENE });
     });
     globalThis.fetch = vi.fn(async () => ({ status: 422, ok: false, json: async () => ({ message: "A box has no area inside the image." }) })) as unknown as typeof fetch;
     await act(async () => {
@@ -1396,7 +1402,7 @@ describe("touch on the photo (9 Oct 2026)", () => {
     const tool = onPhone();
     const peek = () => host.querySelector("#box-review-section-peek")!;
     const peekButton = (text: string) => Array.from(peek().querySelectorAll("button")).find((b) => b.textContent?.trim() === text);
-    expect(peek().textContent).toContain("Step 1: Identify Objects");
+    expect(peek().textContent).toContain("Step 2: Identify Objects");
     expect(peekButton("Hide all")).toBeDefined();
     expect(host.querySelector("#box-review-section [data-hidden-summary]")).toBeNull();
     act(() => peekButton("Hide all")!.click());
@@ -1953,25 +1959,23 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
   });
 
   // 12 Oct 2026: on a 360 px phone the fifth accessibility option stuck out of
-  // its card. jsdom lays nothing out, so this checks the rows may wrap. The
-  // widths were checked in a browser at 320, 360, 375 and 390 px.
-  it("lets Step 2's rows of options wrap in the sheet, five going three and two on a narrow phone, and keeps one row on the desktop layout", () => {
+  // its card. From S15 (9 Nov 2026) each question is one grid of picture
+  // buttons, and Ease of Navigation's five go three and two in the sheet (five
+  // "obstructed" labels do not fit at 12 px) and five across on a laptop.
+  // jsdom lays nothing out, so this checks the grids' columns.
+  it("puts Step 3's answers in rows, Ease of Navigation three and two in the sheet and five across on the desktop layout", () => {
     window.localStorage.clear();
     writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: false } });
-    const rows = () =>
-      Array.from(host.querySelectorAll<HTMLElement>("#scene-level-section div")).filter(
-        (div) => div.children.length >= 3 && Array.from(div.children).every((child) => child.tagName === "BUTTON") && !div.className.includes("grid"),
-      );
+    const counts = () =>
+      Array.from(host.querySelectorAll<HTMLElement>("#scene-level-section [data-scene-question]")).map((q) => q.querySelectorAll("[data-scene-option]").length);
+    const easeGrid = () => host.querySelector<HTMLElement>('[data-scene-question="overallAccessibility"] .grid')!;
     mount({ layout: "sheet" });
-    expect(rows().map((row) => row.children.length)).toEqual([3, 3, 5]);
-    for (const row of rows()) expect(row.className).toContain("flex-wrap");
-    for (const option of Array.from(rows()[2].children)) expect(option.className).toContain("max-[399px]:basis-[30%]");
-    expect(rows()[0].children[0].className).not.toContain("basis-");
+    expect(counts()).toEqual([3, 5, 3, 4, 3, 2]);
+    expect(easeGrid().className).toContain("grid-cols-3");
     unmount();
     mount({ layout: "desktop" });
-    expect(rows().map((row) => row.children.length)).toEqual([3, 3, 5]);
-    for (const row of rows()) expect(row.className).not.toContain("flex-wrap");
-    expect(rows()[2].children[0].className).not.toContain("basis-");
+    expect(counts()).toEqual([3, 5, 3, 4, 3, 2]);
+    expect(easeGrid().className).toContain("grid-cols-5");
   });
 
   // 12 Oct 2026: bringing Step 2 into view scrolled the phone screen itself
@@ -2083,7 +2087,7 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
         tool.onSetOnSidewalk(true);
         tool.onUnselectObstruction();
       }
-      tool.setState({ sceneLevel: { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null } });
+      tool.setState({ sceneLevel: COMPLETE_SCENE });
     });
     const fetchMock = vi.fn(async () => ({ status: 200, ok: true, json: async () => ({}) }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -2467,7 +2471,7 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
       await tool.submit();
     });
   };
-  const SCENE = { sidewalkWidth: "wide", surfaceCondition: "easy", walkability: "comfortable", overallAccessibility: 1 };
+  const SCENE = COMPLETE_SCENE;
 
   it("annotators, desktop: Next opens the first suggestion still to decide, then the first box with no category", () => {
     const tool = open("annotator");
@@ -2521,10 +2525,10 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
     await submitNow(tool);
     expect(tool.state.error).toContain("severity");
     expect(tool.selectedId).toBe("c-tree");
-    // Step 2 left: no box opens
+    // Step 3 left: no box opens
     act(() => (tool as unknown as { onClose(): void }).onClose());
     set(tool, { "c-tree": { severity: 2 } });
-    act(() => tool.setState({ sceneLevel: { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null } }));
+    act(() => tool.setState({ sceneLevel: emptySceneLevel() }));
     await submitNow(tool);
     expect(tool.state.error).toContain("sidewalk width");
     expect(tool.selectedId).toBeNull();
@@ -2679,7 +2683,7 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
     // Above the screen: brought in
     section.getBoundingClientRect = () => ({ top: -300 }) as DOMRect;
     press();
-    expect(tool.state.error).toBe("Please select the sidewalk width category.");
+    expect(tool.state.error).toBe("Please choose the sidewalk width.");
     expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ block: "start" }));
     // In view below the pill (jsdom reads no scroll margin, so 0): left alone
     scroll.mockClear();
@@ -3195,5 +3199,179 @@ describe("dragging a box with its panel open on the desktop layout (S18)", () =>
     const types = removed.mock.calls.map((c) => c[0]);
     expect(types).toEqual(expect.arrayContaining(["mousemove", "mouseup", "blur"]));
     removed.mockRestore();
+  });
+});
+
+// S15 (9 Nov 2026): Step 1, whether there is a sidewalk or only a path, in the real tool
+describe("Step 1, whether there is a sidewalk (S15)", () => {
+  type S15Tool = Tool & {
+    state: Tool["state"] & { hasSidewalk: boolean | null; sceneLevel: Record<string, unknown>; showInput: boolean };
+    currentImageElement: { width: number; height: number };
+  };
+  type Data = Record<string, unknown>;
+  const fresh = (extra: Record<string, unknown> = {}) => {
+    window.localStorage.clear();
+    const rec: Record<string, unknown> = { ...record(), ...extra };
+    if (!("userHasSidewalk" in extra)) delete rec.userHasSidewalk;
+    writeSession({ total: 1, current: 1, data: { imgRecords: [rec], isAnnotator: false } });
+  };
+  const start = (options: MountOptions = {}) => {
+    const tool = mount(options) as S15Tool;
+    tool.currentImageElement = { width: 640, height: 360 };
+    return tool;
+  };
+  const presence = (value: boolean) => host.querySelector(`[data-presence-option='${value}']`) as HTMLButtonElement;
+  const answer = (value: boolean) => act(() => presence(value).click());
+  const data = (tool: Tool, id: string) => tool.shapes.find((s) => s.getAnnotationData().id === id)!.getAnnotationData() as unknown as Data;
+  const PATH_SCENE = { sidewalkWidth: null, overallAccessibility: 3, surfaceEvenness: 2, surfaceType: null, surfaceCondition: null, roadBarrier: null };
+
+  it("restores Step 1 with the other answers, and saves it as it changes", () => {
+    fresh();
+    const tool = start();
+    expect(tool.state.hasSidewalk).toBeNull();
+    answer(false);
+    expect(tool.state.hasSidewalk).toBe(false);
+    act(() => vi.advanceTimersByTime(500));
+    expect(saved().userHasSidewalk).toBe(false);
+    unmount();
+    expect(start().state.hasSidewalk).toBe(false);
+    unmount();
+    // Only a real answer is restored
+    fresh({ userHasSidewalk: "true" });
+    expect(start().state.hasSidewalk).toBeNull();
+  });
+
+  it("shows Step 1 as its own card above Step 2's on a laptop", () => {
+    fresh();
+    start();
+    const card = host.querySelector("#sidewalk-presence-section")!;
+    expect(card.textContent).toContain("Step 1: Is There a Sidewalk?");
+    expect(card.compareDocumentPosition(host.querySelector("[data-step1-card]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("clears and turns off the four sidewalk-only questions for a path, and turns them back on, empty, for a sidewalk", () => {
+    const tool = start();
+    act(() => tool.setState({ sceneLevel: COMPLETE_SCENE }));
+    answer(false);
+    expect(tool.state.sceneLevel).toEqual({ ...COMPLETE_SCENE, sidewalkWidth: null, surfaceType: null, surfaceCondition: null, roadBarrier: null });
+    for (const key of ["sidewalkWidth", "surfaceType", "surfaceCondition", "roadBarrier"]) {
+      expect(host.querySelector(`[data-scene-question='${key}']`)!.getAttribute("aria-disabled")).toBe("true");
+    }
+    expect(host.querySelector("[data-scene-question='overallAccessibility']")!.hasAttribute("aria-disabled")).toBe(false);
+    answer(true);
+    expect(tool.state.sceneLevel.sidewalkWidth).toBeNull();
+    expect(host.querySelector("[data-scene-question='sidewalkWidth']")!.hasAttribute("aria-disabled")).toBe(false);
+  });
+
+  it("holds the top of the phone's sheet until answered, then sits first in the list, and a path's Step 3 line reads 2 of 2", () => {
+    fresh();
+    const tool = start({ layout: "sheet" });
+    const header = () => host.querySelector("#answer-sheet")!;
+    expect(header().querySelector("#sidewalk-presence-section")).not.toBeNull();
+    expect(host.querySelector("#scene-level-peek")).toBeNull();
+    answer(false);
+    expect(host.querySelector("#sidewalk-presence-section")).not.toBeNull();
+    // Step 1 before the lists, in the part pulled up
+    const step1 = host.querySelector("#sidewalk-presence-section")!;
+    expect(step1.compareDocumentPosition(host.querySelector("#box-review-section")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(host.querySelector("#scene-level-peek")!.textContent).toBe("Step 3: Rate the Sidewalk, 0 of 2 answered");
+    act(() => tool.setState({ sceneLevel: PATH_SCENE }));
+    expect(host.querySelector("#scene-level-peek")!.textContent).toBe("Step 3: Rate the Sidewalk, 2 of 2 answered");
+    answer(true);
+    expect(host.querySelector("#scene-level-peek")!.textContent).toBe("Step 3: Rate the Sidewalk, 2 of 6 answered");
+  });
+
+  it("resets the boxes answered under the other answer, and says so once", () => {
+    const tool = start();
+    act(() => {
+      tool.selectBoxById("a-car");
+      tool.onSetOnSidewalk(false);
+      tool.selectBoxById("c-tree");
+      tool.onSetOnSidewalk(true);
+      tool.onSelectObstruction();
+      tool.onSetSeverity(3);
+      tool.selectBoxById("b-pole");
+      tool.onMarkNotAnObject();
+    });
+    answer(false);
+    expect(tool.state.error).toBe("Some boxes need answering again.");
+    expect(data(tool, "a-car")).not.toHaveProperty("onSidewalk");
+    expect(data(tool, "a-car")).not.toHaveProperty("obstructs");
+    expect(data(tool, "a-car").isRejected).toBeFalsy();
+    expect(data(tool, "c-tree")).not.toHaveProperty("onSidewalk");
+    expect(data(tool, "c-tree")).toMatchObject({ obstructs: true, severity: 3, selected: true });
+    expect(data(tool, "b-pole").comment).toBe("not_an_object");
+    // The car is back on the photo, still to decide
+    expect(tool.isOffPhoto("a-car")).toBe(false);
+    act(() => tool.setState({ error: null }));
+    answer(true);
+    expect(tool.state.error).toBe("Some boxes need answering again.");
+    expect(data(tool, "c-tree")).not.toHaveProperty("obstructs");
+    expect(data(tool, "c-tree")).not.toHaveProperty("selected");
+    expect(data(tool, "c-tree").comment).toBe("tree");
+    expect(data(tool, "b-pole").comment).toBe("not_an_object");
+  });
+
+  it("says nothing when no box needs answering again", () => {
+    fresh();
+    const tool = start();
+    answer(true);
+    expect(tool.state.error).toBeNull();
+    answer(false);
+    expect(tool.state.error).toBeNull();
+  });
+
+  it("asks a path's boxes only whether they obstruct the path, and sends them with no onSidewalk, beside hasSidewalk", async () => {
+    fresh();
+    const tool = start();
+    answer(false);
+    act(() => tool.selectBoxById("a-car"));
+    expect(host.textContent).toContain("Does Car obstruct the path?");
+    expect(host.querySelector("[data-control='on-sidewalk-yes']")).toBeNull();
+    expect(host.querySelector("[data-question-step]")).toBeNull();
+    act(() => {
+      tool.onUnselectObstruction();
+      tool.selectBoxById("b-pole");
+      tool.onSelectObstruction();
+      tool.onSetSeverity(4);
+      tool.selectBoxById("c-tree");
+      tool.onUnselectObstruction();
+      tool.setState({ sceneLevel: PATH_SCENE });
+    });
+    const fetchMock = vi.fn().mockResolvedValue({ status: 500, json: async () => ({}) });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await act(async () => {
+      await tool.submit();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.hasSidewalk).toBe(false);
+    expect(body.sceneLevel).toEqual(PATH_SCENE);
+    expect(body.selectedObjectsID).toHaveLength(3);
+    for (const b of body.selectedObjectsID) expect(b).not.toHaveProperty("onSidewalk");
+    expect(body.selectedObjectsID.find((b: Data) => b.id === "b-pole")).toMatchObject({ obstructs: true, severity: 4 });
+  });
+
+  it("stops Next Image without Step 1, with its message, and brings Step 1 into view on a laptop", async () => {
+    fresh();
+    const tool = start();
+    const section = host.querySelector("#sidewalk-presence-section") as HTMLElement;
+    const scroll = vi.fn();
+    section.scrollIntoView = scroll;
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    await act(async () => {
+      await tool.submit();
+    });
+    expect(tool.state.error).toBe("Please say whether there is a sidewalk.");
+    expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ block: "start" }));
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("counts changing Step 1 as a change to a sent image", () => {
+    const tool = start() as S15Tool & { hasUnsentChanges(): boolean; sentSignature: string | null };
+    act(() => tool.setState({}));
+    expect(tool.hasUnsentChanges()).toBe(false);
+    answer(false);
+    expect(tool.hasUnsentChanges()).toBe(true);
   });
 });

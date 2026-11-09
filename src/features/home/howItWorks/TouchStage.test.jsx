@@ -52,14 +52,20 @@ describe("TouchStage", () => {
     expect(el.querySelector('img[src="/images/tutorial/tutorial-1.jpg"]')).not.toBeNull();
     expect(photoBoxes(el)).toHaveLength(4);
     expect(el.textContent).toContain(TOOL_COPY.addBox);
-    expect(sheet(el).querySelector("#box-review-section-peek")).not.toBeNull();
-    expect(sheet(el).textContent).toContain("Still to decide");
-    expect(sheet(el).textContent).toContain("Step 2: Rate the Sidewalk, 0 of 4 answered");
+    // Step 1 (S15) holds the top of the sheet until it is answered
+    expect(sheet(el).querySelector("#sidewalk-presence-section")).not.toBeNull();
+    expect(sheet(el).querySelector("#box-review-section-peek")).toBeNull();
     expect(el.textContent).toContain("Next Image");
     expect(el.textContent).not.toContain("Previous");
     // The step card stands in for the tool's top bar, as on a laptop for the progress strip
     expect(el.textContent).not.toContain("Sidewalk 1 of");
     expect(el.querySelector("[data-demo-panel]")).toBeNull();
+    // Answered: the top of the sheet as before, and Step 1 at the top of the list, Yes chosen
+    const answered = show(touchTickOf("presence", "end"));
+    expect(sheet(answered).querySelector("#box-review-section-peek")).not.toBeNull();
+    expect(sheet(answered).textContent).toContain("Still to decide");
+    expect(sheet(answered).textContent).toContain("Step 3: Rate the Sidewalk, 0 of 6 answered");
+    expect(sheet(answered).querySelector('[data-presence-option="true"]').getAttribute("aria-pressed")).toBe("true");
   });
 
   it("shows the full-screen button only where the tool does, with a finger as the primary pointer", () => {
@@ -137,14 +143,15 @@ describe("TouchStage", () => {
     expect(sheet(el).textContent).toContain("Every object is answered.");
   });
 
-  it("answers Step 2 in the sheet, then shows the second photo with Previous", () => {
-    const el = show(touchTickOf("overallAccessibility", "end"));
+  it("answers Step 3 in the sheet, then shows the second photo with Previous", () => {
+    const el = show(touchTickOf("roadBarrier", "end"));
     const scene = sheet(el).querySelector("#scene-level-section");
-    for (const option of ["sidewalkWidth:two_people", "surfaceCondition:3", "walkability:3", "overallAccessibility:5"]) {
-      expect(scene.querySelector(`[data-scene-option="${option}"]`).className).toContain("border-primary");
+    for (const option of ["sidewalkWidth:two_people", "overallAccessibility:5", "surfaceEvenness:3", "surfaceType:concrete", "surfaceCondition:3", "roadBarrier:true"]) {
+      expect(scene.querySelector(`[data-scene-option="${option}"]`).getAttribute("aria-pressed"), option).toBe("true");
     }
+    expect(sheet(el).textContent).toContain("Step 3: Rate the Sidewalk, 6 of 6 answered");
     // The sheet's variant: 44 px answers
-    expect(scene.querySelector('[data-scene-option="sidewalkWidth:none"], [data-scene-option="sidewalkWidth:no_sidewalk"]').className).toContain("min-h-[44px]");
+    expect(scene.querySelector('[data-scene-option="sidewalkWidth:one_person"]').className).toContain("min-h-[44px]");
     const next = show(TICKS);
     expect(next.querySelector('img[src="/images/tutorial/tutorial-2.jpg"]')).not.toBeNull();
     expect(next.textContent).toContain("Previous");

@@ -1,290 +1,611 @@
 import React from "react";
+import { useMediaQuery, REDUCED_MOTION_QUERY } from "@/hooks/useMediaQuery";
 
 /**
- * Sidewalk width card icons.
- *
- * Each card shows a person navigating past an obstruction (a bollard/post) on
- * a perspective-drawn sidewalk. The three width levels differ in how much clear
- * space surrounds the obstruction — narrow (squeeze past), moderate (comfortable
- * clearance), wide (plenty of room). This framing avoids literal person-counting
- * and instead captures the *effective clear width* concept from the manuscript
- * (Ch. 1 line 27, Ch. 2 line 53).
- *
- * The same obstruction appears at a fixed size across all three cards — what
- * changes is the sidewalk width around it.
+ * Step 3 icons (S15). Sidewalk Width is drawn in 3D, looking along a stretch
+ * of sidewalk, with people walking on it (SidewalkWidthIcon, animated). The
+ * others are plans: a close plan of the paving for the surface, plans seen
+ * from above for traffic and the route. currentColor only, so the chosen
+ * answer turns primary like the rest of the option. Every svg is aria-hidden,
+ * since the option's text names the answer. data-icon describes the drawing
+ * for tests.
  */
-export function SidewalkWidthIcon({ type }: { type: string }) {
-  /** Stick figure walking forward — head, body, arms, legs. */
-  const walkingFigure = (cx: number) => (
+
+// ---- Sidewalk Width ---------------------------------------------------------
+// A stretch of sidewalk seen from one end and above: u runs along it (up and
+// to the right on screen), v across it (towards the viewer), height is up.
+const O = [3, 47];
+const ALONG = [0.82, -0.415];
+const ACROSS = [0.46, 0.62];
+const LENGTH = 60;
+const CURB = 2.6;
+const ROAD = 5;
+const WALL = 5;
+const at = (u: number, v: number): [number, number] => [O[0] + ALONG[0] * u + ACROSS[0] * v, O[1] + ALONG[1] * u + ACROSS[1] * v];
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const xy = ([x, y]: [number, number]) => `${r2(x)} ${r2(y)}`;
+
+interface Walker {
+  /** Lane across the sidewalk */
+  v: number;
+  /** Start and end along the sidewalk */
+  from: number;
+  to: number;
+  /** Seconds per loop */
+  dur: number;
+  /** Fraction of the loop spent walking, then standing until holdEnd */
+  moveEnd?: number;
+  holdEnd?: number;
+  /** Seconds into the loop at load, so walkers are spread out */
+  begin?: number;
+  /** Where the walker stands when motion is reduced */
+  still: number;
+}
+
+interface WidthScene {
+  label: string;
+  /** Width of the sidewalk, across */
+  width: number;
+  walkers: Walker[];
+  /** Narrow only: the mark that appears when the two walkers meet */
+  clash?: { u: number; v: number; dur: number; from: number; to: number };
+}
+
+/**
+ * Narrow: room for one direction at a time, so two people walking towards
+ * each other meet and stop. Limited: two people pass each other with no
+ * room to spare. Wide: people pass both ways with room for everyone.
+ */
+const WIDTH_SCENES: Record<string, WidthScene> = {
+  one_person: {
+    label: "Narrow: room for one direction of walkers, two people meeting cannot pass",
+    width: 9,
+    walkers: [
+      { v: 4.5, from: 58, to: 34, dur: 3.6, moveEnd: 0.45, holdEnd: 0.88, still: 34 },
+      { v: 4.5, from: 2, to: 26, dur: 3.6, moveEnd: 0.45, holdEnd: 0.88, still: 26 },
+    ],
+    clash: { u: 30, v: 4.5, dur: 3.6, from: 0.45, to: 0.86 },
+  },
+  two_people: {
+    label: "Limited: two people can pass each other with no room to spare",
+    width: 15,
+    walkers: [
+      { v: 4, from: 60, to: 0, dur: 3.6, still: 38 },
+      { v: 11, from: 0, to: 60, dur: 3.6, still: 22 },
+    ],
+  },
+  three_or_more: {
+    label: "Wide: people pass both ways with room to spare",
+    width: 30,
+    walkers: [
+      { v: 5, from: 60, to: 0, dur: 4.4, still: 46 },
+      { v: 5, from: 60, to: 0, dur: 4.4, begin: -2.2, still: 16 },
+      { v: 17, from: 0, to: 60, dur: 4.8, begin: -1, still: 24 },
+      { v: 25, from: 0, to: 60, dur: 4.8, begin: -3.4, still: 50 },
+    ],
+  },
+};
+
+/** The sidewalk slab with its curb, the road in front and a low wall behind */
+function Slab({ width, road = ROAD }: { width: number; road?: number }) {
+  const a = at(0, 0), b = at(LENGTH, 0), c = at(LENGTH, width), d = at(0, width);
+  const e = at(0, width + road), g = at(LENGTH, width + road);
+  const l0 = at(0, width + road * 0.72), l1 = at(LENGTH, width + road * 0.72);
+  return (
     <g>
-      <ellipse cx={cx} cy={22} rx={5} ry={6} fill="currentColor" />
-      <line x1={cx} y1={28} x2={cx - 1} y2={46} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
-      <line x1={cx - 1} y1={33} x2={cx - 10} y2={38} stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
-      <line x1={cx - 1} y1={33} x2={cx + 8} y2={40} stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
-      <line x1={cx - 1} y1={46} x2={cx - 8} y2={62} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
-      <line x1={cx - 1} y1={46} x2={cx + 7} y2={61} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
+      <path d={`M${xy(d)} L${xy(c)} L${r2(g[0])} ${r2(g[1] + CURB)} L${r2(e[0])} ${r2(e[1] + CURB)} Z`} fill="currentColor" fillOpacity={0.05} />
+      {road >= 10 && <path d={`M${r2(l0[0])} ${r2(l0[1] + CURB)} L${r2(l1[0])} ${r2(l1[1] + CURB)}`} stroke="currentColor" strokeOpacity={0.35} strokeWidth={0.8} strokeDasharray="4 3" />}
+      <path d={`M${xy(a)} L${xy(b)} L${r2(b[0])} ${r2(b[1] - WALL)} L${r2(a[0])} ${r2(a[1] - WALL)} Z`} fill="currentColor" fillOpacity={0.14} />
+      <path d={`M${xy(a)} L${xy(b)} L${xy(c)} L${xy(d)} Z`} fill="currentColor" fillOpacity={0.12} stroke="currentColor" strokeOpacity={0.55} strokeWidth={1} strokeLinejoin="round" />
+      <path d={`M${xy(d)} L${xy(c)} L${r2(c[0])} ${r2(c[1] + CURB)} L${r2(d[0])} ${r2(d[1] + CURB)} Z`} fill="currentColor" fillOpacity={0.32} />
     </g>
   );
+}
 
-  /** Two converging perspective lines representing sidewalk edges. */
-  const sidewalkEdges = (leftTop: number, leftBot: number, rightTop: number, rightBot: number) => (
+/** A person standing at the origin, with a shadow on the ground */
+function Person() {
+  return (
+    <>
+      <ellipse cx={0} cy={0} rx={3.4} ry={1.4} fill="currentColor" fillOpacity={0.18} />
+      <rect x={-2.7} y={-13.5} width={5.4} height={13.5} rx={2.7} fill="currentColor" />
+      <rect x={0.4} y={-13} width={1.9} height={12} rx={0.95} fill="#fff" fillOpacity={0.18} />
+      <circle cx={0} cy={-16.6} r={2.75} fill="currentColor" />
+    </>
+  );
+}
+
+function WalkerFigure({ walker, still }: { walker: Walker; still: boolean }) {
+  const { v, from, to, dur, moveEnd, holdEnd, begin = 0 } = walker;
+  if (still) {
+    return <g transform={`translate(${xy(at(walker.still, v))})`}><Person /></g>;
+  }
+  const a = xy(at(from, v)), b = xy(at(to, v));
+  const holds = moveEnd !== undefined && holdEnd !== undefined;
+  return (
+    <g transform={`translate(${a})`}>
+      <animateTransform
+        attributeName="transform" type="translate" dur={`${dur}s`} begin={`${begin}s`} repeatCount="indefinite"
+        values={holds ? `${a};${b};${b};${b}` : `${a};${b}`}
+        keyTimes={holds ? `0;${moveEnd};${holdEnd};1` : "0;1"}
+      />
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.88;1" dur={`${dur}s`} begin={`${begin}s`} repeatCount="indefinite" />
+      <g>
+        <Person />
+        <animateTransform attributeName="transform" type="translate" additive="sum" values="0 0;0 -0.7;0 0" dur="0.5s" begin={`${begin}s`} repeatCount="indefinite" />
+      </g>
+    </g>
+  );
+}
+
+function Clash({ clash, still }: { clash: NonNullable<WidthScene["clash"]>; still: boolean }) {
+  const [cx, cy] = at(clash.u, clash.v);
+  const y = cy - 21;
+  const lines: [number, number, number, number][] = [[-3.2, -3.2, -1.2, -1.2], [3.2, -3.2, 1.2, -1.2], [0, -4.4, 0, -1.8]];
+  return (
+    <g stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" opacity={still ? 1 : 0}>
+      {lines.map(([x1, y1, x2, y2], i) => <path key={i} d={`M${r2(cx + x1)} ${r2(y + y1)} L${r2(cx + x2)} ${r2(y + y2)}`} />)}
+      {!still && (
+        <animate attributeName="opacity" values="0;0;1;1;0" keyTimes={`0;${clash.from};${clash.from + 0.04};${clash.to};1`} dur={`${clash.dur}s`} repeatCount="indefinite" />
+      )}
+    </g>
+  );
+}
+
+/**
+ * Sidewalk Width, by stored value (one_person Narrow, two_people Limited,
+ * three_or_more Wide). Animated with SVG's own animation (no CSS, no timers).
+ * With reduced motion, a still frame that tells the same story.
+ */
+export function SidewalkWidthIcon({ value }: { value: string }) {
+  // Still pictures when the visitor asked for less motion (null, animated, until known)
+  const still = useMediaQuery(REDUCED_MOTION_QUERY) === true;
+  const scene = WIDTH_SCENES[value];
+  if (!scene) return null;
+  // Lanes further back are drawn first
+  const walkers = [...scene.walkers].sort((p, q) => p.v - q.v);
+  return (
+    <svg viewBox="0 0 70 74" className="w-full h-full" aria-hidden="true" data-icon={scene.label}>
+      <Slab width={scene.width} />
+      {walkers.map((w, i) => <WalkerFigure key={`${value}-${i}`} walker={w} still={still} />)}
+      {scene.clash && <Clash clash={scene.clash} still={still} />}
+    </svg>
+  );
+}
+
+// ---- Ease of Navigation ------------------------------------------------------
+// The same stretch of sidewalk as Sidewalk Width, with a wider road in front.
+// One person walks along it and meets what is in the way.
+
+const EASE_WIDTH = 14;
+const EASE_ROAD = 12;
+/** Offset on screen of a point u along and v across, from u 0 v 0 */
+const off = (u: number, v: number): [number, number] => [ALONG[0] * u + ACROSS[0] * v, ALONG[1] * u + ACROSS[1] * v];
+/** A point on the ground, lower by the curb's height when it is in the road */
+const ground = (u: number, v: number, width = EASE_WIDTH): [number, number] => {
+  const [x, y] = at(u, v);
+  return [x, v > width ? y + CURB : y];
+};
+
+/** A box standing on the ground: the top, the side facing the road and the end facing the viewer */
+function Block({ u0, u1, v0, v1, h, lift = 0, tone = 1 }: { u0: number; u1: number; v0: number; v1: number; h: number; lift?: number; tone?: number }) {
+  const p = (u: number, v: number, z: number): string => {
+    const [x, y] = off(u, v);
+    return `${r2(x)} ${r2(y - z - lift)}`;
+  };
+  const face = (pts: string[], op: number) => <path d={`M${pts.join(" L")} Z`} fill="currentColor" fillOpacity={op * tone} stroke="currentColor" strokeOpacity={0.55} strokeWidth={0.6} strokeLinejoin="round" />;
+  return (
     <g>
-      <line x1={leftTop} y1={5} x2={leftBot} y2={75} stroke="currentColor" strokeWidth={2} opacity={0.35} />
-      <line x1={rightTop} y1={5} x2={rightBot} y2={75} stroke="currentColor" strokeWidth={2} opacity={0.35} />
+      {face([p(u0, v0, 0), p(u0, v1, 0), p(u0, v1, h), p(u0, v0, h)], 0.42)}
+      {face([p(u0, v1, 0), p(u1, v1, 0), p(u1, v1, h), p(u0, v1, h)], 0.55)}
+      {face([p(u0, v0, h), p(u1, v0, h), p(u1, v1, h), p(u0, v1, h)], 0.28)}
     </g>
   );
+}
 
-  /** A simple bollard/post obstruction — the obstacle the person navigates past. */
-  const bollard = (cx: number) => (
-    <g opacity={0.35}>
-      {/* Post shaft */}
-      <line x1={cx} y1={26} x2={cx} y2={56} stroke="currentColor" strokeWidth={4.5} strokeLinecap="round" />
-      {/* Cap / top */}
-      <circle cx={cx} cy={24} r={4} fill="currentColor" />
+/** A car seen from the same angle, nose towards the viewer, drawn at u 0 v 0 */
+function Car() {
+  return (
+    <g>
+      <ellipse cx={off(6, 3)[0]} cy={off(6, 3)[1] + 0.6} rx={8} ry={2.6} fill="currentColor" fillOpacity={0.15} />
+      <Block u0={0} u1={12} v0={0} v1={6} h={3.6} lift={1} tone={1.3} />
+      <Block u0={2.5} u1={8.5} v0={0.6} v1={5.4} h={2.8} lift={4.6} tone={0.9} />
     </g>
   );
+}
 
-  switch (type) {
-    case "noSidewalk":
-      return (
-        <svg viewBox="0 0 80 80" className="w-full h-full text-muted" aria-label="None — person forced onto road, no sidewalk">
-          {/* Dashed sidewalk edges — where a sidewalk would be */}
-          <line x1={35} y1={5} x2={15} y2={75} stroke="currentColor" strokeWidth={2} strokeDasharray="6 4" opacity={0.25} />
-          <line x1={45} y1={5} x2={65} y2={75} stroke="currentColor" strokeWidth={2} strokeDasharray="6 4" opacity={0.25} />
-          {/* X mark over the sidewalk area */}
-          <line x1={30} y1={25} x2={50} y2={50} stroke="currentColor" strokeWidth={2.5} opacity={0.35} />
-          <line x1={50} y1={25} x2={30} y2={50} stroke="currentColor" strokeWidth={2.5} opacity={0.35} />
-          {/* Walking figure outside the sidewalk on the left — forced onto the road */}
-          <g opacity={0.7}>
-            <ellipse cx={14} cy={24} rx={4.5} ry={5.5} fill="currentColor" />
-            <line x1={14} y1={30} x2={15} y2={46} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
-            <line x1={15} y1={35} x2={7} y2={39} stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
-            <line x1={15} y1={35} x2={23} y2={41} stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
-            <line x1={15} y1={46} x2={8} y2={60} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
-            <line x1={15} y1={46} x2={22} y2={59} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
-          </g>
-        </svg>
-      );
-    case "onePerson":
-      return (
-        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="Narrow — tight clearance past obstruction">
-          {sidewalkEdges(33, 18, 47, 62)}
-          {walkingFigure(33)}
-          {bollard(47)}
-        </svg>
-      );
-    case "twoPeople":
-      return (
-        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="Moderate — comfortable clearance past obstruction">
-          {sidewalkEdges(28, 8, 52, 72)}
-          {walkingFigure(33)}
-          {bollard(52)}
-        </svg>
-      );
-    case "threePlus":
-      return (
-        <svg viewBox="0 0 80 80" className="w-full h-full text-ink" aria-label="Wide — plenty of room past obstruction">
-          {sidewalkEdges(24, 2, 56, 78)}
-          {walkingFigure(30)}
-          {bollard(56)}
-        </svg>
-      );
-    default:
-      return null;
-  }
+interface EaseStop { u: number; v: number; t: number }
+interface EaseScene {
+  label: string;
+  /** Objects on the sidewalk */
+  blocks: { u0: number; u1: number; v0: number; v1: number; h: number; front?: boolean }[];
+  /** A railing along the curb, u0 to u1, so the road is no way round either */
+  railing?: [number, number];
+  /** The walker's route, t the fraction of the loop at each point */
+  route: EaseStop[];
+  dur: number;
+  /** Where the walker stands when motion is reduced */
+  still: [number, number];
+  /** Cars in the road: lane, start along the loop and where one stands when still */
+  cars?: { v: number; begin: number; still: number }[];
+  /** Can't get through: the mark over the walker's head while stopped */
+  stop?: { from: number; to: number };
+}
+
+const EASE_SCENES: Record<number, EaseScene> = {
+  5: {
+    label: "Unobstructed: walks straight along the sidewalk",
+    blocks: [],
+    route: [{ u: 2, v: 7, t: 0 }, { u: 58, v: 7, t: 1 }],
+    dur: 4,
+    still: [14, 7],
+  },
+  4: {
+    label: "Slightly obstructed: a small object, a short step aside",
+    blocks: [{ u0: 28, u1: 32, v0: 0.5, v1: 5, h: 8 }],
+    route: [{ u: 2, v: 5, t: 0 }, { u: 21, v: 5, t: 0.34 }, { u: 26, v: 9.5, t: 0.45 }, { u: 34, v: 9.5, t: 0.59 }, { u: 40, v: 5, t: 0.7 }, { u: 58, v: 5, t: 1 }],
+    dur: 4.4,
+    still: [14, 5],
+  },
+  3: {
+    label: "Moderately obstructed: zigzags between objects on both sides",
+    blocks: [{ u0: 20, u1: 25, v0: 0, v1: 8.5, h: 9 }, { u0: 33, u1: 38, v0: 5.5, v1: 14, h: 9, front: true }],
+    route: [{ u: 2, v: 11, t: 0 }, { u: 16, v: 11, t: 0.2 }, { u: 26, v: 11.2, t: 0.36 }, { u: 30, v: 3, t: 0.5 }, { u: 39, v: 3, t: 0.66 }, { u: 44, v: 7, t: 0.76 }, { u: 58, v: 7, t: 1 }],
+    dur: 5.2,
+    still: [9, 11],
+  },
+  2: {
+    label: "Heavily obstructed: has to step into the road, where cars pass, to get around",
+    blocks: [{ u0: 26, u1: 36, v0: 0, v1: 14, h: 10 }],
+    route: [{ u: 2, v: 7, t: 0 }, { u: 18, v: 7, t: 0.2 }, { u: 23, v: 17.5, t: 0.32 }, { u: 39, v: 17.5, t: 0.62 }, { u: 45, v: 7, t: 0.74 }, { u: 58, v: 7, t: 1 }],
+    dur: 5.4,
+    still: [13, 7],
+    cars: [{ v: 19.6, begin: 0.5, still: 46 }],
+  },
+  1: {
+    label: "Fully obstructed: a wall fills the sidewalk and a railing closes off the road, the walker stops",
+    blocks: [{ u0: 26, u1: 54, v0: 0, v1: 14, h: 15 }],
+    railing: [22, 56],
+    route: [{ u: 2, v: 7, t: 0 }, { u: 18, v: 7, t: 0.36 }, { u: 18, v: 7, t: 0.9 }, { u: 18, v: 7, t: 1 }],
+    dur: 4.4,
+    still: [18, 7],
+    stop: { from: 0.36, to: 0.88 },
+  },
+};
+
+/** A railing along the curb from u0 to u1, a post every few steps and a rail on top */
+function Railing({ u0, u1, v, h = 6.5 }: { u0: number; u1: number; v: number; h?: number }) {
+  const posts: number[] = [];
+  for (let u = u0; u <= u1 + 0.01; u += 4.5) posts.push(u);
+  const top = (u: number) => { const [x, y] = at(u, v); return `${r2(x)} ${r2(y - h)}`; };
+  return (
+    <g stroke="currentColor" strokeLinecap="round">
+      {posts.map((u) => { const [x, y] = at(u, v); return <path key={u} d={`M${r2(x)} ${r2(y)} L${r2(x)} ${r2(y - h)}`} strokeWidth={0.9} />; })}
+      <path d={`M${top(u0)} L${top(posts[posts.length - 1])}`} strokeWidth={1.3} />
+      <path d={`M${(() => { const [x, y] = at(u0, v); return `${r2(x)} ${r2(y - h * 0.5)}`; })()} L${(() => { const [x, y] = at(posts[posts.length - 1], v); return `${r2(x)} ${r2(y - h * 0.5)}`; })()}`} strokeWidth={0.7} strokeOpacity={0.7} />
+    </g>
+  );
+}
+
+function EaseWalker({ scene, still }: { scene: EaseScene; still: boolean }) {
+  if (still) return <g transform={`translate(${xy(ground(...scene.still))})`}><Person /></g>;
+  const pts = scene.route.map((s) => xy(ground(s.u, s.v)));
+  const times = scene.route.map((s) => r2(s.t)).join(";");
+  return (
+    <g transform={`translate(${pts[0]})`}>
+      <animateTransform attributeName="transform" type="translate" dur={`${scene.dur}s`} repeatCount="indefinite" values={pts.join(";")} keyTimes={times} />
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.08;0.9;1" dur={`${scene.dur}s`} repeatCount="indefinite" />
+      <g>
+        <Person />
+        <animateTransform attributeName="transform" type="translate" additive="sum" values="0 0;0 -0.7;0 0" dur="0.5s" repeatCount="indefinite" />
+      </g>
+    </g>
+  );
+}
+
+/** A car driving along the road towards the viewer, once per loop */
+function EaseCar({ car, dur, still }: { car: { v: number; begin: number; still: number }; dur: number; still: boolean }) {
+  if (still) return <g transform={`translate(${xy(ground(car.still, car.v))})`}><Car /></g>;
+  const a = xy(ground(62, car.v)), b = xy(ground(-12, car.v));
+  const begin = `${r2(-car.begin * dur)}s`;
+  return (
+    <g transform={`translate(${a})`}>
+      <animateTransform attributeName="transform" type="translate" dur={`${dur}s`} begin={begin} repeatCount="indefinite" values={`${a};${b}`} keyTimes="0;1" />
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.06;0.86;1" dur={`${dur}s`} begin={begin} repeatCount="indefinite" />
+      <Car />
+    </g>
+  );
+}
+
+/** The way the walker goes, dashed on the ground, ending in an arrow (or at the stop) */
+function Route({ scene }: { scene: EaseScene }) {
+  const pts = scene.route.filter((p, i, all) => i === 0 || p.u !== all[i - 1].u || p.v !== all[i - 1].v).map((p) => ground(p.u, p.v));
+  const d = "M" + pts.map(xy).join(" L");
+  const [x1, y1] = pts[pts.length - 2];
+  const [x2, y2] = pts[pts.length - 1];
+  const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+  const [dx, dy] = [(x2 - x1) / len, (y2 - y1) / len];
+  const head = scene.stop ? "" : `M${r2(x2 - dx * 3 - dy * 2)} ${r2(y2 - dy * 3 + dx * 2)} L${r2(x2)} ${r2(y2)} L${r2(x2 - dx * 3 + dy * 2)} ${r2(y2 - dy * 3 - dx * 2)}`;
+  return (
+    <g fill="none" stroke="currentColor" strokeOpacity={0.7} strokeWidth={0.9} strokeLinecap="round" strokeLinejoin="round">
+      <path d={d} strokeDasharray="2 1.6" />
+      {head && <path d={head} />}
+    </g>
+  );
+}
+
+function StopMark({ scene, still }: { scene: EaseScene; still: boolean }) {
+  if (!scene.stop) return null;
+  const [cx, cy] = ground(...scene.still);
+  const y = cy - 23.5;
+  return (
+    <g stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" opacity={still ? 1 : 0}>
+      <path d={`M${r2(cx - 2.6)} ${r2(y - 2.6)} L${r2(cx + 2.6)} ${r2(y + 2.6)} M${r2(cx + 2.6)} ${r2(y - 2.6)} L${r2(cx - 2.6)} ${r2(y + 2.6)}`} />
+      {!still && <animate attributeName="opacity" values="0;0;1;1;0" keyTimes={`0;${scene.stop.from};${scene.stop.from + 0.04};${scene.stop.to};1`} dur={`${scene.dur}s`} repeatCount="indefinite" />}
+    </g>
+  );
 }
 
 /**
- * Surface Condition Icon — ground cross-section profiles.
- *
- * Visual language: the ground itself, not a person. A flat line = easy,
- * a bumpy line = some difficulty, a jagged broken line = dangerous.
- * Uses a wheel/motion glyph for "easy" and a warning triangle for "dangerous"
- * to reinforce the functional meaning.
+ * Ease of Navigation, by stored value 1 to 5 (overallAccessibility). One person
+ * walks along the sidewalk and meets what is in the way: nothing, a small
+ * object to step round, objects on both sides to zigzag between, an object
+ * that sends them into the road among the cars, and a wall across the whole
+ * sidewalk with a railing along the curb, so there is no way past at all.
  */
-export function SurfaceConditionIcon({ type }: { type: "easy" | "some" | "difficult" }) {
-  switch (type) {
-    case "easy":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Easy to traverse — smooth surface">
-          {/* Smooth ground line */}
-          <line x1={8} y1={44} x2={56} y2={44} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.7} />
-          {/* Surface texture marks */}
-          <line x1={14} y1={44} x2={14} y2={47} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
-          <line x1={26} y1={44} x2={26} y2={47} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
-          <line x1={38} y1={44} x2={38} y2={47} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
-          <line x1={50} y1={44} x2={50} y2={47} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
-          {/* Smooth rolling wheel above */}
-          <circle cx={32} cy={30} r={9} stroke="currentColor" strokeWidth={2} fill="none" opacity={0.5} />
-          <circle cx={32} cy={30} r={2} fill="currentColor" opacity={0.5} />
-          {/* Motion lines */}
-          <line x1={18} y1={26} x2={14} y2={26} stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" opacity={0.3} />
-          <line x1={18} y1={30} x2={12} y2={30} stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" opacity={0.3} />
-          <line x1={18} y1={34} x2={14} y2={34} stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" opacity={0.3} />
-        </svg>
-      );
-    case "some":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Some difficulty — uneven surface">
-          {/* Bumpy ground line */}
-          <polyline points="8,44 16,44 20,41 24,44 30,43 34,45 38,42 42,44 48,43 52,44 56,44" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" fill="none" opacity={0.7} />
-          {/* Depth lines */}
-          <line x1={14} y1={46} x2={14} y2={49} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
-          <line x1={32} y1={47} x2={32} y2={50} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
-          <line x1={50} y1={46} x2={50} y2={49} stroke="currentColor" strokeWidth={1.5} opacity={0.3} />
-          {/* Wobbling wheel */}
-          <circle cx={32} cy={28} r={9} stroke="currentColor" strokeWidth={2} fill="none" opacity={0.5} />
-          <circle cx={32} cy={28} r={2} fill="currentColor" opacity={0.5} />
-          {/* Wobble marks */}
-          <line x1={26} y1={17} x2={24} y2={15} stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" opacity={0.35} />
-          <line x1={38} y1={17} x2={40} y2={15} stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" opacity={0.35} />
-        </svg>
-      );
-    case "difficult":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Difficult or dangerous — broken surface">
-          {/* Jagged broken ground */}
-          <polyline points="8,44 14,44 17,40 19,46 22,42 26,44 28,48 30,41 34,44 36,39 40,46 42,43 46,44 48,40 50,45 54,42 56,44" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" fill="none" opacity={0.7} />
-          {/* Crack lines */}
-          <line x1={22} y1={44} x2={20} y2={52} stroke="currentColor" strokeWidth={1.8} opacity={0.4} />
-          <line x1={36} y1={44} x2={38} y2={54} stroke="currentColor" strokeWidth={1.8} opacity={0.4} />
-          <line x1={48} y1={44} x2={46} y2={51} stroke="currentColor" strokeWidth={1.8} opacity={0.4} />
-          {/* Warning triangle */}
-          <polygon points="32,14 22,32 42,32" stroke="currentColor" strokeWidth={2} fill="none" opacity={0.55} />
-          <line x1={32} y1={20} x2={32} y2={26} stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" opacity={0.55} />
-          <circle cx={32} cy={29} r={1.2} fill="currentColor" opacity={0.55} />
-        </svg>
-      );
-    default:
-      return null;
-  }
+export function EaseOfNavigationIcon({ value }: { value: number }) {
+  const still = useMediaQuery(REDUCED_MOTION_QUERY) === true;
+  const scene = EASE_SCENES[value];
+  if (!scene) return null;
+  return (
+    // Closer in than Sidewalk Width, on the stretch where the objects stand
+    <svg viewBox="8 6 54 58" className="w-full h-full" aria-hidden="true" data-icon={scene.label}>
+      <Slab width={EASE_WIDTH} road={EASE_ROAD} />
+      <Route scene={scene} />
+      <g transform={`translate(${O[0]} ${O[1]})`}>
+        {scene.blocks.filter((b) => !b.front).map((b, i) => <Block key={i} {...b} />)}
+      </g>
+      <EaseWalker scene={scene} still={still} />
+      <g transform={`translate(${O[0]} ${O[1]})`}>
+        {scene.blocks.filter((b) => b.front).map((b, i) => <Block key={i} {...b} />)}
+      </g>
+      {scene.railing && <Railing u0={scene.railing[0]} u1={scene.railing[1]} v={EASE_WIDTH - 0.6} />}
+      {scene.cars?.map((c, i) => <EaseCar key={i} car={c} dur={scene.dur} still={still} />)}
+      <StopMark scene={scene} still={still} />
+    </svg>
+  );
 }
 
-/**
- * Walking Comfort Icon — face expressions.
- *
- * Visual language: how the scene *feels*. Face-based scales (Wong-Baker FACES)
- * are the most validated visual approach for subjective self-reports.
- * Simple hand-drawn line faces — calm smile, uncertain flat, tense frown.
- */
-export function WalkingComfortIcon({ type }: { type: "comfortable" | "somewhat" | "uncomfortable" }) {
-  switch (type) {
-    case "comfortable":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Comfortable">
-          <circle cx={32} cy={32} r={20} stroke="currentColor" strokeWidth={2.2} fill="none" opacity={0.6} />
-          {/* Relaxed eyes */}
-          <ellipse cx={24} cy={27} rx={2.5} ry={3} fill="currentColor" opacity={0.6} />
-          <ellipse cx={40} cy={27} rx={2.5} ry={3} fill="currentColor" opacity={0.6} />
-          {/* Gentle smile */}
-          <path d="M23 37 Q28 43 32 43 Q36 43 41 37" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" fill="none" opacity={0.6} />
-        </svg>
-      );
-    case "somewhat":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Somewhat uncomfortable">
-          <circle cx={32} cy={32} r={20} stroke="currentColor" strokeWidth={2.2} fill="none" opacity={0.6} />
-          {/* Slightly concerned eyes */}
-          <ellipse cx={24} cy={27} rx={2.5} ry={3} fill="currentColor" opacity={0.6} />
-          <ellipse cx={40} cy={27} rx={2.5} ry={3} fill="currentColor" opacity={0.6} />
-          {/* Slight raised brow */}
-          <line x1={36} y1={20} x2={44} y2={21} stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" opacity={0.4} />
-          {/* Flat wavy mouth */}
-          <path d="M24 39 Q28 37 32 38 Q36 39 40 37" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" fill="none" opacity={0.6} />
-        </svg>
-      );
-    case "uncomfortable":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full text-inherit" aria-label="Uncomfortable">
-          <circle cx={32} cy={32} r={20} stroke="currentColor" strokeWidth={2.2} fill="none" opacity={0.6} />
-          {/* Tense eyes */}
-          <ellipse cx={24} cy={27} rx={2.5} ry={2.5} fill="currentColor" opacity={0.6} />
-          <ellipse cx={40} cy={27} rx={2.5} ry={2.5} fill="currentColor" opacity={0.6} />
-          {/* Furrowed brows */}
-          <line x1={20} y1={21} x2={27} y2={22} stroke="currentColor" strokeWidth={2} strokeLinecap="round" opacity={0.5} />
-          <line x1={44} y1={21} x2={37} y2={22} stroke="currentColor" strokeWidth={2} strokeLinecap="round" opacity={0.5} />
-          {/* Frown */}
-          <path d="M24 41 Q28 36 32 36 Q36 36 40 41" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" fill="none" opacity={0.6} />
-        </svg>
-      );
-    default:
-      return null;
-  }
+// ---- Road Barrier ------------------------------------------------------------
+// Seen from above, as the old Traffic icons were: the building line at the top,
+// the sidewalk with a person on it, the curb, and the road with a car. Still
+// pictures, so they stand apart from the animated questions.
+
+function BarrierPlan({ barrier }: { barrier: boolean }) {
+  return (
+    <svg viewBox="2 1 60 60" className="w-full h-full" aria-hidden="true"
+      data-icon={barrier ? "Barrier: a railing between the sidewalk and the road" : "No barrier: only the curb between the sidewalk and the road"}
+      fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+      {/* Building line and its hatching */}
+      <path d="M4 7H60" strokeWidth={3} />
+      {[6, 14, 22, 30, 38, 46, 54].map((x) => <path key={x} d={`M${x} 3L${x + 3} 6`} strokeWidth={1} opacity={0.35} />)}
+      {/* Sidewalk */}
+      <rect x={4} y={7} width={56} height={25} fill="currentColor" fillOpacity={0.1} stroke="none" />
+      {/* Person seen from above, walking along */}
+      <ellipse cx={17} cy={17} rx={3.4} ry={5.6} fill="currentColor" stroke="none" />
+      <circle cx={20.6} cy={17} r={2.7} fill="currentColor" stroke="none" opacity={0.5} />
+      {/* Curb */}
+      <path d="M4 32H60" strokeWidth={2.4} />
+      {barrier && (
+        <g>
+          {/* A railing along the curb: the rail and its posts */}
+          <path d="M4 27H60" strokeWidth={2.2} />
+          {[7, 19, 31, 43, 55].map((x) => <rect key={x} x={x - 1.7} y={25.3} width={3.4} height={3.4} rx={0.6} fill="currentColor" stroke="none" />)}
+        </g>
+      )}
+      {/* Road, a car close to the curb, and the lane line */}
+      <path d="M6 57H58" strokeWidth={1.5} strokeDasharray="5 4" opacity={0.45} />
+      <rect x={26} y={36} width={24} height={12} rx={3.5} fill="currentColor" fillOpacity={0.2} strokeWidth={1.8} />
+      <path d="M44 38.5V45.5" strokeWidth={1.5} />
+      {/* It is moving: lines behind it */}
+      <path d="M53 39H59M54.5 42H60M53 45H59" strokeWidth={1.3} opacity={0.5} />
+    </svg>
+  );
 }
 
-/**
- * Accessible to Me Icon — gateway/path metaphor with 5-level colour gradient.
- *
- * Visual language: "can I get through?" The gateway progressively narrows from
- * wide-open (green) to fully blocked (red), matching a 1–5 person-dependent
- * accessibility scale (Preston & Colman 2000; Project Sidewalk 1–5 precedent).
- */
-export function AccessibleToMeIcon({ type }: { type: "easy" | "mostly" | "somewhat" | "very" | "not" }) {
-  switch (type) {
-    case "easy":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full" aria-label="Easily accessible" style={{ color: "#16a34a" }}>
-          {/* Wide-open gateway */}
-          <line x1={16} y1={12} x2={16} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={48} y1={12} x2={48} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={16} y1={12} x2={48} y2={12} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={10} y1={52} x2={54} y2={52} stroke="currentColor" strokeWidth={2} opacity={0.35} />
-          {/* Double checkmark */}
-          <polyline points="20,32 26,38 36,24" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.7} />
-          <polyline points="30,32 36,38 46,24" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.7} />
-        </svg>
-      );
-    case "mostly":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full" aria-label="Mostly accessible" style={{ color: "#22c55e" }}>
-          {/* Open gateway — walls slightly inward */}
-          <line x1={17} y1={12} x2={19} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={47} y1={12} x2={45} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={17} y1={12} x2={47} y2={12} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={10} y1={52} x2={54} y2={52} stroke="currentColor" strokeWidth={2} opacity={0.35} />
-          {/* Single checkmark */}
-          <polyline points="24,32 30,38 40,24" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.7} />
-        </svg>
-      );
-    case "somewhat":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full" aria-label="Somewhat difficult" style={{ color: "#d97706" }}>
-          {/* Narrowing gateway */}
-          <line x1={18} y1={12} x2={24} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={46} y1={12} x2={40} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={18} y1={12} x2={46} y2={12} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={10} y1={52} x2={54} y2={52} stroke="currentColor" strokeWidth={2} opacity={0.35} />
-          {/* Tilde / wavy line — uncertain */}
-          <path d="M25,31 Q29,26 32,31 Q35,36 39,31" stroke="currentColor" strokeWidth={3} strokeLinecap="round" fill="none" opacity={0.7} />
-        </svg>
-      );
-    case "very":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full" aria-label="Very difficult" style={{ color: "#ea580c" }}>
-          {/* More narrowing gateway */}
-          <line x1={14} y1={12} x2={26} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={50} y1={12} x2={38} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={14} y1={12} x2={50} y2={12} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={10} y1={52} x2={54} y2={52} stroke="currentColor" strokeWidth={2} opacity={0.35} />
-          {/* Exclamation */}
-          <line x1={32} y1={22} x2={32} y2={34} stroke="currentColor" strokeWidth={3} strokeLinecap="round" opacity={0.7} />
-          <circle cx={32} cy={40} r={2} fill="currentColor" opacity={0.7} />
-        </svg>
-      );
-    case "not":
-      return (
-        <svg viewBox="0 0 64 64" className="w-full h-full" aria-label="Not accessible to me" style={{ color: "#dc2626" }}>
-          {/* Blocked gateway — walls converge */}
-          <line x1={12} y1={12} x2={28} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={52} y1={12} x2={36} y2={52} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={12} y1={12} x2={52} y2={12} stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" opacity={0.6} />
-          <line x1={10} y1={52} x2={54} y2={52} stroke="currentColor" strokeWidth={2} opacity={0.35} />
-          {/* X mark */}
-          <line x1={25} y1={24} x2={39} y2={38} stroke="currentColor" strokeWidth={3} strokeLinecap="round" opacity={0.7} />
-          <line x1={39} y1={24} x2={25} y2={38} stroke="currentColor" strokeWidth={3} strokeLinecap="round" opacity={0.7} />
-        </svg>
-      );
-    default:
-      return null;
+/** Road Barrier, by answer: false, the curb only. true, a railing along the curb. */
+export function RoadBarrierIcon({ value }: { value: boolean }) {
+  return <BarrierPlan barrier={value} />;
+}
+
+// ---- Evenness ----------------------------------------------------------------
+// The same stretch of sidewalk as Sidewalk Width, standing still: the whole
+// sidewalk rolls up and down, tilts, or lies flat, beside a flat road. Paving
+// joints across it show its shape. Stored 1 to 3, worst to best: Uneven,
+// Sloped, Flat.
+
+const EVEN_WIDTH = 13;
+const EVEN_ROAD = 6;
+const EVEN_SHAPES: Record<number, { label: string; rise: (u: number) => number; person: number }> = {
+  1: { label: "Uneven: the whole sidewalk rises and dips along its length", rise: (u) => 3 + 3 * Math.sin((u / 32) * 2 * Math.PI - Math.PI / 2), person: 16 },
+  2: { label: "Sloped: the whole sidewalk tilts along its length", rise: (u) => 1 + u * 0.16, person: 22 },
+  3: { label: "Flat: the sidewalk stays level along its length", rise: () => 2, person: 22 },
+};
+
+/** Evenness, by stored value 1 to 3 */
+export function EvennessIcon({ value }: { value: number }) {
+  const shape = EVEN_SHAPES[value];
+  if (!shape) return null;
+  const W = EVEN_WIDTH;
+  const us: number[] = [];
+  for (let u = 0; u <= LENGTH + 0.01; u += 1.5) us.push(u);
+  // A point on the sidewalk's surface, raised by the shape
+  const top = (u: number, v: number): [number, number] => { const [x, y] = at(u, v); return [x, y - shape.rise(u)]; };
+  const back = us.map((u) => top(u, 0));
+  const front = us.map((u) => top(u, W));
+  const line = (pts: [number, number][]) => pts.map(xy).join(" L");
+  // The road and the foot of the curb stay flat
+  const foot = us.map((u) => { const [x, y] = at(u, W); return [x, y + CURB] as [number, number]; });
+  const e = at(0, W + EVEN_ROAD), g = at(LENGTH, W + EVEN_ROAD);
+  const joints: number[] = [];
+  for (let u = 6; u < LENGTH; u += 6) joints.push(u);
+  const [px, py] = top(shape.person, W * 0.45);
+  return (
+    // Cropped to the sidewalk and the person, so it reads in a small box
+    <svg viewBox="2 12 60 52" className="w-full h-full" aria-hidden="true" data-icon={shape.label}>
+      {/* Road */}
+      <path d={`M${xy(foot[0])} L${xy(foot[foot.length - 1])} L${r2(g[0])} ${r2(g[1] + CURB)} L${r2(e[0])} ${r2(e[1] + CURB)} Z`} fill="currentColor" fillOpacity={0.05} />
+      {/* The side of the sidewalk facing the road, from its surface down to the flat road */}
+      <path d={`M${line(front)} L${line([...foot].reverse())} Z`} fill="currentColor" fillOpacity={0.3} />
+      {/* The walking surface */}
+      <path d={`M${line(back)} L${line([...front].reverse())} Z`} fill="currentColor" fillOpacity={0.12} stroke="currentColor" strokeOpacity={0.55} strokeWidth={1} strokeLinejoin="round" />
+      {/* Paving joints across it, which follow its shape */}
+      <g stroke="currentColor" strokeOpacity={0.35} strokeWidth={0.6}>
+        {joints.map((u) => <path key={u} d={`M${xy(top(u, 0))} L${xy(top(u, W))}`} />)}
+      </g>
+      <g transform={`translate(${r2(px)} ${r2(py)})`}><Person /></g>
+    </svg>
+  );
+}
+
+// ---- Surface Type and Surface Condition -------------------------------------
+// A close view of a patch of sidewalk from the same angle as the other
+// pictures, so its thickness shows. Still pictures. Surface Type shows the
+// material, Surface Condition shows concrete panels whole, cracked, or broken
+// (a raised panel, a hole and a chipped corner: something missing or out of
+// level, where a crack is only a line).
+
+const PU = [1.5, -0.62];
+const PV = [0.9, 0.95];
+const PO = [3, 36];
+const PATCH_U = 30;
+const PATCH_V = 22;
+const THICK = 4;
+const pp = (u: number, v: number, z = 0): [number, number] => [PO[0] + PU[0] * u + PV[0] * v, PO[1] + PU[1] * u + PV[1] * v - z];
+const poly = (pts: [number, number][]) => "M" + pts.map(xy).join(" L") + " Z";
+
+/** The patch: its top, the edge facing the viewer and the end on the left */
+function Patch({ fill = 0.12 }: { fill?: number }) {
+  return (
+    <g>
+      <path d={poly([pp(0, PATCH_V), pp(PATCH_U, PATCH_V), [pp(PATCH_U, PATCH_V)[0], pp(PATCH_U, PATCH_V)[1] + THICK], [pp(0, PATCH_V)[0], pp(0, PATCH_V)[1] + THICK]])} fill="currentColor" fillOpacity={0.32} />
+      <path d={poly([pp(0, 0), pp(0, PATCH_V), [pp(0, PATCH_V)[0], pp(0, PATCH_V)[1] + THICK], [pp(0, 0)[0], pp(0, 0)[1] + THICK]])} fill="currentColor" fillOpacity={0.22} />
+      <path d={poly([pp(0, 0), pp(PATCH_U, 0), pp(PATCH_U, PATCH_V), pp(0, PATCH_V)])} fill="currentColor" fillOpacity={fill} stroke="currentColor" strokeOpacity={0.6} strokeWidth={0.9} strokeLinejoin="round" />
+    </g>
+  );
+}
+
+const seg = (a: [number, number], b: [number, number]) => `M${xy(a)} L${xy(b)}`;
+
+/** Joints of concrete panels, 3 along by 2 across */
+function Panels() {
+  return (
+    <path d={[seg(pp(10, 0), pp(10, PATCH_V)), seg(pp(20, 0), pp(20, PATCH_V)), seg(pp(0, 11), pp(PATCH_U, 11))].join(" ")} stroke="currentColor" strokeOpacity={0.55} strokeWidth={0.8} />
+  );
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  concrete: "Concrete or asphalt: one poured surface, panels at most",
+  tiles: "Tiles: small glazed squares, shiny",
+  pavers: "Paver blocks or bricks: small blocks laid in rows",
+  unpaved: "Unpaved: soil, gravel or grass",
+};
+
+/** Surface Type, by stored value */
+export function SurfaceTypeIcon({ value }: { value: string }) {
+  let inner: React.ReactNode = null;
+  if (value === "concrete") {
+    // Two wide panels, a few specks in the mix
+    inner = (
+      <g>
+        <path d={seg(pp(15, 0), pp(15, PATCH_V))} stroke="currentColor" strokeOpacity={0.55} strokeWidth={0.8} />
+        {[[5, 5], [9, 15], [21, 7], [25, 17], [12, 9], [27, 4]].map(([u, v], i) => <circle key={i} cx={r2(pp(u, v)[0])} cy={r2(pp(u, v)[1])} r={0.55} fill="currentColor" fillOpacity={0.45} />)}
+      </g>
+    );
+  } else if (value === "tiles") {
+    // A tight grid of tiles, with a shine across them
+    const lines: string[] = [];
+    for (let u = 5; u < PATCH_U; u += 5) lines.push(seg(pp(u, 0), pp(u, PATCH_V)));
+    for (let v = 5.5; v < PATCH_V; v += 5.5) lines.push(seg(pp(0, v), pp(PATCH_U, v)));
+    inner = (
+      <g>
+        <path d={lines.join(" ")} stroke="currentColor" strokeOpacity={0.5} strokeWidth={0.7} />
+        <path d={`${seg(pp(6, 18), pp(13, 4))} ${seg(pp(9, 19), pp(16, 5))} ${seg(pp(19, 18), pp(24, 8))}`} stroke="#fff" strokeOpacity={0.9} strokeWidth={1.4} strokeLinecap="round" />
+      </g>
+    );
+  } else if (value === "pavers") {
+    // Bricks in rows across, every other row shifted by half a brick
+    const lines: string[] = [];
+    const rows = 5, bw = 6;
+    for (let r = 1; r < rows; r++) lines.push(seg(pp(0, (r * PATCH_V) / rows), pp(PATCH_U, (r * PATCH_V) / rows)));
+    for (let r = 0; r < rows; r++) {
+      const v0 = (r * PATCH_V) / rows, v1 = ((r + 1) * PATCH_V) / rows;
+      for (let u = r % 2 ? bw / 2 : bw; u < PATCH_U; u += bw) lines.push(seg(pp(u, v0), pp(u, v1)));
+    }
+    inner = <path d={lines.join(" ")} stroke="currentColor" strokeOpacity={0.55} strokeWidth={0.7} />;
+  } else if (value === "unpaved") {
+    // Bare ground: pebbles and tufts of grass, no edges laid
+    const pebbles: [number, number, number][] = [[4, 6, 1], [8, 16, 1.3], [13, 9, 0.9], [17, 18, 1.1], [21, 5, 1.2], [26, 13, 0.9], [11, 3, 0.8], [24, 20, 1]];
+    const tufts: [number, number][] = [[6, 12], [19, 11], [28, 6], [14, 20]];
+    return (
+      <svg viewBox="0 14 72 56" className="w-full h-full" aria-hidden="true" data-icon={TYPE_LABELS[value]}>
+        <path d={poly([pp(0, 0), pp(PATCH_U, 0), pp(PATCH_U, PATCH_V), pp(0, PATCH_V)])} fill="currentColor" fillOpacity={0.2} stroke="currentColor" strokeOpacity={0.35} strokeWidth={0.8} strokeDasharray="2 1.5" />
+        {pebbles.map(([u, v, rr], i) => <ellipse key={i} cx={r2(pp(u, v)[0])} cy={r2(pp(u, v)[1])} rx={rr * 1.4} ry={rr * 0.9} fill="currentColor" fillOpacity={0.55} />)}
+        <g stroke="currentColor" strokeWidth={0.9} strokeLinecap="round">
+          {tufts.map(([u, v], i) => { const [x, y] = pp(u, v); return <path key={i} d={`M${r2(x - 1.6)} ${r2(y - 2.6)} L${r2(x)} ${r2(y)} L${r2(x)} ${r2(y - 3.4)} M${r2(x)} ${r2(y)} L${r2(x + 1.6)} ${r2(y - 2.6)}`} />; })}
+        </g>
+      </svg>
+    );
   }
+  if (!inner) return null;
+  return (
+    <svg viewBox="0 14 72 56" className="w-full h-full" aria-hidden="true" data-icon={TYPE_LABELS[value]}>
+      <Patch fill={value === "tiles" ? 0.08 : 0.12} />
+      {inner}
+    </svg>
+  );
+}
+
+const CONDITION_LABELS: Record<number, string> = {
+  1: "Broken: a raised panel, a hole and a chipped corner, pieces missing or out of level",
+  2: "Cracked: cracks across the panels, every piece still in place and level",
+  3: "Intact: whole panels, no cracks",
+};
+
+/** Surface Condition, by stored value 1 to 3: Broken, Cracked, Intact */
+export function SurfaceConditionIcon({ value }: { value: number }) {
+  if (!CONDITION_LABELS[value]) return null;
+  let marks: React.ReactNode = null;
+  if (value === 2) {
+    marks = (
+      <path d={`M${xy(pp(2, 3))} L${xy(pp(5, 6))} L${xy(pp(4, 8))} L${xy(pp(8, 10))} M${xy(pp(13, 13))} L${xy(pp(15, 16))} L${xy(pp(14, 18))} L${xy(pp(18, 21))} M${xy(pp(22, 2))} L${xy(pp(24, 5))} L${xy(pp(23, 7))} L${xy(pp(27, 9))}`}
+        fill="none" stroke="currentColor" strokeWidth={1.1} strokeLinejoin="round" strokeLinecap="round" />
+    );
+  } else if (value === 1) {
+    // A hole in the middle panel of the near row, with its walls
+    const h = [pp(12, 14), pp(17, 13), pp(18, 18), pp(13, 19.5)];
+    const deep = 3.2;
+    // The far panel on the right lifted, so its edge stands up
+    const lift = 2.6;
+    const L = (u: number, v: number) => pp(u, v, lift);
+    marks = (
+      <g>
+        <path d={poly(h)} fill="currentColor" fillOpacity={0.85} />
+        <path d={poly([h[0], h[1], [h[1][0], h[1][1] + deep], [h[0][0], h[0][1] + deep]])} fill="currentColor" fillOpacity={0.35} />
+        {/* Raised panel: its side, then its top */}
+        <path d={poly([pp(20, 11), pp(30, 11), L(30, 11), L(20, 11)])} fill="currentColor" fillOpacity={0.55} />
+        <path d={poly([pp(20, 0), pp(20, 11), L(20, 11), L(20, 0)])} fill="currentColor" fillOpacity={0.45} />
+        <path d={poly([L(20, 0), L(30, 0), L(30, 11), L(20, 11)])} fill="currentColor" fillOpacity={0.16} stroke="currentColor" strokeOpacity={0.7} strokeWidth={0.8} />
+        {/* A chipped corner, missing from the near left panel */}
+        <path d={poly([pp(0, 17), pp(4, 22), pp(0, 22)])} fill="#fff" />
+        <path d={`M${xy(pp(0, 17))} L${xy(pp(2.5, 18.5))} L${xy(pp(4, 22))}`} fill="none" stroke="currentColor" strokeWidth={0.9} strokeLinejoin="round" />
+      </g>
+    );
+  }
+  return (
+    <svg viewBox="0 14 72 56" className="w-full h-full" aria-hidden="true" data-icon={CONDITION_LABELS[value]}>
+      <Patch />
+      <Panels />
+      {marks}
+    </svg>
+  );
 }

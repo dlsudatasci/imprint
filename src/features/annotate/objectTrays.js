@@ -1,9 +1,10 @@
 import { NOT_AN_OBJECT, isOffSidewalk } from "@/util/suggestionJudgment";
 import { formatLabel } from "@/util/buildDisplayLabels";
+import { sceneProgress } from "@/util/validators/sceneQuestions.mjs";
 
 /**
- * Contributor Step 1: the lists of answers under the photo (7 Oct 2026,
- * contributors only).
+ * Contributor Step 2 (Step 1 until S15): the lists of answers under the photo
+ * (7 Oct 2026, contributors only).
  *
  * Every object sits in exactly one place: still to decide, Not obstructions
  * (answered No), Obstructions (answered Yes), or Not an object. Suggestions and
@@ -18,6 +19,10 @@ import { formatLabel } from "@/util/buildDisplayLabels";
  * walk on is not an obstruction, so it is listed under Not obstructions with
  * the other No answers, and its box is off the photo. A box counts as
  * answered only once it has its sidewalk answer.
+ *
+ * From S15 (9 Nov 2026) Step 1 asks whether there is a sidewalk. With only a
+ * path (`pathOnly`) no box has a sidewalk answer, so a box goes by its
+ * obstruction answer alone.
  */
 
 export const TRAYS = Object.freeze({
@@ -33,6 +38,8 @@ export const TRAY_COPY = Object.freeze({
   toDecideTitle: "Still to decide",
   allAnswered: "Every object is answered.",
   noObjects: "No suggestions in this image. Draw a box around any object on the sidewalk we missed.",
+  // Only a path (S15)
+  noObjectsPath: "No suggestions in this image. Draw a box around any object on the path we missed.",
   notObstructions: "Not obstructions",
   obstructions: "Obstructions",
   removed: "Not an object",
@@ -41,27 +48,22 @@ export const TRAY_COPY = Object.freeze({
   // The top of the answers sheet on a phone or tablet (9 Oct 2026)
   next: "Next",
   // The first row of the sheet, beside Show all and Hide all (14 Oct 2026)
-  stepHeading: "Step 1: Identify Objects and Obstructions",
+  // Step 2 from S15, when Step 1 asks whether there is a sidewalk
+  stepHeading: "Step 2: Identify Objects and Obstructions",
   noObjectsTouch: "No suggestions in this image. Tap Add box for any object on the sidewalk we missed.",
+  // Only a path (S15)
+  noObjectsTouchPath: "No suggestions in this image. Tap Add box for any object on the path we missed.",
 });
 
 /**
- * How much of Step 2 is answered, for the line at the top of the answers sheet
- * (9 Oct 2026). With no sidewalk the other three questions are skipped, so
- * only the width is needed.
+ * "Step 3: Rate the Sidewalk, 1 of 6 answered", the line at the top of the
+ * answers sheet (9 Oct 2026). From S15 it counts by sceneQuestions.mjs: six
+ * questions for a sidewalk, two for a path ("2 of 2"), roadBarrier false
+ * counting as an answer.
  */
-export function sceneProgress(sceneLevel) {
-  const s = sceneLevel || {};
-  const answered = (v) => v !== null && v !== undefined;
-  if (s.sidewalkWidth === "no_sidewalk") return { answered: 1, required: 1 };
-  const fields = [s.sidewalkWidth, s.surfaceCondition, s.walkability, s.overallAccessibility];
-  return { answered: fields.filter(answered).length, required: 4 };
-}
-
-/** "Step 2: Rate the Sidewalk, 1 of 4 answered" */
-export function sceneProgressLine(sceneLevel) {
-  const { answered, required } = sceneProgress(sceneLevel);
-  return `Step 2: Rate the Sidewalk, ${answered} of ${required} answered`;
+export function sceneProgressLine(sceneLevel, hasSidewalk = true) {
+  const { answered, required } = sceneProgress(sceneLevel, hasSidewalk);
+  return `Step 3: Rate the Sidewalk, ${answered} of ${required} answered`;
 }
 
 /**
@@ -70,13 +72,14 @@ export function sceneProgressLine(sceneLevel) {
  * box with no sidewalk answer is still to decide. Otherwise suggestions use
  * the same states as validateAnnotationForSubmit (undecided is not editable,
  * not selected and not rejected), and drawn boxes go by their Yes or No
- * answer. null for anything that is not a box.
+ * answer. null for anything that is not a box. With only a path (S15,
+ * `pathOnly`) there is no sidewalk answer to wait for.
  */
-export function trayOf(box) {
+export function trayOf(box, { pathOnly = false } = {}) {
   if (box == null || typeof box !== "object") return null;
   if (!box.editable && box.comment === NOT_AN_OBJECT) return TRAYS.removed;
-  if (box.onSidewalk === false) return TRAYS.notObstructions;
-  if (box.onSidewalk !== true) return TRAYS.toDecide;
+  if (!pathOnly && box.onSidewalk === false) return TRAYS.notObstructions;
+  if (!pathOnly && box.onSidewalk !== true) return TRAYS.toDecide;
   if (!box.editable) {
     if (box.selected === true) return TRAYS.obstructions;
     if (box.isRejected === true) return TRAYS.notObstructions;
@@ -96,7 +99,7 @@ export function trayOf(box) {
  * Does not mutate the boxes.
  *
  * @param {Array<object> | null | undefined} boxes
- * @param {{ labels?: Map<string, string | null> }} [options]
+ * @param {{ labels?: Map<string, string | null>, pathOnly?: boolean }} [options]
  */
 /** A box's name in the lists. A Not an object box is named by the model's own category ("Car"), since its label only repeats that. */
 function trayLabel(box, tray, labels) {
@@ -105,10 +108,14 @@ function trayLabel(box, tray, labels) {
   return removedLabel || labels?.get(box.id) || formatLabel(box.comment) || FALLBACK_LABEL;
 }
 
-export function buildTrays(boxes, { labels } = {}) {
+/**
+ * @param {Array<object> | null | undefined} boxes
+ * @param {{ labels?: Map<string, string | null>, pathOnly?: boolean }} [options]
+ */
+export function buildTrays(boxes, { labels, pathOnly = false } = {}) {
   const trays = { toDecide: [], notObstructions: [], obstructions: [], removed: [] };
   for (const box of boxes || []) {
-    const tray = trayOf(box);
+    const tray = trayOf(box, { pathOnly });
     if (!tray) continue;
     trays[tray].push({
       id: box.id,
@@ -169,8 +176,8 @@ export const PEEK_TAG = Object.freeze({
 const LEFT = new Set([PEEK_STATUS.toDecide, PEEK_STATUS.noSeverity]);
 
 /** A contributor's object as its chip shows it, or null for anything that is not a box. */
-export function peekStatus(box, { askSeverity = true } = {}) {
-  const tray = trayOf(box);
+export function peekStatus(box, { askSeverity = true, pathOnly = false } = {}) {
+  const tray = trayOf(box, { pathOnly });
   if (tray === TRAYS.toDecide) return PEEK_STATUS.toDecide;
   if (tray === TRAYS.removed) return PEEK_STATUS.removed;
   if (tray === TRAYS.notObstructions) return PEEK_STATUS.notObstruction;
@@ -184,14 +191,14 @@ export function peekStatus(box, { askSeverity = true } = {}) {
  * is left and `nextId` is the first of it, for Next. Does not mutate the boxes.
  *
  * @param {Array<object> | null | undefined} boxes
- * @param {{ labels?: Map<string, string | null>, askSeverity?: boolean }} [options]
+ * @param {{ labels?: Map<string, string | null>, askSeverity?: boolean, pathOnly?: boolean }} [options]
  */
-export function buildPeekChips(boxes, { labels, askSeverity = true } = {}) {
+export function buildPeekChips(boxes, { labels, askSeverity = true, pathOnly = false } = {}) {
   const items = [];
   for (const box of boxes || []) {
-    const status = peekStatus(box, { askSeverity });
+    const status = peekStatus(box, { askSeverity, pathOnly });
     if (!status) continue;
-    items.push({ id: box.id, label: trayLabel(box, trayOf(box), labels), drawn: box.editable === true, status });
+    items.push({ id: box.id, label: trayLabel(box, trayOf(box, { pathOnly }), labels), drawn: box.editable === true, status });
   }
   const left = items.filter((item) => LEFT.has(item.status));
   return {

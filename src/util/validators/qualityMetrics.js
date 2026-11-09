@@ -1,6 +1,7 @@
 import { excludeNotAnObject } from "@/util/suggestionJudgment";
 import { isBelowMinimumSize } from "@/util/boxGeometry";
 import { sceneAnswersOf } from "@/util/validators/sceneScale.mjs";
+import { SCENE_KEYS } from "@/util/validators/sceneQuestions.mjs";
 
 /**
  * Quality-control metrics: IoU-based box matching, precision/recall/F1,
@@ -116,36 +117,44 @@ export function computeSeverityMAE(matchedPairs) {
 }
 
 /**
- * Share of scene-level answers two people gave alike (2 Oct 2026).
+ * Share of scene-level answers two people gave alike (2 Oct 2026, S15 9 Nov
+ * 2026).
  *
- * Sidewalk width is always compared. "None" is one of its answers, so a
- * disagreement about whether a sidewalk exists counts here, once. Surface
- * condition, walking comfort and accessibility are left empty when the width
- * is "None", so they are compared only when both people saw a sidewalk: an
+ * Step 1, whether there is a sidewalk (hasSidewalk), is compared as its own
+ * field when both rows have it, so a disagreement about whether a sidewalk
+ * exists counts here, once. Then each of the six Step 3 questions
+ * (SCENE_KEYS) is compared when both people have a value for it, so the four
+ * asked only of a sidewalk are compared only when both said sidewalk: an
  * answer missing by design is not a disagreement (Krippendorff's alpha, used
- * for the reported analysis, treats it the same way).
+ * for the reported analysis, treats it the same way). The comparison is ===,
+ * which suits the numbers, the words of surfaceType and the true or false of
+ * roadBarrier alike.
+ *
+ * `presence` is each row's hasSidewalk ({ a, b }), null or absent for a row
+ * that has none.
  */
-export const SCENE_CONDITIONAL_KEYS = Object.freeze(["surfaceCondition", "walkability", "overallAccessibility"]);
-
-export function computeSceneLevelAgreement(sceneA, sceneB) {
+export function computeSceneLevelAgreement(sceneA, sceneB, presence = {}) {
   if (!sceneA || !sceneB) return { fields: {}, overallRate: null };
 
   const fields = {};
-  const bothSawSidewalk =
-    sceneA.sidewalkWidth != null && sceneA.sidewalkWidth !== "no_sidewalk" &&
-    sceneB.sidewalkWidth != null && sceneB.sidewalkWidth !== "no_sidewalk";
-  const keys = ["sidewalkWidth", ...(bothSawSidewalk ? SCENE_CONDITIONAL_KEYS : [])];
   let agreed = 0;
   let compared = 0;
-
-  for (const key of keys) {
-    const a = sceneA[key];
-    const b = sceneB[key];
-    if (a == null && b == null) continue;
+  const compare = (key, a, b) => {
     compared++;
     const match = a === b;
     if (match) agreed++;
     fields[key] = { a, b, match };
+  };
+
+  const presenceA = presence?.a;
+  const presenceB = presence?.b;
+  if (typeof presenceA === "boolean" && typeof presenceB === "boolean") compare("hasSidewalk", presenceA, presenceB);
+
+  for (const key of SCENE_KEYS) {
+    const a = sceneA[key];
+    const b = sceneB[key];
+    if (a == null || b == null) continue;
+    compare(key, a, b);
   }
 
   return {
@@ -174,7 +183,8 @@ export function computeReferencePerformance(contributorAnnotation, groundTruthAn
   // Both on the scale where higher is better, whichever each was answered on (22 Oct 2026)
   const sceneLevelAgreement = computeSceneLevelAgreement(
     sceneAnswersOf(contributorAnnotation),
-    sceneAnswersOf(groundTruthAnnotation)
+    sceneAnswersOf(groundTruthAnnotation),
+    { a: contributorAnnotation?.hasSidewalk, b: groundTruthAnnotation?.hasSidewalk }
   );
 
   return {
@@ -209,11 +219,10 @@ export function detectDegenerateFlags(annotations, telemetryEvents) {
     // On one scale, so the same answers before and after 22 Oct 2026 are one pattern
     const scene = sceneAnswersOf(ann);
     if (scene) {
+      // Step 1 and the six Step 3 answers (S15)
       scenePatterns.push(JSON.stringify({
-        sw: scene.sidewalkWidth,
-        sc: scene.surfaceCondition,
-        w: scene.walkability,
-        oa: scene.overallAccessibility,
+        hs: ann.hasSidewalk ?? null,
+        ...Object.fromEntries(SCENE_KEYS.map((key) => [key, scene[key] ?? null])),
       }));
     }
   }
@@ -568,7 +577,8 @@ export function computePairwiseAgreement(annotationsA, annotationsB) {
   // Both on the scale where higher is better, whichever each was answered on (22 Oct 2026)
   const sceneLevelAgreement = computeSceneLevelAgreement(
     sceneAnswersOf(annotationsA),
-    sceneAnswersOf(annotationsB)
+    sceneAnswersOf(annotationsB),
+    { a: annotationsA?.hasSidewalk, b: annotationsB?.hasSidewalk }
   );
 
   return { ...prf1, obstructionAgreement, sceneLevelAgreement };

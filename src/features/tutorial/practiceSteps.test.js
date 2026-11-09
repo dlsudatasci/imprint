@@ -9,7 +9,7 @@ import {
   DRAW_TARGET,
   DRAW_MIN_IOU,
   PRACTICE_SELECTORS,
-  SCENE_QUESTIONS,
+  sceneQuestionsFor,
   boxAnswered,
   drawTargetIoU,
   practiceDrawnBox,
@@ -22,9 +22,10 @@ import {
 } from "./practiceSteps";
 
 /**
- * S19 (7 Nov 2026): the practice on the first tutorial photo, ten steps that
+ * S19 (7 Nov 2026): the practice on the first tutorial photo, steps that
  * each wait for the contributor to do one thing, decided from the tool's
- * state. The photo and boxes are the home page preview's.
+ * state. The photo and boxes are the home page preview's. S15 (9 Nov 2026)
+ * adds Step 1 first, so there are eleven, and Step 3's six questions.
  */
 
 const PHOTO = TUTORIAL_IMAGES[0];
@@ -33,8 +34,9 @@ const suggestion = (id, extra = {}) => {
   return { id, comment: box.comment, editable: false, mark: { ...box.mark }, selected: false, isRejected: false, severity: null, ...extra };
 };
 const drawn = (mark, extra = {}) => ({ id: "drawn-1", comment: "---", editable: true, mark, selected: false, isRejected: false, severity: null, ...extra });
-const EMPTY_SCENE = { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null };
-const state = ({ boxes = {}, extra = [], openId = null, scene = EMPTY_SCENE } = {}) => ({
+const EMPTY_SCENE = { sidewalkWidth: null, overallAccessibility: null, surfaceEvenness: null, surfaceType: null, surfaceCondition: null, roadBarrier: null };
+// Step 1 answered Yes unless a test says otherwise (S15)
+const state = ({ boxes = {}, extra = [], openId = null, scene = EMPTY_SCENE, hasSidewalk = true } = {}) => ({
   boxes: [
     suggestion(ids.lamp, boxes.lamp),
     suggestion(ids.tree, boxes.tree),
@@ -44,6 +46,7 @@ const state = ({ boxes = {}, extra = [], openId = null, scene = EMPTY_SCENE } = 
   ],
   openId,
   scene,
+  hasSidewalk,
 });
 const index = (key) => PRACTICE_STEPS.findIndex((s) => s.key === key);
 const onPathYes = { onSidewalk: true, obstructs: undefined };
@@ -68,7 +71,7 @@ describe("the practice's photo and boxes", () => {
     expect(PHOTO.annotationList.find((b) => b.id === PRACTICE_IDS.lamp).comment).toBe("lamp_post");
   });
 
-  it("gives the tree the model's hint that step 3 shows", () => {
+  it("gives the tree the model's hint that step 4 shows", () => {
     expect(PHOTO.annotationList.find((b) => b.id === PRACTICE_IDS.tree).proposedObstructs).toBe(true);
   });
 
@@ -82,10 +85,10 @@ describe("the practice's photo and boxes", () => {
     for (const box of PHOTO.annotationList) expect(drawTargetIoU(box.mark), box.id).toBe(0);
   });
 
-  it("has ten steps, each with a lock", () => {
-    expect(PRACTICE_STEP_COUNT).toBe(10);
+  it("has eleven steps, Step 1 first (S15), each with a lock", () => {
+    expect(PRACTICE_STEP_COUNT).toBe(11);
     expect(PRACTICE_STEPS.map((s) => s.key)).toEqual([
-      "openTree", "treeOnPath", "treeObstructs", "treeSeverity", "carOff",
+      "presence", "openTree", "treeOnPath", "treeObstructs", "treeSeverity", "carOff",
       "drawPost", "answerDrawn", "lastTwo", "scene", "next",
     ]);
     for (const step of PRACTICE_STEPS) expect(practiceLockFor(step), step.key).toBeTruthy();
@@ -93,20 +96,28 @@ describe("the practice's photo and boxes", () => {
 });
 
 describe("practiceStepDone", () => {
-  it("step 1: the tree's panel is open", () => {
-    expect(practiceStepDone(0, state())).toBe(false);
-    expect(practiceStepDone(0, state({ openId: ids.car }))).toBe(false);
-    expect(practiceStepDone(0, state({ openId: ids.tree }))).toBe(true);
+  it("step 1 (S15): Step 1 answered Yes, the photo having a sidewalk", () => {
+    expect(PRACTICE_STEPS[0].key).toBe("presence");
+    expect(practiceStepDone(0, state({ hasSidewalk: null }))).toBe(false);
+    expect(practiceStepDone(0, state({ hasSidewalk: false }))).toBe(false);
+    expect(practiceStepDone(0, state())).toBe(true);
     expect(practiceStepDone(0, null)).toBe(false);
   });
 
-  it("step 2: the tree is on the path", () => {
+  it("step 2: the tree's panel is open", () => {
+    expect(practiceStepDone(1, state())).toBe(false);
+    expect(practiceStepDone(1, state({ openId: ids.car }))).toBe(false);
+    expect(practiceStepDone(1, state({ openId: ids.tree }))).toBe(true);
+    expect(practiceStepDone(1, null)).toBe(false);
+  });
+
+  it("step 3: the tree is on the path", () => {
     expect(practiceStepDone("treeOnPath", state({ openId: ids.tree }))).toBe(false);
     expect(practiceStepDone("treeOnPath", state({ boxes: { tree: offPath } }))).toBe(false);
     expect(practiceStepDone("treeOnPath", state({ boxes: { tree: onPathYes } }))).toBe(true);
   });
 
-  it("step 3: the tree answered whether it obstructs, by Yes or by No", () => {
+  it("step 4: the tree answered whether it obstructs, by Yes or by No", () => {
     expect(practiceStepDone("treeObstructs", state({ boxes: { tree: onPathYes } }))).toBe(false);
     // A first Yes, the severity picker still open
     expect(practiceStepDone("treeObstructs", state({ boxes: { tree: { onSidewalk: true, obstructs: true, selected: true } } }))).toBe(true);
@@ -115,7 +126,7 @@ describe("practiceStepDone", () => {
     expect(practiceStepDone("treeObstructs", state({ boxes: { tree: offPath } }))).toBe(false);
   });
 
-  it("step 4: the tree has a severity, any value, and is skipped after a No", () => {
+  it("step 5: the tree has a severity, any value, and is skipped after a No", () => {
     const yes = { onSidewalk: true, obstructs: true, selected: true };
     expect(practiceStepDone("treeSeverity", state({ boxes: { tree: yes } }))).toBe(false);
     for (const severity of [1, 2, 3, 4, 5]) {
@@ -130,13 +141,13 @@ describe("practiceStepDone", () => {
     expect(practiceStepDone("treeSeverity", state({ boxes: { tree: answeredNo } }))).toBe(true);
   });
 
-  it("step 5: the car is off the path", () => {
+  it("step 6: the car is off the path", () => {
     expect(practiceStepDone("carOff", state({ openId: ids.car }))).toBe(false);
     expect(practiceStepDone("carOff", state({ boxes: { car: onPathYes } }))).toBe(false);
     expect(practiceStepDone("carOff", state({ boxes: { car: offPath } }))).toBe(true);
   });
 
-  it("step 6: a drawn box covers the white post with an IoU of at least 0.3", () => {
+  it("step 7: a drawn box covers the white post with an IoU of at least 0.3", () => {
     expect(DRAW_MIN_IOU).toBe(0.3);
     expect(practiceStepDone("drawPost", state())).toBe(false);
     expect(practiceStepDone("drawPost", state({ extra: [drawn(POST)] }))).toBe(true);
@@ -163,7 +174,7 @@ describe("practiceStepDone", () => {
     expect(practiceDrawnBox(state({ extra: [drawn(top), better] })).id).toBe("drawn-2");
   });
 
-  it("step 7: the drawn box has a category, Question 1, and Question 2 with a severity if Yes", () => {
+  it("step 8: the drawn box has a category, Question 1, and Question 2 with a severity if Yes", () => {
     const at = (extra) => state({ extra: [drawn(POST, extra)] });
     expect(practiceStepDone("answerDrawn", at({}))).toBe(false);
     expect(practiceStepDone("answerDrawn", at({ comment: "lamp_post" }))).toBe(false);
@@ -176,14 +187,14 @@ describe("practiceStepDone", () => {
     expect(practiceStepDone("answerDrawn", at({ onSidewalk: false, obstructs: false }))).toBe(false);
   });
 
-  it("step 7 gives way to step 6 when the drawn box is deleted or fitted away", () => {
+  it("step 8 gives way to step 7 when the drawn box is deleted or fitted away", () => {
     const at7 = index("answerDrawn");
     expect(practiceStepFor(at7, state({ extra: [drawn(POST)] }))).toBe(at7);
     expect(practiceStepFor(at7, state())).toBe(index("drawPost"));
     expect(practiceStepFor(index("lastTwo"), state())).toBe(index("lastTwo"));
   });
 
-  it("step 8: the motorcycle and the lamp post answered, or marked Not an object", () => {
+  it("step 9: the motorcycle and the lamp post answered, or marked Not an object", () => {
     expect(practiceStepDone("lastTwo", state())).toBe(false);
     expect(practiceStepDone("lastTwo", state({ boxes: { moto: answeredNo } }))).toBe(false);
     expect(practiceStepDone("lastTwo", state({ boxes: { moto: answeredNo, lamp: offPath } }))).toBe(true);
@@ -195,21 +206,24 @@ describe("practiceStepDone", () => {
     expect(practiceStepDone("lastTwo", state({ boxes: { moto: notAnObject, lamp: answeredNo } }))).toBe(true);
   });
 
-  it("step 9: Step 2 complete, four answers or None", () => {
+  it("step 10: Step 3 complete, six answers for a sidewalk or two for a path, roadBarrier false counting", () => {
     expect(practiceStepDone("scene", state())).toBe(false);
-    const three = { sidewalkWidth: "moderate", surfaceCondition: 3, walkability: 3, overallAccessibility: null };
-    expect(practiceStepDone("scene", state({ scene: three }))).toBe(false);
-    expect(practiceStepDone("scene", state({ scene: { ...three, overallAccessibility: 5 } }))).toBe(true);
-    expect(practiceStepDone("scene", state({ scene: { ...EMPTY_SCENE, sidewalkWidth: "no_sidewalk" } }))).toBe(true);
+    const five = { sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 3, roadBarrier: null };
+    expect(practiceStepDone("scene", state({ scene: five }))).toBe(false);
+    expect(practiceStepDone("scene", state({ scene: { ...five, roadBarrier: false } }))).toBe(true);
+    const path = { ...EMPTY_SCENE, overallAccessibility: 2, surfaceEvenness: 1 };
+    expect(practiceStepDone("scene", state({ scene: path }))).toBe(false);
+    expect(practiceStepDone("scene", state({ scene: path, hasSidewalk: false }))).toBe(true);
   });
 
-  it("step 10: done by going to image 2, never by the tool's state", () => {
+  it("step 11: done by going to image 2, never by the tool's state", () => {
     expect(practiceStepDone("next", state())).toBe(false);
     expect(nextPracticeStep(index("next"), state())).toBe(PRACTICE_STEP_COUNT);
   });
 
   it("the whole run, each step done in turn by the preview's answers", () => {
     const steps = [
+      state(),
       state({ openId: ids.tree }),
       state({ openId: ids.tree, boxes: { tree: onPathYes } }),
       state({ openId: ids.tree, boxes: { tree: { onSidewalk: true, obstructs: true, selected: true } } }),
@@ -243,7 +257,7 @@ describe("the locks", () => {
     for (const step of PRACTICE_STEPS) expect(step.lock.allowAnswers?.obstructs, step.key).toBeUndefined();
   });
 
-  it("allows drawing from step 6 only, and Next Image at step 10 only", () => {
+  it("allows drawing from step 7 only, and Next Image at step 11 only", () => {
     PRACTICE_STEPS.forEach((step, i) => {
       expect(step.lock.canDraw, step.key).toBe(i >= index("drawPost"));
       expect(step.lock.canSubmit, step.key).toBe(i === index("next"));
@@ -251,7 +265,12 @@ describe("the locks", () => {
     expect(practiceLockFor("drawPost").openable).toEqual([]);
   });
 
-  it("opens every box, and allows any answer, from step 8", () => {
+  it("opens no box and allows no drawing at Step 1, and allows only Yes there on every step (S15)", () => {
+    expect(practiceLockFor("presence")).toMatchObject({ openable: [], canDraw: false, canSubmit: false, allowPresence: true });
+    for (const step of PRACTICE_STEPS) expect(step.lock.allowPresence, step.key).toBe(true);
+  });
+
+  it("opens every box, and allows any answer, from step 9", () => {
     for (const key of ["lastTwo", "scene", "next"]) {
       expect(practiceLockFor(key).openable).toBe("all");
       expect(practiceLockFor(key).allowAnswers).toBeNull();
@@ -268,7 +287,7 @@ describe("practiceTargets", () => {
     expect(practiceTargets("treeOnPath", state()).highlight).toEqual({ boxId: ids.tree });
   });
 
-  it("rings Question 1's Yes at step 2, with the open box marked and no outline on it", () => {
+  it("rings Question 1's Yes at step 3, with the open box marked and no outline on it", () => {
     const t = practiceTargets("treeOnPath", state({ openId: ids.tree }));
     expect(t).toMatchObject({ highlight: { avoidBoxIds: [ids.tree] }, rings: [S.onPathYes], spotlight: [S.photo] });
     expect(t.highlight.boxId).toBeUndefined();
@@ -279,14 +298,14 @@ describe("practiceTargets", () => {
     expect(t.spotlight).toEqual([S.answerSheet, S.openBox]);
   });
 
-  it("rings Yes and No at step 3, alike, and never the model's line (Rans, 8 Nov 2026)", () => {
+  it("rings Yes and No at step 4, alike, and never the model's line (Rans, 8 Nov 2026)", () => {
     const t = practiceTargets("treeObstructs", state({ openId: ids.tree, boxes: { tree: onPathYes } }));
     expect(t.rings).toEqual([S.obstructsYes, S.obstructsNo]);
     expect(t.rings).not.toContain(S.modelHint);
     expect(t.spotlight).toEqual([S.photo]);
   });
 
-  it("rings Confirm at step 4 and not the slider, and Yes and No again after Go back", () => {
+  it("rings Confirm at step 5 and not the slider, and Yes and No again after Go back", () => {
     expect(practiceTargets("treeSeverity", state({ openId: ids.tree, boxes: { tree: yesPicker } })).rings).toEqual([S.confirm]);
     expect(practiceTargets("treeSeverity", state({ openId: ids.tree, boxes: { tree: onPathYes } })).rings).toEqual([S.obstructsYes, S.obstructsNo]);
   });
@@ -299,12 +318,12 @@ describe("practiceTargets", () => {
     expect(practiceTargets("carOff", state({ openId: ids.car }), "touch").spotlight).toEqual([S.answerSheet, S.openBox]);
   });
 
-  it("at step 5 outlines the car, then rings its Question 1 No", () => {
+  it("at step 6 outlines the car, then rings its Question 1 No", () => {
     expect(practiceTargets("carOff", state()).highlight).toEqual({ boxId: ids.car });
     expect(practiceTargets("carOff", state({ openId: ids.car }))).toMatchObject({ highlight: { avoidBoxIds: [ids.car] }, rings: [S.onPathNo] });
   });
 
-  it("at step 6 outlines the white post; on touch rings Add box with the card by it, then above the post once the new box is open", () => {
+  it("at step 7 outlines the white post; on touch rings Add box with the card by it, then above the post once the new box is open", () => {
     expect(practiceTargets("drawPost", state())).toMatchObject({ highlight: { rect: DRAW_TARGET }, rings: [], spotlight: [S.photo], cardNear: null });
     expect(practiceTargets("drawPost", state(), "touch")).toMatchObject({ highlight: { rect: DRAW_TARGET }, rings: [S.addBox], spotlight: [], cardNear: S.addBox });
     // Add box tapped: the new box open, the card above the post and clear of the box
@@ -317,7 +336,7 @@ describe("practiceTargets", () => {
     }
   });
 
-  it("at step 7 rings the category field, then Confirm for a Yes", () => {
+  it("at step 8 rings the category field, then Confirm for a Yes", () => {
     const box = drawn(POST);
     expect(practiceTargets("answerDrawn", state({ extra: [box], openId: box.id })).rings).toEqual([S.category]);
     expect(practiceTargets("answerDrawn", state({ extra: [box] })).highlight).toEqual({ boxId: box.id });
@@ -325,24 +344,38 @@ describe("practiceTargets", () => {
     expect(practiceTargets("answerDrawn", state({ extra: [{ ...box, comment: "lamp_post", onSidewalk: true, obstructs: true }], openId: box.id })).rings).toEqual([S.confirm]);
   });
 
-  it("at step 8 outlines the two boxes still to answer", () => {
+  it("at step 9 outlines the two boxes still to answer", () => {
     expect(practiceTargets("lastTwo", state()).highlight).toEqual({ boxIds: [ids.moto, ids.lamp] });
     expect(practiceTargets("lastTwo", state({ boxes: { moto: answeredNo } })).highlight).toEqual({ boxIds: [ids.lamp] });
     expect(practiceTargets("lastTwo", state({ openId: ids.moto })).highlight).toEqual({ boxIds: [ids.lamp], avoidBoxIds: [ids.moto] });
   });
 
-  it("at step 9 lights Step 2's questions one at a time, and on touch its line until the sheet is up", () => {
-    const at = (scene, words) => practiceTargets("scene", state({ scene: { ...EMPTY_SCENE, ...scene } }), words);
-    expect(SCENE_QUESTIONS).toEqual(["sidewalkWidth", "surfaceCondition", "walkability", "overallAccessibility"]);
+  it("at step 1 lights Step 1 and rings its Yes, on a laptop and on touch (S15)", () => {
+    for (const words of ["pointer", "touch"]) {
+      expect(practiceTargets("presence", state({ hasSidewalk: null }), words)).toMatchObject({
+        highlight: null,
+        spotlight: ["#sidewalk-presence-section"],
+        rings: ["[data-presence-option='true']"],
+      });
+    }
+  });
+
+  it("at step 10 lights Step 3's questions one at a time, and on touch its line until the sheet is up", () => {
+    const at = (scene, words, hasSidewalk = true) => practiceTargets("scene", state({ scene: { ...EMPTY_SCENE, ...scene }, hasSidewalk }), words);
+    expect(sceneQuestionsFor(state())).toEqual(["sidewalkWidth", "overallAccessibility", "surfaceEvenness", "surfaceType", "surfaceCondition", "roadBarrier"]);
+    expect(sceneQuestionsFor(state({ hasSidewalk: false }))).toEqual(["overallAccessibility", "surfaceEvenness"]);
     expect(at({}).spotlight).toEqual(["[data-scene-question='sidewalkWidth']"]);
-    expect(at({ sidewalkWidth: "moderate" }).spotlight).toEqual(["[data-scene-question='surfaceCondition']"]);
-    expect(at({ sidewalkWidth: "moderate", surfaceCondition: 3, walkability: 3 }).spotlight).toEqual(["[data-scene-question='overallAccessibility']"]);
+    expect(at({ sidewalkWidth: "two_people" }).spotlight).toEqual(["[data-scene-question='overallAccessibility']"]);
+    expect(at({ sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3 }).spotlight).toEqual(["[data-scene-question='roadBarrier']"]);
+    // roadBarrier false is an answer: the whole section then
+    expect(at({ sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3, roadBarrier: false }).spotlight).toEqual(["#scene-level-section"]);
+    expect(at({ overallAccessibility: 2 }, "pointer", false).spotlight).toEqual(["[data-scene-question='surfaceEvenness']"]);
     expect(at({}).rings).toEqual([]);
     expect(at({}).fallback).toBeNull();
     expect(at({}, "touch").fallback).toEqual({ unless: S.sheetUp, rings: [S.sceneLine], spotlight: [S.sceneLine] });
   });
 
-  it("at step 10 lights and rings Next Image", () => {
+  it("at step 11 lights and rings Next Image", () => {
     expect(practiceTargets("next", state())).toMatchObject({ rings: ["button[type='submit']"], spotlight: ["button[type='submit']"] });
   });
 
@@ -352,7 +385,7 @@ describe("practiceTargets", () => {
   });
 
   it("rings only Question 1's Yes, Question 2's Yes and No, Confirm, No, Add box, the category and Next Image anywhere", () => {
-    const allowed = new Set([S.onPathYes, S.obstructsYes, S.obstructsNo, S.confirm, S.onPathNo, S.addBox, S.category, S.submit, S.sceneLine]);
+    const allowed = new Set([S.presenceYes, S.onPathYes, S.obstructsYes, S.obstructsNo, S.confirm, S.onPathNo, S.addBox, S.category, S.submit, S.sceneLine]);
     const states = [
       state(), state({ openId: ids.tree }), state({ openId: ids.tree, boxes: { tree: onPathYes } }),
       state({ openId: ids.tree, boxes: { tree: yesPicker } }), state({ openId: ids.car }),

@@ -106,7 +106,7 @@ export const getServerSideProps = async (context) => {
           newObjects: annotation.newObjects ?? [],
           accessibilityRating: annotation.accessibilityRating ?? null,
           sceneRatings: annotation.sceneRatings ?? null,
-          // 5 is Easily accessible, whichever scale it was answered on (22 Oct 2026)
+          // 5 is Unobstructed (S15), whichever scale it was answered on (22 Oct 2026)
           sceneLevel: sceneAnswersOf(annotation),
           pavementType: annotation.pavementType ?? null,
           username: annotation.username ?? null,

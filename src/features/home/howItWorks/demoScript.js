@@ -1,13 +1,15 @@
 import TUTORIAL_IMAGES from "@/data/tutorialImages";
 import { normalizeMark } from "@/util/boxGeometry";
 import { offSidewalkPatch, onSidewalkPatch } from "@/util/suggestionJudgment";
+import { emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
 
 /**
  * The landing page's preview of the contributor task (HowItWorks).
  *
  * A scripted run through one image, played by scrolling: the cursor answers
- * the model's suggestions, rates a severity, draws a box the model missed,
- * answers Step 2 and moves to the next image. Pure: `demoFrame(progress)`
+ * Step 1 (S15: Yes, there is a sidewalk), the model's suggestions, rates a
+ * severity, draws a box the model missed, answers Step 3 and moves to the
+ * next image. Pure: `demoFrame(progress)`
  * replays every step up to that point of the scroll and returns what the
  * screen shows, so scrolling back and forth always lands on the same picture.
  *
@@ -16,10 +18,11 @@ import { offSidewalkPatch, onSidewalkPatch } from "@/util/suggestionJudgment";
  * onSelectObstruction, onUnselectObstruction, onSetObstructs and
  * onSetSeverity), but which object gets which answer is only for show:
  * Tree #1 first, Yes with severity 1, then Car and Lamp Post #1 not on the
- * path, Motorcycle #1 on it but No, the drawn Lamp Post #2 Yes with severity 4, and Step 2 Moderate, Easy
- * to traverse, Comfortable and Easily accessible (Rans, 15 Oct 2026). Those
- * are 3, 3 and 5, the last answer of each, now the answers run worst to best
- * (22 Oct 2026, validators/sceneScale.mjs). Every object is first answered
+ * path, Motorcycle #1 on it but No, the drawn Lamp Post #2 Yes with severity 4, and Step 3
+ * (S15, 9 Nov 2026) in its order: Limited (two_people), Unobstructed (5),
+ * Flat (3), Concrete or asphalt, Intact (3) and Barrier (true). The numbered
+ * answers run worst to best (22 Oct 2026, validators/sceneScale.mjs). The
+ * photo has a sidewalk, so every box keeps both questions. Every object is first answered
  * on the sidewalk question, as the tool asks it before the obstruction
  * question (S12, 2 Nov 2026). Car #1 and Lamp Post #1 get No there, so their
  * boxes leave the photo and they are listed under Not obstructions (Rans,
@@ -148,6 +151,13 @@ export function chooseCategory(value) {
   };
 }
 
+/** Step 1 (S15, onPresenceAnswer): the preview's photo has a sidewalk, so nothing is reset */
+export function answerPresence(value) {
+  return (s) => {
+    s.hasSidewalk = value;
+  };
+}
+
 export function answerScene(updates) {
   return (s) => {
     s.scene = { ...s.scene, ...updates };
@@ -158,6 +168,7 @@ function nextImage(s) {
   s.imageIndex = 1;
   s.boxes = freshBoxes(1);
   s.scene = emptyScene();
+  s.hasSidewalk = null;
   s.saving = false;
   close(s);
 }
@@ -206,7 +217,12 @@ const answerOffPath = (key) => [
   // A moment to see the box gone from the photo and listed under Not obstructions
   wait(1.5),
 ];
-/** A Step 2 answer: move to the option, then click it */
+/** Step 1 (S15): move to Yes, then click it */
+export const answerStep1 = () => [
+  step("to-presence", "move", 6, { to: ui("presence", { value: true }) }),
+  step("presence", "press", 2, { then: answerPresence(true) }),
+];
+/** A Step 3 answer: move to the option, then click it */
 const sceneAnswer = (field, value) => [
   step(`to-${field}`, "move", 4, { to: ui("scene", { field, value }) }),
   step(field, "press", 1.5, { then: answerScene({ [field]: value }) }),
@@ -222,12 +238,24 @@ const sceneAnswer = (field, value) => [
  * 0 to LAST_TICK, except that what comes before an `until` is stretched to
  * end at its tick, and what follows starts there.
  */
+/** Step 3's scripted answers, in the order shown (S15), shared with touchScript.js */
+export const STEP3_ANSWERS = Object.freeze([
+  ["sidewalkWidth", "two_people"],
+  ["overallAccessibility", 5],
+  ["surfaceEvenness", 3],
+  ["surfaceType", "concrete"],
+  ["surfaceCondition", 3],
+  ["roadBarrier", true],
+]);
+
 const TIMELINE = [
   { chapter: "rate" },
   { camera: "overview" },
   // The page slides in and pins, and the whole of it holds still a moment
   wait(1),
   until(HOLD_END),
+  // Step 1 first (S15), still in the whole-page shot, above the photo's card
+  ...answerStep1(),
   // Then the camera goes close in, and the cursor sets off for Tree #1
   { camera: "photo" },
   wait(3),
@@ -279,14 +307,11 @@ const TIMELINE = [
   step("drawn-to-confirm", "move", 4, { to: ui("confirm") }),
   step("drawn-confirm", "press", 2, { then: confirmSeverity(DRAWN_ID) }),
   { card: "shown" },
-  // Step 2 in the whole-page shot (Rans, 15 Oct 2026)
+  // Step 3 in the whole-page shot (Rans, 15 Oct 2026)
   { camera: "overview" },
   { chapter: "scene" },
   wait(2),
-  ...sceneAnswer("sidewalkWidth", "two_people"),
-  ...sceneAnswer("surfaceCondition", 3),
-  ...sceneAnswer("walkability", 3),
-  ...sceneAnswer("overallAccessibility", 5),
+  ...STEP3_ANSWERS.flatMap(([field, value]) => sceneAnswer(field, value)),
   { chapter: "next" },
   wait(1),
   step("to-next", "move", 5, { to: ui("next") }),
@@ -401,7 +426,7 @@ export function freshBoxes(imageIndex) {
 }
 
 export function emptyScene() {
-  return { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null };
+  return emptySceneLevel();
 }
 
 export function initialState() {
@@ -413,6 +438,8 @@ export function initialState() {
     picker: null,
     dropdown: null,
     scene: emptyScene(),
+    // Step 1 (S15): null until the cursor answers it
+    hasSidewalk: null,
     saving: false,
   };
 }

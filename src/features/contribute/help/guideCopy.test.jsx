@@ -38,14 +38,27 @@ describe("the guide on the path (S16)", () => {
     expect(step("answer").paragraphs[0]).toBe("Dashed yellow boxes are suggested objects. A box is only a suggested object, it doesn't necessarily mean it's on the sidewalk or an obstruction. Click one, or tap it on a phone, to open its panel.");
   });
 
-  it("rates the sidewalk nearest you in Step 2, the same one as in Step 1", () => {
-    expect(step("rate").paragraphs[0]).toMatch(/^Step 2 asks four questions about the sidewalk nearest you as a whole, the same one as in Step 1\./);
+  it("rates the sidewalk nearest you in Step 3, the same one as in Step 2, or two questions for a path (S15)", () => {
+    expect(step("rate").paragraphs).toEqual([
+      "Step 3 asks six questions about the sidewalk nearest you as a whole, the same one as in Step 2, or two if there is only a path. On a phone or tablet, tap the Step 3 line in the answers sheet to bring them up.",
+    ]);
+  });
+
+  // S15 (9 Nov 2026): Step 1 before the objects
+  it("says whether there is a sidewalk first, before Answer each suggestion", () => {
+    const ids = GUIDE_COPY.steps.map((s) => s.id);
+    expect(ids.indexOf("presence")).toBe(ids.indexOf("answer") - 1);
+    expect(step("presence").title).toBe("Say whether there is a sidewalk");
+    expect(step("presence").paragraphs).toEqual([
+      "First, check whether the photo has a sidewalk raised above the road on a curb, or only a path for people to walk on. Answer this before the objects. With only a path, each object asks only whether it obstructs the path, and Step 3 asks two questions instead of six. If you change this answer later, some objects ask again.",
+    ]);
   });
 
   // S16 follow-up (3 Nov 2026): the questions named as the box panel names them
-  it("names Question 1 then Question 2 in Answer each suggestion", () => {
-    const [, first, second] = step("answer").paragraphs;
+  it("names Question 1 then Question 2 in Answer each suggestion, and that a path has no Question 1 (S15)", () => {
+    const [, first, path, second] = step("answer").paragraphs;
     expect(first).toBe(`Check the category, then answer Question 1, “${SIDEWALK_QUESTION_COPY.question}”, with Yes or No.`);
+    expect(path).toBe("With only a path, there is no Question 1. Each object asks only whether it obstructs the path.");
     expect(second).toBe("If it is on the sidewalk, then Question 2 asks “Does it obstruct the sidewalk?” Answer it for yourself if you believe the object obstructs your path or not. If it does obstruct, rate the severity of its obstruction from 1, a minor inconvenience, to 5, impassable.");
     const text = step("answer").paragraphs.join(" ");
     expect(text.indexOf("Question 1")).toBeLessThan(text.indexOf("Question 2"));
@@ -56,10 +69,10 @@ describe("the guide on the path (S16)", () => {
   // S3 (6 Nov 2026): shown whether or not proposals are loaded yet
   it("says the model's proposal can be wrong, right after the paragraph on Question 2, and on the guide page", () => {
     const { paragraphs } = step("answer");
-    expect(paragraphs).toHaveLength(4);
-    expect(paragraphs[2]).toMatch(/^If it is on the sidewalk, then Question 2 asks/);
-    expect(paragraphs[3]).toBe("Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo.");
-    expect(paragraphs[3]).toBe(PROPOSAL_HINT_COPY.tutorial);
+    expect(paragraphs).toHaveLength(5);
+    expect(paragraphs[3]).toMatch(/^If it is on the sidewalk, then Question 2 asks/);
+    expect(paragraphs[4]).toBe("Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo.");
+    expect(paragraphs[4]).toBe(PROPOSAL_HINT_COPY.tutorial);
     // Once in the guide, in Answer each suggestion only
     const all = GUIDE_COPY.steps.flatMap((s) => s.paragraphs);
     expect(all.filter((p) => p.includes(PROPOSAL_HINT_COPY.tutorial))).toHaveLength(1);

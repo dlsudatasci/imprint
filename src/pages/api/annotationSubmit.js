@@ -9,6 +9,8 @@ import { SESSION_CHANGED_CODES } from "@/util/validators/sessionSync";
 import {
   validateSceneLevel,
   validateBoxes,
+  isPresenceAnswer,
+  RELOAD_FOR_NEW_QUESTIONS,
   normalizeAnnotatorSubmission,
   validateAnnotatorBoxes,
   normalizeSubmittedMarks,
@@ -64,6 +66,7 @@ const handler = async (req, res) => {
       telemetry,
       canvasVersion,
       sceneScale,
+      hasSidewalk: sentHasSidewalk,
     } = req.body;
     let { sceneLevel, selectedObjectsID, newObjects, sidewalkMask } = req.body;
 
@@ -96,6 +99,9 @@ const handler = async (req, res) => {
     // and severities are dropped here rather than refused, so the server
     // stores none. A real box without a Yes/No answer is refused.
     let boxResult;
+    // Contributors' Step 1 (S15): a sidewalk (true) or only a path (false).
+    // Annotators have no Step 1, so their rows never get one.
+    const hasSidewalk = isAnnotator ? null : sentHasSidewalk;
     if (isAnnotator) {
       ({ sceneLevel, selectedObjectsID, newObjects, sidewalkMask } = normalizeAnnotatorSubmission({
         sceneLevel,
@@ -105,11 +111,18 @@ const handler = async (req, res) => {
       }));
       boxResult = validateAnnotatorBoxes(selectedObjectsID, newObjects);
     } else {
-      const sceneResult = validateSceneLevel(sceneLevel);
+      // Only a tab opened before S15 sends no Step 1 answer, since the form
+      // asks for it before anything else
+      if (!isPresenceAnswer(hasSidewalk)) {
+        return res.status(422).json({ message: RELOAD_FOR_NEW_QUESTIONS });
+      }
+      const sceneResult = validateSceneLevel(sceneLevel, hasSidewalk);
       if (!sceneResult.valid) {
         return res.status(422).json({ message: sceneResult.message });
       }
-      boxResult = validateBoxes(selectedObjectsID, newObjects, { requireSeverity: true });
+      // The six keys, null where not asked, as checked
+      sceneLevel = sceneResult.sceneLevel;
+      boxResult = validateBoxes(selectedObjectsID, newObjects, { requireSeverity: true, hasSidewalk });
     }
 
     if (!boxResult.valid) {
@@ -157,7 +170,7 @@ const handler = async (req, res) => {
       // and drawn boxes with no confidence. The classifier's proposal and
       // whether it was shown come from the record too (S3).
       const suggestions = imageRecord.annotationList || [];
-      const matched = applyRecordSuggestions(selectedObjectsID, suggestions, { isAnnotator });
+      const matched = applyRecordSuggestions(selectedObjectsID, suggestions, { isAnnotator, hasSidewalk });
       if (!matched.valid) {
         return res.status(422).json({ message: matched.message });
       }
@@ -215,6 +228,8 @@ const handler = async (req, res) => {
             servedModelVersion: isAnnotator ? null : (imageRecord.modelVersion || DEFAULT_MODEL_VERSION),
             source: isAnnotator ? "annotator" : "contributor",
             sceneLevel,
+            // Contributors' Step 1 (S15), beside the scene answers it decides
+            ...(isAnnotator ? {} : { hasSidewalk }),
             schemaVersion: 2,
             selectedObjectsID,
             newObjects,
@@ -291,13 +306,16 @@ const handler = async (req, res) => {
         // IMAGE_SUBMITTED counts one event per photo.
         const sanitized = sanitizeQcTelemetry(sanitizeDeviceTelemetry(telemetry), { isAnnotator });
         // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
-        const { timestamp, ...clientTelemetry } = withRecordConfidences(sanitized, suggestions, { boxes: selectedObjectsID, isAnnotator });
+        const { timestamp, ...clientTelemetry } = withRecordConfidences(sanitized, suggestions, { boxes: selectedObjectsID, isAnnotator, hasSidewalk });
         await logTelemetryEvent({
           ...clientTelemetry,
           event: isResend ? "IMAGE_RESUBMITTED" : "IMAGE_SUBMITTED",
           userId,
           username,
           imageID,
+          // Contributors' Step 1 (S15), from the checked body, so Step 3's
+          // time can be read by its length (six questions or two)
+          ...(isAnnotator ? {} : { hasSidewalk }),
           browserFamily: classifyBrowser(req.headers?.["user-agent"]),
           // The threshold the server checked with (S2), over the client's
           tauThreshold: tau,

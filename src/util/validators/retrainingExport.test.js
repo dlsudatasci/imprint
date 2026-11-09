@@ -84,6 +84,11 @@ describe("RETRAINING_CSV_KEYS", () => {
     expect(RETRAINING_CSV_KEYS[RETRAINING_CSV_KEYS.indexOf("obstructs") + 1]).toBe("onSidewalk");
   });
 
+  it("has hasSidewalk right after onSidewalk (S15, 9 Nov 2026)", () => {
+    expect(RETRAINING_CSV_KEYS[RETRAINING_CSV_KEYS.indexOf("onSidewalk") + 1]).toBe("hasSidewalk");
+    expect(RETRAINING_CSV_KEYS.filter((k) => k === "hasSidewalk")).toHaveLength(1);
+  });
+
   it("has proposalShown right after servedModelVersion (S3, 6 Nov 2026)", () => {
     expect(RETRAINING_CSV_KEYS[RETRAINING_CSV_KEYS.indexOf("servedModelVersion") + 1]).toBe("proposalShown");
     expect(RETRAINING_CSV_KEYS.filter((k) => k === "proposalShown")).toHaveLength(1);
@@ -512,5 +517,31 @@ describe("minimum box size in the retraining export", () => {
 
   it("starts the count at zero", () => {
     expect(rowsFor([sized("big", 100, 100)], MAPILLARY).summary.excludedBelowMinimumSize).toBe(0);
+  });
+});
+
+// S15 (9 Nov 2026): a contributor's Step 1, and a path's boxes with no sidewalk answer
+describe("hasSidewalk in the retraining rows", () => {
+  const rowsFor = (annotation) => buildRetrainingRows({ annotations: [makeAnnotation(annotation)], userMap: makeUserMap(), imageMap: makeImageMap() }).rows;
+  const cell = (row, key) => toCsvRow(row, RETRAINING_CSV_KEYS).split(",")[RETRAINING_CSV_KEYS.indexOf(key)];
+
+  it("gives a path's rows hasSidewalk false and an empty onSidewalk, the obstruction label as stored", () => {
+    const [row] = rowsFor({ hasSidewalk: false, selectedObjectsID: [makeBox({ id: "p", obstructs: true, severity: 4 })], newObjects: [] });
+    expect(row.hasSidewalk).toBe(false);
+    expect(row.onSidewalk).toBe("");
+    expect(row.obstructs).toBe(true);
+    expect(cell(row, "hasSidewalk")).toBe("false");
+    expect(cell(row, "onSidewalk")).toBe("");
+  });
+
+  it("gives a sidewalk's rows hasSidewalk true beside their onSidewalk", () => {
+    const [row] = rowsFor({ hasSidewalk: true, selectedObjectsID: [makeBox({ id: "s", onSidewalk: true })], newObjects: [] });
+    expect(cell(row, "onSidewalk")).toBe("true");
+    expect(cell(row, "hasSidewalk")).toBe("true");
+  });
+
+  it("leaves hasSidewalk empty for a row with none (an annotator's)", () => {
+    const [row] = rowsFor({ selectedObjectsID: [makeBox({ id: "a", onSidewalk: true })], newObjects: [] });
+    expect(row.hasSidewalk).toBe("");
   });
 });

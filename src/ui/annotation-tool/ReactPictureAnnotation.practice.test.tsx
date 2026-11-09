@@ -6,6 +6,7 @@ import ReactPictureAnnotation, { type PracticeEvent, type PracticeLock, type Pra
 import { writeSession } from "@/util/sessionCache";
 import TUTORIAL_IMAGES from "@/data/tutorialImages";
 import { ids } from "@/features/home/howItWorks/demoScript";
+import { DRAW_TARGET } from "@/features/tutorial/practiceSteps";
 import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
 
 /**
@@ -474,6 +475,29 @@ describe("practiceHighlight", () => {
     const tool = mount({ practiceHighlight: { boxId: ids.tree } });
     press(tool, [centre(ids.tree)]);
     expect(tool.selectedId).toBe(ids.tree);
+  });
+
+  // S22 (9 Nov 2026): while the new box is dragged out only it is on the
+  // photo, and the white post's outline, which is not a box, stays
+  it("keeps the white post's outline while a box is dragged out over it, with every other box hidden", () => {
+    const tool = mount({ practiceLock: { openable: [], canDraw: true, allowAnswers: {} }, practiceHighlight: { rect: DRAW_TARGET } });
+    const hidden = (id: string) => (tool as unknown as { isBoxHidden(id: string): boolean }).isBoxHidden(id);
+    const outline = () => host.querySelector("[data-practice-highlight='rect']") as HTMLElement | null;
+    act(() => {
+      tool.onMouseDown(at(DRAW_TARGET.x, DRAW_TARGET.y));
+      tool.onMouseMove(at(DRAW_TARGET.x + DRAW_TARGET.width, DRAW_TARGET.y + DRAW_TARGET.height));
+    });
+    const drawn = drawnBoxes(tool);
+    expect(drawn).toHaveLength(1);
+    expect(hidden(drawn[0].id)).toBe(false);
+    for (const id of [ids.tree, ids.car, ids.moto, ids.lamp]) expect(hidden(id)).toBe(true);
+    expect(outline()).toBeTruthy();
+    expect(outline()!.style.display).not.toBe("none");
+    expect(outline()!.style.left).toBe(`${DRAW_TARGET.x - 4}px`);
+    act(() => tool.onMouseUp());
+    expect(tool.selectedId).toBe(drawn[0].id);
+    expect(outline()).toBeTruthy();
+    expect(outline()!.style.display).not.toBe("none");
   });
 
   it("draws nothing for a box off the photo", () => {

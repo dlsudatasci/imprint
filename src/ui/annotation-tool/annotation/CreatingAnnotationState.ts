@@ -16,6 +16,11 @@ export default class CreatingAnnotationState implements IAnnotationState {
   private readonly context: ReactPictureAnnotation;
   private readonly currentShape: IShape;
 
+  /** The box being drawn, for the tool to show it alone while it grows (S22) */
+  public get shape(): IShape | undefined {
+    return this.currentShape;
+  }
+
   constructor(context: ReactPictureAnnotation) {
     this.context = context;
     // The shape Default just pushed. Captured here rather than re-read on each

@@ -104,7 +104,9 @@ const ANNOTATOR_TARGETS = Object.freeze([
 // Check Each Box to the right of the photo (S16b): below it, the card could not
 // be read without scrolling. Where there is no room on the right it slides over
 // the photo's right side (CHECK_FLOATING), never below the photo.
-const CONTRIBUTOR_PLACEMENTS = ["bottom", "right", "right", "top", "bottom", "top", "top"];
+// Step 3 (S22, 9 Nov 2026): left of the section, its top level with the
+// section's top. Above it, the card ran off the top of a laptop's screen.
+const CONTRIBUTOR_PLACEMENTS = ["bottom", "right", "right", "top", "bottom", "left-start", "top"];
 const ANNOTATOR_PLACEMENTS = ["bottom", "left", "top", "top"];
 
 // ---- Contributors (S16, 3 Nov 2026): short numbered steps ----

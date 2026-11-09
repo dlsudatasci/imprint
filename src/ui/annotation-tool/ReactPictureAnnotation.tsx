@@ -30,7 +30,7 @@ import {
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 import { emptySceneLevel, SIDEWALK_ONLY_KEYS } from "@/util/validators/sceneQuestions.mjs";
 import { isTaxonomyCategory } from "@/util/taxonomy";
-import { isBelowMinimumSize, clampPointToImage, keepMarkInside, markArea, normalizeMark, pickNearSmallBox } from "@/util/boxGeometry";
+import { isBelowMinimumSize, isTooSmallToKeep, clampPointToImage, keepMarkInside, markArea, normalizeMark, pickNearSmallBox } from "@/util/boxGeometry";
 import { normalizeSubmittedMarks } from "@/util/validators/annotationSubmit";
 import { findNearDuplicates } from "@/features/annotate/objectStep";
 import { buildTrays, buildPeekChips, TRAY_COPY, sceneProgressLine } from "@/features/annotate/objectTrays";
@@ -808,7 +808,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   /**
    * True for a box hidden on the photo. Only in Step 1: every box shows in the
    * other steps. While a box is open it is also the only one shown
-   * (focusedBoxId), except the box a drag on the photo is drawing.
+   * (focusedBoxId), except the box a drag on the photo is drawing. For
+   * contributors the box being drawn is itself the open one (S22), so it is
+   * the only box shown.
    */
   public isBoxHidden = (id: string) => {
     if (!this.inBoxStep) return false;
@@ -826,6 +828,23 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (!(this.currentAnnotationState instanceof CreatingAnnotationState)) return false;
     const last = this.shapes[this.shapes.length - 1];
     return Boolean(last) && last.getAnnotationData().id === id;
+  }
+
+  /**
+   * The box a contributor's mouse drag is drawing, once it is big enough to
+   * be kept on release (S22, 9 Nov 2026): the size isTooSmallToKeep sets, 5
+   * screen px each way. Smaller, a release throws it away as a click, so a
+   * plain click on the photo hides nothing and no box flickers. Annotators
+   * keep every box in view while they draw. The desktop layout only: phones
+   * and tablets add a box with Add box, which opens it at once.
+   */
+  private get drawingBoxId(): string | null {
+    if (this.annotatorObjectStep || this.isSheet) return null;
+    const state = this.currentAnnotationState;
+    if (!(state instanceof CreatingAnnotationState)) return null;
+    const data = state.shape?.getAnnotationData();
+    if (!data || !this.shapes.includes(state.shape!)) return null;
+    return isTooSmallToKeep(data.mark, this.scaleState.scale) ? null : data.id;
   }
 
   /**
@@ -858,9 +877,16 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * Phones and tablets, both roles (14 Oct 2026). The desktop layout too for
    * contributors (S17, 4 Nov 2026), as pilot participant 3 asked. Annotators
    * on the desktop see every box, as before.
+   *
+   * A contributor's new box counts as open from the moment a drag has made
+   * it big enough to keep (S22, drawingBoxId), not only once the mouse is
+   * released, even while another box is open. Its panel opens on release.
    */
   private get focusedBoxId(): string | null {
-    if (!this.inBoxStep || this.selectedId == null) return null;
+    if (!this.inBoxStep) return null;
+    const drawing = this.drawingBoxId;
+    if (drawing !== null) return drawing;
+    if (this.selectedId == null) return null;
     if (!this.isSheet && this.annotatorObjectStep) return null;
     const id = this.selectedId;
     return this.shapes.some((shape) => shape.getAnnotationData().id === id) ? id : null;
@@ -1528,7 +1554,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
           {/* ── Right: Step 3 (35%) for contributors, the "What to Box" list for annotators ── */}
           {askScene ? (
-          <div style={{ flex: '35 1 0%' }} className="min-w-0 overflow-y-auto">
+          // No overflow-y-auto (S22, 9 Nov 2026): the column grows with Step 3
+          // and never scrolled, but the tour library took it for Step 3's
+          // scrolling box and scrolled the page to the top for the tour's
+          // Step 3 card, so the card was not level with the section
+          <div style={{ flex: '35 1 0%' }} className="min-w-0">
             {this.renderSceneQuestions("desktop")}
           </div>
           ) : inSidewalkStep ? this.renderSidewalkGuide() : inObstructionStep ? this.renderObstructionGuide() : this.renderTaxonomyGuide()}

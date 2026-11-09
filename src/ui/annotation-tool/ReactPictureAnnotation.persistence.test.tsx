@@ -3375,3 +3375,150 @@ describe("Step 1, whether there is a sidewalk (S15)", () => {
     expect(tool.hasUnsentChanges()).toBe(true);
   });
 });
+
+// S22 (9 Nov 2026): a contributor's new box, dragged out with the mouse on the
+// desktop layout, is the only box on the photo from the moment it is big
+// enough to keep (5 screen px each way), as an open box is
+describe("drawing a new box on the desktop layout (S22)", () => {
+  const realRect = HTMLCanvasElement.prototype.getBoundingClientRect;
+  beforeEach(() => {
+    // The stage at 1:1 from the window's top-left, so client px are stage px
+    HTMLCanvasElement.prototype.getBoundingClientRect = function () {
+      return { left: 0, top: 0, width: 960, height: 600, right: 960, bottom: 600, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    };
+  });
+  afterEach(() => {
+    HTMLCanvasElement.prototype.getBoundingClientRect = realRect;
+  });
+
+  const OTHERS = ["a-car", "b-pole", "c-tree"];
+  const canvas = () => host.querySelector("canvas.rp-shapes") as HTMLCanvasElement;
+  const ready = (options: MountOptions = {}) => {
+    const tool = mount(options);
+    tool.currentImageElement = { width: 960, height: 600 };
+    return tool;
+  };
+  // A press on empty photo, clear of every box, then the window follows the mouse (S18)
+  const press = (tool: Tool, x = 600, y = 400) =>
+    act(() => (tool.onMouseDown as unknown as (e: object) => void)({ nativeEvent: { offsetX: x, offsetY: y }, currentTarget: canvas(), clientX: x, clientY: y, detail: 1 }));
+  const moveTo = (x: number, y: number) =>
+    act(() => {
+      window.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: x, clientY: y }));
+    });
+  const release = (x: number, y: number) =>
+    act(() => {
+      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: x, clientY: y }));
+    });
+  const drawnId = (tool: Tool) => tool.shapes.map((s) => s.getAnnotationData()).find((d) => d.editable)?.id;
+  const hiddenOf = (tool: Tool, ids: string[]) => ids.map((id) => tool.isBoxHidden(id));
+
+  it("hides every other box once the drag passes the size a box is kept at, and keeps them hidden with the new box open", () => {
+    const tool = ready();
+    press(tool);
+    // 3 px: still a click, nothing hidden
+    moveTo(603, 403);
+    expect(drawnId(tool)).toBeDefined();
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, false, false]);
+    // 4 by 40 px: thinner than 5 px, which a release would throw away
+    moveTo(604, 440);
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, false, false]);
+    // Past it: only the new box shows, and only it can be clicked
+    moveTo(700, 500);
+    const id = drawnId(tool)!;
+    expect(tool.isBoxHidden(id)).toBe(false);
+    expect(hiddenOf(tool, OTHERS)).toEqual([true, true, true]);
+    expect(OTHERS.every((other) => tool.isOffPhoto(other))).toBe(true);
+    // Released: the new box opens, and stays the only box
+    release(700, 500);
+    expect(tool.selectedId).toBe(id);
+    expect((tool.state as unknown as { showInput: boolean }).showInput).toBe(true);
+    expect(tool.isBoxHidden(id)).toBe(false);
+    expect(hiddenOf(tool, OTHERS)).toEqual([true, true, true]);
+    // Closed: every box is back, and none was hidden with the eye
+    act(() => tool.onClose());
+    expect(hiddenOf(tool, [...OTHERS, id])).toEqual([false, false, false, false]);
+    expect(tool.state.hiddenBoxIds).toEqual([]);
+  });
+
+  it("hides nothing for a click on empty photo, at any point", () => {
+    const tool = ready();
+    press(tool);
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, false, false]);
+    release(600, 400);
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, false, false]);
+    expect(tool.shapes).toHaveLength(3);
+    expect(tool.selectedId).toBeNull();
+  });
+
+  it("brings the other boxes back at once when the drag shrinks back to a click and is thrown away", () => {
+    const tool = ready();
+    press(tool);
+    moveTo(700, 500);
+    expect(hiddenOf(tool, OTHERS)).toEqual([true, true, true]);
+    moveTo(602, 401);
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, false, false]);
+    release(602, 401);
+    expect(tool.shapes).toHaveLength(3);
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, false, false]);
+  });
+
+  it("with another box open, shows only the new box during the drag, then opens it", () => {
+    const tool = ready();
+    act(() => tool.selectBoxById("a-car"));
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, true, true]);
+    press(tool);
+    moveTo(700, 500);
+    const id = drawnId(tool)!;
+    expect(tool.isBoxHidden(id)).toBe(false);
+    expect(hiddenOf(tool, OTHERS)).toEqual([true, true, true]);
+    // The car's panel closes with its box off the photo
+    expect((tool.state as unknown as { showInput: boolean }).showInput).toBe(false);
+    release(700, 500);
+    expect(tool.selectedId).toBe(id);
+    expect(hiddenOf(tool, OTHERS)).toEqual([true, true, true]);
+  });
+
+  it("keeps a box hidden with the eye hidden after the new box closes", () => {
+    const tool = ready();
+    act(() => tool.toggleBoxHidden("b-pole"));
+    press(tool);
+    moveTo(700, 500);
+    release(700, 500);
+    act(() => tool.onClose());
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, true, false]);
+    expect(tool.state.hiddenBoxIds).toEqual(["b-pole"]);
+  });
+
+  it("hides nothing for an annotator on the desktop layout", () => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: true } });
+    const tool = ready({ isAnnotator: true });
+    press(tool);
+    moveTo(700, 500);
+    expect(drawnId(tool)).toBeDefined();
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, false, false]);
+    release(700, 500);
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, false, false]);
+  });
+
+  // The tour's Step 3 card (S22 A): react-joyride takes any ancestor with
+  // overflow auto or scroll for the target's scrolling box, and scrolled the
+  // page to the top for a column that never scrolls
+  it("keeps the contributors' Step 3 column from being a scrolling box, so the tour scrolls the page to Step 3", () => {
+    mount();
+    let el = host.querySelector("#scene-level-section")!.parentElement;
+    expect(el).toBeTruthy();
+    while (el && el !== host) {
+      expect(el.className, el.className).not.toMatch(/overflow-(y-|x-)?(auto|scroll)/);
+      el = el.parentElement;
+    }
+  });
+
+  it("leaves the sheet layout as it was: a mouse drag with nothing open hides nothing", () => {
+    const tool = ready({ layout: "sheet" });
+    press(tool);
+    moveTo(700, 500);
+    expect(drawnId(tool)).toBeDefined();
+    expect(hiddenOf(tool, OTHERS)).toEqual([false, false, false]);
+  });
+});

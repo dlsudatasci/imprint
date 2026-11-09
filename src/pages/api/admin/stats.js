@@ -2,9 +2,11 @@
  * GET /api/admin/stats — overview statistics for the admin dashboard.
  *
  * Returns contributor counts, annotation totals, session health (completion
- * and abandonment rates, average duration), and model version distribution.
+ * and abandonment rates, the average duration of contributors' completed
+ * sessions), and model version distribution.
  */
 import { requireAdmin } from "@/util/adminAuth";
+import { annotatorIdForms, completedSessionQuery, averageSessionDurationMs } from "@/util/validators/sessionDuration";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -82,10 +84,18 @@ export default async function handler(req, res) {
   const abandoned = sessionCounts.abandoned || 0;
   const totalSessions = completed + abandoned + (sessionCounts.active || 0);
 
-  const avgSessionDuration = await db.collection("telemetry_logs").aggregate([
-    { $match: { event: "SESSION_COMPLETE" } },
-    { $group: { _id: null, avg: { $avg: "$sessionDurationMs" } } },
-  ]).toArray();
+  // Contributors' completed sessions, from start to completion (S22). Read
+  // from the sessions collection: the SESSION_COMPLETE event it averaged
+  // before is never written.
+  const annotators = await db
+    .collection("users")
+    .find({ role: "annotator" }, { projection: { _id: 1 } })
+    .toArray();
+  const annotatorIds = annotatorIdForms(annotators);
+  const completedSessions = await db
+    .collection("sessions")
+    .find(completedSessionQuery(annotatorIds), { projection: { userId: 1, status: 1, createdAt: 1, completedAt: 1 } })
+    .toArray();
 
   return res.status(200).json({
     totalContributors,
@@ -94,7 +104,7 @@ export default async function handler(req, res) {
     activeContributorsToday,
     completionRate: totalSessions > 0 ? +(completed / totalSessions * 100).toFixed(1) : 0,
     abandonmentRate: totalSessions > 0 ? +(abandoned / totalSessions * 100).toFixed(1) : 0,
-    avgSessionDurationMs: avgSessionDuration[0]?.avg ?? null,
+    avgSessionDurationMs: averageSessionDurationMs(completedSessions, annotatorIds),
     totalSessions,
     modelVersions: modelStats.map((m) => ({ version: m._id, count: m.count })),
   });

@@ -51,8 +51,35 @@ describe("tour steps", () => {
       "Next Image",
     ]);
     // Check Each Box right of the photo (S16b): below it, it could not be read
-    // without scrolling. The path step beside it too (5 Nov 2026)
-    expect(steps.map((s) => s.placement)).toEqual(["bottom", "right", "right", "top", "bottom", "top", "top"]);
+    // without scrolling. The path step beside it too (5 Nov 2026). Step 3
+    // left of its section (S22)
+    expect(steps.map((s) => s.placement)).toEqual(["bottom", "right", "right", "top", "bottom", "left-start", "top"]);
+  });
+
+  // S22 (9 Nov 2026): above Step 3, the card ran off the top of a laptop's
+  // screen. Left of it, its top level with the section's top. No floating
+  // options: headless Chrome at 1280x720, 1366x768, 1440x900 and 1920x1080
+  // found it never flips there
+  it("puts the laptop tour's Step 3 card left of Step 3, and changes no other step or tour", () => {
+    for (const words of ["pointer", "touch"]) {
+      const steps = buildTourSteps(false, "objects", "pointer", { words });
+      const scene = steps[5];
+      expect(scene.target).toBe("#scene-level-section");
+      expect(scene.title).toBe("Scene-Level Assessment");
+      expect(scene.placement).toBe("left-start");
+      expect(scene).not.toHaveProperty("floatingOptions");
+      expect(scene).not.toHaveProperty("skipScroll");
+      expect(steps.filter((_, i) => i !== 5).map((s) => s.placement)).toEqual(["bottom", "right", "right", "top", "bottom", "top"]);
+    }
+    // The touch tours, contributors' and annotators', as before
+    expect(buildTourSteps(false, "objects", "touch").map((s) => s.placement)).toEqual(["bottom", "center", "center", "top", "top", "top", "center", "top"]);
+    expect(buildTourSteps(true, "objects", "touch").map((s) => s.placement)).toEqual(["center", "top", "top", "center", "top"]);
+    expect(buildTourSteps(true, "sidewalk", "touch").map((s) => s.placement)).toEqual(["center", "top", "center", "center", "top"]);
+    expect(buildTourSteps(true, "obstructions", "touch").map((s) => s.placement)).toEqual(["center", "top", "center", "top"]);
+    // The annotators' laptop tours
+    expect(buildTourSteps(true).map((s) => s.placement)).toEqual(["bottom", "left", "top", "top"]);
+    expect(buildTourSteps(true, "sidewalk").map((s) => s.placement)).toEqual(["bottom", "bottom", "left", "top", "top"]);
+    expect(buildTourSteps(true, "obstructions").map((s) => s.placement)).toEqual(["bottom", "left", "top", "top"]);
   });
 
   // S16b (3 Nov 2026): never below the photo, and over its right side where there is no room on the right

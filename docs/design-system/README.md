@@ -323,7 +323,7 @@ open in a new tab. Both sources are among the reference images, so it gives noth
 **Box names and answer labels** (17 Oct 2026, apple-design check). A box's name sits at
 its top-left corner. When an earlier name (in the lists' order) has that spot, it goes just
 above the box, then below the earlier names (`placeLabel` in `Shape.ts`), so names never
-cover each other and never move when a box is clicked. Step 2's answer labels are 11 px at
+cover each other and never move when a box is clicked. Step 3's answer labels are 11 px at
 the least on a laptop (`SceneQuestions`, desktop variant), 12 px in the sheet. They were 9
 and 10 px. The landing preview and the guide's stills show the same labels.
 
@@ -377,8 +377,8 @@ with their three steps. There is no device gate.
   object in one 44 px row of chips scrolling sideways (21 Oct 2026, `buildPeekChips`; before,
   the Not obstructions and Obstructions rows), what is left first, each with the pencil if
   drawn and a tag: To decide or No severity in red, Obstruction solid blue, Not an obstruction
-  light blue, Not an object grey. The lists stay in the body. Then the Step 2 line, which pulls
-  the sheet up to Step 2. Fixed heights, so the photo area never changes size as objects are
+  light blue, Not an object grey. The lists stay in the body. Then the Step 3 line, which pulls
+  the sheet up to Step 3. Fixed heights, so the photo area never changes size as objects are
   answered. With a box open the top shows its name with Hide on photo, and the body its panel
   (`variant="sheet"`).
 - **Touch handles**: four round corner handles, a 20 px dot (white, a 2.5 px ring in the box's
@@ -469,7 +469,7 @@ device with a screen whose shorter side is under 600 px (`isPhone`).
   above the home indicator. It is pulled up by the handle, or by the chip's button. Up, it is
   the usual sheet across the whole width, with everything in the part that scrolls and the
   footer (the message and the step's buttons) under it: the open box's name and panel, or the
-  contributor's lists and Step 2 (without the short summary the sheet shows at rest elsewhere,
+  contributor's lists and Step 3 (without the short summary the sheet shows at rest elsewhere,
   which would say the lists twice), or the annotator's step. Where half would leave under
   160 px to scroll (a phone held sideways, about 390 px tall) it goes straight to full, and a
   box's panel takes the height it needs. A box selected on the photo leaves the sheet down.
@@ -499,19 +499,54 @@ device with a screen whose shorter side is under 600 px (`isPhone`).
   bar and the top of the sheet. A tour that would start there starts on leaving. Its first
   step says where the full-screen button is, on phones and on tablets.
 
-**Step 2's order (22 Oct 2026).** Every question's answers run worst to best, left to right,
-and the numbered ones are stored that way, higher is better: Sidewalk Width None, Narrow,
-Moderate, Wide; Surface Condition 1 Difficult or dangerous to 3 Easy to traverse; Walking
-Comfort 1 Uncomfortable to 3 Comfortable; Accessible to Me 1 Not accessible to 5 Easily
-accessible. They ran best to worst, and "1" for the best answer read as the worst score.
-`validators/sceneScale.mjs` says how answers saved before then are read (the testing database's old rows are left as they are). Step 1's severity is
-unchanged: 1 Minor inconvenience to 5 Impassable, where higher is more severe.
+**The contributor's three steps (S15, 9 Nov 2026).** Step 1 asks whether there is a sidewalk,
+Step 2 is the objects (its card still `Step1Card.tsx`, headed by `TRAY_COPY.stepHeading`) and
+Step 3 rates the sidewalk (`SceneQuestions.tsx`). Annotators see no change.
 
-**Step 2 in the sheet.** A row of options wraps when it does not fit (`flex-wrap`), and the
-five accessibility options go three and two under 400 px. Before 12 Oct 2026 the fifth stuck
-out of its card on a 360 px phone; until 22 Oct 2026 the split was under 390 px, but five do not
-fit at 390 either, and Easily accessible sat alone across the row. The desktop layout keeps one
-row per question.
+- **Step 1: Is There a Sidewalk?** (`SidewalkPresence.tsx`, `#sidewalk-presence-section`). Under
+  the heading, "Check if the photo has a sidewalk that is raised above the road on a curb." Two
+  plain buttons, no pictures, `min-h-[44px]`, chosen one primary (`aria-pressed`):
+  "Yes, there is a sidewalk." (`hasSidewalk: true`) and "No, there is only a path for people
+  to walk on." (`false`). On a laptop it is its own card above Step 2's, the buttons side by
+  side (`flex-wrap`). On a phone it holds the fixed top of the answers sheet until it is
+  answered, in place of the Step 2 line, the buttons one under the other (`grid-cols-1`), then
+  sits first in the scrolling list so it can be changed. Until it is answered no box opens and
+  none can be drawn or added, and a press shows "First, answer Step 1: is there a sidewalk?".
+- **Only a path.** Each box asks one question, "Does **{label}** obstruct the path?", with no
+  "Question 1 of 2" line and no Back to Question 1, its footer Not an object or Delete box, the
+  hint "The model thinks this obstructs the path." and a severity panel that goes "Back to the
+  question". Step 2's paragraph says the path, and Step 3's four sidewalk-only questions are
+  off. Changing Step 1 after boxes are answered resets those answered under the other answer
+  and says "Some boxes need answering again."
+- **Step 3: Rate the Sidewalk**, six questions in this order, each one row of picture buttons,
+  answers worst to best and stored higher is better: Sidewalk Width (Narrow, Limited, Wide),
+  Ease of Navigation (Fully, Heavily, Moderately, Slightly obstructed, Unobstructed, stored
+  1 to 5 as `overallAccessibility`), Evenness (Uneven, Sloped, Flat), Surface Type (Concrete or
+  asphalt, Tiles, Paver blocks or bricks, Unpaved, no order), Surface Condition (Broken,
+  Cracked, Intact) and Road Barrier (No barrier, Barrier). For a path, Width, Surface Type,
+  Surface Condition and Road Barrier are greyed out (`opacity-50`, `aria-disabled`), their
+  buttons disabled and their prompt "Not asked for a path.", leaving two. The phone's Step 3
+  line reads "Step 3: Rate the Sidewalk, 2 of 2 answered" then.
+- **Layout of Step 3.** Width and Ease of Navigation have the taller pictures (`h-16`), the
+  four after them shorter ones (`h-11`), so every card carries about the same weight. Ease of
+  Navigation is five across on a laptop (`grid-cols-5`) and three and two in the sheet
+  (`grid-cols-3`: five "obstructed" labels do not fit at the 12 px phone minimum), Surface Type
+  four across, Road Barrier's two buttons centred, each as wide as a button in a row of three
+  (`grid-cols-2 w-2/3 mx-auto`). Labels are 11 px at the least on a laptop and 12 px in the
+  sheet, every option 44 px tall there.
+- **The pictures** (`sceneIcons.tsx`) are monochrome in `currentColor`, so the chosen answer
+  turns primary, `aria-hidden` with a `data-icon` description. Width and Ease of Navigation are
+  animated with SVG `<animateTransform>` and `<animate>` (no script timers): a stretch of
+  sidewalk seen from one end and above, people walking on it. With reduced motion
+  (`useMediaQuery(REDUCED_MOTION_QUERY)`) each is a still frame, with no animation in the DOM.
+  Evenness is the same stretch standing still, Surface Type and Condition close views of a patch
+  of paving, Road Barrier a still plan from above.
+
+Every numbered answer runs worst to best, left to right, as from 22 Oct 2026, when the old
+questions ran best to worst and "1" for the best answer read as the worst score.
+`validators/sceneScale.mjs` says how answers saved before then are read. `surfaceEvenness` was
+born higher is better and is never turned round. Step 2's severity is unchanged: 1 Minor
+inconvenience to 5 Impassable, where higher is more severe.
 
 **The tutorial on touch (12 Oct 2026).** The touch tours (sheet layout) have **no beacons**:
 over the photo and the sheet they blocked swipes and drags. The top bar's ? button replays the
@@ -537,9 +572,11 @@ Below the city figures, the landing page plays the contributor task as the visit
   short scroll after it pins (about a twelfth of a screen, `HOLD_END`) the camera goes close in.
   It plays over 4.1 screens in all (a 4.6-screen track). The script is one timeline of named steps in `demoScript.js`, laid out over
   the scroll, so steps can be added, removed or lengthened without working out the ticks.
-- **What it shows**: the annotation page as contributors see it on a laptop (the Step 1 card,
-  Step 2 beside it, Next Image under them), without the session thumbnails and the
-  "Sidewalk #n" title.
+- **What it shows**: the annotation page as contributors see it on a laptop (Step 1's card
+  above Step 2's, Step 3 beside them, Next Image under them), without the session thumbnails
+  and the "Sidewalk #n" title. From S15 (9 Nov 2026) the first beat answers Step 1 Yes in the
+  whole-page shot, then the camera goes close in, and Step 3's six answers play in order. The
+  phone and tablet preview answers it at the top of the sheet first.
 - **Under the navbar (16 Oct 2026)**: the public navbar is sticky, so the frame sticks at
   `top: var(--nav-h)` and is `calc(100svh - var(--nav-h))` tall. `useScrollProgress` reads the
   frame's `top` (`stickyTop`), so the preview still starts and ends where the frame starts and
@@ -552,7 +589,7 @@ Below the city figures, the landing page plays the contributor task as the visit
   added empty ground under them on a big screen. The rail and the frame grow in together as they
   arrive.
 - **The camera** films it: the whole page, then close in for Steps 1 to 3 without a break, then
-  back out to the whole page, centred, for Step 2 and Next Image (a close shot of Step 2 left
+  back out to the whole page, centred, for Step 3 and Next Image (a close shot of Step 3 left
   empty ground beside it). The close shot (28 Oct 2026, `workShot`) is the photo and the answer
   lists under it: the Step 1 card from the inside of the photo's grey well to the foot of the lists
   at their fullest in the run (measured from an invisible copy laid out under the real lists, its
@@ -598,7 +635,7 @@ Below the city figures, the landing page plays the contributor task as the visit
   opens it (`panelPosition`). Any change to them shows in the preview. Nothing about the
   annotation screen may be restyled in the preview alone.
 - **Keeping in step (15 Oct 2026)**: the cursor finds the panel's controls by `data-control`
-  (`yes`, `no`, `confirm`, `category`, `severity`) and Step 2's by `data-scene-option`, never by
+  (`yes`, `no`, `confirm`, `category`, `severity`) and Step 3's by `data-scene-option`, never by
   their wording, so rewording a button does not lose it. Keep those attributes when changing
   the components. `DemoStage.test.jsx` renders every step of the script and fails, naming the
   step, when something the cursor goes to is missing. Still copies, to update by hand if the
@@ -621,13 +658,13 @@ Below the city figures, the landing page plays the contributor task as the visit
   travels, pressed while it taps or drags) instead of the cursor. The same track, chapters and
   answers as on a laptop, given the way a phone gives them: Tree #1 tapped on the photo, Next
   for the rest in the tool's order, Add box with its corners dragged (the hint, then the
-  magnifier), the Step 2 line pulling the sheet up, Next Image. No camera: the whole screen is
+  magnifier), the Step 3 line pulling the sheet up, Next Image. No camera: the whole screen is
   always in view. The chapter is a band across the top of the frame, where the tool's top bar
   would be (left out, as the laptop preview leaves out the progress strip), so it never covers
   the sheet. Every chapter's text is laid in one grid cell and only the current one shows, so
   the band is as tall as the longest text at that width and no taller (28 Oct 2026: before, it
   kept three lines everywhere and clamped, which left a white line under the two-line texts on
-  tablets and cut Step 2 short on a 320 px phone). The screen under it never changes size, and
+  tablets and cut Step 3 short on a 320 px phone). The screen under it never changes size, and
   its bottom edge carries the progress line. The screen is laid out at the size of the
   space it is shown in, and below 520 by 320 design px it is laid out at that size and scaled
   down to fit. Built from the tool's pieces (the sheet variants of `DefaultInputSection`,
@@ -761,16 +798,18 @@ Laid out with the apple-design principles, like §9d. `src/pages/contribute/inde
     middle (Rans: one column alone on the left looked stranded). One series, so no legend:
     columns `bg-primary/45`, 12 px wide in 16 px slots (a 4 px gap), tops rounded 4 px; the
     tallest is the one full `bg-primary` column, its count on its cap. On a phone, beside
-    Accessible to me, the slots share what is left (`flex-1`, at most 16 px). Hovering a column fills
+    Ease of navigation, the slots share what is left (`flex-1`, at most 16 px). Hovering a column fills
     it and fades in (150 ms, none with reduced motion) a two-line tip, count then photos,
     under 110 px wide and anchored by the column's third of the plot so it never leaves it; an
     `sr-only` table has every count. No axis labels. It was five averaged columns, then (22 Oct
     2026, first pass) one per photo across the row, too many to read at 50 (Rans).
-  - **Accessible to me**: contributors' Step 2 answer, the average on its colour in a 64 px
+  - **Ease of navigation** ("Accessible to me" before S15, the same field and scale):
+    contributors' Step 3 answer, the average on its colour in a 64 px
     square (`text-xl extrabold`) on the band's floor, level with the chart's baseline, the
-    nearest answer word under it; label, tile and word centred in the column as the chart's are. 5 Easily accessible:
+    nearest answer word under it (3.6 reads "Slightly obstructed"); label, tile and word centred
+    in the column as the chart's are. 5 Unobstructed:
     `bg-primary` from 4, `bg-primary-100` from 2.5, `bg-line` under that (22 Oct 2026; it was
-    1 Easily accessible, lower better). Annotators answer no scene questions, so the column is shown only
+    the best answer at 1, lower better). Annotators answer no scene questions, so the column is shown only
     when a session in the list has an answer; a session without one, in a list with it,
     shows "–" and "No sidewalk rated".
 - Section headings `font-display text-2xl sm:text-3xl bold`, tracking -0.02em, `mt-5` to

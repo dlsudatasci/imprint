@@ -143,10 +143,10 @@ describe("DemoStage", () => {
     expect(el.textContent).toContain("Every object is answered.");
   });
 
-  it("marks the Step 2 answers and then moves to the second photo", () => {
-    const answered = show(tickOf("overallAccessibility", "end"));
-    for (const option of ["sidewalkWidth:two_people", "surfaceCondition:3", "walkability:3", "overallAccessibility:5"]) {
-      expect(answered.querySelector(`[data-scene-option="${option}"]`).className).toContain("border-primary");
+  it("marks the Step 3 answers and then moves to the second photo", () => {
+    const answered = show(tickOf("roadBarrier", "end"));
+    for (const option of ["sidewalkWidth:two_people", "overallAccessibility:5", "surfaceEvenness:3", "surfaceType:concrete", "surfaceCondition:3", "roadBarrier:true"]) {
+      expect(answered.querySelector(`[data-scene-option="${option}"]`).getAttribute("aria-pressed"), option).toBe("true");
     }
     act(() => root.unmount());
     host.remove();
@@ -224,10 +224,22 @@ describe("keeping in step with the annotation tool", () => {
     expect(missing).toEqual([]);
   });
 
-  it("draws Step 1 with the tool's own card, the photo in its grey well", () => {
+  it("draws Step 1 above Step 2's card, as the tool does, unanswered until the cursor answers it (S15)", () => {
+    const el = show(0);
+    const presence = el.querySelector("#sidewalk-presence-section");
+    expect(presence.querySelector("h2").textContent).toBe("Step 1: Is There a Sidewalk?");
+    expect(presence.compareDocumentPosition(el.querySelector("[data-step1-card]")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(presence.querySelector('[aria-pressed="true"]')).toBeNull();
+    act(() => root.unmount());
+    host.remove();
+    const answered = show(tickOf("presence", "end"));
+    expect(answered.querySelector('[data-presence-option="true"]').getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("draws Step 2 with the tool's own card, the photo in its grey well", () => {
     const el = show(0);
     const card = el.querySelector("[data-step1-card]");
-    expect(card.querySelector("h2").textContent).toBe("Step 1: Identify Objects and Obstructions");
+    expect(card.querySelector("h2").textContent).toBe("Step 2: Identify Objects and Obstructions");
     expect(card.querySelector("[data-step1-well] [data-demo-photo]")).not.toBeNull();
     expect(card.querySelector("#box-review-section")).not.toBeNull();
   });

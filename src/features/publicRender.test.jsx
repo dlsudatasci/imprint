@@ -26,7 +26,7 @@ import { GUIDE_COPY } from "@/features/contribute/help/guideCopy";
 import { SESSION_PICKER_COPY } from "@/features/annotate/SessionSizeOptions";
 import { CONTRIBUTOR_OPTIONS } from "@/features/annotate/sessionOptions";
 import { PICKER_STILL_SELECTED } from "@/features/contribute/help/SessionPickerStill";
-import { CATEGORY_GROUPS, SCENE_QUESTIONS, SEVERITY_SCALE } from "@/features/contribute/help/taskFacts";
+import { CATEGORY_GROUPS, SCENE_QUESTIONS, SEVERITY_SCALE, PATH_NOT_ASKED } from "@/features/contribute/help/taskFacts";
 import { AUTH_COPY } from "@/features/auth/authCopy";
 import { NOT_FOUND_COPY } from "@/features/notFound/notFoundCopy";
 
@@ -44,6 +44,12 @@ describe("About", () => {
     for (const step of ABOUT_COPY.steps.items) expect(html).toContain(step.title);
     for (const g of CATEGORY_GROUPS) for (const label of g.labels) expect(html).toContain(`>${label}<`);
     for (const q of SCENE_QUESTIONS) expect(html).toContain(q.name);
+    // What each answer means, and the four not asked for a path (S15)
+    for (const q of SCENE_QUESTIONS) for (const m of q.meanings) expect(html).toContain(m);
+    expect(html.match(/data-path-not-asked/g)).toHaveLength(4);
+    expect(html).toContain(PATH_NOT_ASKED);
+    expect(html).toContain(ABOUT_COPY.record.questionsTitle);
+    expect(ABOUT_COPY.record.questionsTitle).toBe("Six questions about each sidewalk");
     // The old page: "simple micro-tasks", labels that "train the models", and
     // lists of things (tactile paving, ramps, manholes) the platform never asks about
     expect(html).not.toMatch(/micro-task|train the models|tactile paving|manhole|wheelchair ramps/i);
@@ -75,7 +81,8 @@ describe("annotation guide", () => {
   });
 
   it("pictures every step, the first with the session picker drawn from its own words and sizes", () => {
-    for (const step of GUIDE_COPY.steps) expect(step.still !== undefined || step.picker === true, step.id).toBe(true);
+    // Step 1 (S15) is two plain buttons, so it has no picture of its own
+    for (const step of GUIDE_COPY.steps) expect(step.still !== undefined || step.picker === true || step.id === "presence", step.id).toBe(true);
     const start = html.slice(html.indexOf('id="start"'), html.indexOf('id="answer"'));
     expect(start).toContain('data-guide-still="session-picker"');
     expect(start).toContain(SESSION_PICKER_COPY.title);
@@ -87,9 +94,16 @@ describe("annotation guide", () => {
   });
 
   it("describes the tool as it is: no slider, no surface-type step, no white boxes", () => {
-    expect(html).not.toMatch(/slider|surface type|white box|Selected Obstructions|Others"/i);
+    // Surface Type is a Step 3 question from S15, not the old form's step
+    expect(html).not.toMatch(/slider|surface-type step|pavement type|white box|Selected Obstructions|Others"/i);
     for (const s of SEVERITY_SCALE) expect(html).toContain(s.label);
     for (const q of SCENE_QUESTIONS) for (const a of q.answers) expect(html).toContain(a);
+  });
+
+  it("says what each Step 3 answer means, and which are not asked for a path (S15)", () => {
+    for (const q of SCENE_QUESTIONS) for (const m of q.meanings) expect(html).toContain(m);
+    expect(html.match(/data-path-not-asked/g)).toHaveLength(4);
+    expect(html).not.toMatch(/Walking Comfort|Accessible to Me|choose None/);
   });
 });
 

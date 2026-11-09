@@ -10,9 +10,9 @@
  * tree, the car, the motorcycle and the lamp post by `ids`, and the white post
  * the preview draws a box around (DRAW_FROM to DRAW_TO). The preview's
  * answers are the practice's steps, but only two answers are directed: the
- * tree is on the path (step 2) and the car is not (step 5), which the photo
+ * tree is on the path (step 3) and the car is not (step 6), which the photo
  * settles. Whether the tree obstructs, and how much, is the contributor's own
- * answer (step 3, decided by Rans 7 Nov 2026), since its panel shows the
+ * answer (step 4, decided by Rans 7 Nov 2026), since its panel shows the
  * model's hint (S3) and a practice that made everyone choose Yes there would
  * teach them to follow it.
  *
@@ -22,7 +22,15 @@
  *   { boxes: [{ id, comment, editable, mark, onSidewalk, obstructs, severity,
  *               selected, isRejected }],
  *     openId: the id of the box whose panel is open, or null,
- *     scene: Step 2's answers (SceneQuestions' sceneLevel) }
+ *     scene: Step 3's answers (SceneQuestions' sceneLevel),
+ *     hasSidewalk: Step 1's answer, true, false or null (S15) }
+ *
+ * S15 (9 Nov 2026): a new first step, Step 1 (`presence`), done once it is
+ * answered Yes, since the practice photo has a sidewalk raised on a curb.
+ * Its lock opens no box and allows no drawing, as the tool's own rule "Step
+ * 2 waits for Step 1" does anyway. Every step allows only Yes at Step 1
+ * (`allowPresence`), so the practice never turns into the path's questions.
+ * The practice has eleven steps.
  *
  * Each step's lock is the tool's `practiceLock`: which boxes open
  * (`openable`, a list or "all", and drawn boxes whenever drawing is allowed),
@@ -33,14 +41,14 @@
  */
 import { ids, DRAW_FROM, DRAW_TO } from "@/features/home/howItWorks/demoScript";
 import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
-import { sceneProgress } from "@/features/annotate/objectTrays";
+import { sceneProgress, requiredSceneKeys } from "@/util/validators/sceneQuestions.mjs";
 import { normalizeMark } from "@/util/boxGeometry";
 import { computeIoU } from "@/util/validators/qualityMetrics";
 
 /** The four suggestions on the practice photo, by what they are */
 export const PRACTICE_IDS = ids;
 
-/** The white post on the sidewalk the model missed, image px: the box drawn at step 6 is matched against it */
+/** The white post on the sidewalk the model missed, image px: the box drawn at step 7 is matched against it */
 export const DRAW_TARGET = Object.freeze({
   x: DRAW_FROM[0],
   y: DRAW_FROM[1],
@@ -65,6 +73,9 @@ export const PRACTICE_SELECTORS = Object.freeze({
   confirm: "[data-control='confirm']",
   category: "[data-control='category']",
   addBox: "#add-box-button",
+  // Step 1 (S15) and its Yes
+  presence: "#sidewalk-presence-section",
+  presenceYes: "[data-presence-option='true']",
   scene: "#scene-level-section",
   sceneLine: "#scene-level-peek",
   submit: "button[type='submit']",
@@ -74,7 +85,7 @@ export const PRACTICE_SELECTORS = Object.freeze({
   answerSheet: "#answer-sheet",
   topBar: ".annotate-sheet-screen > header",
   // What the practice lights up (8 Nov 2026): the photo, the open box (the
-  // tool marks it), Step 2's questions, and the answers sheet pulled up
+  // tool marks it), Step 1 and Step 3's questions, and the answers sheet pulled up
   photo: "[data-photo-area]",
   // The white post's dashed outline, which the tool draws
   drawTarget: "[data-practice-highlight='rect']",
@@ -82,26 +93,29 @@ export const PRACTICE_SELECTORS = Object.freeze({
   sheetUp: "#answer-sheet button[aria-expanded='true']",
 });
 
-/** Step 2's questions in their order, each lit in turn at step 9 */
-export const SCENE_QUESTIONS = Object.freeze(["sidewalkWidth", "surfaceCondition", "walkability", "overallAccessibility"]);
+/** Step 3's questions in their order, each lit in turn at step 10: six for a sidewalk, two for a path (S15) */
+export const sceneQuestionsFor = (state) => requiredSceneKeys(state?.hasSidewalk);
 const sceneQuestion = (key) => `[data-scene-question='${key}']`;
 
 const S = PRACTICE_SELECTORS;
 
 // The tree's steps keep its Question 1 at Yes, so Back to Question 1 cannot
-// take it off the path. Allowed from step 1, as the check mark shows for half
+// take it off the path. Allowed from step 2, as the check mark shows for half
 // a second after its panel opens.
-const TREE_LOCK = Object.freeze({ openable: Object.freeze([ids.tree]), canDraw: false, canSubmit: false, allowAnswers: Object.freeze({ onSidewalk: true }) });
-const DRAW_LOCK = Object.freeze({ openable: Object.freeze([]), canDraw: true, canSubmit: false, allowAnswers: Object.freeze({}) });
-const OPEN_LOCK = Object.freeze({ openable: "all", canDraw: true, canSubmit: false, allowAnswers: null });
+// Step 1 allows only Yes on every step (S15): the photo has a sidewalk.
+const PRESENCE_LOCK = Object.freeze({ openable: Object.freeze([]), canDraw: false, canSubmit: false, allowAnswers: Object.freeze({}), allowPresence: true });
+const TREE_LOCK = Object.freeze({ openable: Object.freeze([ids.tree]), canDraw: false, canSubmit: false, allowAnswers: Object.freeze({ onSidewalk: true }), allowPresence: true });
+const DRAW_LOCK = Object.freeze({ openable: Object.freeze([]), canDraw: true, canSubmit: false, allowAnswers: Object.freeze({}), allowPresence: true });
+const OPEN_LOCK = Object.freeze({ openable: "all", canDraw: true, canSubmit: false, allowAnswers: null, allowPresence: true });
 
-/** The ten steps, in order. `key` names the line in practiceCopy.js. */
+/** The eleven steps, in order. `key` names the line in practiceCopy.js. */
 export const PRACTICE_STEPS = Object.freeze([
+  { key: "presence", lock: PRESENCE_LOCK },
   { key: "openTree", lock: TREE_LOCK },
   { key: "treeOnPath", lock: TREE_LOCK },
   { key: "treeObstructs", lock: TREE_LOCK },
   { key: "treeSeverity", lock: TREE_LOCK },
-  { key: "carOff", lock: Object.freeze({ openable: Object.freeze([ids.car]), canDraw: false, canSubmit: false, allowAnswers: Object.freeze({ onSidewalk: false }) }) },
+  { key: "carOff", lock: Object.freeze({ openable: Object.freeze([ids.car]), canDraw: false, canSubmit: false, allowAnswers: Object.freeze({ onSidewalk: false }), allowPresence: true }) },
   { key: "drawPost", lock: DRAW_LOCK },
   { key: "answerDrawn", lock: DRAW_LOCK },
   { key: "lastTwo", lock: OPEN_LOCK },
@@ -156,6 +170,8 @@ export function practiceDrawnBox(state) {
 export function practiceStepDone(step, state) {
   const tree = boxOf(state, ids.tree);
   switch (keyOf(step)) {
+    case "presence":
+      return state?.hasSidewalk === true;
     case "openTree":
       return state?.openId === ids.tree;
     case "treeOnPath":
@@ -177,7 +193,7 @@ export function practiceStepDone(step, state) {
     case "lastTwo":
       return boxAnswered(boxOf(state, ids.moto)) && boxAnswered(boxOf(state, ids.lamp));
     case "scene": {
-      const { answered, required } = sceneProgress(state?.scene);
+      const { answered, required } = sceneProgress(state?.scene, state?.hasSidewalk);
       return answered === required;
     }
     default:
@@ -185,7 +201,7 @@ export function practiceStepDone(step, state) {
   }
 }
 
-/** Step 4 is skipped when the tree was answered No: there is no severity to give. */
+/** Step 5 (treeSeverity) is skipped when the tree was answered No: there is no severity to give. */
 export function practiceStepSkipped(step, state) {
   return keyOf(step) === "treeSeverity" && boxOf(state, ids.tree)?.obstructs === false;
 }
@@ -199,8 +215,8 @@ export function nextPracticeStep(index, state) {
 
 /**
  * The step to stay on after the tool's state changed. Only one step goes
- * back: the drawn box deleted, or fitted away from the post, at step 7
- * brings back step 6, so the line never asks to answer a box that is not there.
+ * back: the drawn box deleted, or fitted away from the post, at step 8
+ * brings back step 7, so the line never asks to answer a box that is not there.
  */
 export function practiceStepFor(index, state) {
   if (keyOf(index) === "answerDrawn" && !practiceStepDone("drawPost", state)) return index - 1;
@@ -223,21 +239,21 @@ export function practiceLockFor(step) {
  *   spotlight  what stays lit while the rest of the screen is dimmed, as the
  *              tour does: the photo for every step on the photo (on a laptop
  *              the box panel is on it), on touch the answers sheet and the
- *              open box while a panel is the step, the next Step 2 question,
+ *              open box while a panel is the step, the next Step 3 question,
  *              and Next Image. Empty: nothing is dimmed. On touch a step on
  *              the photo dims nothing, as the photo with the sheet under it
  *              looked wonky lit alone (Rans, 8 Nov 2026).
  *   rings      the controls that get a pulsing ring: Question 1's Yes at step
- *              2, Yes and No at step 3 (back from 8 Nov 2026, Rans), Confirm
- *              at step 4, No at step 5, Add box on touch, the category field
- *              at step 7, Next Image. Never the model's line or the severity
+ *              3, Yes and No at step 4 (back from 8 Nov 2026, Rans), Confirm
+ *              at step 5, No at step 6, Add box on touch, the category field
+ *              at step 8, Next Image. Never the model's line or the severity
  *              slider (Rans, 8 Nov 2026).
- *   cardNear   what the card is kept next to, on touch at step 6 (Rans,
+ *   cardNear   what the card is kept next to, on touch at step 7 (Rans,
  *              8 Nov 2026): the Add box button until it is tapped, then the
  *              white post's outline, kept clear of the new box's corners
  *              (`avoidBoxIds`). It went to the bottom of the screen when Add
  *              box opened the new box's panel in the sheet.
- *   fallback   on touch at step 9, the Step 2 line at the top of the answers
+ *   fallback   on touch at step 10, the Step 3 line at the top of the answers
  *              sheet (lit and ringed) until the sheet is pulled up
  *              (`unless` is on the page)
  *   avoid      what the card also keeps clear of: the top bar on touch
@@ -268,6 +284,9 @@ export function practiceTargets(step, state, words = "pointer") {
   const severityPending = (box) => box?.obstructs === true && box.severity == null;
 
   switch (keyOf(step)) {
+    case "presence":
+      // Step 1: on a laptop its card, on touch the top of the answers sheet
+      return result(null, { rings: [S.presenceYes], spotlight: [S.presence] });
     case "openTree":
       return result({ boxId: ids.tree });
     case "treeOnPath":
@@ -302,7 +321,7 @@ export function practiceTargets(step, state, words = "pointer") {
     case "scene": {
       // The next question still to answer, one at a time
       const scene = state?.scene ?? {};
-      const next = SCENE_QUESTIONS.find((key) => scene[key] === null || scene[key] === undefined);
+      const next = sceneQuestionsFor(state).find((key) => scene[key] === null || scene[key] === undefined);
       const spotlight = [next ? sceneQuestion(next) : S.scene];
       if (!touch) return result(null, { spotlight });
       return result(null, { spotlight, fallback: { unless: S.sheetUp, rings: [S.sceneLine], spotlight: [S.sceneLine] } });

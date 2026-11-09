@@ -51,7 +51,7 @@ let host: HTMLDivElement;
 
 function mount({ isAnnotator = false } = {}): Tool {
   window.localStorage.clear();
-  writeSession({ total: 1, current: 1, data: { imgRecords: [{ imageID: "IMG", url: "/p.jpg", annotationList: boxes }], isAnnotator } });
+  writeSession({ total: 1, current: 1, data: { imgRecords: [{ imageID: "IMG", url: "/p.jpg", annotationList: boxes, userHasSidewalk: true }], isAnnotator } });
   const ref = React.createRef<ReactPictureAnnotation>();
   host = document.createElement("div");
   document.body.appendChild(host);

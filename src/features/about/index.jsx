@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Display, Headline, H2, P, Container, cn } from "@/ui";
 import ClosingSection from "@/features/home/ClosingSection";
-import { CATEGORY_GROUPS, SCENE_QUESTIONS } from "@/features/contribute/help/taskFacts";
+import { CATEGORY_GROUPS, SCENE_QUESTIONS, PATH_NOT_ASKED } from "@/features/contribute/help/taskFacts";
 import { RESEARCHER_EMAIL } from "@/features/footerMain/footerCopy";
 import { ABOUT_COPY as COPY } from "./aboutCopy";
 
@@ -118,11 +118,18 @@ export default function AboutSection() {
           <p className="mt-4 text-sm text-muted">{COPY.record.other} {COPY.record.surface}</p>
 
           <h3 className="mt-16 text-center font-display text-2xl font-bold text-ink">{COPY.record.questionsTitle}</h3>
-          <dl className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {SCENE_QUESTIONS.map((q) => (
               <div key={q.name} className="rounded-card border border-line bg-surface p-5">
                 <dt className="text-sm font-semibold text-ink">{q.name}</dt>
                 <dd className="mt-1 text-sm text-muted">{q.prompt}</dd>
+                {/* What each answer means (S15) */}
+                <dd>
+                  <ul data-scene-meanings className="mt-3 space-y-1 text-sm text-body">
+                    {q.meanings.map((m) => <li key={m}>{m}</li>)}
+                  </ul>
+                </dd>
+                {q.sidewalkOnly && <dd data-path-not-asked className="mt-2 text-xs text-muted">{PATH_NOT_ASKED}</dd>}
               </div>
             ))}
           </dl>

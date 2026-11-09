@@ -1,3 +1,5 @@
+import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
+
 /**
  * The obstruction classifier's proposal as a hint (S3, decided 25 Oct 2026 by
  * Rans and the adviser). scripts/update-predictions.mjs writes it onto each
@@ -14,12 +16,16 @@
  * The hint is never a pre-selected answer (pipeline_methodology.md §7t). It
  * shows only on Question 2, "Does {label} obstruct the sidewalk?", so only for
  * a contributor's suggestion answered Yes to Question 1. The probability is
- * never shown, only the Yes or No.
+ * never shown, only the Yes or No. With only a path (S15, Step 1 answered
+ * No) there is no Question 1: the one question, "Does {label} obstruct the
+ * path?", carries the hint, worded for the path.
  */
 
 /** The panel's line, and the tutorial's sentence. No em dashes, no semicolons. */
 export const PROPOSAL_HINT_COPY = Object.freeze({
   obstructs: "The model thinks this obstructs the sidewalk.",
+  // Only a path (S15): the obstruction question is about the path
+  obstructsPath: "The model thinks this obstructs the path.",
   /**
    * The guide's answer step and the tour's Check Each Box, right after the
    * obstruction question, shown whether or not proposals exist yet
@@ -34,8 +40,9 @@ export const isProposal = (value) => typeof value === "boolean";
 export const isShownProposal = (value) => value === true;
 
 /** The panel's line for a proposal, or null when nothing is shown (false, or none). */
-export function proposalHintText(proposedObstructs) {
-  return isShownProposal(proposedObstructs) ? PROPOSAL_HINT_COPY.obstructs : null;
+export function proposalHintText(proposedObstructs, { pathOnly = false } = {}) {
+  if (!isShownProposal(proposedObstructs)) return null;
+  return pathOnly ? PROPOSAL_HINT_COPY.obstructsPath : PROPOSAL_HINT_COPY.obstructs;
 }
 
 /** A record suggestion's probability, or null when it has none. */
@@ -52,9 +59,16 @@ export function recordProbability(entry) {
  * box (no record entry), a suggestion whose proposal is false or missing,
  * and every annotator's box.
  *
+ * With only a path (S15, `hasSidewalk: false`) a box is asked one question,
+ * whether it obstructs the path, and the hint is on it, so the hint was
+ * shown for every suggestion proposed to obstruct that is not marked Not an
+ * object. A sidewalk (`hasSidewalk` true, the default) keeps the rule above.
+ *
  * `recordEntry` is always the image record's suggestion, never the request's.
  */
-export function proposalWasShown(recordEntry, submittedBox, { isAnnotator = false } = {}) {
+export function proposalWasShown(recordEntry, submittedBox, { isAnnotator = false, hasSidewalk = true } = {}) {
   if (isAnnotator) return false;
-  return isShownProposal(recordEntry?.proposedObstructs) && submittedBox?.onSidewalk === true;
+  if (!isShownProposal(recordEntry?.proposedObstructs) || !submittedBox) return false;
+  if (hasSidewalk === false) return submittedBox.comment !== NOT_AN_OBJECT;
+  return submittedBox.onSidewalk === true;
 }

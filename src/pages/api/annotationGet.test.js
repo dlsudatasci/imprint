@@ -701,18 +701,22 @@ describe("POST /api/annotationGet", () => {
       mocks.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([img(1), img(2)]) });
       mocks.annotationsCol.find.mockReturnValue({
         toArray: vi.fn().mockResolvedValue([
-          // Before the change: 1 was Easily accessible, Easy to traverse and Comfortable
-          { imageID: 1, selectedObjectsID: [], newObjects: [], sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 1, walkability: 1, overallAccessibility: 1 } },
-          { imageID: 2, selectedObjectsID: [], newObjects: [], sceneScale: 2, sceneLevel: { sidewalkWidth: "one_person", surfaceCondition: 2, walkability: 1, overallAccessibility: 4 } },
+          // Before the 22 Oct 2026 change 1 was the best answer (no sceneScale): turned round
+          { imageID: 1, selectedObjectsID: [], newObjects: [], sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 1, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 1, roadBarrier: true }, hasSidewalk: true },
+          // S15: a path, its four sidewalk-only answers null
+          { imageID: 2, selectedObjectsID: [], newObjects: [], sceneScale: 2, sceneLevel: { sidewalkWidth: null, overallAccessibility: 4, surfaceEvenness: 2, surfaceType: null, surfaceCondition: null, roadBarrier: null }, hasSidewalk: false },
         ]),
       });
       const res = createMockRes();
       await handler(createMockReq({ body: {} }), res);
 
       const [first, second] = res._json.imgRecords;
-      expect(first.userSceneLevel).toEqual({ sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 3, overallAccessibility: 5 });
-      expect(second.userSceneLevel).toEqual({ sidewalkWidth: "one_person", surfaceCondition: 2, walkability: 1, overallAccessibility: 4 });
+      // The six keys, and Step 1 beside them (S15). surfaceEvenness is never turned round.
+      expect(first.userSceneLevel).toEqual({ sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3, roadBarrier: true });
+      expect(second.userSceneLevel).toEqual({ sidewalkWidth: null, overallAccessibility: 4, surfaceEvenness: 2, surfaceType: null, surfaceCondition: null, roadBarrier: null });
       expect(first.userSceneScale).toBe(2);
+      expect(first.userHasSidewalk).toBe(true);
+      expect(second.userHasSidewalk).toBe(false);
     });
 
     // S12 (2 Nov 2026): the sidewalk answer comes back with the box, so a box

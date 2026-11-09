@@ -13,6 +13,7 @@ import {
   isOffSidewalk,
   offSidewalkPatch,
   onSidewalkPatch,
+  applyPresenceChange,
 } from "./suggestionJudgment";
 
 describe("NOT_AN_OBJECT", () => {
@@ -262,5 +263,87 @@ describe("isDecidedForObjects", () => {
 
   it("is false for a missing box", () => {
     expect(isDecidedForObjects(undefined)).toBe(false);
+  });
+});
+
+// Only a path (S15, 9 Nov 2026): no sidewalk question, straight to whether it obstructs
+describe("getSuggestionPanelMode with pathOnly", () => {
+  const base = { editable: false, selected: false, obstructs: undefined, severity: null, comment: "tree", onSidewalk: undefined };
+  it("skips the sidewalk question for a path", () => {
+    expect(getSuggestionPanelMode({ ...base })).toBe("sidewalk");
+    expect(getSuggestionPanelMode({ ...base, pathOnly: true })).toBe("judge");
+    expect(getSuggestionPanelMode({ ...base, editable: true, comment: "bollard", pathOnly: true })).toBe("drawn");
+  });
+
+  it("keeps the rest as for a sidewalk", () => {
+    expect(getSuggestionPanelMode({ ...base, pathOnly: true, selected: true, obstructs: true, severity: null })).toBe("severity");
+    expect(getSuggestionPanelMode({ ...base, pathOnly: true, selected: true, obstructs: true, severity: 3 })).toBe("confirmed");
+    expect(getSuggestionPanelMode({ ...base, pathOnly: true, comment: NOT_AN_OBJECT })).toBe("not_an_object");
+  });
+});
+
+describe("applyPresenceChange (S15)", () => {
+  const box = (id, extra = {}) => ({ id, comment: "tree", mark: { x: 0, y: 0, width: 5, height: 5 }, editable: false, selected: false, isRejected: false, ...extra });
+  const offPath = box("off", { ...offSidewalkPatch({ editable: false }) });
+  const onYes = box("yes", { onSidewalk: true, selected: true, obstructs: true, severity: 4 });
+  const onUndecided = box("pending", { onSidewalk: true });
+  const drawnOff = box("drawn-off", { editable: true, comment: "bench", ...offSidewalkPatch({ editable: true }) });
+  const drawnNo = box("drawn-no", { editable: true, comment: "bench", onSidewalk: true, obstructs: false, severity: null });
+  const nao = box("nao", { ...notAnObjectPatch() });
+  const untouched = box("untouched");
+
+  it("Yes to No: a box off the path goes back to Still to decide, one on it keeps its answer without onSidewalk", () => {
+    const before = [offPath, onYes, onUndecided, drawnOff, drawnNo, nao, untouched];
+    const copy = JSON.parse(JSON.stringify(before));
+    const { boxes, resetIds } = applyPresenceChange(before, true, false);
+    expect(resetIds).toEqual(["off", "drawn-off"]);
+    const [off, yes, pending, dOff, dNo, notObject, same] = boxes;
+    expect(off).not.toHaveProperty("onSidewalk");
+    expect(off).not.toHaveProperty("obstructs");
+    expect(off).not.toHaveProperty("severity");
+    expect(off).not.toHaveProperty("isRejected");
+    expect(off).toMatchObject({ id: "off", comment: "tree", selected: false });
+    const withoutSidewalk = { ...onYes };
+    delete withoutSidewalk.onSidewalk;
+    expect(yes).toEqual(withoutSidewalk);
+    expect(yes).toMatchObject({ selected: true, obstructs: true, severity: 4 });
+    expect(pending).not.toHaveProperty("onSidewalk");
+    expect(dOff).toEqual({ id: "drawn-off", comment: "bench", mark: drawnOff.mark, editable: true, selected: false, isRejected: false });
+    expect(dNo).toMatchObject({ obstructs: false, severity: null });
+    expect(dNo).not.toHaveProperty("onSidewalk");
+    // Not an object and the categories are kept
+    expect(notObject).toBe(nao);
+    expect(same).toBe(untouched);
+    // The boxes given are not changed
+    expect(before).toEqual(copy);
+  });
+
+  it("No to Yes: every real box answered goes back to Still to decide, Not an object kept", () => {
+    const pathYes = box("p-yes", { selected: true, obstructs: true, severity: 2 });
+    const pathNo = box("p-no", { isRejected: true, obstructs: false, severity: null });
+    const pathDrawn = box("p-drawn", { editable: true, comment: "bench", obstructs: true, severity: 5 });
+    const { boxes, resetIds } = applyPresenceChange([pathYes, pathNo, pathDrawn, nao, untouched], false, true);
+    expect(resetIds).toEqual(["p-yes", "p-no", "p-drawn"]);
+    for (const b of boxes.slice(0, 3)) {
+      expect(b).not.toHaveProperty("obstructs");
+      expect(b).not.toHaveProperty("severity");
+    }
+    expect(boxes[0]).not.toHaveProperty("selected");
+    expect(boxes[1]).not.toHaveProperty("isRejected");
+    expect(boxes[2]).toMatchObject({ editable: true, comment: "bench", selected: false });
+    expect(boxes[0].comment).toBe("tree");
+    expect(boxes[3]).toBe(nao);
+    expect(boxes[4]).toBe(untouched);
+  });
+
+  it("changes nothing for the same answer, a first answer, or anything that is not a box", () => {
+    for (const [from, to] of [[true, true], [false, false], [null, true], [null, false]]) {
+      const { boxes, resetIds } = applyPresenceChange([offPath, onYes], from, to);
+      expect(boxes[0]).toBe(offPath);
+      expect(boxes[1]).toBe(onYes);
+      expect(resetIds).toEqual([]);
+    }
+    expect(applyPresenceChange(null, true, false)).toEqual({ boxes: [], resetIds: [] });
+    expect(applyPresenceChange([null, "x"], true, false).boxes).toEqual([null, "x"]);
   });
 });

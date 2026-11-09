@@ -31,14 +31,15 @@ describe("dashboard copy", () => {
     }
   });
 
-  it("names a session's average with the Accessible to Me answer nearest it", () => {
-    const answers = SCENE_QUESTIONS.find((q) => q.name === "Accessible to Me").answers;
-    // 1 Not accessible to 5 Easily accessible from 22 Oct 2026
+  it("names a session's average with the Ease of Navigation answer nearest it (S15)", () => {
+    const answers = SCENE_QUESTIONS.find((q) => q.name === "Ease of Navigation").answers;
+    // 1 Fully obstructed to 5 Unobstructed, the same field and scale as Accessible to Me was
     expect(accessWord(1)).toBe(answers[0]);
-    expect(accessWord(1)).toBe("Not accessible");
-    expect(accessWord("3.6")).toBe("Mostly accessible");
-    expect(accessWord(4.6)).toBe("Easily accessible");
-    expect(accessWord(5)).toBe("Easily accessible");
+    expect(accessWord(1)).toBe("Fully obstructed");
+    expect(accessWord("3.6")).toBe("Slightly obstructed");
+    expect(accessWord(4.6)).toBe("Unobstructed");
+    expect(accessWord(5)).toBe("Unobstructed");
+    expect(DASHBOARD_COPY.accessLabel).toBe("Ease of navigation");
     for (const v of [0, 6, null, "x"]) expect(accessWord(v)).toBeNull();
   });
 
@@ -111,13 +112,13 @@ describe("the lower dashboard", () => {
 describe("a recent session", () => {
   const finished = { date: "2026-10-16T20:00:00Z", location: "Quezon City", totalImages: 5, imageUrls: ["a.jpg"], chartData: [2, 0, 1], averageScore: "3.6" };
 
-  it("shows obstructions per photo and the Accessible to Me average with its word", () => {
+  it("shows obstructions per photo and the Ease of Navigation average with its word", () => {
     const html = renderToStaticMarkup(<ul><RecentSessionItem sessionData={finished} /></ul>);
     expect(html).toContain(">Oct 17, 2026<");
     expect(html).toContain(">Quezon City<");
     expect(html).toContain(DASHBOARD_COPY.chartLabel);
     expect(html).toContain(DASHBOARD_COPY.accessLabel);
-    expect(html).toContain("Mostly accessible");
+    expect(html).toContain("Slightly obstructed");
     expect(html).not.toMatch(/Avg Score|Obstruction Density|uppercase/);
     expect(html).toContain('alt=""');
   });
@@ -244,19 +245,19 @@ describe("a recent session, laid out again", () => {
     expect(chart.querySelectorAll("[data-chart-peak]")).toHaveLength(0);
   });
 
-  // 22 Oct 2026: 5 is Easily accessible, so the darkest tile is the highest
-  it("colours Accessible to me darkest for the most accessible", () => {
+  // 22 Oct 2026: 5 is the best answer (Unobstructed from S15), so the darkest tile is the highest
+  it("colours Ease of navigation darkest for the least obstructed", () => {
     const tile = (averageScore) => {
       const host = document.createElement("div");
       host.innerHTML = row({ averageScore });
       return host.querySelector("[data-access-tile]");
     };
     expect(tile("4.6").className).toContain("bg-primary text-white");
-    expect(tile("4.6").closest("[data-session-access]").textContent).toContain("Easily accessible");
+    expect(tile("4.6").closest("[data-session-access]").textContent).toContain("Unobstructed");
     expect(tile("4.6").textContent).toBe("4.6");
     expect(tile("3.0").className).toContain("bg-primary-100");
     expect(tile("1.4").className).toContain("bg-line");
-    expect(tile("1.4").closest("[data-session-access]").textContent).toContain("Not accessible");
+    expect(tile("1.4").closest("[data-session-access]").textContent).toContain("Fully obstructed");
   });
 
   // 22 Oct 2026 (Rans): the thumbnails and Accessible to me looked small beside
@@ -295,7 +296,7 @@ describe("a recent session, laid out again", () => {
     expect(total.textContent).toBe("10 in 8 photos");
     expect(chart.lastElementChild).toBe(total);
     expect(total.className).toContain("mt-1 text-center text-xs text-muted");
-    expect(tile.parentElement.nextElementSibling.textContent).toBe("Mostly accessible");
+    expect(tile.parentElement.nextElementSibling.textContent).toBe("Slightly obstructed");
     expect(tile.parentElement.nextElementSibling.className).toBe("mt-1 text-center text-xs text-muted");
     // Side by side from 768 px; on a phone Accessible to me beside the chart
     expect(li.className).toContain("md:grid-cols-[minmax(0,1fr)_10rem_8rem]");

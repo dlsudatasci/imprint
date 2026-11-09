@@ -4,7 +4,8 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import PracticeGuide, { targetsInUse } from "./PracticeGuide";
 import SceneQuestions from "@/ui/annotation-tool/SceneQuestions";
-import { PRACTICE_SELECTORS, SCENE_QUESTIONS } from "./practiceSteps";
+import { PRACTICE_SELECTORS } from "./practiceSteps";
+import { SCENE_KEYS, emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
 
 /**
  * The practice's guide (S19), from Rans's review on 8 Nov 2026: the screen
@@ -24,7 +25,7 @@ async function show(props = {}) {
   document.body.appendChild(host);
   root = createRoot(host);
   const all = {
-    step: 3, total: 10, line: "Does the object obstruct your way? You decide. The model can be wrong.",
+    step: 4, total: 11, line: "Does the object obstruct your way? You decide. The model can be wrong.",
     targets: { highlight: null, rings: [], spotlight: ["[data-photo-area]"], fallback: null, avoid: [] },
     onSkip: () => {}, layout: "desktop", ...props,
   };
@@ -47,7 +48,7 @@ describe("the practice's guide", () => {
     expect(host.contains(layer())).toBe(false);
     expect(layer().className).toMatch(/z-\[70\]/);
     const card = layer().querySelector("[data-practice-card]");
-    expect(card.textContent).toMatch(/Practice 3 of 10/);
+    expect(card.textContent).toMatch(/Practice 4 of 11/);
     expect(card.textContent).toMatch(/You decide\. The model can be wrong\./);
   });
 
@@ -122,20 +123,20 @@ describe("the practice's guide", () => {
 });
 
 describe("the line with a fallback", () => {
-  it("says to tap the Step 2 line until the answers sheet is up, then the plain line", async () => {
+  it("says to tap the Step 3 line until the answers sheet is up, then the plain line", async () => {
     const targets = {
       highlight: null, rings: [], spotlight: ["[data-scene-question='sidewalkWidth']"], avoid: [],
       fallback: { unless: PRACTICE_SELECTORS.sheetUp, rings: [PRACTICE_SELECTORS.sceneLine], spotlight: [PRACTICE_SELECTORS.sceneLine] },
     };
-    await show({ layout: "sheet", targets, line: "Next is Step 2: questions about the sidewalk itself.", fallbackLine: "Next is Step 2: questions about the sidewalk itself. Tap the Step 2 line." });
+    await show({ layout: "sheet", targets, line: "Next is Step 3: questions about the sidewalk itself.", fallbackLine: "Next is Step 3: questions about the sidewalk itself. Tap the Step 3 line." });
     await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
-    expect(layer().textContent).toMatch(/Tap the Step 2 line\./);
+    expect(layer().textContent).toMatch(/Tap the Step 3 line\./);
     const sheet = document.createElement("section");
     sheet.id = "answer-sheet";
     sheet.innerHTML = '<button aria-expanded="true"></button>';
     document.body.appendChild(sheet);
     await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
-    expect(layer().textContent).not.toMatch(/Tap the Step 2 line/);
+    expect(layer().textContent).not.toMatch(/Tap the Step 3 line/);
     expect(layer().textContent).toMatch(/questions about the sidewalk itself\./);
     sheet.remove();
   });
@@ -147,7 +148,7 @@ describe("targetsInUse", () => {
     fallback: { unless: PRACTICE_SELECTORS.sheetUp, rings: [PRACTICE_SELECTORS.sceneLine], spotlight: [PRACTICE_SELECTORS.sceneLine] },
   };
 
-  it("uses the Step 2 line until the answers sheet is pulled up, then the question", () => {
+  it("uses the Step 3 line until the answers sheet is pulled up, then the question", () => {
     expect(targetsInUse(touchScene)).toMatchObject({ rings: [PRACTICE_SELECTORS.sceneLine], spotlight: [PRACTICE_SELECTORS.sceneLine] });
     const sheet = document.createElement("section");
     sheet.id = "answer-sheet";
@@ -165,17 +166,17 @@ describe("targetsInUse", () => {
   });
 });
 
-describe("Step 2's questions", () => {
+describe("Step 3's questions", () => {
   it("each carry the name the practice lights them up by", async () => {
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
-    const scene = { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null };
+    const scene = emptySceneLevel();
     await act(async () => root.render(<SceneQuestions sceneLevel={scene} variant="desktop" onAnswer={() => {}} />));
     const marked = Array.from(host.querySelectorAll("[data-scene-question]"));
-    expect(marked.map((e) => e.getAttribute("data-scene-question"))).toEqual(SCENE_QUESTIONS);
+    expect(marked.map((e) => e.getAttribute("data-scene-question"))).toEqual([...SCENE_KEYS]);
     // Each holds its own options
-    for (const key of SCENE_QUESTIONS) {
+    for (const key of SCENE_KEYS) {
       expect(host.querySelector(`[data-scene-question='${key}'] [data-scene-option^='${key}:']`), key).toBeTruthy();
     }
   });

@@ -11,130 +11,140 @@ import {
   applyRecordSuggestions,
   clearDrawnModelFields,
   withRecordConfidences,
+  isPresenceAnswer,
+  RELOAD_FOR_NEW_QUESTIONS,
+  PATH_HAS_NO_SIDEWALK_ANSWER,
 } from "./annotationSubmit.js";
+import { SCENE_KEYS, SIDEWALK_ONLY_KEYS, SURFACE_TYPE_OPTIONS, SIDEWALK_WIDTH_OPTIONS as SHARED_WIDTHS } from "./sceneQuestions.mjs";
 
+// Step 3 (S15, 9 Nov 2026): six questions for a sidewalk, two for a path
 describe("validateSceneLevel", () => {
   const validScene = {
     sidewalkWidth: "two_people",
-    surfaceCondition: 2,
-    walkability: 3,
     overallAccessibility: 3,
+    surfaceEvenness: 2,
+    surfaceType: "concrete",
+    surfaceCondition: 2,
+    roadBarrier: false,
   };
+  const pathScene = { sidewalkWidth: null, overallAccessibility: 4, surfaceEvenness: 1, surfaceType: null, surfaceCondition: null, roadBarrier: null };
 
-  it("accepts a valid scene with sidewalk present", () => {
-    expect(validateSceneLevel(validScene)).toEqual({ valid: true });
+  it("accepts a sidewalk's six answers and returns them as stored", () => {
+    expect(validateSceneLevel(validScene, true)).toEqual({ valid: true, sceneLevel: validScene });
   });
 
-  it("accepts all sidewalkWidth values", () => {
-    for (const val of ["no_sidewalk", "one_person", "two_people", "three_or_more"]) {
-      const scene = val === "no_sidewalk"
-        ? { sidewalkWidth: val, surfaceCondition: null, walkability: null, overallAccessibility: null }
-        : { ...validScene, sidewalkWidth: val };
-      expect(validateSceneLevel(scene).valid).toBe(true);
+  it("accepts a path's two answers, the four sidewalk-only ones null or absent, and stores all six keys", () => {
+    expect(validateSceneLevel(pathScene, false)).toEqual({ valid: true, sceneLevel: pathScene });
+    const result = validateSceneLevel({ overallAccessibility: 4, surfaceEvenness: 1 }, false);
+    expect(result).toEqual({ valid: true, sceneLevel: pathScene });
+    expect(Object.keys(result.sceneLevel)).toEqual([...SCENE_KEYS]);
+  });
+
+  it("refuses a sidewalk-only answer on a path", () => {
+    for (const key of SIDEWALK_ONLY_KEYS) {
+      const result = validateSceneLevel({ ...pathScene, [key]: validScene[key] }, false);
+      expect(result.valid).toBe(false);
+      expect(result.message).toContain(key);
+    }
+    // roadBarrier false is an answer, so it is refused too
+    expect(validateSceneLevel({ ...pathScene, roadBarrier: false }, false).valid).toBe(false);
+  });
+
+  it("refuses a missing key, for a sidewalk and for a path", () => {
+    for (const key of SCENE_KEYS) {
+      expect(validateSceneLevel({ ...validScene, [key]: null }, true).valid).toBe(false);
+      const { [key]: _dropped, ...without } = validScene;
+      void _dropped;
+      expect(validateSceneLevel(without, true).valid).toBe(false);
+    }
+    expect(validateSceneLevel({ ...pathScene, overallAccessibility: null }, false).valid).toBe(false);
+    expect(validateSceneLevel({ ...pathScene, surfaceEvenness: undefined }, false).valid).toBe(false);
+  });
+
+  it("refuses walkability and any other key that is not one of the six", () => {
+    expect(validateSceneLevel({ ...validScene, walkability: 2 }, true)).toEqual({ valid: false, message: "sceneLevel.walkability is not a question." });
+    expect(validateSceneLevel({ ...validScene, walkability: null }, true).valid).toBe(false);
+    expect(validateSceneLevel({ ...pathScene, extra: 1 }, false).valid).toBe(false);
+  });
+
+  it("refuses no_sidewalk, which is Step 1's to say now", () => {
+    expect(validateSceneLevel({ ...validScene, sidewalkWidth: "no_sidewalk" }, true).valid).toBe(false);
+    expect(validateSceneLevel({ ...pathScene, sidewalkWidth: "no_sidewalk" }, false).valid).toBe(false);
+  });
+
+  it("refuses a string roadBarrier and an unknown surfaceType", () => {
+    expect(validateSceneLevel({ ...validScene, roadBarrier: "true" }, true)).toEqual({ valid: false, message: "sceneLevel.roadBarrier must be true or false." });
+    expect(validateSceneLevel({ ...validScene, roadBarrier: 1 }, true).valid).toBe(false);
+    expect(validateSceneLevel({ ...validScene, surfaceType: "gravel" }, true)).toEqual({ valid: false, message: "sceneLevel.surfaceType must be concrete, tiles, pavers or unpaved." });
+    for (const type of SURFACE_TYPE_OPTIONS) expect(validateSceneLevel({ ...validScene, surfaceType: type }, true).valid).toBe(true);
+    expect(validateSceneLevel({ ...validScene, roadBarrier: true }, true).valid).toBe(true);
+  });
+
+  it("accepts each width and refuses any other", () => {
+    for (const width of ["one_person", "two_people", "three_or_more"]) expect(validateSceneLevel({ ...validScene, sidewalkWidth: width }, true).valid).toBe(true);
+    for (const width of ["maybe", "yes", "no", "partial", ""]) expect(validateSceneLevel({ ...validScene, sidewalkWidth: width }, true).valid).toBe(false);
+  });
+
+  it("keeps each numbered answer on its scale, as a whole number", () => {
+    const tops = { overallAccessibility: 5, surfaceEvenness: 3, surfaceCondition: 3 };
+    for (const [key, top] of Object.entries(tops)) {
+      expect(validateSceneLevel({ ...validScene, [key]: 1 }, true).valid).toBe(true);
+      expect(validateSceneLevel({ ...validScene, [key]: top }, true).valid).toBe(true);
+      for (const bad of [0, top + 1, 2.5, true, "", "x"]) expect(validateSceneLevel({ ...validScene, [key]: bad }, true).valid).toBe(false);
     }
   });
 
-  it("accepts no sidewalk with the other three questions left empty (2 Oct 2026)", () => {
-    const noSidewalk = {
-      sidewalkWidth: "no_sidewalk",
-      surfaceCondition: null,
-      walkability: null,
-      overallAccessibility: null,
-    };
-    expect(validateSceneLevel(noSidewalk)).toEqual({ valid: true });
+  it("stores a numbered answer sent as text as a number", () => {
+    const result = validateSceneLevel({ ...validScene, overallAccessibility: "4", surfaceEvenness: "3", surfaceCondition: "1" }, true);
+    expect(result.sceneLevel).toMatchObject({ overallAccessibility: 4, surfaceEvenness: 3, surfaceCondition: 1 });
   });
 
-  it("accepts no sidewalk with the other three questions absent", () => {
-    expect(validateSceneLevel({ sidewalkWidth: "no_sidewalk" })).toEqual({ valid: true });
+  it("refuses no Step 1 answer, and anything that is not an object", () => {
+    for (const hasSidewalk of [undefined, null, "true", 1]) expect(validateSceneLevel(validScene, hasSidewalk).valid).toBe(false);
+    for (const scene of [null, undefined, "string", []]) expect(validateSceneLevel(scene, true).valid).toBe(false);
   });
 
-  it("rejects walking comfort or accessibility answered when there is no sidewalk", () => {
-    const empty = { sidewalkWidth: "no_sidewalk", surfaceCondition: null, walkability: null, overallAccessibility: null };
-    expect(validateSceneLevel({ ...empty, walkability: 1 }).valid).toBe(false);
-    expect(validateSceneLevel({ ...empty, overallAccessibility: 3 }).valid).toBe(false);
-    expect(validateSceneLevel({ ...empty, walkability: 2, overallAccessibility: 2 }).valid).toBe(false);
+  it("does not change the scene it is given", () => {
+    const sent = { overallAccessibility: "4", surfaceEvenness: 1 };
+    validateSceneLevel(sent, false);
+    expect(sent).toEqual({ overallAccessibility: "4", surfaceEvenness: 1 });
+  });
+});
+
+describe("isPresenceAnswer and the reload message (S15)", () => {
+  it("takes exactly true or false", () => {
+    expect(isPresenceAnswer(true)).toBe(true);
+    expect(isPresenceAnswer(false)).toBe(true);
+    for (const v of [undefined, null, "true", 0, 1]) expect(isPresenceAnswer(v)).toBe(false);
+    expect(RELOAD_FOR_NEW_QUESTIONS).toBe("IMPRINT was updated. Please reload the page to see the new questions.");
+  });
+});
+
+// Only a path (S15): no box is asked whether it is on the sidewalk
+describe("validateBoxes with only a path", () => {
+  const path = { requireSeverity: true, hasSidewalk: false };
+  it("accepts real boxes with no onSidewalk, answered Yes with a severity or No", () => {
+    expect(validateBoxes([{ obstructs: true, severity: 4 }, { obstructs: false, severity: null }], [{ obstructs: false }], path)).toEqual({ valid: true });
+    expect(validateBoxes([{ comment: "not_an_object", obstructs: false, severity: null }], [], path)).toEqual({ valid: true });
   });
 
-  it("still requires walking comfort and accessibility when a sidewalk is present", () => {
-    expect(validateSceneLevel({ ...validScene, walkability: null }).valid).toBe(false);
-    expect(validateSceneLevel({ ...validScene, overallAccessibility: undefined }).valid).toBe(false);
+  it("refuses any sidewalk answer on a path box", () => {
+    for (const onSidewalk of [true, false, null]) {
+      expect(validateBoxes([{ onSidewalk, obstructs: false }], [], path)).toEqual({ valid: false, message: PATH_HAS_NO_SIDEWALK_ANSWER });
+      expect(validateBoxes([], [{ onSidewalk, obstructs: false }], path)).toEqual({ valid: false, message: PATH_HAS_NO_SIDEWALK_ANSWER });
+    }
+    expect(PATH_HAS_NO_SIDEWALK_ANSWER).toBe("With only a path, objects have no sidewalk answer.");
   });
 
-  it("rejects null sceneLevel", () => {
-    expect(validateSceneLevel(null).valid).toBe(false);
+  it("keeps today's obstruction and severity rules", () => {
+    expect(validateBoxes([{ obstructs: true }], [], path).valid).toBe(false);
+    expect(validateBoxes([{ obstructs: true, severity: 6 }], [], path).valid).toBe(false);
+    expect(validateBoxes([], [{}], path).valid).toBe(false);
   });
 
-  it("rejects undefined sceneLevel", () => {
-    expect(validateSceneLevel(undefined).valid).toBe(false);
-  });
-
-  it("rejects non-object sceneLevel", () => {
-    expect(validateSceneLevel("string").valid).toBe(false);
-  });
-
-  it("rejects invalid sidewalkWidth value", () => {
-    expect(validateSceneLevel({ ...validScene, sidewalkWidth: "maybe" }).valid).toBe(false);
-  });
-
-  it("rejects legacy sidewalkPresent values", () => {
-    expect(validateSceneLevel({ ...validScene, sidewalkWidth: "yes" }).valid).toBe(false);
-    expect(validateSceneLevel({ ...validScene, sidewalkWidth: "no" }).valid).toBe(false);
-    expect(validateSceneLevel({ ...validScene, sidewalkWidth: "partial" }).valid).toBe(false);
-  });
-
-  it("rejects surfaceCondition present when no sidewalk", () => {
-    const invalid = {
-      sidewalkWidth: "no_sidewalk",
-      surfaceCondition: 2,
-      walkability: null,
-      overallAccessibility: null,
-    };
-    expect(validateSceneLevel(invalid).valid).toBe(false);
-  });
-
-  it("rejects missing surfaceCondition when sidewalk is present", () => {
-    const invalid = { ...validScene, surfaceCondition: null };
-    expect(validateSceneLevel(invalid).valid).toBe(false);
-  });
-
-  it("rejects surfaceCondition out of range (0)", () => {
-    expect(validateSceneLevel({ ...validScene, surfaceCondition: 0 }).valid).toBe(false);
-  });
-
-  it("rejects surfaceCondition out of range (4)", () => {
-    expect(validateSceneLevel({ ...validScene, surfaceCondition: 4 }).valid).toBe(false);
-  });
-
-  it("rejects non-integer surfaceCondition (2.5)", () => {
-    expect(validateSceneLevel({ ...validScene, surfaceCondition: 2.5 }).valid).toBe(false);
-  });
-
-  it("rejects walkability out of range (0)", () => {
-    expect(validateSceneLevel({ ...validScene, walkability: 0 }).valid).toBe(false);
-  });
-
-  it("rejects walkability out of range (4)", () => {
-    expect(validateSceneLevel({ ...validScene, walkability: 4 }).valid).toBe(false);
-  });
-
-  it("rejects overallAccessibility out of range (0)", () => {
-    expect(validateSceneLevel({ ...validScene, overallAccessibility: 0 }).valid).toBe(false);
-  });
-
-  it("accepts overallAccessibility at upper bound (5)", () => {
-    expect(validateSceneLevel({ ...validScene, overallAccessibility: 5 }).valid).toBe(true);
-  });
-
-  it("rejects overallAccessibility out of range (6)", () => {
-    expect(validateSceneLevel({ ...validScene, overallAccessibility: 6 }).valid).toBe(false);
-  });
-
-  it("rejects missing walkability", () => {
-    expect(validateSceneLevel({ ...validScene, walkability: null }).valid).toBe(false);
-  });
-
-  it("rejects missing overallAccessibility", () => {
-    expect(validateSceneLevel({ ...validScene, overallAccessibility: undefined }).valid).toBe(false);
+  it("keeps the sidewalk's rules for hasSidewalk true", () => {
+    expect(validateBoxes([{ obstructs: false }], [], { hasSidewalk: true }).valid).toBe(false);
+    expect(validateBoxes([{ onSidewalk: true, obstructs: false }], [], { hasSidewalk: true })).toEqual({ valid: true });
   });
 });
 
@@ -276,7 +286,7 @@ describe("validateBoxes with requireSeverity false", () => {
 
 describe("normalizeAnnotatorSubmission", () => {
   const input = () => ({
-    sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+    sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false },
     selectedObjectsID: [
       { id: "s1", comment: "tree", obstructs: true, severity: 4 },
       { id: "s2", comment: "not_an_object", obstructs: false, severity: null },
@@ -610,6 +620,28 @@ describe("the classifier's proposal from the record (S3)", () => {
       one(on("yes"));
       expect(list).toEqual(before);
     });
+    // Only a path (S15): the one question carries the hint, so it was shown
+    // for every real box whose record proposes that it obstructs
+    it("gives proposalShown true for a path's box proposed to obstruct, without a sidewalk answer", () => {
+      const pathBox = (id, extra = {}) => ({ id, comment: "tree", mark: mark(9), obstructs: false, ...extra });
+      const path = { hasSidewalk: false };
+      expect(one(pathBox("yes"), path).proposalShown).toBe(true);
+      expect(one(pathBox("bare", { obstructs: true, severity: 2 }), path).proposalShown).toBe(true);
+      expect(one(pathBox("no"), path).proposalShown).toBe(false);
+      expect(one(pathBox("none"), path).proposalShown).toBe(false);
+      expect(one({ id: "yes", comment: "not_an_object", isRejected: true, obstructs: false, mark: mark(1) }, path).proposalShown).toBe(false);
+      expect(one(pathBox("yes"), { ...path, isAnnotator: true }).proposalShown).toBe(false);
+      // The same box for a sidewalk, with no sidewalk answer, never reached Question 2
+      expect(one(pathBox("yes")).proposalShown).toBe(false);
+    });
+
+    it("sets the telemetry's proposalShown by the same rule for a path", () => {
+      const telemetry = { suggestionConfidences: [{ id: "yes" }, { id: "no" }] };
+      const boxes = [{ id: "yes", comment: "tree", obstructs: true, severity: 3 }, { id: "no", comment: "car", obstructs: false }];
+      const out = withRecordConfidences(telemetry, list, { boxes, hasSidewalk: false });
+      expect(out.suggestionConfidences.map((e) => e.proposalShown)).toEqual([true, false]);
+      expect(withRecordConfidences(telemetry, list, { boxes }).suggestionConfidences.map((e) => e.proposalShown)).toEqual([false, false]);
+    });
   });
 
   describe("clearDrawnModelFields", () => {
@@ -664,8 +696,8 @@ describe("constants", () => {
     expect(MAX_BOXES_PER_IMAGE).toBe(300);
   });
 
-  it("SIDEWALK_WIDTH_OPTIONS has 4 entries", () => {
-    expect(SIDEWALK_WIDTH_OPTIONS).toHaveLength(4);
-    expect(SIDEWALK_WIDTH_OPTIONS).toEqual(["no_sidewalk", "one_person", "two_people", "three_or_more"]);
+  it("SIDEWALK_WIDTH_OPTIONS has 3 entries, from sceneQuestions.mjs, with no no_sidewalk (S15)", () => {
+    expect(SIDEWALK_WIDTH_OPTIONS).toEqual(["one_person", "two_people", "three_or_more"]);
+    expect(SIDEWALK_WIDTH_OPTIONS).toBe(SHARED_WIDTHS);
   });
 });

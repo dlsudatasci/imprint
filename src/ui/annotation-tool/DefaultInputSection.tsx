@@ -45,6 +45,13 @@ import { proposalHintText } from "@/util/modelProposal";
  * the severity picker or panel, a drawn box or a Not an object panel. Neither
  * button is chosen or moved because of it, and the probability is never shown.
  *
+ * Only a path (S15, 9 Nov 2026, `pathOnly`): Step 1 says the photo has no
+ * sidewalk, so there is no Question 1. The panel opens on "Does {label}
+ * obstruct the path?" with no "Question 1 of 2" line and no Back to Question
+ * 1, its footer the one Question 1 has (Not an object, or Delete box). The
+ * hint says "path", and a confirmed obstruction's severity panel goes "Back to
+ * the question". Nothing else changes, so askOnSidewalk is left as it is.
+ *
  * Two variants (9 Oct 2026): "floating", the card beside the box on the
  * desktop photo, and "sheet", the same panel in the answers sheet on a phone
  * or tablet: full width with no shadow, every button at least 44 px tall, and
@@ -99,6 +106,11 @@ export interface IDefaultInputSection {
   onChangeSeverity?: (severity: number) => void;
   /** False only where no sidewalk question is asked */
   askOnSidewalk?: boolean;
+  /**
+   * Contributors' Step 1 answered Only a path (S15): the obstruction question
+   * alone, about the path. Changes nothing else that askOnSidewalk switches.
+   */
+  pathOnly?: boolean;
   /**
    * The classifier's proposal for a suggestion (S3), from the image record:
    * true, false, or none. Shown as a hint on Question 2 only, never as an answer.
@@ -364,6 +376,7 @@ const DefaultInputSection = ({
   onSetOnSidewalk = () => undefined,
   onChangeSeverity = () => undefined,
   askOnSidewalk = true,
+  pathOnly = false,
   proposedObstructs = null,
   allowAnswers = null,
 }: IDefaultInputSection) => {
@@ -404,7 +417,7 @@ const DefaultInputSection = ({
     }
   }, [value, onChange]);
 
-  const mode = getSuggestionPanelMode({ editable, selected, obstructs, severity, comment: value, onSidewalk: onSidewalk ?? undefined, askSeverity, askOnSidewalk });
+  const mode = getSuggestionPanelMode({ editable, selected, obstructs, severity, comment: value, onSidewalk: onSidewalk ?? undefined, askSeverity, askOnSidewalk, pathOnly });
 
   if (mode === "severity") {
     // A first Yes: Go back takes the Yes back, so nothing is recorded
@@ -473,7 +486,8 @@ const DefaultInputSection = ({
   const answered = answer === "no" || (answer === "yes" && (!askSeverity || severity != null));
   // A confirmed obstruction opens on its severity scale (S17)
   const confirmed = answer === "yes" && askSeverity && severity != null;
-  const view = back === 1 && askOnSidewalk ? 1 : back === 2 || !confirmed ? 2 : "severity";
+  // Only a path has no Question 1 to go back to (S15)
+  const view = back === 1 && askOnSidewalk && !pathOnly ? 1 : back === 2 || !confirmed ? 2 : "severity";
   // Delete box on the right of every footer for a drawn box
   const deleteBox = editable ? <DeleteBoxButton variant={variant} onDelete={onDelete} /> : null;
 
@@ -509,7 +523,7 @@ const DefaultInputSection = ({
         onHide={onHide}
         severity={severity!}
         onChangeSeverity={onChangeSeverity}
-        footer={<><BackButton to={2} variant={variant} onClick={() => setBack(2)} />{deleteBox}</>}
+        footer={<><BackButton to={2} pathOnly={pathOnly} variant={variant} onClick={() => setBack(2)} />{deleteBox}</>}
       />
     );
   }
@@ -528,7 +542,7 @@ const DefaultInputSection = ({
 
   // The classifier's proposal (S3): a suggestion's, at Question 2 for
   // contributors only. A drawn box has none, whatever it is given.
-  const hint = askOnSidewalk && !editable ? proposalHintText(proposedObstructs) : null;
+  const hint = askOnSidewalk && !editable ? proposalHintText(proposedObstructs, { pathOnly }) : null;
 
   const onNo = () => {
     if (editable) {
@@ -548,9 +562,12 @@ const DefaultInputSection = ({
       // Without the path question, the close button as before.
       onClose={!askOnSidewalk && answered ? onClose : undefined}
       // The category in bold within the semibold question (S18)
-      question={<>Does <span className="font-bold">{label}</span> obstruct the sidewalk?</>}
-      // Second of the two only when the path question was asked (contributors)
-      step={askOnSidewalk ? 2 : undefined}
+      question={pathOnly
+        ? <>{SIDEWALK_QUESTION_COPY.pathQuestion.before}<span className="font-bold">{label}</span>{SIDEWALK_QUESTION_COPY.pathQuestion.after}</>
+        : <>Does <span className="font-bold">{label}</span> obstruct the sidewalk?</>}
+      // Second of the two only when the path question was asked (contributors).
+      // Only a path asks one question, so no line (S15).
+      step={askOnSidewalk && !pathOnly ? 2 : undefined}
       note={hint}
       answer={answer}
       disabled={!hasCategory}
@@ -558,8 +575,9 @@ const DefaultInputSection = ({
       onNo={onNo}
       allowed={allowed("obstructs")}
       // Contributors: Back to Question 1, and no Not an object past Question 1
-      // (S17). Without the path question the footer is as it was.
-      footer={askOnSidewalk ? <><BackButton to={1} variant={variant} onClick={() => setBack(1)} />{deleteBox}</> : footer}
+      // (S17). Without the path question the footer is as it was. Only a
+      // path (S15): its one question has Question 1's footer.
+      footer={askOnSidewalk && !pathOnly ? <><BackButton to={1} variant={variant} onClick={() => setBack(1)} />{deleteBox}</> : footer}
     />
   );
 };
@@ -607,7 +625,7 @@ function SeverityPanel({ variant, header, onHide, severity, onChangeSeverity, fo
  * Back to an earlier question (S17): plain text on the left of the footer, as
  * the severity picker's Go back is styled, with an arrow that is not read out.
  */
-function BackButton({ to, variant, onClick }: { to: 1 | 2; variant: PanelVariant; onClick: () => void }) {
+function BackButton({ to, pathOnly = false, variant, onClick }: { to: 1 | 2; pathOnly?: boolean; variant: PanelVariant; onClick: () => void }) {
   return (
     <button
       data-control={`back-to-question-${to}`}
@@ -615,7 +633,7 @@ function BackButton({ to, variant, onClick }: { to: 1 | 2; variant: PanelVariant
       onClick={onClick}
     >
       <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.25" d="M15 18l-6-6 6-6" /></svg>
-      {SIDEWALK_QUESTION_COPY.backTo(to)}
+      {pathOnly ? SIDEWALK_QUESTION_COPY.backToQuestion : SIDEWALK_QUESTION_COPY.backTo(to)}
     </button>
   );
 }

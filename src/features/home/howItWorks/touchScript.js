@@ -8,6 +8,8 @@ import {
   LAST_TICK,
   TICKS,
   answerScene,
+  answerStep1,
+  STEP3_ANSWERS,
   box,
   chapterIn,
   chooseCategory,
@@ -44,14 +46,15 @@ import {
  * itself would use that layout (layoutFor in useAnnotateLayout.js): under
  * 1024 px, and on every touch device.
  *
- * The same answers as on a laptop, given the way a phone gives them: Tree #1
+ * The same answers as on a laptop, given the way a phone gives them: Step 1
+ * first (S15), Yes at the top of the sheet, then Tree #1
  * is tapped on the photo, Yes to the sidewalk question, Yes, severity 1. Every
  * object is answered Yes to the sidewalk question first (S12, 2 Nov 2026). Next at the top of the sheet opens
  * the rest in the tool's own order (Lamp Post #1 and Car #1 not on the path,
  * so their boxes leave the photo, then Motorcycle #1 on it but No). Add box puts a box in the middle of the photo, its corners are dragged
- * onto the white post on the sidewalk, Lamp Post, Yes, severity 4. The Step 2
- * line pulls the sheet up to Step 2: Moderate, Easy to traverse, Comfortable,
- * Easily accessible. Then Next Image.
+ * onto the white post on the sidewalk, Lamp Post, Yes, severity 4. The Step 3
+ * line pulls the sheet up to Step 3, answered as on a laptop (STEP3_ANSWERS):
+ * Limited, Unobstructed, Flat, Concrete or asphalt, Intact, Barrier. Then Next Image.
  *
  * Every change mirrors the tool's handler for the same tap, as in
  * demoScript.js, whose mutations it shares. Pure: `touchFrame(progress)`
@@ -132,7 +135,7 @@ function dragCorner({ corner, from, to }, markAtStart) {
   };
 }
 
-/** The Step 2 line in the sheet (showSceneSection): the sheet goes up to full, at Step 2 */
+/** The Step 3 line in the sheet (showSceneSection): the sheet goes up to full, at Step 3 */
 function showScene(s) {
   close(s);
   s.sheet = "full";
@@ -144,6 +147,7 @@ function nextImage(s) {
   s.imageIndex = 1;
   s.boxes = freshBoxes(1);
   s.scene = emptyScene();
+  s.hasSidewalk = null;
   s.saving = false;
   s.sheet = "collapsed";
   s.sceneFocus = null;
@@ -171,7 +175,7 @@ const nextOffPath = (key) => [
   wait(1.5),
 ];
 
-/** A Step 2 answer: the sheet scrolls to it as the finger goes there, then a tap */
+/** A Step 3 answer: the sheet scrolls to it as the finger goes there, then a tap */
 const sceneAnswer = (field, value) => [
   step(`to-${field}`, "move", 4, {
     to: ui("scene", { field, value }),
@@ -192,7 +196,10 @@ const TOUCH_TIMELINE = [
   // The screen slides in and pins, and holds still a moment
   wait(1),
   until(HOLD_END),
-  wait(3),
+  // Step 1 first (S15), at the top of the sheet
+  wait(1),
+  ...answerStep1(),
+  wait(1),
   step("to-tree", "move", 9, { to: box(ids.tree) }),
   step("tree-open", "press", 2, { then: select(ids.tree) }),
   // The sheet comes up with its panel and the photo moves the tree clear of it
@@ -236,10 +243,7 @@ const TOUCH_TIMELINE = [
   step("to-scene", "move", 5, { to: ui("scene-line") }),
   step("scene-open", "press", 2, { then: showScene }),
   wait(2),
-  ...sceneAnswer("sidewalkWidth", "two_people"),
-  ...sceneAnswer("surfaceCondition", 3),
-  ...sceneAnswer("walkability", 3),
-  ...sceneAnswer("overallAccessibility", 5),
+  ...STEP3_ANSWERS.flatMap(([field, value]) => sceneAnswer(field, value)),
   { chapter: "next" },
   wait(1),
   step("to-next", "move", 5, { to: ui("next") }),
@@ -263,10 +267,10 @@ export function touchTickOf(name, edge = "start") {
  * What the phone or tablet preview shows at `progress` (0 to 1) of the
  * scroll: demoFrame's fields (no camera, no card), and
  *   snap        where the answers sheet rests: "panel" while a box is open,
- *               "full" for Step 2, else "collapsed" (the tool's sheetSnap)
+ *               "full" for Step 3, else "collapsed" (the tool's sheetSnap)
  *   hint        Add box's "Drag the corners" line over the photo
  *   corner      the corner being dragged, image px, for the magnifier, or null
- *   sceneFocus  the Step 2 answer the finger is going to, which the sheet scrolls to
+ *   sceneFocus  the Step 3 answer the finger is going to, which the sheet scrolls to
  */
 export function touchFrame(progress) {
   const p = Number.isFinite(progress) ? clamp01(progress) : 0;

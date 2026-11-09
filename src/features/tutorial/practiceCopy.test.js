@@ -62,14 +62,17 @@ describe("the practice's lines", () => {
     }
   });
 
-  it("directs Yes for the tree on the path and No for the car, and no other answer", () => {
+  it("directs Yes at Step 1 (S15), Yes for the tree on the path and No for the car, and no other answer", () => {
+    expect(practiceLine("presence")).toMatch(/Choose Yes\.$/);
     expect(practiceLine("treeOnPath")).toMatch(/If it is, choose Yes\.$/);
     expect(practiceLine("carOff")).toMatch(/Please choose No\.$/);
     const directing = lines("pointer").filter(({ text }) => /\bchoose (Yes|No)\b/i.test(text)).map(({ key }) => key);
-    expect(directing).toEqual(["treeOnPath", "carOff"]);
+    expect(directing).toEqual(["presence", "treeOnPath", "carOff"]);
   });
 
   it("has Rans's wording (8 Nov 2026), and the spec's for the rest", () => {
+    expect(practiceLine("presence")).toBe("Step 1: this photo has a sidewalk raised on a curb. Choose Yes.");
+    expect(practiceLine("presence", "touch")).toBe(practiceLine("presence"));
     expect(practiceLine("openTree")).toBe("Click the dashed box on the tree.");
     expect(practiceLine("openTree", "touch")).toBe("Tap the dashed box on the tree.");
     expect(practiceLine("treeOnPath")).toBe("Is the tree on the sidewalk or the path? If it is, choose Yes.");
@@ -82,11 +85,11 @@ describe("the practice's lines", () => {
     expect(practiceNote("answerDrawn")).toBe("Hint: this is a lamp post.");
     // The only note
     expect(PRACTICE_STEPS.map((s) => practiceNote(s.key)).filter(Boolean)).toEqual(["Hint: this is a lamp post."]);
-    expect(practiceLine("scene")).toBe("Next is Step 2: questions about the sidewalk itself.");
-    expect(practiceLine("scene", "touch")).toBe("Next is Step 2: questions about the sidewalk itself. Tap the Step 2 line.");
+    expect(practiceLine("scene")).toBe("Next is Step 3: questions about the sidewalk itself.");
+    expect(practiceLine("scene", "touch")).toBe("Next is Step 3: questions about the sidewalk itself. Tap the Step 3 line.");
     expect(practiceLine("next")).toBe("All done. Click Next Image.");
     expect(practiceLine("next", "touch")).toBe("All done. Tap Next Image.");
-    expect(PRACTICE_COPY.counter(3, 10)).toBe("Practice 3 of 10");
+    expect(PRACTICE_COPY.counter(3, 11)).toBe("Practice 3 of 11");
     expect(PRACTICE_COPY.skip).toBe("Skip practice");
     expect(PRACTICE_COPY.reminder).toBe("You can find more information by clicking the Tour button at the top of the page.");
     expect(PRACTICE_COPY.touchReminder).toBe("You can find more information by tapping the ? button at the top of the screen.");

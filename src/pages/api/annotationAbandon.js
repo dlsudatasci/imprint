@@ -88,6 +88,8 @@ const handler = async (req, res) => {
                                                 userId,
                                                 source: ann.source,
                                                 sceneLevel: ann.sceneLevel,
+                                                // Contributors' Step 1 (S15), null for an annotator's row
+                                                hasSidewalk: ann.hasSidewalk ?? null,
                                                 // The scale the answers are on (22 Oct 2026, validators/sceneScale.mjs)
                                                 ...(ann.sceneScale === SCENE_SCALE ? { sceneScale: SCENE_SCALE } : {}),
                                                 selectedObjectsID: ann.selectedObjectsID,

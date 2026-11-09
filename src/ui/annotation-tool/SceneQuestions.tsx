@@ -1,216 +1,164 @@
 import React from "react";
 import { H2, P } from "../Typography";
-import { SidewalkWidthIcon, SurfaceConditionIcon, WalkingComfortIcon, AccessibleToMeIcon } from "./sceneIcons";
+import { SidewalkWidthIcon, EvennessIcon, EaseOfNavigationIcon, RoadBarrierIcon, SurfaceTypeIcon, SurfaceConditionIcon } from "./sceneIcons";
 
+/** Step 3's answers, question set 2 (S15, util/validators/sceneQuestions.mjs) */
 export interface SceneLevel {
   sidewalkWidth: string | null;
-  surfaceCondition: number | null;
-  walkability: number | null;
   overallAccessibility: number | null;
+  surfaceEvenness: number | null;
+  surfaceType: string | null;
+  surfaceCondition: number | null;
+  roadBarrier: boolean | null;
 }
 
 export interface SceneQuestionsProps {
   sceneLevel: SceneLevel;
   variant: "desktop" | "sheet";
-  /** One answer changed. Choosing None for the width also clears the other three. */
+  /** Step 1 answered Only a path: the questions that need a built sidewalk are off */
+  pathOnly?: boolean;
+  /** One answer changed */
   onAnswer: (updates: Partial<SceneLevel>) => void;
 }
 
 /**
- * Contributors' Step 2, the four questions about the sidewalk. One copy for
- * both layouts (9 Oct 2026), and for the landing page's preview of the task.
- * Presentational: the tool keeps the answers and passes each change to
- * onAnswer. The desktop layout keeps its classes. In the
- * sheet every option is at least 44 px tall and no label is under 12 px.
+ * Contributors' Step 3 (question set 2, S15). One copy for both layouts and
+ * for the landing page's preview of the task. Presentational: the tool keeps
+ * the answers and passes each change to onAnswer. In the sheet every option is
+ * at least 44 px tall and no label is under 12 px. Every question runs worst
+ * to best, stored higher is better (validators/sceneScale.mjs).
+ *
+ * Sidewalk Width asks how wide the sidewalk is as built, in three answers named
+ * by how people can move along it: Narrow (one direction at a time), Limited
+ * (two people can just pass) and Wide (both ways with room to spare). Ease of
+ * Navigation (stored as overallAccessibility) follows it and is where the
+ * objects on it count, answered by how obstructed the way is. Evenness is the
+ * shape of the whole sidewalk along its length: Uneven, Sloped, Flat. Surface
+ * Type is what most of it is made of, a category with no order. Surface
+ * Condition: Cracked is lines only, every piece in place, Broken is something
+ * missing or out of level. Road Barrier asks whether anything stands between
+ * the sidewalk and the road: a curb alone is an ordinary sidewalk. Whether the
+ * photo has a sidewalk is Step 1 (SidewalkPresence). For Only a path, Width,
+ * Surface Type, Surface Condition and Road Barrier are off (pathOnly).
  */
-export default function SceneQuestions({ sceneLevel, variant, onAnswer }: SceneQuestionsProps) {
+export default function SceneQuestions({ sceneLevel, variant, pathOnly = false, onAnswer }: SceneQuestionsProps) {
   const sheet = variant === "sheet";
-  const disabled = sceneLevel.sidewalkWidth === "no_sidewalk";
-  // Shown under a greyed-out question when the image has no sidewalk
-  const notApplicable = "Not applicable. There is no sidewalk.";
   const prompt = sheet ? "text-xs text-muted mb-1.5" : "text-[11px] text-muted mb-1.5";
-  // Answer labels on a laptop are 11 px at the least (apple-design check, 17
-  // Oct 2026): they were 9 and 10 px, below what reads at arm's length, on the
-  // very answers a contributor picks. The sheet's are 12 px already.
-  const optionLabel = (desktopSize: string) => sheet ? "text-xs font-semibold leading-tight text-center" : `${desktopSize} font-semibold leading-tight text-center`;
-  // In the sheet a row of options wraps when it does not fit (12 Oct 2026):
-  // on a 360 px phone the fifth accessibility option stuck out of its card,
-  // and on a 320 px one the third comfort option did. The five options go
-  // three and two under 400 px, where five in a row have no room. It was
-  // under 390 px until 22 Oct 2026, but they do not fit at 390 either, and
-  // there the last answer, Easily accessible now the answers run worst to
-  // best, sat alone across the whole row, louder than the other four.
-  const optionRow = (gap: string) => (sheet ? `flex flex-wrap ${gap}` : `flex ${gap}`);
-  const FIVE_ACROSS = "max-[399px]:basis-[30%]";
-  const optionClass = (isSelected: boolean, desktopPadding: string, sheetExtra = "") =>
-    `${sheet ? `min-h-[44px] ${sheetExtra} ` : ""}flex-1 flex flex-col items-center ${desktopPadding} rounded-control transition-all border ${isSelected
-      ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-      : 'border-line bg-surface text-body' + (disabled ? ' cursor-not-allowed' : ' hover:bg-primary/5 hover:border-primary/30')
-      }`;
+  // Answer labels on a laptop are 11 px at the least (apple-design check, 17 Oct 2026)
+  const optionLabel = sheet ? "text-xs font-semibold leading-tight text-center" : "text-[11px] font-semibold leading-tight text-center";
+  const selectedClass = "border-primary bg-primary/10 text-primary ring-2 ring-primary/20";
+  const idleClass = "border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30";
+  const card = "bg-surface-subtle p-3 rounded-card border border-line";
+  // Each question is marked for the practice image, which lights them in turn (S19)
 
-  // Every question runs worst to best, and higher is better (22 Oct 2026,
-  // validators/sceneScale.mjs): 5 is Easily accessible. It was the other way
-  // round, so "1" was the best answer.
-  const surfaceOptions: { value: number; label: string; icon: "easy" | "some" | "difficult" }[] = [
-    { value: 1, label: "Difficult or dangerous", icon: "difficult" },
-    { value: 2, label: "Some difficulty", icon: "some" },
-    { value: 3, label: "Easy to traverse", icon: "easy" },
+  const widthOptions = [
+    { value: "one_person", label: "Narrow" },
+    { value: "two_people", label: "Limited" },
+    { value: "three_or_more", label: "Wide" },
   ];
-  const comfortOptions: { value: number; label: string; icon: "comfortable" | "somewhat" | "uncomfortable" }[] = [
-    { value: 1, label: "Uncomfortable", icon: "uncomfortable" },
-    { value: 2, label: "Somewhat uncomfortable", icon: "somewhat" },
-    { value: 3, label: "Comfortable", icon: "comfortable" },
+  // Worst to best, stored 1 to 5 (overallAccessibility). The soft hyphen lets
+  // Unobstructed break as Un-obstructed when five share a row.
+  const easeOptions = [
+    { value: 1, label: "Fully obstructed" },
+    { value: 2, label: "Heavily obstructed" },
+    { value: 3, label: "Moderately obstructed" },
+    { value: 4, label: "Slightly obstructed" },
+    { value: 5, label: "Un­obstructed" },
   ];
-  const accessOptions: { value: number; label: string; icon: "easy" | "mostly" | "somewhat" | "very" | "not" }[] = [
-    { value: 1, label: "Not accessible", icon: "not" },
-    { value: 2, label: "Very difficult", icon: "very" },
-    { value: 3, label: "Somewhat difficult", icon: "somewhat" },
-    { value: 4, label: "Mostly accessible", icon: "mostly" },
-    { value: 5, label: "Easily accessible", icon: "easy" },
+  const evennessOptions = [
+    { value: 1, label: "Uneven" },
+    { value: 2, label: "Sloped" },
+    { value: 3, label: "Flat" },
   ];
+  // What the surface is made of: no order, none is better than another
+  const typeOptions = [
+    { value: "concrete", label: "Concrete or asphalt" },
+    { value: "tiles", label: "Tiles" },
+    { value: "pavers", label: "Paver blocks or bricks" },
+    { value: "unpaved", label: "Unpaved" },
+  ];
+  // Worst to best. A crack is a line only, with every piece in place and level.
+  // Broken is something missing or out of level (BP 344 IRR B.3.6, "cracks or breaks").
+  const conditionOptions = [
+    { value: 1, label: "Broken" },
+    { value: 2, label: "Cracked" },
+    { value: 3, label: "Intact" },
+  ];
+  const barrierOptions = [
+    { value: false, label: "No barrier" },
+    { value: true, label: "Barrier" },
+  ];
+
+  /**
+   * One question whose answers are pictures in a row: three, five (three and
+   * two on a phone) or two across. Every picture is the same height so the rows line up.
+   */
+  function pictureRow<K extends keyof SceneLevel>(
+    field: K,
+    title: string,
+    question: string,
+    options: { value: NonNullable<SceneLevel[K]>; label: string }[],
+    picture: (value: NonNullable<SceneLevel[K]>) => React.ReactNode,
+    cols: string,
+    note?: string,
+    // The width and ease scenes are thin strips inside their box, so they get
+    // a taller box. The pictures below them fill theirs, so a smaller one
+    // gives every question about the same weight.
+    small = false,
+    // Asked only of a sidewalk: off, greyed and cleared, for a path (Step 1)
+    needsSidewalk = false,
+  ) {
+    const off = needsSidewalk && pathOnly;
+    return (
+      <div data-scene-question={field} aria-disabled={off || undefined} className={`${card}${off ? " opacity-50" : ""}`}>
+        <p className="text-sm font-semibold text-ink mb-0.5">{title}</p>
+        <p className={prompt}>{off ? "Not asked for a path." : question}</p>
+        <div className={`grid ${cols} gap-1`}>
+          {options.map((opt) => {
+            const on = sceneLevel[field] === opt.value;
+            return (
+              <button
+                key={String(opt.value)}
+                type="button"
+                data-scene-option={`${field}:${opt.value}`}
+                aria-pressed={on}
+                disabled={off}
+                className={`${sheet ? "min-h-[44px] " : ""}${off ? "cursor-not-allowed " : ""}min-w-0 flex flex-col items-center px-0.5 py-1.5 rounded-card text-center transition-all border ${on ? selectedClass : off ? "border-line bg-surface text-body" : idleClass}`}
+                onClick={() => onAnswer({ [field]: opt.value } as Partial<SceneLevel>)}
+              >
+                <div className={`w-full ${small ? "h-11" : "h-16"} mb-1 flex items-end justify-center`}>{picture(opt.value)}</div>
+                <span className={`${optionLabel} [hyphens:manual]`}>{opt.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        {note && <p className={`${prompt} mt-1.5 mb-0`}>{note}</p>}
+      </div>
+    );
+  }
 
   return (
     // On a laptop, scrolled into view below the message pill, as the photo is (S20)
     <div id="scene-level-section" className={sheet ? "px-4 pt-4 pb-6" : "mb-6 scroll-mt-[calc(var(--nav-h,64px)+60px)]"}>
-      <H2 className="text-lg font-bold text-ink mb-1">Step 2: Rate the Sidewalk</H2>
+      <H2 className="text-lg font-bold text-ink mb-1">Step 3: Rate the Sidewalk</H2>
       <P className="text-body text-sm mb-4">
         Rate the following aspects of the sidewalk scene based on what you see in the image.
       </P>
       <div className="space-y-2">
-        {/* Item 1 — Sidewalk Width */}
-        <div data-scene-question="sidewalkWidth" className="bg-surface-subtle p-3 rounded-card border border-line">
-          <p className="text-sm font-semibold text-ink mb-0.5">Sidewalk Width</p>
-          <p className={prompt}>How much usable walking space does this sidewalk have?</p>
-          <div className="grid grid-cols-4 gap-1.5">
-            {[
-              { value: "no_sidewalk", label: "None", icon: "noSidewalk" as const },
-              { value: "one_person", label: "Narrow", icon: "onePerson" as const },
-              { value: "two_people", label: "Moderate", icon: "twoPeople" as const },
-              { value: "three_or_more", label: "Wide", icon: "threePlus" as const },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                data-scene-option={`sidewalkWidth:${opt.value}`}
-                className={`${sheet ? "min-h-[44px] " : ""}flex flex-col items-center p-2 rounded-card text-center transition-all border ${sceneLevel.sidewalkWidth === opt.value
-                  ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                  : 'border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30'
-                  }`}
-                onClick={() => {
-                  const updates: Partial<SceneLevel> = { sidewalkWidth: opt.value };
-                  // No sidewalk: the other three questions are greyed out, so
-                  // clear any answers given before "None" was chosen.
-                  if (opt.value === "no_sidewalk") {
-                    updates.surfaceCondition = null;
-                    updates.walkability = null;
-                    updates.overallAccessibility = null;
-                  }
-                  onAnswer(updates);
-                }}
-              >
-                <div className="w-12 h-12 mb-1 flex items-end justify-center">
-                  <SidewalkWidthIcon type={opt.icon} />
-                </div>
-                <span className={sheet ? "text-xs font-semibold leading-tight" : "text-[11px] font-semibold leading-tight"}>{opt.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Item 2 — Surface Condition (disabled when no sidewalk) */}
-        {/* Ground cross-section profiles — visual language: the surface itself.
-            3-level functional scale per Wolf et al. (2007) and Project Sidewalk reliability data. */}
-        <div data-scene-question="surfaceCondition" className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
-          <p className="text-sm font-semibold text-ink mb-0.5">Surface Condition</p>
-          <p className={prompt}>
-            {disabled ? notApplicable : "How does the walking surface affect movement?"}
-          </p>
-          <div className={optionRow("gap-1.5")}>
-            {surfaceOptions.map((opt) => (
-              <button
-                key={opt.value}
-                data-scene-option={`surfaceCondition:${opt.value}`}
-                disabled={disabled}
-                className={optionClass(!disabled && sceneLevel.surfaceCondition === opt.value, "py-2 px-1")}
-                onClick={() => {
-                  if (!disabled) {
-                    onAnswer({ surfaceCondition: opt.value });
-                  }
-                }}
-              >
-                <div className="w-10 h-10 mb-1 flex items-center justify-center">
-                  <SurfaceConditionIcon type={opt.icon} />
-                </div>
-                <span className={optionLabel("text-[11px]")}>{opt.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Item 3 — Walking Comfort (disabled when no sidewalk) */}
-        {/* Face expressions — visual language: how the scene *feels*.
-            Reframed from undefined "walkability" to concrete "comfort" per Mehta (2008).
-            3-level scale per Kim et al. (2025) stability findings. */}
-        <div data-scene-question="walkability" className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
-          <p className="text-sm font-semibold text-ink mb-0.5">Walking Comfort</p>
-          <p className={prompt}>
-            {disabled ? notApplicable : "How comfortable does this sidewalk look for walking?"}
-          </p>
-          <div className={optionRow("gap-1.5")}>
-            {comfortOptions.map((opt) => (
-              <button
-                key={opt.value}
-                data-scene-option={`walkability:${opt.value}`}
-                disabled={disabled}
-                className={optionClass(!disabled && sceneLevel.walkability === opt.value, "py-2 px-1")}
-                onClick={() => {
-                  if (!disabled) {
-                    onAnswer({ walkability: opt.value });
-                  }
-                }}
-              >
-                <div className="w-10 h-10 mb-1 flex items-center justify-center">
-                  <WalkingComfortIcon type={opt.icon} />
-                </div>
-                <span className={optionLabel("text-[11px]")}>{opt.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Item 4 — Accessible to Me (disabled when no sidewalk) */}
-        {/* Gateway/path metaphor with traffic-light colour gradient.
-            Self-referential "to me" framing per Huang et al. (2025) and Li et al. (2025).
-            Worst to best, 1 Not accessible to 5 Easily accessible (22 Oct 2026).
-            5-point scale: Preston & Colman (2000) show 2-4 point scales have worst
-            psychometric properties; Project Sidewalk uses 1-5 severity; finer scale
-            captures person-dependent variation that IS the signal (thesis core argument).
-            Can be collapsed to 3 levels for reporting if needed. */}
-        <div data-scene-question="overallAccessibility" className={`bg-surface-subtle p-3 rounded-card border border-line${disabled ? ' opacity-50' : ''}`}>
-          <p className="text-sm font-semibold text-ink mb-0.5">Accessible to Me</p>
-          <p className={prompt}>
-            {disabled ? notApplicable : "Could you personally navigate this sidewalk?"}
-          </p>
-          <div className={optionRow("gap-1")}>
-            {accessOptions.map((opt) => (
-              <button
-                key={opt.value}
-                data-scene-option={`overallAccessibility:${opt.value}`}
-                disabled={disabled}
-                className={optionClass(!disabled && sceneLevel.overallAccessibility === opt.value, "py-1.5 px-0.5", FIVE_ACROSS)}
-                onClick={() => {
-                  if (!disabled) {
-                    onAnswer({ overallAccessibility: opt.value });
-                  }
-                }}
-              >
-                <div className="w-8 h-8 mb-0.5 flex items-center justify-center">
-                  <AccessibleToMeIcon type={opt.icon} />
-                </div>
-                <span className={optionLabel("text-[11px]")}>{opt.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        {pictureRow("sidewalkWidth", "Sidewalk Width", "How wide is the sidewalk?", widthOptions,
+          (v) => <SidewalkWidthIcon value={v} />, "grid-cols-3", undefined, false, true)}
+        {pictureRow("overallAccessibility", "Ease of Navigation", "How easy would it be for you to walk through here?", easeOptions,
+          // One row on a laptop. A phone has no room for five "obstructed" at
+          // 12 px, so it goes three and two there.
+          (v) => <EaseOfNavigationIcon value={v} />, sheet ? "grid-cols-3" : "grid-cols-5")}
+        {pictureRow("surfaceEvenness", "Evenness", "How even is the walking surface?", evennessOptions,
+          (v) => <EvennessIcon value={v} />, "grid-cols-3", undefined, true)}
+        {pictureRow("surfaceType", "Surface Type", "What is most of the walking surface made of?", typeOptions,
+          (v) => <SurfaceTypeIcon value={v} />, "grid-cols-4", undefined, true, true)}
+        {pictureRow("surfaceCondition", "Surface Condition", "Is the walking surface cracked or broken anywhere?", conditionOptions,
+          (v) => <SurfaceConditionIcon value={v} />, "grid-cols-3", undefined, true, true)}
+        {pictureRow("roadBarrier", "Road Barrier", "Is there anything between the sidewalk and the road?", barrierOptions,
+          (v) => <div className="w-11 h-11"><RoadBarrierIcon value={v} /></div>, "grid-cols-2 w-2/3 mx-auto", undefined, true, true)}
       </div>
     </div>
   );

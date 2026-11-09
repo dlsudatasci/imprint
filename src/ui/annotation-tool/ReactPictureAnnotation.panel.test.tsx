@@ -52,7 +52,7 @@ let heightSpy: ReturnType<typeof vi.spyOn> | null = null;
 
 function mount({ isAnnotator = false } = {}): Tool {
   window.localStorage.clear();
-  writeSession({ total: 1, current: 1, data: { imgRecords: [{ imageID: "IMG", url: "/p.jpg", annotationList: boxes }], isAnnotator } });
+  writeSession({ total: 1, current: 1, data: { imgRecords: [{ imageID: "IMG", url: "/p.jpg", annotationList: boxes, userHasSidewalk: true }], isAnnotator } });
   // The floating panel's wrapper has the height under test, every other element none
   heightSpy = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
     return this.classList.contains("rp-selected-input") ? panelHeight : 0;

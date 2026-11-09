@@ -25,7 +25,10 @@ import {
   isSetAside,
   offSidewalkPatch,
   onSidewalkPatch,
+  applyPresenceChange,
 } from "@/util/suggestionJudgment";
+import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
+import { emptySceneLevel, SIDEWALK_ONLY_KEYS } from "@/util/validators/sceneQuestions.mjs";
 import { isTaxonomyCategory } from "@/util/taxonomy";
 import { isBelowMinimumSize, clampPointToImage, keepMarkInside, markArea, normalizeMark, pickNearSmallBox } from "@/util/boxGeometry";
 import { normalizeSubmittedMarks } from "@/util/validators/annotationSubmit";
@@ -148,6 +151,7 @@ import { H2 } from "../Typography";
 import { H3 } from "../Typography";
 import SceneQuestions, { type SceneLevel } from "./SceneQuestions";
 import Step1Card from "./Step1Card";
+import SidewalkPresence from "./SidewalkPresence";
 import { panelPosition, fitPanelTop, PANEL_MARGIN, PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
 import Container from '../Container';
 import Checkbox from '../Checkbox';
@@ -280,9 +284,9 @@ function practiceOutlineStyle(rect: { x: number; y: number; width: number; heigh
  */
 export type PracticeEventType =
   | "open" | "close" | "onSidewalk" | "obstructs" | "severity" | "notAnObject"
-  | "restore" | "category" | "drawn" | "deleted" | "scene";
+  | "restore" | "category" | "drawn" | "deleted" | "scene" | "presence";
 
-/** The tool's state as the practice reads it: plain copies of the boxes, the open box and Step 2's answers */
+/** The tool's state as the practice reads it: plain copies of the boxes, the open box, Step 1's answer (S15) and Step 3's answers */
 export interface PracticeToolState {
   boxes: {
     id: string;
@@ -297,6 +301,8 @@ export interface PracticeToolState {
   }[];
   openId: string | null;
   scene: SceneLevel;
+  /** Contributors' Step 1 (S15): true a sidewalk, false only a path, null not answered */
+  hasSidewalk: boolean | null;
 }
 
 export interface PracticeEvent {
@@ -316,6 +322,8 @@ export interface PracticeLock {
   /** False: Next Image does nothing. Absent: it works. */
   canSubmit?: boolean;
   allowAnswers: PracticeAnswers;
+  /** Step 1 (S15): the one answer allowed. Absent: both. */
+  allowPresence?: boolean;
 }
 
 /**
@@ -384,6 +392,8 @@ interface IReactPictureAnnotationProps {
     proposedObstructs?: boolean | null,
     // The tutorial's practice (S19): the answers allowed, null for any
     allowAnswers?: PracticeAnswers,
+    // Contributors' Step 1 answered Only a path (S15): the obstruction question alone
+    pathOnly?: boolean,
   ) => React.ReactElement;
   totalAnnotationCount?: number;
   // Annotators give no severity and answer no scene-level questions (decided
@@ -495,6 +505,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       onChangeSeverity?: (severity: number) => void,
       proposedObstructs?: boolean | null,
       allowAnswers?: PracticeAnswers,
+      pathOnly?: boolean,
     ) => (
       <DefaultInputSection
         key={id}
@@ -523,6 +534,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         onChangeSeverity={onChangeSeverity}
         proposedObstructs={proposedObstructs}
         allowAnswers={allowAnswers}
+        pathOnly={pathOnly}
       />
     ),
     isAnnotator: false,
@@ -543,12 +555,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     selected: false,
     sliderValue: 5,
     pavementType: "",
-    sceneLevel: {
-      sidewalkWidth: null as string | null,
-      surfaceCondition: null as number | null,
-      walkability: null as number | null,
-      overallAccessibility: null as number | null,
-    },
+    // Contributors' Step 3 (S15, validators/sceneQuestions.mjs). The cast,
+    // since every field starts null.
+    sceneLevel: emptySceneLevel() as SceneLevel,
+    // Contributors' Step 1 (S15): true a sidewalk, false only a path, null not answered
+    hasSidewalk: null as boolean | null,
     error: null as string | null,
     // Counts each message shown, so the same one shown again restarts its
     // timer (21 Oct 2026, showMessage)
@@ -746,6 +757,28 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   private get askScene() {
     return !this.props.isAnnotator;
+  }
+
+  /** Contributors' Step 1 answered Only a path (S15): the boxes skip the path question, Step 3 asks two */
+  private get pathOnly() {
+    return this.askScene && this.state.hasSidewalk === false;
+  }
+
+  /** Contributors before Step 1 is answered (S15): no box opens and none can be drawn or added */
+  private get awaitingPresence() {
+    return this.askScene && this.state.hasSidewalk === null;
+  }
+
+  /**
+   * A box, the photo, Add box or a name in the answers pressed before Step 1
+   * (S15): the message, and Step 1 brought into view (on a phone it is
+   * already the top of the sheet). True when that happened.
+   */
+  private askStep1First() {
+    if (!this.awaitingPresence) return false;
+    this.showMessage(SIDEWALK_QUESTION_COPY.firstStep1);
+    this.showSection("presence");
+    return true;
   }
 
   // The annotator flow (4 Oct 2026): Objects (boxes and categories, Keep or Not
@@ -1034,6 +1067,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           if (savedScene && typeof savedScene === "object") {
             this.setState({ sceneLevel: toCurrentScale(savedScene, currentRecord.userSceneScale) });
           }
+          // Step 1 (S15), restored with the other answers
+          if (typeof currentRecord.userHasSidewalk === "boolean") {
+            this.setState({ hasSidewalk: currentRecord.userHasSidewalk });
+          }
           savedAnnotatorStep = currentRecord.userAnnotatorStep;
           if (typeof currentRecord.userSentSignature === "string") savedSentSignature = currentRecord.userSentSignature;
           // The cached or stored sidewalk outline (annotationGet copies a
@@ -1095,8 +1132,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (prevState && !this.isSheet && Boolean(prevState.error) !== Boolean(this.state.error)) {
       this.props.onDesktopMessage?.(Boolean(this.state.error));
     }
-    // Contributors' Step 2 answers are saved as they change, like the boxes
-    if (prevState && prevState.sceneLevel !== this.state.sceneLevel) this.scheduleEditSave();
+    // Contributors' Step 1 and Step 3 answers are saved as they change, like the boxes
+    if (prevState && (prevState.sceneLevel !== this.state.sceneLevel || prevState.hasSidewalk !== this.state.hasSidewalk)) this.scheduleEditSave();
     // A switch between the desktop and sheet layouts (an iPad rotated) builds
     // new canvases in a new place. Every box, answer and the selection are
     // instance fields and state, so they carry over. Only the stage changes.
@@ -1344,6 +1381,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.onChangeSeverity,
       this.state.proposedObstructs,
       this.props.practiceLock ? this.props.practiceLock.allowAnswers : null,
+      this.pathOnly,
     );
 
     // The canvas, the same in every layout
@@ -1416,14 +1454,18 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       <Container as="section" width="wide" className="annotation-container">
         <div className="flex flex-row gap-6">
 
-          {/* ── Left: Step 1 (65%, or the full width when there is no Step 2) ── */}
+          {/* ── Left: contributors' Steps 1 and 2, or the annotator's step (65%, or the full width when there is no Step 3) ── */}
           <div style={{ flex: '65 1 0%' }} className="min-w-0">
             {contributorLayout ? (
               // Contributors (7 Oct 2026): the heading, the photo and the answers
-              // sit in one card, so Step 1 reads as one unit (Step1Card, shared
-              // with the landing page's preview)
+              // sit in one card, so Step 2 reads as one unit (Step1Card, shared
+              // with the landing page's preview). Step 1 (S15) is its own card above.
+              <>
+              {this.renderPresence("desktop")}
               <Step1Card
                 className="mb-6"
+                pathOnly={this.pathOnly}
+                touch={this.touchWords}
                 photo={
                   <>
                     {canvasArea}
@@ -1432,7 +1474,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                 }
                 answers={
                   <ObjectTrays
-                    trays={buildTrays(sortedAnnotations, { labels: displayLabels })}
+                    trays={buildTrays(sortedAnnotations, { labels: displayLabels, pathOnly: this.pathOnly })}
                     selectedId={showInput ? this.selectedId : null}
                     hiddenIds={this.state.hiddenBoxIds}
                     onOpen={this.openTrayItem}
@@ -1440,9 +1482,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                     onShowAll={this.showAllBoxes}
                     onHideAll={this.hideAllBoxes}
                     tourIds={this.state.anyCoarsePointer}
+                    pathOnly={this.pathOnly}
                   />
                 }
               />
+              </>
             ) : (
               <>
                 <div className="mb-3">
@@ -1482,7 +1526,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             )}
           </div>
 
-          {/* ── Right: Step 2 (35%) for contributors, the "What to Box" list for annotators ── */}
+          {/* ── Right: Step 3 (35%) for contributors, the "What to Box" list for annotators ── */}
           {askScene ? (
           <div style={{ flex: '35 1 0%' }} className="min-w-0 overflow-y-auto">
             {this.renderSceneQuestions("desktop")}
@@ -1585,13 +1629,56 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   }
 
   /**
-   * Contributors' Step 2, the four questions about the sidewalk (SceneQuestions,
-   * shared with the landing page's preview). The first answer starts the
-   * Step 2 timer.
+   * Contributors' Step 3, the six questions about the sidewalk, or two for a
+   * path (SceneQuestions, shared with the landing page's preview). The first
+   * answer starts the Step 3 timer.
    */
   private renderSceneQuestions(variant: "desktop" | "sheet") {
-    return <SceneQuestions sceneLevel={this.state.sceneLevel} variant={variant} onAnswer={this.onSceneAnswer} />;
+    return <SceneQuestions sceneLevel={this.state.sceneLevel} variant={variant} pathOnly={this.pathOnly} onAnswer={this.onSceneAnswer} />;
   }
+
+  /** Contributors' Step 1 (S15): is there a sidewalk, or only a path? */
+  private renderPresence(variant: "desktop" | "sheet") {
+    return <SidewalkPresence value={this.state.hasSidewalk} variant={variant} onAnswer={this.onPresenceAnswer} allowed={this.props.practiceLock?.allowPresence ?? null} />;
+  }
+
+  /**
+   * Step 1 answered (S15). Only a path clears the four Step 3 questions that
+   * need a built sidewalk, and a sidewalk again leaves them on and empty.
+   * Boxes answered under the other answer are reset (applyPresenceChange),
+   * with "Some boxes need answering again." when any must be answered again.
+   * An open box panel closes first, so it never shows the other answer's questions.
+   */
+  private onPresenceAnswer = (value: boolean) => {
+    if (!this.askScene) return;
+    const allowed = this.props.practiceLock?.allowPresence;
+    if (allowed !== undefined && allowed !== value) return;
+    const from = this.state.hasSidewalk;
+    if (from === value) return;
+    if (this.state.showInput) {
+      this.lastPanelId = null;
+      this.closePanel();
+    }
+    const current = this.shapes.map((shape) => shape.getAnnotationData());
+    const { boxes, resetIds } = applyPresenceChange(current, from, value);
+    // The boxes' data in place, as every answer handler changes it
+    current.forEach((data, i) => {
+      const next = boxes[i] as IAnnotation;
+      if (next === data) return;
+      const record = data as unknown as Record<string, unknown>;
+      for (const key of Object.keys(record)) if (!(key in next)) delete record[key];
+      Object.assign(data, next);
+    });
+    const sceneLevel = value === false
+      ? { ...this.state.sceneLevel, ...Object.fromEntries(SIDEWALK_ONLY_KEYS.map((key) => [key, null])) } as SceneLevel
+      : this.state.sceneLevel;
+    this.setState({ hasSidewalk: value, sceneLevel }, () => {
+      this.onShapeChange();
+      if (resetIds.length > 0) this.showMessage(SIDEWALK_QUESTION_COPY.boxesReset);
+      else if (this.state.error === SIDEWALK_QUESTION_COPY.firstStep1) this.showMessage(null);
+      this.notePractice("presence", null, value);
+    });
+  };
 
   private onSceneAnswer = (updates: Partial<SceneLevel>) => {
     this.markSceneStepStart();
@@ -1625,6 +1712,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // A box open: the handle and its name, so the answers come back as soon as it closes
     let header: React.ReactNode;
     let body: React.ReactNode;
+    // Contributors before Step 1 (S15): it is the header
+    const presenceFirst = !annotator && this.state.hasSidewalk === null;
     if (showInput) {
       header = this.renderSheetPanelTitle(openLabel || TRAY_COPY.fallbackLabel, "h-11 px-4");
       body = <div className="px-3 pt-1 pb-4">{panel("sheet")}</div>;
@@ -1637,19 +1726,22 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         </>
       );
     } else {
-      const trays = buildTrays(sortedAnnotations, { labels: displayLabels });
-      header = (
+      const trays = buildTrays(sortedAnnotations, { labels: displayLabels, pathOnly: this.pathOnly });
+      // Step 1 (S15) holds the top of the sheet until it is answered, then
+      // sits at the top of the list, where it can be changed
+      header = presenceFirst ? this.renderPresence("sheet") : (
         <ObjectTraysPeek
           trays={trays}
           peek={this.contributorPeek(sortedAnnotations, displayLabels)}
           selectedId={null}
           onOpen={this.openTrayItem}
           onNext={this.openNextToDecide}
-          sceneLine={sceneProgressLine(this.state.sceneLevel)}
+          sceneLine={sceneProgressLine(this.state.sceneLevel, this.state.hasSidewalk)}
           onShowScene={this.showSceneSection}
           hiddenIds={this.state.hiddenBoxIds}
           onShowAll={this.showAllBoxes}
           onHideAll={this.hideAllBoxes}
+          pathOnly={this.pathOnly}
         />
       );
       // Show all and Hide all are at the top of the sheet (14 Oct 2026). In
@@ -1657,6 +1749,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       const listVisibility = this.inFocus ? { onShowAll: this.showAllBoxes, onHideAll: this.hideAllBoxes } : {};
       body = (
         <>
+          {!presenceFirst && this.renderPresence("sheet")}
           <ObjectTrays
             trays={trays}
             selectedId={null}
@@ -1665,6 +1758,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             onToggleHidden={this.toggleBoxHidden}
             {...listVisibility}
             stacked
+            pathOnly={this.pathOnly}
           />
           {this.renderSceneQuestions("sheet")}
           <PhotoCredit photo={this.props.photoSource} className="px-4 pt-1 pb-4" />
@@ -1693,9 +1787,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       ) : annotator ? (
         <div className="pt-3">{header}{body}</div>
       ) : (
-        // A contributor's lists and Step 2. The short summary the sheet shows
-        // at rest outside full screen would only say the lists twice.
-        <div className="pt-1">{body}</div>
+        // A contributor's lists and Step 3. The short summary the sheet shows
+        // at rest outside full screen would only say the lists twice. Step 1
+        // (S15) stays first until it is answered.
+        <div className="pt-1">{presenceFirst ? header : null}{body}</div>
       );
       header = null;
     }
@@ -2421,7 +2516,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * the sheet, what is left first (21 Oct 2026). `sorted` is in the lists' order.
    */
   private contributorPeek(sorted: IAnnotation[], labels?: Map<string, string>) {
-    return buildPeekChips(sorted, { labels: labels ?? buildDisplayLabelsInOrder(sorted), askSeverity: this.askSeverity });
+    return buildPeekChips(sorted, { labels: labels ?? buildDisplayLabelsInOrder(sorted), askSeverity: this.askSeverity, pathOnly: this.pathOnly });
   }
 
   /** Next at the top of the sheet: the first chip left, so it is the one Next opens. */
@@ -2470,7 +2565,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   }
 
   /**
-   * Laptop, a message about Step 2 (S20, 7 Nov 2026): Step 2's heading is
+   * Laptop, a message about Step 3 (S20, 7 Nov 2026, Step 2 until S15): its heading is
    * brought into view below the message pill when it is under the pill, above
    * the screen or low on it. Its section's top scroll margin (SceneQuestions)
    * is the photo's, so it lands where the photo does. Left where it is when
@@ -2487,19 +2582,29 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     section.scrollIntoView?.({ behavior: reduced ? "auto" : "smooth", block: "start" });
   }
 
-  /** The Step 2 line at the top of the sheet: pull the sheet up to Step 2. */
+  /** Laptop (S15): Step 1's card brought into view below the message pill, as the photo is */
+  private revealPresenceOnDesktop() {
+    if (typeof document === "undefined") return;
+    const section = document.getElementById("sidewalk-presence-section");
+    if (!section) return;
+    const reduced = matches("(prefers-reduced-motion: reduce)");
+    section.scrollIntoView?.({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  }
+
+  /** The Step 3 line at the top of the sheet: pull the sheet up to Step 3. */
   private showSceneSection = () => {
     this.showSection("scene");
   };
 
   /**
    * Shows the part of the screen a submit error is about (sheet layout):
-   * Step 2 with the sheet at full, or the answers with the sheet collapsed, so
+   * Step 3 with the sheet at full, or the answers with the sheet collapsed, so
    * the Still to decide line and its Next button are in view.
    */
   private showSection(section?: string) {
     if (!this.isSheet) {
       if (section === "scene") this.revealSceneOnDesktop();
+      if (section === "presence") this.revealPresenceOnDesktop();
       return;
     }
     if (this.state.showInput) {
@@ -2519,6 +2624,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
    * four corners showing. Dragging a finger on empty photo never draws a box.
    */
   public addBoxFromButton = () => {
+    if (this.askStep1First()) return;
     if (!this.touchEnabled || !this.inBoxStep || !this.canDrawBox) return;
     const { width: iw, height: ih } = this.imageSize();
     const stage = this.stageSize();
@@ -2957,6 +3063,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         break;
       case "deselect":
         if (this.inObstructionStep) break;
+        // A tap on the photo before Step 1 (S15): no box opens
+        if (this.askStep1First()) break;
         if (this.selectedId !== null) this.closePanel();
         this.showHiddenOnDoubleTap();
         break;
@@ -3311,6 +3419,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   /** Whether a box opens. Always, without the practice's lock. A drawn box opens whenever drawing is allowed. */
   public canOpenBox = (id: string) => {
+    // Step 2 waits for Step 1 (S15)
+    if (this.awaitingPresence) return false;
     const lock = this.props.practiceLock;
     if (!lock || lock.openable === "all" || lock.openable.includes(id)) return true;
     const box = this.shapes.find((shape) => shape.getAnnotationData().id === id)?.getAnnotationData();
@@ -3319,6 +3429,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   /** Whether a new box can be drawn or added. Always, without the practice's lock. */
   public get canDrawBox() {
+    if (this.awaitingPresence) return false;
     const lock = this.props.practiceLock;
     return !lock || lock.canDraw;
   }
@@ -3351,6 +3462,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       }),
       openId: this.selectedId ?? null,
       scene: { ...this.state.sceneLevel },
+      hasSidewalk: this.state.hasSidewalk,
     };
   }
 
@@ -3473,6 +3585,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   /** Contributors: a chip under the photo opens its box's panel (7 Oct 2026). */
   private openTrayItem = (id: string) => {
     if (this.annotatorObjectStep) return;
+    if (this.askStep1First()) return;
     this.selectBoxById(id);
   };
 
@@ -4298,6 +4411,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     return answerSignature({
       boxes: this.tidyMarks(this.currentAnnotationData),
       scene: this.askScene ? this.state.sceneLevel : null,
+      hasSidewalk: this.askScene ? this.state.hasSidewalk : null,
       mask: this.annotatorObjectStep && this.askSidewalk ? this.sidewalkState.mask : null,
     });
   }
@@ -4444,7 +4558,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       answered,
       objectStep
         ? { isAnnotator: true }
-        : { msToAnswer: (id: string) => this.answerClock.msToAnswer(id), isAnnotator: Boolean(this.props.isAnnotator) }
+        : { msToAnswer: (id: string) => this.answerClock.msToAnswer(id), isAnnotator: Boolean(this.props.isAnnotator), hasSidewalk: this.state.hasSidewalk }
     );
     // Never shown, so never answered, and no hint was seen
     const hiddenConfidences = this.hiddenSuggestions.map((s) => ({
@@ -4488,12 +4602,13 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
     this.setState({ error: null });
 
-    const { sceneLevel } = this.state;
+    const { sceneLevel, hasSidewalk } = this.state;
     const validationResult = validateAnnotationForSubmit({
       existingAnnotations: this.currentAnnotationData,
       newObjects,
       selectedObjects,
       sceneLevel,
+      hasSidewalk,
       isAnnotator: objectStep,
       obstructionsConfirmed: this.state.obstructionsConfirmed,
       askSidewalk: this.askSidewalk,
@@ -4519,6 +4634,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       city: this.props.city,
       servedModelVersion: this.props.servedModelVersion,
       sceneLevel: this.askScene ? sceneLevel : null,
+      // Contributors' Step 1 (S15), beside the answers it decides
+      ...(this.askScene ? { hasSidewalk } : {}),
       // Annotators on model-development images only (6 Oct 2026)
       ...(objectStep ? { sidewalkMask: submittedMask } : {}),
       selectedObjectsID: selectedObjects,
@@ -4621,6 +4738,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     record.userSliderValue = this.state.sliderValue;
     record.userPavementType = this.state.pavementType;
     record.userSceneLevel = this.askScene ? this.state.sceneLevel : null;
+    record.userHasSidewalk = this.askScene ? this.state.hasSidewalk : null;
     record.userSceneScale = SCENE_SCALE;
     if (this.annotatorObjectStep) {
       record.userAnnotatorStep = annotatorStep ?? this.state.annotatorStep;
@@ -5299,6 +5417,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // Obstructions (14 Oct 2026): a double-click is one click. Its second
     // press used to toggle the box back, so a double-clicked box stayed unmarked.
     if (this.inObstructionStep && event.detail > 1) return;
+    // A click on the photo before Step 1 (S15): no box opens, none is drawn
+    if (this.askStep1First()) return;
     const { offsetX, offsetY } = event.nativeEvent;
     const { positionX, positionY } = this.calculateMousePosition(
       offsetX,
@@ -5436,20 +5556,6 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.hideLoupe();
   }
 
-  private surfaceTypeText = (surfaceType) => {
-    switch (surfaceType) {
-      case "no_sidewalk":
-        return "There is no sidewalk found in the image.";
-      case "rough_paving":
-        return "Rough surfaces are craggy, irregular, and are usually broken in various spots on the surface";
-      case "smooth_paving":
-        return "Smooth surfaces are evenly balanced, made of solid material, and do not contain any cracks or irregularities";
-      case "slippery_paving":
-        return "Tiled/Slippery surfaces are put together using different segments of flooring and become hazardous and slippery when wet.";
-    }
-    return "";
-  };
-
   /* Legacy sliderValueText removed — the old 1-10 slider is replaced by the
-     5-level "Accessible to Me" card buttons (values 1-5). */
+     5-level Ease of Navigation buttons (values 1-5, S15). */
 }

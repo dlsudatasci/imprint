@@ -69,7 +69,7 @@ describe("GET /api/admin/quality/agreement", () => {
   });
 
   it("computes pairwise agreement for shared images", async () => {
-    const scene = { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 };
+    const scene = { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false };
 
     setupAdminMocks({
       sharedImages: [{ _id: "img1", users: [USER_A, USER_B], count: 2 }],

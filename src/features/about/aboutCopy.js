@@ -13,7 +13,8 @@
  *   distributed-intelligence level. Removed.
  * - The lists of things people value and that get in the way (ramps, tactile
  *   paving, manholes): not what Imprint records. Replaced by the 18 categories
- *   (Table 4.1) and the four questions about the sidewalk (§7n).
+ *   (Table 4.1) and the questions about the sidewalk (§7n), six from S15
+ *   (9 Nov 2026), after the first step asks whether there is a sidewalk.
  * - The same object judged differently by different people: chapter_1.tex and
  *   chapter_3.tex (the wheelchair user and the pole).
  * - The photos: Mapillary and ATLAS-3. ATLAS-3 is described, not named, as
@@ -61,11 +62,11 @@ export const ABOUT_COPY = Object.freeze({
       }),
       Object.freeze({
         title: "You decide",
-        text: "Open each box and say whether the object gets in your way as you normally travel, and if it does, how much, from 1 to 5. Mark a box with nothing real in it as Not an object, and draw any objects we missed.",
+        text: "Say whether there is a sidewalk or only a path. Then open each box and say whether the object gets in your way as you normally travel, and if it does, how much, from 1 to 5. Mark a box with nothing real in it as Not an object, and draw any objects we missed.",
       }),
       Object.freeze({
         title: "You rate the sidewalk",
-        text: "Answer four questions about the sidewalk as a whole: its width, its surface, how comfortable it looks, and whether you could get through.",
+        text: "Answer up to six questions about the sidewalk as a whole: its width, how obstructed it is, how even it is, its surface and its condition, and whether anything separates it from the road.",
       }),
       Object.freeze({
         title: "The model learns",
@@ -81,7 +82,7 @@ export const ABOUT_COPY = Object.freeze({
     intro: "Eighteen kinds of object, some that come and go and some that stay put.",
     other: "Anything else can be named with Other.",
     surface: "Cracks and uneven paving are not boxed. A surface has no edges to draw a box around, so it is one of the questions about the sidewalk instead.",
-    questionsTitle: "Four questions about each sidewalk",
+    questionsTitle: "Six questions about each sidewalk",
   }),
 
   photos: Object.freeze({

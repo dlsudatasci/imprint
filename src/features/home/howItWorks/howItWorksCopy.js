@@ -25,7 +25,7 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
   chapters: Object.freeze([
     Object.freeze({
       title: "Say what blocks your way",
-      text: "We've already boxed the objects we found. Open a box and say if it is on the sidewalk or the path people walk on, then if it obstructs your path. If it does, rate its severity from 1 to 5.",
+      text: "Say if there is a sidewalk or only a path. Then open a box we found and say if it is on the sidewalk or the path people walk on, then if it obstructs your path. If so, rate its severity from 1 to 5.",
     }),
     Object.freeze({
       title: "Answer every suggestion",
@@ -37,7 +37,7 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
     }),
     Object.freeze({
       title: "Rate the sidewalk",
-      text: "Four quick questions about the sidewalk nearest you: how wide it is, its surface, how comfortable it looks, and whether you could get through.",
+      text: "Six quick questions about the sidewalk nearest you: its width, how obstructed it is, how even it is, its surface, and whether anything separates it from the road.",
     }),
     Object.freeze({
       title: "On to the next sidewalk",
@@ -47,15 +47,17 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
   /**
    * The same chapters on phones and tablets (22 Oct 2026), where the preview
    * plays the tool's phone layout (touchScript.js): the same titles, shorter
-   * text in the tool's words for a finger (tap, Next, Add box, the Step 2
-   * line), at most two lines on a phone. From 2 Nov 2026 (S12) the second and
+   * text in the tool's words for a finger (tap, Next, Add box, the Step 3
+   * line from S15), at most two lines on a phone. From S15 (9 Nov 2026) the
+   * first chapter, desktop and touch, begins with Step 1, whether there is a sidewalk. From 2 Nov 2026 (S12) the second and
    * third name the two questions on every box: on the walking path, then in
    * your way, and from 3 Nov 2026 (S16 follow-up) the first does too.
    */
   touchChapters: Object.freeze([
     Object.freeze({
       title: "Say what blocks your way",
-      text: "Tap a box. On the walking path? In your way? Rate its severity, 1 to 5.",
+      // Step 1 first (S15), in the same short questions, within two lines on a phone
+      text: "Sidewalk or path? Tap a box. On the walking path? In your way? Rate it.",
     }),
     Object.freeze({
       title: "Answer every suggestion",
@@ -67,7 +69,7 @@ export const HOW_IT_WORKS_COPY = Object.freeze({
     }),
     Object.freeze({
       title: "Rate the sidewalk",
-      text: "Tap the Step 2 line and answer four questions about the sidewalk nearest you.",
+      text: "Tap the Step 3 line and answer the questions about the sidewalk nearest you.",
     }),
     Object.freeze({
       title: "On to the next sidewalk",

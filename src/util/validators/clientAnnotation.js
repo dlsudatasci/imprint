@@ -3,6 +3,20 @@ import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy
 import { isTaxonomyCategory } from "@/util/taxonomy";
 import { realObjects } from "@/features/annotate/obstructionStep";
 import { validateSidewalkMask } from "@/util/validators/sidewalkMask";
+import { requiredSceneKeys } from "@/util/validators/sceneQuestions.mjs";
+
+/** Contributors' Step 1 unanswered (S15) */
+export const PRESENCE_MISSING = "Please say whether there is a sidewalk.";
+
+/** A Step 3 question unanswered (S15), by its key */
+export const SCENE_MISSING = Object.freeze({
+  sidewalkWidth: "Please choose the sidewalk width.",
+  overallAccessibility: "Please rate how easy it is to get through.",
+  surfaceEvenness: "Please rate how even the surface is.",
+  surfaceType: "Please choose what the surface is made of.",
+  surfaceCondition: "Please rate the surface condition.",
+  roadBarrier: "Please say whether anything separates the sidewalk from the road.",
+});
 
 /** The ids of these boxes, for the tool to open the first one still to fix (21 Oct 2026) */
 const idsOf = (boxes) => boxes.map((box) => box?.id).filter((id) => id != null);
@@ -67,14 +81,23 @@ export function validateSidewalkStep({ askSidewalk, mask, hasDraft, imageWidth, 
 /**
  * Every check before an image is sent. A contributor's failure names the part
  * of the screen to show (9 Oct 2026): "objects" for a box (the answers at the
- * bottom of the screen on a phone) or "scene" for Step 2. A failure about
+ * bottom of the screen on a phone) or "scene" for Step 3. A failure about
  * boxes lists them too (`boxIds`, 21 Oct 2026): the tool opens the first one.
+ *
+ * S15 (9 Nov 2026): a contributor answers Step 1 first, a sidewalk
+ * (hasSidewalk true) or only a path (false), "presence" when it is missing.
+ * With only a path no box is asked whether it is on the sidewalk, so a
+ * suggestion is complete when answered Yes or No (with a severity on a Yes)
+ * or Not an object. Step 3 needs every key in requiredSceneKeys(hasSidewalk):
+ * six, or two for a path, a value counting unless null or undefined, so
+ * roadBarrier false is an answer.
  */
 export function validateAnnotationForSubmit({
   existingAnnotations,
   newObjects,
   selectedObjects,
   sceneLevel,
+  hasSidewalk = null,
   isAnnotator = false,
   obstructionsConfirmed = false,
   askSidewalk = false,
@@ -98,10 +121,17 @@ export function validateAnnotationForSubmit({
     return validateObstructionStep({ annotations: existingAnnotations, confirmed: obstructionsConfirmed });
   }
 
+  // Contributors' Step 1 (S15) comes before everything
+  if (hasSidewalk !== true && hasSidewalk !== false) {
+    return { valid: false, section: "presence", error: PRESENCE_MISSING };
+  }
+  const pathOnly = hasSidewalk === false;
+
   // Contributors (S12, 2 Nov 2026): every real box is first answered on the
   // sidewalk or not, and only one on the sidewalk is asked whether it
-  // obstructs. A box not on the sidewalk is answered (obstructs false).
-  const noSidewalkAnswer = (el) => !isNotAnObject(el) && typeof el.onSidewalk !== "boolean";
+  // obstructs. A box not on the sidewalk is answered (obstructs false). With
+  // only a path (S15) that question is never asked.
+  const noSidewalkAnswer = (el) => !pathOnly && !isNotAnObject(el) && typeof el.onSidewalk !== "boolean";
   const suggestions = (existingAnnotations || []).filter((el) => !el.editable);
   const suggestionsWithoutSidewalk = suggestions.filter(noSidewalkAnswer);
   if (suggestionsWithoutSidewalk.length > 0) {
@@ -142,25 +172,17 @@ export function validateAnnotationForSubmit({
   const first = allBoxes.find((object) => unanswered(object) || unrated(object));
   if (first) {
     if (unanswered(first)) {
-      return { valid: false, section: "objects", error: "Please indicate whether each object obstructs the sidewalk.", boxIds: idsOf(allBoxes.filter(unanswered)) };
+      const where = pathOnly ? "the path" : "the sidewalk";
+      return { valid: false, section: "objects", error: `Please indicate whether each object obstructs ${where}.`, boxIds: idsOf(allBoxes.filter(unanswered)) };
     }
     return { valid: false, section: "objects", error: "Please rate the severity of each obstruction (1–5).", boxIds: idsOf(allBoxes.filter(unrated)) };
   }
 
-  if (!sceneLevel || !sceneLevel.sidewalkWidth) {
-    return { valid: false, section: "scene", error: "Please select the sidewalk width category." };
-  }
-  // With no sidewalk the other three questions are greyed out and left empty
-  // (decided 2 Oct 2026), so they are only required when a sidewalk is present.
-  if (sceneLevel.sidewalkWidth !== "no_sidewalk") {
-    if (sceneLevel.surfaceCondition === null || sceneLevel.surfaceCondition === undefined) {
-      return { valid: false, section: "scene", error: "Please rate the surface condition." };
-    }
-    if (sceneLevel.walkability === null || sceneLevel.walkability === undefined) {
-      return { valid: false, section: "scene", error: "Please rate the walking comfort." };
-    }
-    if (sceneLevel.overallAccessibility === null || sceneLevel.overallAccessibility === undefined) {
-      return { valid: false, section: "scene", error: "Please rate accessibility." };
+  // Step 3 (S15): six questions for a sidewalk, two for a path, in order
+  const scene = sceneLevel || {};
+  for (const key of requiredSceneKeys(hasSidewalk)) {
+    if (scene[key] === null || scene[key] === undefined) {
+      return { valid: false, section: "scene", error: SCENE_MISSING[key] };
     }
   }
 

@@ -68,7 +68,7 @@ describe("POST /api/annotationComplete", () => {
       completedImageIDs: [7],
     });
     m.imageCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: "ref-oid", imageID: 7 }]) });
-    const ann = { imageID: 7, source: "annotator", sceneLevel: { walkability: 3 }, selectedObjectsID: [{ id: "s1", obstructs: false }], newObjects: [] };
+    const ann = { imageID: 7, source: "annotator", sceneLevel: { surfaceEvenness: 3 }, selectedObjectsID: [{ id: "s1", obstructs: false }], newObjects: [] };
     m.annotationsCol.find.mockReturnValue({ toArray: vi.fn().mockResolvedValue([ann]) });
     m.imageCol.bulkWrite = vi.fn().mockResolvedValue({});
 
@@ -127,9 +127,13 @@ describe("POST /api/annotationComplete", () => {
     expect((await pushed({ canvasVersion: 2 })).canvasVersion).toBe(2);
     expect(await pushed({})).not.toHaveProperty("canvasVersion");
     // The scale its scene answers are on (22 Oct 2026), the same way
-    const scene = { sidewalkWidth: "two_people", surfaceCondition: 3, walkability: 3, overallAccessibility: 5 };
+    const scene = { sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 3, roadBarrier: false };
     expect(await pushed({ sceneLevel: scene, sceneScale: 2 })).toMatchObject({ sceneLevel: scene, sceneScale: 2 });
     expect(await pushed({ sceneLevel: scene })).not.toHaveProperty("sceneScale");
+    // Step 1 (S15) beside sceneLevel, null for a row without one (an annotator's)
+    expect(await pushed({ sceneLevel: scene, hasSidewalk: false })).toMatchObject({ sceneLevel: scene, hasSidewalk: false });
+    expect(await pushed({ sceneLevel: scene, hasSidewalk: true })).toMatchObject({ hasSidewalk: true });
+    expect((await pushed({})).hasSidewalk).toBeNull();
   });
 
   it("writes nothing onto a reference image when a contributor finishes a session", async () => {

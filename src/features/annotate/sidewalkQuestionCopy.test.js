@@ -36,7 +36,9 @@ describe("SIDEWALK_QUESTION_COPY", () => {
 
   it("has no tutorial sentence any more: pathPoints replaced it", () => {
     expect(SIDEWALK_QUESTION_COPY).not.toHaveProperty("tutorial");
-    expect(Object.keys(SIDEWALK_QUESTION_COPY).sort()).toEqual(["answerWhether", "backTo", "incomplete", "pathPoints", "question", "questionOf"]);
+    expect(Object.keys(SIDEWALK_QUESTION_COPY).sort()).toEqual([
+      "answerWhether", "backTo", "backToQuestion", "boxesReset", "firstStep1", "incomplete", "pathPoints", "pathQuestion", "question", "questionOf",
+    ]);
   });
 
   // S17 (4 Nov 2026): the way back at the foot of the box panel
@@ -55,13 +57,27 @@ describe("SIDEWALK_QUESTION_COPY", () => {
       SIDEWALK_QUESTION_COPY.answerWhether,
       SIDEWALK_QUESTION_COPY.backTo(1),
       SIDEWALK_QUESTION_COPY.backTo(2),
+      SIDEWALK_QUESTION_COPY.pathQuestion.before,
+      SIDEWALK_QUESTION_COPY.pathQuestion.after,
+      SIDEWALK_QUESTION_COPY.backToQuestion,
+      SIDEWALK_QUESTION_COPY.firstStep1,
+      SIDEWALK_QUESTION_COPY.boxesReset,
     ];
     for (const text of texts) expect(text).not.toMatch(/[—;]/);
   });
 
+  // Only a path (S15, 9 Nov 2026)
+  it("words the path's one question, its way back and the Step 1 messages", () => {
+    expect(`${SIDEWALK_QUESTION_COPY.pathQuestion.before}Tree${SIDEWALK_QUESTION_COPY.pathQuestion.after}`).toBe("Does Tree obstruct the path?");
+    expect(SIDEWALK_QUESTION_COPY.backToQuestion).toBe("Back to the question");
+    expect(SIDEWALK_QUESTION_COPY.firstStep1).toBe("First, answer Step 1: is there a sidewalk?");
+    expect(SIDEWALK_QUESTION_COPY.boxesReset).toBe("Some boxes need answering again.");
+  });
+
   it("is what the tour and the guide show, and Step 1's instructions keep the nearest-sidewalk rule", () => {
     for (const input of ["pointer", "touch"]) {
-      const [check, path] = buildTourSteps(false, "objects", input);
+      // Step 1 first from S15
+      const [, check, path] = buildTourSteps(false, "objects", input);
       // The tour says it as an instruction (Rans, 5 Nov 2026)
       expect(check.content).toContain(SIDEWALK_QUESTION_COPY.answerWhether);
       expect(SIDEWALK_QUESTION_COPY.answerWhether).toBe("Answer whether it's on the sidewalk or the path people walk on.");

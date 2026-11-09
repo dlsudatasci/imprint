@@ -70,27 +70,27 @@ const TouchStage = dynamic(() => import("./howItWorks/TouchStage"), {
 /**
  * The still shown for each chapter with reduced motion, the moment that
  * chapter is about: Tree #1's severity at 2, the last No (Lamp Post #1 off
- * the path, S12), the drawn box with Lamp Post chosen, Step 2 answered, and
- * the second photo.
+ * the path, S12), the drawn box with Lamp Post chosen, Step 3 answered (its
+ * last question, Road Barrier, from S15), and the second photo.
  */
 export const STILL_TICKS = Object.freeze([
   tickOf("tree-severity", "end"),
   tickOf("lamp-sidewalk", "end"),
   tickOf("category-pick", "end"),
-  tickOf("overallAccessibility", "end"),
+  tickOf("roadBarrier", "end"),
   TICKS,
 ]);
 
 /**
  * The same on phones and tablets: Tree #1's severity at 1, every suggestion
- * answered, the fitted box with Lamp Post chosen, Step 2 answered, and the
+ * answered, the fitted box with Lamp Post chosen, Step 3 answered, and the
  * second photo.
  */
 export const TOUCH_STILL_TICKS = Object.freeze([
   touchTickOf("tree-severity", "end"),
   touchTickOf("moto-no", "end"),
   touchTickOf("category-pick", "end"),
-  touchTickOf("overallAccessibility", "end"),
+  touchTickOf("roadBarrier", "end"),
   TICKS,
 ]);
 

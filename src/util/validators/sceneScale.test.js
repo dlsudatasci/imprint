@@ -39,6 +39,20 @@ describe("toCurrentScale", () => {
     expect(sceneAnswersOf({ sceneLevel: null })).toBeNull();
   });
 
+  // S15 (9 Nov 2026): surfaceEvenness was born higher is better, surfaceType is a word, roadBarrier true or false
+  it("passes the three new fields through unchanged, on either scale", () => {
+    const s15 = { sidewalkWidth: "two_people", overallAccessibility: 2, surfaceEvenness: 1, surfaceType: "pavers", surfaceCondition: 1, roadBarrier: false };
+    for (const scale of [undefined, 1, SCENE_SCALE]) {
+      const out = toCurrentScale(s15, scale);
+      expect(out.surfaceEvenness).toBe(1);
+      expect(out.surfaceType).toBe("pavers");
+      expect(out.roadBarrier).toBe(false);
+    }
+    expect(toCurrentScale({ ...s15, roadBarrier: true }).roadBarrier).toBe(true);
+    expect(toCurrentScale({ surfaceEvenness: 3 })).toEqual({ surfaceEvenness: 3 });
+    expect(SCENE_SCALE_TOP).not.toHaveProperty("surfaceEvenness");
+  });
+
   it("reads a record's own sceneScale", () => {
     expect(sceneAnswersOf({ sceneLevel: { overallAccessibility: 1 } })).toEqual({ overallAccessibility: 5 });
     expect(sceneAnswersOf({ sceneLevel: { overallAccessibility: 1 }, sceneScale: SCENE_SCALE })).toEqual({ overallAccessibility: 1 });

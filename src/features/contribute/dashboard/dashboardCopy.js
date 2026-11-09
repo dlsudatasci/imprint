@@ -54,9 +54,11 @@ export const DASHBOARD_COPY = Object.freeze({
   chartCount: (n) => `${n} ${n === 1 ? "obstruction" : "obstructions"}`,
   chartPhoto: (from, to) => (to === undefined || to === from ? `Photo ${from}` : `Photos ${from} to ${to}`),
   chartTableCaption: "Obstructions found in each photo",
-  accessLabel: "Accessible to me",
-  // A session with no Accessible to Me answers, beside sessions that have them
-  // (every photo had no sidewalk, so the question was skipped)
+  // Ease of Navigation (S15), stored as overallAccessibility, as Accessible to Me was
+  accessLabel: "Ease of navigation",
+  // A session with no answers to it, beside sessions that have them. From
+  // S15 it is asked for a sidewalk and a path alike, so only a session saved
+  // before then, when a photo with no sidewalk skipped it, has none.
   accessNone: "No sidewalk rated",
   // Five sessions at a time (22 Oct 2026)
   showMore: "Show more",
@@ -76,14 +78,15 @@ export const DASHBOARD_COPY = Object.freeze({
   }),
 });
 
-const ACCESS_ANSWERS = SCENE_QUESTIONS.find((q) => q.name === "Accessible to Me").answers;
+const ACCESS_ANSWERS = SCENE_QUESTIONS.find((q) => q.name === "Ease of Navigation").answers;
 
 /**
- * The answer word nearest a session's average "Accessible to Me", so "3.6"
- * reads as "Mostly accessible". The old label "Avg Score" did not say which
- * question it averaged. From 22 Oct 2026 the scale runs 1 Not accessible to 5
- * Easily accessible (validators/sceneScale.mjs), so higher is better, as a
- * score reads; it ran the other way, and "1" was the best answer.
+ * The answer word nearest a session's average Ease of Navigation
+ * (overallAccessibility, S15), so "3.6" reads as "Slightly obstructed". The
+ * old label "Avg Score" did not say which question it averaged. The scale runs
+ * 1 Fully obstructed to 5 Unobstructed, higher is better, as a score reads
+ * (validators/sceneScale.mjs). Before S15 the same field and scale were
+ * Accessible to Me.
  */
 export function accessWord(average) {
   const n = Number(average);

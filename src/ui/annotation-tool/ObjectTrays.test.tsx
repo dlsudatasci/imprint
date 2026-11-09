@@ -303,9 +303,9 @@ describe("ObjectTraysPeek's first row", () => {
     renderToStaticMarkup(<ObjectTraysPeek trays={trays} peek={buildPeekChips(boxes)} selectedId={null} onOpen={() => undefined} onNext={() => undefined} sceneLine="Step 2" onShowScene={() => undefined} {...extra} />);
 
   it("shows the step's name with Show all and Hide all only when it is given both", () => {
-    expect(peek()).not.toContain("Step 1: Identify Objects");
+    expect(peek()).not.toContain("Step 2: Identify Objects");
     const withRow = peek({ hiddenIds: ["a"], onShowAll: () => undefined, onHideAll: () => undefined });
-    expect(withRow).toContain("Step 1: Identify Objects");
+    expect(withRow).toContain("Step 2: Identify Objects");
     expect(withRow).toMatch(/Show all <span[^>]*>1<\/span>/);
     expect(withRow).toContain(">Hide all<");
   });

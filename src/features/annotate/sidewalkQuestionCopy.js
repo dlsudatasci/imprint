@@ -1,6 +1,9 @@
 /**
- * Contributor Step 1: the question asked before the obstruction question
- * (S12, decided 23 Oct 2026, wording by Rans on 2 Nov 2026). Every piece of
+ * Contributor Step 2: the question asked before the obstruction question
+ * (S12, decided 23 Oct 2026, wording by Rans on 2 Nov 2026). From S15 (9 Nov
+ * 2026) it is asked only when Step 1 says there is a sidewalk. With only a
+ * path each box is asked one question, whether it obstructs the path
+ * (pathQuestion), with no step line and no way back to Question 1. Every piece of
  * its wording lives here and nowhere else, so a change of wording, if the
  * adviser asks for one, is a change to this file only.
  *
@@ -42,4 +45,15 @@ export const SIDEWALK_QUESTION_COPY = Object.freeze({
    * a confirmed obstruction's severity. Nothing changes until a new answer is picked.
    */
   backTo: (n) => `Back to Question ${n}`,
+  /**
+   * Only a path (S15): the one question, the label in bold put in by the
+   * panel between the two parts, "Does {label} obstruct the path?"
+   */
+  pathQuestion: Object.freeze({ before: "Does ", after: " obstruct the path?" }),
+  /** Only a path: a confirmed obstruction's severity panel, back to its one question */
+  backToQuestion: "Back to the question",
+  /** A box opened, drawn or added before Step 1 is answered (S15) */
+  firstStep1: "First, answer Step 1: is there a sidewalk?",
+  /** Step 1 changed after boxes were answered, and some go back to Still to decide (S15) */
+  boxesReset: "Some boxes need answering again.",
 });

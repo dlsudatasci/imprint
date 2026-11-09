@@ -6,9 +6,10 @@ import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
  * Fixed 15 Oct 2026, to say what each number is:
  * - Annotations counts annotated images (one record per photo per person),
  *   not bounding boxes.
- * - Accessibility is the average answer to Step 2's "Accessible to Me". From
- *   22 Oct 2026 it runs 1 Not accessible to 5 Easily accessible, so higher is
- *   better (validators/sceneScale.mjs); it was 1 Easily to 5 Not accessible,
+ * - Accessibility is the average answer to Step 3's Ease of Navigation (S15,
+ *   overallAccessibility, Step 2's Accessible to Me before then). It runs 1
+ *   Fully obstructed to 5 Unobstructed, so higher is better
+ *   (validators/sceneScale.mjs); before 22 Oct 2026 it ran the other way,
  *   and shown without "/5", which then read as a score the wrong way round.
  *   Now a score out of 5 is what it is, and the caption says so plainly
  *   (23 Oct 2026; it said "average, 1 not to 5 easily accessible").

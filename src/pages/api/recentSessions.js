@@ -87,7 +87,7 @@ export default async function handler(req, res) {
       annotations.forEach((ann) => {
         annotationMap[ann.imageID] = ann;
         
-        // On the scale where higher is better, 5 Easily accessible, rows
+        // On the scale where higher is better, 5 Unobstructed (S15), rows
         // answered before 22 Oct 2026 turned round (validators/sceneScale.mjs).
         // The fields before sceneLevel (sceneRatings, the 1 to 10 slider's
         // accessibilityRating) are no longer averaged in: no one knows which

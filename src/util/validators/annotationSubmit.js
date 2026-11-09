@@ -2,51 +2,92 @@ import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
 import { isTaxonomyCategory } from "@/util/taxonomy";
 import { normalizeMark, clampMark, markArea } from "@/util/boxGeometry";
 import { isProposal, recordProbability, proposalWasShown } from "@/util/modelProposal";
+import {
+  SIDEWALK_WIDTH_OPTIONS,
+  SURFACE_TYPE_OPTIONS,
+  SCENE_NUMBERED,
+  SCENE_KEYS,
+  emptySceneLevel,
+  requiredSceneKeys,
+} from "@/util/validators/sceneQuestions.mjs";
 
 export const MAX_BOXES_PER_IMAGE = 300;
-export const SIDEWALK_WIDTH_OPTIONS = ["no_sidewalk", "one_person", "two_people", "three_or_more"];
 
-export function validateSceneLevel(sceneLevel) {
-  if (!sceneLevel || typeof sceneLevel !== "object") {
-    return { valid: false, message: "sceneLevel is required." };
-  }
+export { SIDEWALK_WIDTH_OPTIONS };
 
-  if (!SIDEWALK_WIDTH_OPTIONS.includes(sceneLevel.sidewalkWidth)) {
-    return { valid: false, message: "Invalid sidewalk width value." };
-  }
+/** The server's message for a contributor's body with no Step 1 answer, sent only by a tab opened before S15 */
+export const RELOAD_FOR_NEW_QUESTIONS = "IMPRINT was updated. Please reload the page to see the new questions.";
 
-  // With no sidewalk, the absence itself is the recorded barrier (chapter_4.tex,
-  // Sidewalk Segmentation Annotation), and the other three questions ask about
-  // "this sidewalk", so they are left unanswered (decided 2 Oct 2026). The UI
-  // greys them out and clears any earlier answers when "None" is chosen.
-  if (sceneLevel.sidewalkWidth === "no_sidewalk") {
-    for (const key of ["surfaceCondition", "walkability", "overallAccessibility"]) {
-      if (sceneLevel[key] !== null && sceneLevel[key] !== undefined) {
-        return { valid: false, message: `${key} must be empty when there is no sidewalk.` };
-      }
-    }
-    return { valid: true };
-  }
-
-  const sc = Number(sceneLevel.surfaceCondition);
-  if (!Number.isInteger(sc) || sc < 1 || sc > 3) {
-    return { valid: false, message: "sceneLevel.surfaceCondition must be 1–3 when a sidewalk is present." };
-  }
-
-  const walkVal = Number(sceneLevel.walkability);
-  if (!Number.isInteger(walkVal) || walkVal < 1 || walkVal > 3) {
-    return { valid: false, message: "sceneLevel.walkability must be an integer from 1 to 3." };
-  }
-
-  const accVal = Number(sceneLevel.overallAccessibility);
-  if (!Number.isInteger(accVal) || accVal < 1 || accVal > 5) {
-    return { valid: false, message: "sceneLevel.overallAccessibility must be an integer from 1 to 5." };
-  }
-
-  return { valid: true };
+/** Contributors' Step 1 (S15): exactly true (a sidewalk) or false (only a path) */
+export function isPresenceAnswer(hasSidewalk) {
+  return hasSidewalk === true || hasSidewalk === false;
 }
 
-export function validateBoxes(selectedObjectsID, newObjects, { requireSeverity = true } = {}) {
+const isGiven = (v) => v !== null && v !== undefined;
+// A numbered answer sent as "3" is read as 3, as before S15, and stored as a number
+const asInteger = (v) => (typeof v === "number" || (typeof v === "string" && v.trim() !== "") ? Number(v) : NaN);
+const isIntegerIn = (v, top) => Number.isInteger(asInteger(v)) && asInteger(v) >= 1 && asInteger(v) <= top;
+
+const SCENE_RULES = {
+  sidewalkWidth: (v) => SIDEWALK_WIDTH_OPTIONS.includes(v),
+  overallAccessibility: (v) => isIntegerIn(v, SCENE_NUMBERED.overallAccessibility),
+  surfaceEvenness: (v) => isIntegerIn(v, SCENE_NUMBERED.surfaceEvenness),
+  surfaceType: (v) => SURFACE_TYPE_OPTIONS.includes(v),
+  surfaceCondition: (v) => isIntegerIn(v, SCENE_NUMBERED.surfaceCondition),
+  roadBarrier: (v) => v === true || v === false,
+};
+
+const SCENE_MESSAGES = {
+  sidewalkWidth: "sceneLevel.sidewalkWidth must be one_person, two_people or three_or_more.",
+  overallAccessibility: "sceneLevel.overallAccessibility must be an integer from 1 to 5.",
+  surfaceEvenness: "sceneLevel.surfaceEvenness must be an integer from 1 to 3.",
+  surfaceType: "sceneLevel.surfaceType must be concrete, tiles, pavers or unpaved.",
+  surfaceCondition: "sceneLevel.surfaceCondition must be an integer from 1 to 3.",
+  roadBarrier: "sceneLevel.roadBarrier must be true or false.",
+};
+
+/**
+ * Contributors' Step 3 (S15, question set 2, validators/sceneQuestions.mjs).
+ * Every key in requiredSceneKeys(hasSidewalk) must hold a valid answer: all
+ * six for a sidewalk, Ease of Navigation and Evenness for a path, whose four
+ * SIDEWALK_ONLY_KEYS must be null or absent. Any key outside SCENE_KEYS
+ * (walkability among them) is refused. Gives { valid: true, sceneLevel }
+ * with the six keys, null where not asked, which the route stores.
+ */
+export function validateSceneLevel(sceneLevel, hasSidewalk) {
+  if (!sceneLevel || typeof sceneLevel !== "object" || Array.isArray(sceneLevel)) {
+    return { valid: false, message: "sceneLevel is required." };
+  }
+  if (!isPresenceAnswer(hasSidewalk)) {
+    return { valid: false, message: "hasSidewalk must be true or false." };
+  }
+  for (const key of Object.keys(sceneLevel)) {
+    if (!SCENE_KEYS.includes(key)) return { valid: false, message: `sceneLevel.${key} is not a question.` };
+  }
+  const required = requiredSceneKeys(hasSidewalk);
+  const normalized = emptySceneLevel();
+  for (const key of SCENE_KEYS) {
+    const value = sceneLevel[key];
+    if (!required.includes(key)) {
+      if (isGiven(value)) return { valid: false, message: `sceneLevel.${key} is not asked when there is only a path.` };
+      continue;
+    }
+    if (!SCENE_RULES[key](value)) return { valid: false, message: SCENE_MESSAGES[key] };
+    normalized[key] = key in SCENE_NUMBERED ? asInteger(value) : value;
+  }
+  return { valid: true, sceneLevel: normalized };
+}
+
+/**
+ * Contributors' boxes. hasSidewalk (S15, Step 1) picks the rules: with a
+ * sidewalk (true, the default) every real box says whether it is on it
+ * (S12). With only a path (false) Question 1 is never asked, so a real box
+ * must have no onSidewalk at all. The obstructs and severity rules are the
+ * same for both.
+ */
+export const PATH_HAS_NO_SIDEWALK_ANSWER = "With only a path, objects have no sidewalk answer.";
+
+export function validateBoxes(selectedObjectsID, newObjects, { requireSeverity = true, hasSidewalk = true } = {}) {
   if (!Array.isArray(selectedObjectsID) || !Array.isArray(newObjects)) {
     return { valid: false, message: "selectedObjectsID and newObjects must be arrays." };
   }
@@ -75,7 +116,9 @@ export function validateBoxes(selectedObjectsID, newObjects, { requireSeverity =
     // Contributors (S12, 2 Nov 2026): every real box says whether it is on the
     // sidewalk or the path people walk on. One that is not is stored as a
     // real object that does not obstruct, with no severity.
-    if (box.comment !== NOT_AN_OBJECT) {
+    if (box.comment !== NOT_AN_OBJECT && hasSidewalk === false) {
+      if (box.onSidewalk !== undefined) return { valid: false, message: PATH_HAS_NO_SIDEWALK_ANSWER };
+    } else if (box.comment !== NOT_AN_OBJECT) {
       if (typeof box.onSidewalk !== "boolean") {
         return { valid: false, message: "Every object must say whether it is on the sidewalk (onSidewalk: true/false)." };
       }
@@ -246,10 +289,11 @@ function recordById(annotationList) {
  * S3: initialState also carries the record's `proposedObstructs` and
  * `obstructionProbability` when the record has them, and `proposalShown` is
  * true only when the record has a proposal and the box answered Question 1
- * Yes (proposalWasShown). Any of the three sent in the request is dropped.
+ * Yes, or with only a path (S15) was not marked Not an object
+ * (proposalWasShown). Any of the three sent in the request is dropped.
  * Annotators' boxes are always `proposalShown: false`.
  */
-export function applyRecordSuggestions(selectedObjectsID, annotationList, { isAnnotator = false } = {}) {
+export function applyRecordSuggestions(selectedObjectsID, annotationList, { isAnnotator = false, hasSidewalk = true } = {}) {
   if (!Array.isArray(selectedObjectsID)) return { valid: true, boxes: selectedObjectsID };
   const byId = recordById(annotationList);
   const boxes = [];
@@ -261,7 +305,7 @@ export function applyRecordSuggestions(selectedObjectsID, annotationList, { isAn
       editable: false,
       confidence: recordConfidence(entry),
       initialState: { comment: entry.comment ?? null, mark: entry.mark ? { ...entry.mark } : null, ...recordProposal(entry) },
-      proposalShown: proposalWasShown(entry, box, { isAnnotator }),
+      proposalShown: proposalWasShown(entry, box, { isAnnotator, hasSidewalk }),
     });
   }
   return { valid: true, boxes };
@@ -289,7 +333,7 @@ export function clearDrawnModelFields(newObjects) {
  * same ids. An entry with no submitted box (one hidden below tau) was never
  * shown. A tampered body cannot change either.
  */
-export function withRecordConfidences(telemetry, annotationList, { boxes = [], isAnnotator = false } = {}) {
+export function withRecordConfidences(telemetry, annotationList, { boxes = [], isAnnotator = false, hasSidewalk = true } = {}) {
   if (!telemetry || typeof telemetry !== "object" || !Array.isArray(telemetry.suggestionConfidences)) return telemetry;
   const byId = recordById(annotationList);
   const submitted = new Map((Array.isArray(boxes) ? boxes : []).filter(Boolean).map((box) => [String(box.id), box]));
@@ -301,7 +345,7 @@ export function withRecordConfidences(telemetry, annotationList, { boxes = [], i
       ...entry,
       confidence: recordConfidence(record),
       proposedObstructs: isProposal(record.proposedObstructs) ? record.proposedObstructs : null,
-      proposalShown: proposalWasShown(record, submitted.get(String(entry.id)), { isAnnotator }),
+      proposalShown: proposalWasShown(record, submitted.get(String(entry.id)), { isAnnotator, hasSidewalk }),
     });
   }
   return { ...telemetry, suggestionConfidences };

@@ -53,8 +53,10 @@ export function onSidewalkPatch({ editable }) {
 // askOnSidewalk (S12, 2 Nov 2026): until a box is answered on the sidewalk, its
 // panel shows the sidewalk question ("sidewalk"), and only then the obstruction
 // question. Not an object boxes are never asked it.
-export function getSuggestionPanelMode({ editable, selected, obstructs, severity, comment, onSidewalk, askSeverity = true, askOnSidewalk = true }) {
-  if (askOnSidewalk && comment !== NOT_AN_OBJECT && onSidewalk !== true) return "sidewalk";
+// pathOnly (S15, 9 Nov 2026): Step 1 says there is only a path, so there is
+// no sidewalk to be on and the panel goes straight to the obstruction question.
+export function getSuggestionPanelMode({ editable, selected, obstructs, severity, comment, onSidewalk, askSeverity = true, askOnSidewalk = true, pathOnly = false }) {
+  if (askOnSidewalk && !pathOnly && comment !== NOT_AN_OBJECT && onSidewalk !== true) return "sidewalk";
   if (askSeverity && obstructs === true && severity == null && (editable || selected)) return "severity";
   if (editable) return "drawn";
   if (selected) return "confirmed";
@@ -87,4 +89,64 @@ export function isDecidedForObjects(box) {
   if (!box) return false;
   if (box.editable) return true;
   return box.selected === true || box.comment === NOT_AN_OBJECT;
+}
+
+/**
+ * Contributors' Step 1 changed after boxes were answered (S15, 9 Nov 2026).
+ * `from` and `to` are hasSidewalk before and after: true a sidewalk, false
+ * only a path, null not answered.
+ *
+ * Yes to No: a box answered not on the path (onSidewalk false) goes back to
+ * Still to decide, its onSidewalk, obstructs and severity removed, and a
+ * suggestion also loses the isRejected that offSidewalkPatch set. A box
+ * answered on the path keeps its obstructs and severity and loses onSidewalk,
+ * since a path box has none.
+ *
+ * No to Yes: every real box goes back to Still to decide with obstructs and
+ * severity removed, and a suggestion also loses selected and isRejected,
+ * since Question 1 must now be asked first.
+ *
+ * Not an object and every category are kept either way. Returns new boxes
+ * (the input is not mutated) and `resetIds`, the boxes that need answering
+ * again, which decide whether "Some boxes need answering again." shows.
+ *
+ * @param {Array<object> | null | undefined} boxes
+ * @param {boolean | null} from
+ * @param {boolean | null} to
+ * @returns {{ boxes: Array<object>, resetIds: string[] }}
+ */
+export function applyPresenceChange(boxes, from, to) {
+  const list = Array.isArray(boxes) ? boxes : [];
+  const resetIds = [];
+  const changing = (from === true && to === false) || (from === false && to === true);
+  const next = list.map((box) => {
+    if (!changing || !box || typeof box !== "object" || isNotAnObject(box)) return box;
+    const suggestion = box.editable !== true;
+    const copy = { ...box };
+    if (to === false) {
+      if (box.onSidewalk === false) {
+        delete copy.onSidewalk;
+        delete copy.obstructs;
+        delete copy.severity;
+        if (suggestion) delete copy.isRejected;
+        resetIds.push(box.id);
+      } else if ("onSidewalk" in copy) {
+        delete copy.onSidewalk;
+      } else {
+        return box;
+      }
+      return copy;
+    }
+    const hadAnswer = typeof box.obstructs === "boolean" || box.severity != null || (suggestion && (box.selected === true || box.isRejected === true));
+    if (!hadAnswer) return box;
+    delete copy.obstructs;
+    delete copy.severity;
+    if (suggestion) {
+      delete copy.selected;
+      delete copy.isRejected;
+    }
+    resetIds.push(box.id);
+    return copy;
+  });
+  return { boxes: next, resetIds };
 }

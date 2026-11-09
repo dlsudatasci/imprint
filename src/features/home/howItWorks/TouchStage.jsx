@@ -5,6 +5,7 @@ import { EyeOffIcon, ExpandIcon } from "@/ui/icons";
 import DefaultInputSection, { SeverityPicker } from "@/ui/annotation-tool/DefaultInputSection";
 import ObjectTrays, { ObjectTraysPeek } from "@/ui/annotation-tool/ObjectTrays";
 import SceneQuestions from "@/ui/annotation-tool/SceneQuestions";
+import SidewalkPresence from "@/ui/annotation-tool/SidewalkPresence";
 import { boxLabelColors, boxLineStyle, boxStrokeColor, defaultShapeStyle, placeLabel } from "@/ui/annotation-tool/Shape";
 import { ensureVisible, fitImage, keepPhotoInPlace, panLimits } from "@/ui/annotation-tool/viewTransform";
 import { LOUPE_BACKGROUND, LOUPE_MAGNIFICATION, LOUPE_SIZE_PX, loupePlacement, loupeSource } from "@/ui/annotation-tool/loupe";
@@ -28,8 +29,8 @@ import { DEMO_IMAGES, DEMO_IMAGE_SIZE } from "./demoScript";
  * it, and a finger. Built from the tool's own pieces wherever they stand
  * alone, so it matches what a contributor will meet: the panel in the sheet
  * (DefaultInputSection, SeverityPicker, variant "sheet"), the top of the sheet
- * at rest (ObjectTraysPeek), the lists and Step 2 under it (ObjectTrays
- * stacked, SceneQuestions "sheet"). Where the tool's piece cannot stand alone
+ * at rest (ObjectTraysPeek, or Step 1 until it is answered, S15), the lists
+ * and Step 3 under it (ObjectTrays stacked, SceneQuestions "sheet"). Where the tool's piece cannot stand alone
  * it is copied here, kept in step by tests where it can be: the photo with
  * its boxes (the canvas needs a session), Add box and the full-screen button,
  * the hint, the magnifier, the line above an open box's panel, the sheet's
@@ -124,6 +125,8 @@ export function findTouchTarget(root, target, boxes) {
   if (control) return root.querySelector(`[data-demo-panel] [data-control="${control}"]`);
   if (target.name === "option") return root.querySelector(`[data-demo-option="${target.value}"]`);
   if (target.name === "scene") return root.querySelector(`[data-scene-option="${target.field}:${target.value}"]`);
+  // Step 1 (S15), at the top of the sheet until it is answered
+  if (target.name === "presence") return root.querySelector(`[data-presence-option="${target.value}"]`);
   // The submit button is the last (Previous comes first from the second photo on)
   if (target.name === "next") return root.querySelector('[data-demo="next"] > button:last-child');
   if (target.name === "addbox") return root.querySelector('[data-demo="addbox"]');
@@ -204,7 +207,7 @@ const FLOATING = "absolute z-10 h-11 inline-flex items-center justify-center rou
  * set by the stage on the DOM.
  */
 const Screen = memo(function Screen({ view, geo, coarse, refs }) {
-  const { imageIndex, boxes, selectedId, picker, dropdown, scene, saving, hint } = view;
+  const { imageIndex, boxes, selectedId, picker, dropdown, scene, saving, hint, hasSidewalk = null } = view;
   const image = DEMO_IMAGES[imageIndex];
   const scale = geo.fit ? geo.fit.scale : 0;
   const sorted = orderOfAppearance(boxes);
@@ -256,14 +259,17 @@ const Screen = memo(function Screen({ view, geo, coarse, refs }) {
       </div>
     );
   } else {
-    header = (
+    // Step 1 (S15) holds the top of the sheet until it is answered, then
+    // sits at the top of the list, as in the tool
+    const presence = <SidewalkPresence value={hasSidewalk} variant="sheet" onAnswer={noop} />;
+    header = hasSidewalk === null ? presence : (
       <ObjectTraysPeek
         trays={trays}
         peek={buildPeekChips(sorted, { labels })}
         selectedId={null}
         onOpen={noop}
         onNext={noop}
-        sceneLine={sceneProgressLine(scene)}
+        sceneLine={sceneProgressLine(scene, hasSidewalk)}
         onShowScene={noop}
         hiddenIds={[]}
         onShowAll={noop}
@@ -272,6 +278,7 @@ const Screen = memo(function Screen({ view, geo, coarse, refs }) {
     );
     body = (
       <>
+        {hasSidewalk !== null && presence}
         <ObjectTrays trays={trays} selectedId={null} hiddenIds={[]} onOpen={noop} onToggleHidden={noop} stacked />
         <SceneQuestions sceneLevel={scene} variant="sheet" onAnswer={noop} />
       </>
@@ -379,7 +386,7 @@ const Screen = memo(function Screen({ view, geo, coarse, refs }) {
                 selectedId={null}
                 onOpen={noop}
                 onNext={noop}
-                sceneLine={sceneProgressLine(scene)}
+                sceneLine={sceneProgressLine(scene, hasSidewalk)}
                 onShowScene={noop}
                 hiddenIds={[]}
                 onShowAll={noop}
@@ -483,9 +490,11 @@ export default function TouchStage({ frame, instant = false, coarse = false }) {
       scene: frame.scene,
       saving: frame.saving,
       hint: frame.hint,
+      // Step 1 (S15)
+      hasSidewalk: frame.hasSidewalk ?? null,
     }),
     // Compared by content: touchFrame makes a new object on every scroll step
-    [JSON.stringify([frame.imageIndex, frame.boxes, frame.selectedId, frame.picker, frame.dropdown, frame.scene, frame.saving, frame.hint])]
+    [JSON.stringify([frame.imageIndex, frame.boxes, frame.selectedId, frame.picker, frame.dropdown, frame.scene, frame.saving, frame.hint, frame.hasSidewalk])]
   );
 
   // Where things are on the screen now, and where they are going (design px)

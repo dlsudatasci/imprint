@@ -42,7 +42,8 @@ describe("landing page copy", () => {
     expect(answer.text).toBe("Go through the rest the same way. If an object is off the sidewalk or not an obstruction, click No. If a box does not seem to be a real object, mark it Not an object.");
     expect(draw.title).toBe("Draw the objects we missed");
     expect(draw.text).toBe("Drag a box around any object on the sidewalk we missed, pick its category, and answer both questions.");
-    expect(first.text).toMatch(/^We've already boxed the objects we found\. /);
+    // Step 1 first (S15)
+    expect(first.text).toMatch(/^Say if there is a sidewalk or only a path\. Then open a box we found /);
     expect(HOW_IT_WORKS_COPY.touchChapters[2].title).toBe("Draw the objects we missed");
     expect(draw.text).toContain("answer both questions");
     expect(draw.text).not.toContain("the same question.");
@@ -53,7 +54,7 @@ describe("landing page copy", () => {
     // 101 from 5 Nov 2026 (Rans: any object on the sidewalk)
     expect(draw.text.length).toBeLessThanOrEqual(105);
     // Rate the sidewalk: the sidewalk nearest you, as in the tour and the guide (S16 follow-up, 3 Nov 2026)
-    expect(HOW_IT_WORKS_COPY.chapters[3].text).toBe("Four quick questions about the sidewalk nearest you: how wide it is, its surface, how comfortable it looks, and whether you could get through.");
+    expect(HOW_IT_WORKS_COPY.chapters[3].text).toBe("Six quick questions about the sidewalk nearest you: its width, how obstructed it is, how even it is, its surface, and whether anything separates it from the road.");
   });
 
   it("offers Not an object only where it is offered: the model's boxes, never a drawn one", () => {
@@ -90,7 +91,9 @@ describe("landing page copy", () => {
     // question, as the preview plays it (Yes to the path, Yes, severity 1), in two lines at 320 and
     // 375 px (measured in Chrome at 71 characters)
     const [first, , , rate] = HOW_IT_WORKS_COPY.touchChapters;
-    expect(first.text).toBe("Tap a box. On the walking path? In your way? Rate its severity, 1 to 5.");
+    // Step 1 first from S15, within the same two lines
+    expect(first.text).toBe("Sidewalk or path? Tap a box. On the walking path? In your way? Rate it.");
+    expect(first.text.indexOf("Sidewalk or path?")).toBe(0);
     expect(first.text.indexOf("walking path")).toBeLessThan(first.text.indexOf("In your way"));
     expect(first.text.length).toBeLessThanOrEqual(72);
     // What the first chapter plays: Tree #1, Yes to the path question, Yes, severity 1
@@ -99,7 +102,7 @@ describe("landing page copy", () => {
     expect(tree).toMatchObject({ onSidewalk: true, selected: true, obstructs: true, severity: 1 });
     expect(touchTickOf("tree-sidewalk")).toBeLessThan(touchTickOf("tree-yes"));
     // Both "Rate the sidewalk" texts say which sidewalk
-    expect(rate.text).toBe("Tap the Step 2 line and answer four questions about the sidewalk nearest you.");
+    expect(rate.text).toBe("Tap the Step 3 line and answer the questions about the sidewalk nearest you.");
     expect(HOW_IT_WORKS_COPY.chapters[3].text).toContain("the sidewalk nearest you");
     expect(TOUCH_STILL_TICKS).toHaveLength(TOUCH_CHAPTERS.length);
     TOUCH_STILL_TICKS.forEach((tick) => {

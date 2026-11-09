@@ -41,6 +41,7 @@ import TUTORIAL_IMAGES from "@/data/tutorialImages";
 import DefaultInputSection from "@/ui/annotation-tool/DefaultInputSection";
 import { ids } from "@/features/home/howItWorks/demoScript";
 import { practiceLockFor, PRACTICE_STEPS } from "@/features/tutorial/practiceSteps";
+import { emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
 
 /** 23 Oct 2026: the tutorial wrote its practice photos over a real session's saved copy */
 let host;
@@ -124,7 +125,8 @@ describe("the tour's steps", () => {
     await stageWait();
     await act(async () => seen.form.onShowTour());
     const steps = joyride.props?.steps;
-    expect(steps?.length).toBe(6);
+    // Step 1 first from S15
+    expect(steps?.length).toBe(7);
     for (const step of steps) {
       expect(typeof step.before, step.title).toBe("function");
       const result = step.before();
@@ -236,13 +238,15 @@ describe("the practice on the first image", () => {
   const cardText = () => card()?.textContent ?? "";
   const tree = (extra = {}) => ({ id: ids.tree, comment: "tree", editable: false, mark: { x: 471, y: 71, width: 60, height: 159 }, severity: null, ...extra });
   const car = (extra = {}) => ({ id: ids.car, comment: "car", editable: false, mark: { x: 330, y: 173, width: 72, height: 64 }, severity: null, ...extra });
-  const toolState = ({ treeBox = tree(), carBox = car(), openId = null } = {}) => ({
+  // Step 1 answered Yes unless a test says otherwise (S15)
+  const toolState = ({ treeBox = tree(), carBox = car(), openId = null, hasSidewalk = true } = {}) => ({
     boxes: [treeBox, carBox],
     openId,
-    scene: { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null },
+    scene: emptySceneLevel(),
+    hasSidewalk,
   });
   const send = (state, type = "open") => act(async () => seen.form.onPracticeEvent({ type, id: null, state }));
-  const step = () => Number(/Practice (\d+) of 10/.exec(cardText())?.[1]);
+  const step = () => Number(/Practice (\d+) of 11/.exec(cardText())?.[1]);
   const lockAt = (key) => practiceLockFor(PRACTICE_STEPS.findIndex((s) => s.key === key));
   let realMatchMedia;
   /** Reduced motion: each step moves on at once, without the check mark's half second */
@@ -269,10 +273,17 @@ describe("the practice on the first image", () => {
   it("starts on a contributor's fresh start, not the tour", async () => {
     await start();
     expect(card()).toBeTruthy();
-    expect(cardText()).toMatch(/Practice 1 of 10/);
-    expect(cardText()).toMatch(/Click the dashed box on the tree\./);
+    // Step 1 first (S15): only its Yes, no box open and no outline
+    expect(cardText()).toMatch(/Practice 1 of 11/);
+    expect(cardText()).toMatch(/Step 1: this photo has a sidewalk raised on a curb\. Choose Yes\./);
     expect(cardText()).toMatch(/Skip practice/);
     expect(joyride.props).toBeNull();
+    expect(seen.form.practiceLock).toBe(lockAt("presence"));
+    expect(seen.form.practiceHighlight).toBeNull();
+    // Answered Yes: the tree, as before
+    await send(toolState(), "presence");
+    expect(cardText()).toMatch(/Practice 2 of 11/);
+    expect(cardText()).toMatch(/Click the dashed box on the tree\./);
     expect(seen.form.practiceLock).toBe(lockAt("openTree"));
     expect(seen.form.practiceHighlight).toMatchObject({ boxId: ids.tree });
     expect(typeof seen.form.onPracticeEvent).toBe("function");
@@ -293,15 +304,16 @@ describe("the practice on the first image", () => {
   // At once from 8 Nov 2026 (Rans: the half second on the old line was a drag), the check mark on the new line
   it("moves on as soon as the step is done, with a check mark for half a second", async () => {
     await start();
-    await send(toolState({ openId: ids.car }));
+    // Step 1 not answered yet: nothing moves on
+    await send(toolState({ openId: ids.car, hasSidewalk: null }));
     expect(step()).toBe(1);
     expect(card().querySelector("[data-practice-done]")).toBeNull();
     await send(toolState({ openId: ids.tree }));
-    expect(step()).toBe(2);
+    expect(step()).toBe(3);
     expect(cardText()).toMatch(/If it is, choose Yes\./);
     expect(card().querySelector("[data-practice-done]")).toBeTruthy();
     await act(async () => new Promise((resolve) => setTimeout(resolve, 600)));
-    expect(step()).toBe(2);
+    expect(step()).toBe(3);
     expect(card().querySelector("[data-practice-done]")).toBeNull();
     // Pointing at Question 1's Yes now the panel is open, with no outline on the tree
     expect(seen.form.practiceHighlight).toMatchObject({ avoidBoxIds: [ids.tree] });
@@ -313,7 +325,7 @@ describe("the practice on the first image", () => {
     await start();
     await send(toolState({ openId: ids.tree }));
     await send(toolState({ openId: ids.tree, treeBox: tree({ onSidewalk: true }) }), "onSidewalk");
-    expect(step()).toBe(3);
+    expect(step()).toBe(4);
     expect(cardText()).toMatch(/You decide\. The model can be wrong\./);
     // The lock the page hands the tool, on the tree's own panel at Question 2
     const panelHost = document.createElement("div");
@@ -341,7 +353,7 @@ describe("the practice on the first image", () => {
     reduceMotion();
     await start();
     await throughTheTree(true);
-    expect(step()).toBe(5);
+    expect(step()).toBe(6);
     act(() => root.unmount());
     host.remove();
 
@@ -349,14 +361,14 @@ describe("the practice on the first image", () => {
     await send(toolState({ openId: ids.tree }));
     await send(toolState({ openId: ids.tree, treeBox: tree({ onSidewalk: true }) }), "onSidewalk");
     await send(toolState({ openId: ids.tree, treeBox: tree({ onSidewalk: true, obstructs: true, selected: true }) }), "obstructs");
-    expect(step()).toBe(4);
+    expect(step()).toBe(5);
     expect(cardText()).toMatch(/Rate how much it blocks you, then Confirm\./);
     act(() => root.unmount());
     host.remove();
 
     await start();
     await throughTheTree(false);
-    expect(step()).toBe(5);
+    expect(step()).toBe(6);
     expect(cardText()).toMatch(/Now for the car\./);
     expect(seen.form.practiceLock).toBe(lockAt("carOff"));
   });
@@ -384,11 +396,11 @@ describe("the practice on the first image", () => {
     reduceMotion();
     await start();
     await throughTheTree(true);
-    expect(step()).toBe(5);
+    expect(step()).toBe(6);
     await act(async () => Array.from(card().querySelectorAll("button")).find((b) => b.textContent === "Skip practice").click());
     // What the tool saved: the tree answered on image 1, and an answer on image 2
     const saved = readSessionData();
-    saved.imgRecords[0] = { ...saved.imgRecords[0], annotationList: saved.imgRecords[0].annotationList.map((b) => (b.id === ids.tree ? { ...b, onSidewalk: true, obstructs: true, severity: 2 } : b)), userSceneLevel: { sidewalkWidth: "moderate" } };
+    saved.imgRecords[0] = { ...saved.imgRecords[0], annotationList: saved.imgRecords[0].annotationList.map((b) => (b.id === ids.tree ? { ...b, onSidewalk: true, obstructs: true, severity: 2 } : b)), userSceneLevel: { sidewalkWidth: "two_people" } };
     saved.imgRecords[1] = { ...saved.imgRecords[1], userSceneLevel: { sidewalkWidth: "wide" } };
     writeSession({ data: saved });
     const formBefore = seen.form;
@@ -397,7 +409,7 @@ describe("the practice on the first image", () => {
     await act(async () => {});
     expect(joyride.props).toBeNull();
     expect(step()).toBe(1);
-    expect(cardText()).toMatch(/Click the dashed box on the tree\./);
+    expect(cardText()).toMatch(/Step 1: this photo has a sidewalk/);
     // No hint while it runs, and no button
     expect(Array.from(host.querySelectorAll("[role='status']")).some((el) => /redo the practice/.test(el.textContent))).toBe(false);
     expect(seen.form.onShowTour).toBeUndefined();
@@ -410,7 +422,7 @@ describe("the practice on the first image", () => {
     expect(seen.form.data.annotationList.find((b) => b.id === ids.tree).onSidewalk).toBeUndefined();
     // And it runs as before
     await send(toolState({ openId: ids.tree }));
-    expect(step()).toBe(2);
+    expect(step()).toBe(3);
   });
 
   it("does the practice again from the button on coming back to the first image too", async () => {
@@ -436,6 +448,8 @@ describe("the practice on the first image", () => {
 
   it("pulses the target once more on a press anywhere but the card", async () => {
     await start();
+    // Past Step 1 (S15), which outlines nothing on the photo
+    await send(toolState(), "presence");
     expect(seen.form.practiceHighlight.pulse).toBe(0);
     await act(async () => document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })));
     expect(seen.form.practiceHighlight.pulse).toBe(1);
@@ -449,7 +463,7 @@ describe("the practice on the first image", () => {
     reduceMotion();
     await start();
     await throughTheTree(true);
-    expect(step()).toBe(5);
+    expect(step()).toBe(6);
     // What the tool saved of the tree before the reload
     const saved = readSessionData();
     saved.imgRecords[0] = { ...saved.imgRecords[0], annotationList: [{ ...saved.imgRecords[0].annotationList[1], onSidewalk: true, obstructs: true, severity: 2 }] };
@@ -469,11 +483,11 @@ describe("the practice on the first image", () => {
     reduceMotion();
     await start();
     await send(toolState({ openId: ids.tree }));
-    expect(step()).toBe(2);
+    expect(step()).toBe(3);
     sessionHolder.value = { ...sessionHolder.value, update: async () => {} };
     await act(async () => root.render(<TutorialPage />));
     await stageWait();
-    expect(step()).toBe(2);
+    expect(step()).toBe(3);
   });
 
   it("allows Next Image at its last step only, and image 2 then has no tour, no practice and the reminder", async () => {
@@ -492,22 +506,23 @@ describe("the practice on the first image", () => {
         { ...post, comment: "---", onSidewalk: undefined, obstructs: undefined, severity: null },
       ],
       openId: null,
-      scene: { sidewalkWidth: null, surfaceCondition: null, walkability: null, overallAccessibility: null },
+      scene: emptySceneLevel(),
+      hasSidewalk: true,
     };
     await send({ ...done, boxes: done.boxes.slice(0, 2) }, "onSidewalk");
-    expect(step()).toBe(6);
-    await send(done, "drawn");
     expect(step()).toBe(7);
+    await send(done, "drawn");
+    expect(step()).toBe(8);
     expect(seen.form.practiceLock.canDraw).toBe(true);
     // The drawn box deleted at step 7: back to step 6
     await send({ ...done, boxes: done.boxes.slice(0, 4) }, "deleted");
-    expect(step()).toBe(6);
+    expect(step()).toBe(7);
     const withPost = { ...done, boxes: [...done.boxes.slice(0, 4), post] };
     await send(withPost, "severity");
-    expect(step()).toBe(9);
-    expect(sessionStorage.getItem(PRACTICE_DONE_KEY)).toBeNull();
-    await send({ ...withPost, scene: { sidewalkWidth: "moderate", surfaceCondition: 3, walkability: 3, overallAccessibility: 5 } }, "scene");
     expect(step()).toBe(10);
+    expect(sessionStorage.getItem(PRACTICE_DONE_KEY)).toBeNull();
+    await send({ ...withPost, scene: { sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 3, roadBarrier: true } }, "scene");
+    expect(step()).toBe(11);
     expect(cardText()).toMatch(/All done\. Click Next Image\./);
     expect(seen.form.practiceLock.canSubmit).toBe(true);
     expect(sessionStorage.getItem(PRACTICE_DONE_KEY)).toBe("true");
@@ -538,7 +553,7 @@ describe("the practice on the first image", () => {
     expect(Array.from(host.querySelectorAll("[role='status']")).some((el) => /reminder/.test(el.textContent))).toBe(false);
     await act(async () => seen.form.onShowTour());
     expect(joyride.props?.run).toBe(true);
-    expect(joyride.props.steps).toHaveLength(6);
+    expect(joyride.props.steps).toHaveLength(7);
   });
 
   it("leaves an annotator's tutorial as it was: the tour starts, no practice", async () => {

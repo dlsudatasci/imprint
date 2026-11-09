@@ -142,7 +142,7 @@ export default class DashboardInfo extends React.Component {
 
   render() {
     const { totalAnnotation, recentSessions, sessionsFailed, telemetryStats, loading, hasMoreSessions, firstPageCount, loadingMore, moreFailed } = this.state;
-    // Accessible to me is a contributor's Step 2 answer. Annotators give none,
+    // Ease of navigation is a contributor's Step 3 answer (S15). Annotators give none,
     // so their list has no such column, and the chart takes its space
     // (22 Oct 2026). One session with it brings the column to every row.
     const showAccess = recentSessions.some((session) => !session.isActive && parseFloat(session.averageScore) > 0);

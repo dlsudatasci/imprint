@@ -41,7 +41,7 @@ export default async function handler(req, res) {
         $group: {
           _id: null,
           total: { $sum: 1 },
-          // 5 Easily accessible to 1 Not accessible, rows answered before
+          // Ease of Navigation (S15), 5 Unobstructed to 1 Fully obstructed, rows answered before
           // 22 Oct 2026 turned round (validators/sceneScale.mjs)
           avgRating: { $avg: currentScaleExpr("overallAccessibility") },
           users: { $addToSet: "$userId" },

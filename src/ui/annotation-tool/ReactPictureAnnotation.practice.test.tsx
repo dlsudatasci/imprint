@@ -29,7 +29,8 @@ type Tool = {
   onMarkNotAnObject(): void;
   onSceneAnswer(updates: Record<string, unknown>): void;
   submit(): Promise<void> | undefined;
-  state: { showInput: boolean; sceneLevel: Record<string, unknown>; error: string | null };
+  setState(state: Record<string, unknown>): void;
+  state: { showInput: boolean; sceneLevel: Record<string, unknown>; error: string | null; hasSidewalk: boolean | null };
 };
 
 const PHOTO = TUTORIAL_IMAGES[0];
@@ -63,13 +64,16 @@ let ref: React.RefObject<ReactPictureAnnotation | null>;
 
 type Props = {
   isAnnotator?: boolean;
+  /** A contributor's Step 1 (S15) is answered Yes on mounting, as the practice's first step does, unless this is false */
+  answerStep1?: boolean;
   onPracticeEvent?: (event: PracticeEvent) => void;
   practiceLock?: PracticeLock | null;
   practiceHighlight?: PracticeHighlight | null;
 };
 let lastProps: Props = {};
 
-function render(props: Props) {
+function render({ answerStep1, ...props }: Props) {
+  void answerStep1;
   lastProps = props;
   act(() => {
     root!.render(
@@ -105,6 +109,10 @@ function mount(props: Props = {}): Tool {
   render(props);
   const tool = ref.current as unknown as Tool;
   tool.currentImageElement = { width: 640, height: 360 };
+  // Step 2 waits for Step 1 (S15): the tutorial photo has a sidewalk
+  if (!props.isAnnotator && props.answerStep1 !== false) {
+    act(() => (host.querySelector("[data-presence-option='true']") as HTMLButtonElement).click());
+  }
   return tool;
 }
 
@@ -185,12 +193,16 @@ describe("onPracticeEvent", () => {
     expect(events.find((e) => e.type === "deleted")).toMatchObject({ id: drawnId });
     expect(events.find((e) => e.type === "deleted")!.state.boxes.some((b) => b.id === drawnId)).toBe(false);
 
-    // scene: Step 2's state comes with it
-    act(() => tool.onSceneAnswer({ sidewalkWidth: "moderate" }));
-    expect(last()).toMatchObject({ type: "scene", value: { sidewalkWidth: "moderate" } });
-    expect(last().state.scene.sidewalkWidth).toBe("moderate");
+    // scene: Step 3's state comes with it
+    act(() => tool.onSceneAnswer({ sidewalkWidth: "two_people" }));
+    expect(last()).toMatchObject({ type: "scene", value: { sidewalkWidth: "two_people" } });
+    expect(last().state.scene.sidewalkWidth).toBe("two_people");
 
-    expect(new Set(types())).toEqual(new Set(["open", "close", "onSidewalk", "obstructs", "severity", "notAnObject", "restore", "category", "drawn", "deleted", "scene"]));
+    // presence (S15): Step 1, answered Yes on mounting, with its state
+    expect(events[0]).toMatchObject({ type: "presence", id: null, value: true });
+    expect(events[0].state.hasSidewalk).toBe(true);
+
+    expect(new Set(types())).toEqual(new Set(["presence", "open", "close", "onSidewalk", "obstructs", "severity", "notAnObject", "restore", "category", "drawn", "deleted", "scene"]));
   });
 
   it("sends a drawn box fitted again, and a No, with their state", () => {
@@ -211,6 +223,58 @@ describe("onPracticeEvent", () => {
     press(tool, [centre(ids.tree)]);
     click(button("on-sidewalk-yes"));
     expect(boxIn(tool, ids.tree).onSidewalk).toBe(true);
+  });
+});
+
+// S15 (9 Nov 2026): no box opens and none is drawn or added until Step 1 is answered
+describe("Step 2 waits for Step 1", () => {
+  const FIRST = "First, answer Step 1: is there a sidewalk?";
+
+  it("opens no box from the photo or the lists, draws none and adds none, with the message, until Step 1 is answered", () => {
+    const tool = mount({ answerStep1: false });
+    expect(tool.state.hasSidewalk).toBeNull();
+    press(tool, [centre(ids.tree)]);
+    expect(tool.selectedId).toBeNull();
+    expect(tool.state.showInput).toBe(false);
+    expect(tool.state.error).toBe(FIRST);
+    act(() => tool.setState({ error: null }));
+    press(tool, [EMPTY, [EMPTY[0] + 40, EMPTY[1] + 40]]);
+    expect(drawnBoxes(tool)).toEqual([]);
+    expect(tool.state.error).toBe(FIRST);
+    act(() => tool.addBoxFromButton());
+    expect(drawnBoxes(tool)).toEqual([]);
+    act(() => tool.selectBoxById(ids.tree));
+    expect(tool.selectedId).toBeNull();
+    const chip = Array.from(host.querySelectorAll("#box-review-section button")).find((b) => /^Tree/.test(b.textContent?.trim() ?? "")) as HTMLButtonElement;
+    act(() => tool.setState({ error: null }));
+    click(chip);
+    expect(tool.selectedId).toBeNull();
+    expect(tool.state.error).toBe(FIRST);
+    // Step 1 answered: the message goes, and the tree opens
+    click(host.querySelector<HTMLButtonElement>("[data-presence-option='true']"));
+    expect(tool.state.hasSidewalk).toBe(true);
+    expect(tool.state.error).toBeNull();
+    press(tool, [centre(ids.tree)]);
+    expect(tool.selectedId).toBe(ids.tree);
+  });
+
+  it("brings Step 1 into view on a laptop", () => {
+    const tool = mount({ answerStep1: false });
+    const section = host.querySelector("#sidewalk-presence-section") as HTMLElement;
+    const scroll = vi.fn();
+    section.scrollIntoView = scroll;
+    press(tool, [centre(ids.tree)]);
+    expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ block: "start" }));
+  });
+
+  it("allows only Yes at Step 1 under a lock that says so, and the tool refuses No too", () => {
+    const tool = mount({ answerStep1: false, practiceLock: { openable: [], canDraw: false, canSubmit: false, allowAnswers: {}, allowPresence: true } });
+    const no = host.querySelector<HTMLButtonElement>("[data-presence-option='false']")!;
+    expect(no.disabled).toBe(true);
+    act(() => (tool as unknown as { onPresenceAnswer(v: boolean): void }).onPresenceAnswer(false));
+    expect(tool.state.hasSidewalk).toBeNull();
+    click(host.querySelector<HTMLButtonElement>("[data-presence-option='true']"));
+    expect(tool.state.hasSidewalk).toBe(true);
   });
 });
 

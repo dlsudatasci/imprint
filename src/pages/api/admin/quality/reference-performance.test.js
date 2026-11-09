@@ -83,7 +83,7 @@ describe("GET /api/admin/quality/reference-performance", () => {
         referenceGroundTruth: [{
           userId: USER_B,
           source: "annotator",
-          sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+          sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false },
           selectedObjectsID: [{ mark: { x: 0, y: 0, width: 100, height: 100 }, comment: "tree", obstructs: true, severity: 3 }],
           newObjects: [],
         }],
@@ -93,7 +93,7 @@ describe("GET /api/admin/quality/reference-performance", () => {
         userId: USER_A,
         source: "contributor",
         status: "completed",
-        sceneLevel: { sidewalkWidth: "two_people", surfaceCondition: 2, walkability: 3, overallAccessibility: 3 },
+        sceneLevel: { sidewalkWidth: "two_people", overallAccessibility: 3, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 2, roadBarrier: false },
         selectedObjectsID: [{ mark: { x: 0, y: 0, width: 100, height: 100 }, comment: "tree", obstructs: true, severity: 4 }],
         newObjects: [],
       }],

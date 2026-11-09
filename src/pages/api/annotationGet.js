@@ -106,6 +106,8 @@ async function mergeUserAnnotations(db, userId, imgRecords) {
     // the tool does not turn it round again
     img.userSceneLevel = toCurrentScale(annotation.sceneLevel, annotation.sceneScale);
     img.userSceneScale = SCENE_SCALE;
+    // Contributors' Step 1 (S15), restored with the other answers
+    img.userHasSidewalk = annotation.hasSidewalk ?? null;
     // The annotator's sidewalk outline (6 Oct 2026), so Previous and resumed
     // sessions restore it
     img.userSidewalkMask = annotation.sidewalkMask ?? null;

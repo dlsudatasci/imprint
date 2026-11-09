@@ -24,14 +24,15 @@ const round = (n) => (typeof n === "number" && Number.isFinite(n) ? Math.round(n
 /**
  * A short text that is the same exactly when the answers on an image are the
  * same: every answered or drawn box (its category, place and answers) and,
- * where they are asked, Step 2's answers and the sidewalk outline. Box order
+ * where they are asked, Step 3's answers, contributors' Step 1 (hasSidewalk,
+ * S15, so changing it counts as a change) and the sidewalk outline. Box order
  * does not count (the tool reorders boxes on every click), nor do suggestions
  * not answered yet, which are never sent. A category is read as its option's
  * value (S20, categoryKey), so "Utility Post" and `utility_post`, which the
  * panel turns into each other when it opens, are one category. One typed in
  * with Other... is compared as written.
  */
-export function answerSignature({ boxes = [], scene = null, mask = null } = {}) {
+export function answerSignature({ boxes = [], scene = null, hasSidewalk = null, mask = null } = {}) {
   const answered = (Array.isArray(boxes) ? boxes : [])
     .filter((b) => b && (b.editable || b.selected || b.isRejected))
     .map((b) => [
@@ -46,7 +47,7 @@ export function answerSignature({ boxes = [], scene = null, mask = null } = {}) 
       b.onSidewalk ?? null,
     ])
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
-  return JSON.stringify({ boxes: answered, scene: scene ?? null, mask: mask ?? null });
+  return JSON.stringify({ boxes: answered, scene: scene ?? null, hasSidewalk: hasSidewalk ?? null, mask: mask ?? null });
 }
 
 /**

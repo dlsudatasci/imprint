@@ -13,7 +13,7 @@ import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
  * §7n). Each step's wording here is the tool's own: Let's Annotate! and Start
  * Session (dashboard and session picker), "Does ... obstruct the sidewalk?",
  * Yes, No, Not an object, Delete box, Add box and Other... (the box panel),
- * the four questions (SceneQuestions), Next Image and Previous, Pause and
+ * the Step 3 questions (SceneQuestions), Next Image and Previous, Pause and
  * Stop (their dialogs). The pictures are the landing page's preview at the
  * same five moments, drawn from the tool's components, so they change when
  * the tool does. The first step's picture is the session picker, drawn from
@@ -21,8 +21,8 @@ import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
  *
  * On phones and tablets (23 Oct 2026, IMPRINT_guide_touch_stills.md) the
  * pictures are the phone layout's, so the text names where things are on
- * both: the lists in the answers sheet, and the Step 2 line that brings
- * Step 2 up.
+ * both: the lists in the answers sheet, and the Step 3 line that brings
+ * Step 3 up (the Step 2 line until S15).
  *
  * From 2 Nov 2026 (S12) the box panel asks first whether the object is on the
  * sidewalk or the path people walk on, in sidewalkQuestionCopy.js's words.
@@ -41,6 +41,11 @@ import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
  * drawing the objects we missed (obstructing or not), and no "model" in
  * the text.
  *
+ * S15 (9 Nov 2026): a new step first, "Say whether there is a sidewalk"
+ * (Step 1, SidewalkPresence), with no picture. The objects are Step 2 and
+ * the sidewalk questions Step 3, six of them, or two with only a path, whose
+ * boxes have no Question 1.
+ *
  * Nothing here names the study's hypotheses or the reference images.
  */
 export const GUIDE_COPY = Object.freeze({
@@ -58,12 +63,20 @@ export const GUIDE_COPY = Object.freeze({
       ]),
     }),
     Object.freeze({
+      id: "presence",
+      title: "Say whether there is a sidewalk",
+      paragraphs: Object.freeze([
+        "First, check whether the photo has a sidewalk raised above the road on a curb, or only a path for people to walk on. Answer this before the objects. With only a path, each object asks only whether it obstructs the path, and Step 3 asks two questions instead of six. If you change this answer later, some objects ask again.",
+      ]),
+    }),
+    Object.freeze({
       id: "answer",
       title: "Answer each suggestion",
       still: 0,
       paragraphs: Object.freeze([
         "Dashed yellow boxes are suggested objects. A box is only a suggested object, it doesn't necessarily mean it's on the sidewalk or an obstruction. Click one, or tap it on a phone, to open its panel.",
         `Check the category, then answer Question 1, “${SIDEWALK_QUESTION_COPY.question}”, with Yes or No.`,
+        "With only a path, there is no Question 1. Each object asks only whether it obstructs the path.",
         "If it is on the sidewalk, then Question 2 asks “Does it obstruct the sidewalk?” Answer it for yourself if you believe the object obstructs your path or not. If it does obstruct, rate the severity of its obstruction from 1, a minor inconvenience, to 5, impassable.",
         // The classifier's proposal on Question 2 (S3), said whether or not
         // proposals are loaded yet, so the guide does not change on the day they are
@@ -96,7 +109,7 @@ export const GUIDE_COPY = Object.freeze({
       title: "Rate the sidewalk",
       still: 3,
       paragraphs: Object.freeze([
-        "Step 2 asks four questions about the sidewalk nearest you as a whole, the same one as in Step 1. On a phone or tablet, tap the Step 2 line in the answers sheet to bring them up. If there is no sidewalk, choose None for its width, and the other three are skipped.",
+        "Step 3 asks six questions about the sidewalk nearest you as a whole, the same one as in Step 2, or two if there is only a path. On a phone or tablet, tap the Step 3 line in the answers sheet to bring them up.",
       ]),
       listsQuestions: true,
     }),

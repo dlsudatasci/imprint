@@ -6,9 +6,11 @@ vi.mock("@/util/mongodb", () => ({ connectToDatabase: vi.fn() }));
 vi.mock("next-auth/next", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/pages/api/auth/[...nextauth]", () => ({ authOptions: {} }));
 vi.mock("@/util/telemetryLogger", () => ({ logTelemetryEvent: vi.fn() }));
+vi.mock("@/util/retrainingNotice", () => ({ notifyRetrainingReady: vi.fn() }));
 
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
+import { notifyRetrainingReady } from "@/util/retrainingNotice";
 import handler from "@/pages/api/annotationComplete.js";
 
 function setupMocks({ hasSession = true } = {}) {
@@ -387,5 +389,58 @@ describe("POST /api/annotationComplete email verification", () => {
     expect(res._status).toBe(500);
     expect(mocks.sessionsCol.updateOne).not.toHaveBeenCalled();
     expect(mocks.annotationsCol.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/annotationComplete, the retraining-ready email (S26)", () => {
+  async function finish() {
+    const res = createMockRes();
+    await handler(createMockReq({ body: { total: 10 } }), res);
+    return res;
+  }
+
+  it("a contributor's session end checks the notice, after the answers are promoted", async () => {
+    const m = setupMocks();
+    m.usersCol.findOne.mockResolvedValue({ role: "user", emailVerifiedAt: new Date("2026-10-01T00:00:00Z") });
+    notifyRetrainingReady.mockImplementation(async () => {
+      // Everything is saved before the check runs
+      expect(m.annotationsCol.updateMany).toHaveBeenCalledWith(
+        { userId: MOCK_USER_ID, status: "pending" }, { $set: { status: "completed" } }
+      );
+      expect(m.sessionsCol.updateOne).toHaveBeenCalled();
+      expect(m.usersCol.updateOne).toHaveBeenCalled();
+      return { sent: true, target: 2000 };
+    });
+
+    const res = await finish();
+    expect(res._status).toBe(200);
+    expect(notifyRetrainingReady).toHaveBeenCalledTimes(1);
+    expect(notifyRetrainingReady).toHaveBeenCalledWith(m.db);
+  });
+
+  it("an annotator's session end does not", async () => {
+    const m = setupMocks();
+    m.usersCol.findOne.mockResolvedValue({ role: "annotator" });
+    const res = await finish();
+    expect(res._status).toBe(200);
+    expect(notifyRetrainingReady).not.toHaveBeenCalled();
+  });
+
+  it("a notice that throws leaves the status and body as they are", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    setupMocks();
+    notifyRetrainingReady.mockResolvedValue({ sent: false, reason: "not-ready" });
+    const normal = await finish();
+
+    setupMocks();
+    notifyRetrainingReady.mockRejectedValue(new Error("mail server down"));
+    const failing = await finish();
+
+    expect(notifyRetrainingReady).toHaveBeenCalledTimes(2);
+    expect(failing._status).toBe(200);
+    expect(failing._status).toBe(normal._status);
+    expect(failing._json).toEqual(normal._json);
+    expect(console.error).toHaveBeenCalledWith("Retraining notice check failed:", expect.any(Error));
+    console.error.mockRestore();
   });
 });

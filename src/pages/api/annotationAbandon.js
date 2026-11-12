@@ -4,6 +4,7 @@ import { authOptions } from "./auth/[...nextauth]";
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { ObjectId } from "mongodb";
 import { SCENE_SCALE } from "@/util/validators/sceneScale.mjs";
+import { notifyRetrainingReady } from "@/util/retrainingNotice";
 
 /**
  * POST /api/annotationAbandon — called when a contributor stops partway through
@@ -151,6 +152,24 @@ const handler = async (req, res) => {
                     outcome: "abandoned",
                     imagesCompleted: completedCount,
                 });
+
+                // A contributor's sent photos just became completed, so the
+                // next retraining cycle may now be ready (S26). Everything is
+                // saved by now, and nothing in the check, the role lookup
+                // included, can change what this route answers.
+                if (completedCount > 0) {
+                    try {
+                        const userRecord = await db.collection("users").findOne(
+                            { _id: new ObjectId(userId) },
+                            { projection: { role: 1 } }
+                        );
+                        if (userRecord?.role !== "annotator") {
+                            await notifyRetrainingReady(db);
+                        }
+                    } catch (noticeError) {
+                        console.error("Retraining notice check failed:", noticeError);
+                    }
+                }
 
                 return res.status(200).json({ message: "Session abandoned successfully." });
             } else {

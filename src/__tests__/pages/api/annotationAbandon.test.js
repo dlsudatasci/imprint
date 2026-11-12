@@ -5,9 +5,11 @@ vi.mock("@/util/mongodb", () => ({ connectToDatabase: vi.fn() }));
 vi.mock("next-auth/next", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/pages/api/auth/[...nextauth]", () => ({ authOptions: {} }));
 vi.mock("@/util/telemetryLogger", () => ({ logTelemetryEvent: vi.fn() }));
+vi.mock("@/util/retrainingNotice", () => ({ notifyRetrainingReady: vi.fn() }));
 
 import { connectToDatabase } from "@/util/mongodb";
 import { getServerSession } from "next-auth/next";
+import { notifyRetrainingReady } from "@/util/retrainingNotice";
 import handler from "@/pages/api/annotationAbandon.js";
 
 function setupMocks({ hasSession = true, activeSession = undefined } = {}) {
@@ -241,5 +243,71 @@ describe("POST /api/annotationAbandon", () => {
       expect.anything(),
       expect.objectContaining({ $inc: { totalAnnotations: 2 } })
     );
+  });
+});
+
+describe("POST /api/annotationAbandon, the retraining-ready email (S26)", () => {
+  async function abandon() {
+    const res = createMockRes();
+    await handler(createMockReq(), res);
+    return res;
+  }
+
+  it("a contributor's session end with sent photos checks the notice, after they are completed", async () => {
+    const m = setupMocks();
+    m.usersCol.findOne.mockResolvedValue({ role: "user" });
+    notifyRetrainingReady.mockImplementation(async () => {
+      // Everything is saved before the check runs
+      expect(m.annotationsCol.updateMany).toHaveBeenCalledWith(
+        { userId: MOCK_USER_ID, status: "pending", imageID: { $in: [42, 43] } }, { $set: { status: "completed" } }
+      );
+      expect(m.annotationsCol.deleteMany).toHaveBeenCalled();
+      return { sent: true, target: 2000 };
+    });
+
+    const res = await abandon();
+    expect(res._status).toBe(200);
+    expect(notifyRetrainingReady).toHaveBeenCalledTimes(1);
+    expect(notifyRetrainingReady).toHaveBeenCalledWith(m.db);
+    // The role is read from the database, not the session
+    expect(m.usersCol.findOne).toHaveBeenCalledWith(expect.anything(), { projection: { role: 1 } });
+  });
+
+  it("an annotator's session end does not", async () => {
+    const m = setupMocks();
+    m.usersCol.findOne.mockResolvedValue({ role: "annotator" });
+    const res = await abandon();
+    expect(res._status).toBe(200);
+    expect(notifyRetrainingReady).not.toHaveBeenCalled();
+  });
+
+  it("a session stopped with no photo sent does not, nothing became completed", async () => {
+    setupMocks({ activeSession: { _id: "session-1", userId: MOCK_USER_ID, status: "active", imageIDs: [], completedImageIDs: [] } });
+    const res = await abandon();
+    expect(res._status).toBe(200);
+    expect(notifyRetrainingReady).not.toHaveBeenCalled();
+  });
+
+  it("a notice or role lookup that throws leaves the status and body as they are", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    setupMocks();
+    notifyRetrainingReady.mockResolvedValue({ sent: false, reason: "not-ready" });
+    const normal = await abandon();
+
+    setupMocks();
+    notifyRetrainingReady.mockRejectedValue(new Error("mail server down"));
+    const failingNotice = await abandon();
+
+    const m3 = setupMocks();
+    m3.usersCol.findOne.mockRejectedValue(new Error("users unreachable"));
+    const failingRole = await abandon();
+
+    expect(normal._status).toBe(200);
+    for (const res of [failingNotice, failingRole]) {
+      expect(res._status).toBe(normal._status);
+      expect(res._json).toEqual(normal._json);
+    }
+    expect(console.error).toHaveBeenCalledTimes(2);
+    console.error.mockRestore();
   });
 });

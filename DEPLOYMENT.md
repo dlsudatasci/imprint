@@ -240,6 +240,36 @@ The nginx request limit also covers `/api/auth/resend-verification` (see
 
 ---
 
+## Retraining-ready email
+
+A retraining cycle is due each time the usable contributor judgments reach the
+next target (2,000, then 4,000 and so on). From S26 (12 Nov 2026) the site
+sends one email, "Imprint: retraining cycle N is ready", to
+`RETRAINING_NOTIFY_EMAIL` the first time a contributor's session end brings the
+count to the target. It uses the same numbers as the admin Retraining tab and
+carries counts only. It uses the same mail settings as the other emails
+(`EMAIL_SERVICE`, `EMAIL_USER`, `EMAIL_PASS`) and links to `NEXTAUTH_URL/admin`.
+
+- Without `RETRAINING_NOTIFY_EMAIL` nothing is sent. Setting it later still
+  sends the email for a target already reached, at the next contributor
+  session end.
+- One email per target: the targets already emailed are kept in the `settings`
+  document `retrainingNotice`. A failed send is logged and tried again at the
+  next session end. It never changes what the contributor sees.
+- After a cycle is served (`update-predictions.mjs` logs the new version), the
+  next email comes at the next target.
+
+On Coolify, add `RETRAINING_NOTIFY_EMAIL` under the app's **Environment
+Variables**, then **Redeploy** (a Restart does not pick up settings). On the VM,
+add it to `/srv/imprint/.env` and deploy. To check it without waiting, count
+only:
+
+```bash
+mongosh -u root -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --quiet imprint --eval 'const d=db.settings.findOne({_id:"retrainingNotice"}); print(d ? d.notifiedTargets.length + " target(s) notified" : "none yet")'
+```
+
+---
+
 ## Rate limiting
 
 `deploy/nginx.conf` limits password sign-in, sign-up and the password reset

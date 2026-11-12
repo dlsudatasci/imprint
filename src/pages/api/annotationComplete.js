@@ -8,6 +8,7 @@ import { shouldShowNasaTlx } from "@/util/validators/nasaTlx";
 import { takesContributorInstruments } from "@/util/validators/contributorInstruments";
 import { SCENE_SCALE } from "@/util/validators/sceneScale.mjs";
 import { needsEmailVerification, EMAIL_NOT_VERIFIED_RESPONSE } from "@/util/validators/emailVerification.mjs";
+import { notifyRetrainingReady } from "@/util/retrainingNotice";
 
 /**
  * POST /api/annotationComplete — called when a contributor finishes a full
@@ -192,6 +193,17 @@ const handler = async (req, res) => {
                 takesInstruments = takesContributorInstruments(userRecord?.role);
             } catch (roleError) {
                 console.error("Role lookup failed, skipping NASA-TLX prompt:", roleError);
+            }
+
+            // A contributor's answers just became completed, so the next
+            // retraining cycle may now be ready (S26). Everything is saved by
+            // now, and nothing in the check can change what this route answers.
+            if (gateRecord?.role !== "annotator") {
+                try {
+                    await notifyRetrainingReady(db);
+                } catch (noticeError) {
+                    console.error("Retraining notice check failed:", noticeError);
+                }
             }
 
             return res.status(200).json({

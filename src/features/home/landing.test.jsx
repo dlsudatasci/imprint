@@ -34,7 +34,7 @@ describe("landing page copy", () => {
   it("names both questions in the laptop chapters about the boxes, about as long as before", () => {
     const [first, answer, draw] = HOW_IT_WORKS_COPY.chapters;
     expect(first.title).toBe("Say what blocks your way");
-    expect(first.text).toContain("on the sidewalk or the path people walk on");
+    expect(first.text).toContain("say if it is on the sidewalk, then if it obstructs your path");
     expect(first.text).toContain("obstructs your path");
     expect(first.text).toContain("rate its severity from 1 to 5");
     expect(first.text.indexOf("path people walk on")).toBeLessThan(first.text.indexOf("obstructs your path"));
@@ -84,7 +84,9 @@ describe("landing page copy", () => {
     // a 320 px phone, measured in Chrome at 71 and 66 characters
     expect(answer.text.length).toBeLessThanOrEqual(72);
     expect(draw.text.length).toBeLessThanOrEqual(72);
-    expect(answer.text).toContain("walking path");
+    // 13 Nov 2026: the sidewalk question as the box panel asks it, as on a laptop
+    expect(answer.text).toBe("Tap Next. Is it on the sidewalk? In your way? Or tap Not an object.");
+    for (const c of HOW_IT_WORKS_COPY.touchChapters) expect(c.text).not.toMatch(/walking path/i);
     expect(answer.text).toContain("In your way");
     expect(draw.text).toContain("both questions");
     // S16 follow-up (3 Nov 2026): the first chapter names the path question before the obstruction
@@ -92,9 +94,9 @@ describe("landing page copy", () => {
     // 375 px (measured in Chrome at 71 characters)
     const [first, , , rate] = HOW_IT_WORKS_COPY.touchChapters;
     // Step 1 first from S15, within the same two lines
-    expect(first.text).toBe("Sidewalk or path? Tap a box. On the walking path? In your way? Rate it.");
+    expect(first.text).toBe("Sidewalk or path? Tap a box. On the sidewalk? In your way? Rate it.");
     expect(first.text.indexOf("Sidewalk or path?")).toBe(0);
-    expect(first.text.indexOf("walking path")).toBeLessThan(first.text.indexOf("In your way"));
+    expect(first.text.indexOf("On the sidewalk?")).toBeLessThan(first.text.indexOf("In your way"));
     expect(first.text.length).toBeLessThanOrEqual(72);
     // What the first chapter plays: Tree #1, Yes to the path question, Yes, severity 1
     expect(touchTickOf("tree-confirm", "end")).toBeLessThanOrEqual(TOUCH_CHAPTERS[1].start);

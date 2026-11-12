@@ -162,7 +162,7 @@ describe("DefaultInputSection", () => {
 
     it("asks a suggestion with no sidewalk answer first, in the copy module's words, with Not an object as today", () => {
       const html = render({ onSidewalk: undefined });
-      expect(html).toContain(">Is it on the sidewalk or the path people walk on?<");
+      expect(html).toContain(">Is it on the sidewalk?<");
       expect(html).not.toContain("obstruct the sidewalk?");
       expect(sidewalkButton(html, "yes")).toBe(true);
       expect(sidewalkButton(html, "no")).toBe(true);
@@ -176,7 +176,7 @@ describe("DefaultInputSection", () => {
     it("asks a drawn box after its category, with Delete box", () => {
       const noCategory = render({ onSidewalk: undefined, editable: true, value: "---" });
       expect(noCategory).toContain("Select a category");
-      expect(noCategory).toContain("Is it on the sidewalk or the path people walk on?");
+      expect(noCategory).toContain("Is it on the sidewalk?");
       expect(disabledButton(noCategory, "Yes")).toBe(true);
       expect(disabledButton(noCategory, "No")).toBe(true);
       expect(noCategory).toContain("Delete box");
@@ -190,7 +190,7 @@ describe("DefaultInputSection", () => {
         render({ onSidewalk: false, isRejected: true, obstructs: false }),
         render({ onSidewalk: false, editable: true, value: "bollard", obstructs: false }),
       ]) {
-        expect(html).toContain("Is it on the sidewalk or the path people walk on?");
+        expect(html).toContain("Is it on the sidewalk?");
         expect(pressed(html, "No")).toBe(true);
         expect(pressed(html, "Yes")).toBe(false);
         expect(html).not.toContain('aria-label="Close"');
@@ -243,7 +243,7 @@ describe("DefaultInputSection", () => {
           expect(found?.[3]).toBe("Question 1 of 2");
           expect(found?.[2]).toBe("text-xs font-semibold text-muted mt-3");
           // Right above the question
-          expect(html).toMatch(/Question 1 of 2<\/p><p class="text-base font-semibold text-ink mt-0\.5 mb-2">Is it on the sidewalk or the path people walk on\?<\/p>/);
+          expect(html).toMatch(/Question 1 of 2<\/p><p class="text-base font-semibold text-ink mt-0\.5 mb-2">Is it on the sidewalk\?<\/p>/);
         }
       }
     });
@@ -326,7 +326,7 @@ describe("DefaultInputSection", () => {
     it("sets every question at 16 px semibold ink, laptop card and phone sheet, with the category bold and the step line small", () => {
       for (const variant of ["floating", "sheet"] as const) {
         const paths = render({ variant, onSidewalk: undefined });
-        expect(paths).toContain('<p class="text-base font-semibold text-ink mt-0.5 mb-2">Is it on the sidewalk or the path people walk on?</p>');
+        expect(paths).toContain('<p class="text-base font-semibold text-ink mt-0.5 mb-2">Is it on the sidewalk?</p>');
         const obstruction = render({ variant, value: "car" });
         expect(obstruction).toContain('<p class="text-base font-semibold text-ink mt-0.5 mb-2">Does <span class="font-bold">Car</span> obstruct the sidewalk?</p>');
         // The severity panel and the first severity picker match
@@ -446,7 +446,7 @@ describe("changing an answer (S17)", () => {
         expect(step()).toBe("Question 2 of 2");
         press(control("back-to-question-1"));
         expect(step()).toBe("Question 1 of 2");
-        expect(text()).toContain("Is it on the sidewalk or the path people walk on?");
+        expect(text()).toContain("Is it on the sidewalk?");
         expect(isPressed("on-sidewalk-yes")).toBe(true);
         expect(isPressed("on-sidewalk-no")).toBe(false);
         expect(called(handlers)).toEqual([]);

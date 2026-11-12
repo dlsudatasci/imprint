@@ -18,7 +18,8 @@ import { proposalHintText } from "@/util/modelProposal";
  * was never left half done by accident (see S17 below for where it is now).
  *
  * From 2 Nov 2026 (S12) the panel first asks whether the object is on the
- * sidewalk or the path people walk on, with the same Yes and No buttons. No
+ * sidewalk or the path people walk on ("Is it on the sidewalk?" from 13 Nov
+ * 2026, sidewalkQuestionCopy.js), with the same Yes and No buttons. No
  * closes the panel and the box leaves the photo. Yes moves on to the
  * obstruction question.
  *

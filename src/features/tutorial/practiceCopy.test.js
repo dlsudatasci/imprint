@@ -78,7 +78,7 @@ describe("the practice's lines", () => {
     expect(practiceLine("presence", "touch")).toBe(practiceLine("presence"));
     expect(practiceLine("openTree")).toBe("Click the dashed box on the tree.");
     expect(practiceLine("openTree", "touch")).toBe("Tap the dashed box on the tree.");
-    expect(practiceLine("treeOnPath")).toBe("Is the tree on the sidewalk or the path? If it is, choose Yes.");
+    expect(practiceLine("treeOnPath")).toBe("Is the tree on the sidewalk? If it is, choose Yes.");
     expect(practiceLine("treeObstructs")).toBe("Does the object obstruct your way? You decide. The model can be wrong.");
     expect(practiceLine("carOff")).toBe("Now for the car. This is an example of objects that aren't on the sidewalk, but beside it. Please choose No.");
     expect(practiceLine("drawPost")).toBe("If you find a missed object on the sidewalk, drag a box around it whether it obstructs or not.");

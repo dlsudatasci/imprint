@@ -7,7 +7,7 @@ import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
 
 /**
  * Only a path (S15, 9 Nov 2026): Step 1 says the photo has no sidewalk, so
- * the box panel skips "Is it on the sidewalk or the path people walk on?".
+ * the box panel skips "Is it on the sidewalk?".
  * The one question is "Does {label} obstruct the path?", with no step line,
  * no Back to Question 1, and Question 1's footer (Not an object for a
  * suggestion, Delete box for a drawn box). A confirmed obstruction's severity

@@ -118,7 +118,7 @@ describe("the guide's question names", () => {
     const first = panel(undefined);
     const second = panel(true);
     expect(first).toContain(">Question 1 of 2<");
-    expect(first).toContain("Is it on the sidewalk or the path people walk on?");
+    expect(first).toContain("Is it on the sidewalk?");
     expect(second).toContain(">Question 2 of 2<");
     expect(second).toMatch(/obstruct the sidewalk\?/);
     for (const id of ["answer", "not-an-object"]) {

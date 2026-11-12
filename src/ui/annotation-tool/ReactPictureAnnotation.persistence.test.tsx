@@ -367,7 +367,7 @@ describe("the sidewalk question (S12, 2 Nov 2026)", () => {
   const chipOf = (label: string) =>
     Array.from(noList().querySelectorAll('[data-tray="notObstructions"]')).find((b) => b.textContent?.includes(label)) as HTMLButtonElement | undefined;
   const panelText = () => host.querySelector(".rp-selected-input")?.textContent ?? "";
-  const QUESTION = "Is it on the sidewalk or the path people walk on?";
+  const QUESTION = "Is it on the sidewalk?";
 
   it("No records a suggestion as a real object that does not obstruct, closes its panel and takes it off the photo, without hiding it", () => {
     const tool = mount();
@@ -1436,7 +1436,7 @@ describe("touch on the photo (9 Oct 2026)", () => {
     act(() => tool.selectBoxById("a-car"));
     expect(host.querySelector(".rp-selected-input")).toBeNull();
     // The sidewalk question first (S12)
-    expect(host.querySelector("#answer-sheet")!.textContent).toContain("Is it on the sidewalk or the path people walk on?");
+    expect(host.querySelector("#answer-sheet")!.textContent).toContain("Is it on the sidewalk?");
   });
 
   it("keeps every box and the selection when the layout switches to desktop", () => {
@@ -1447,7 +1447,7 @@ describe("touch on the photo (9 Oct 2026)", () => {
     expect(toolRef.current).toBe(tool);
     expect(tool.shapes).toHaveLength(count);
     expect(tool.selectedId).toBe("a-car");
-    expect(host.querySelector(".rp-selected-input")!.textContent).toContain("Is it on the sidewalk or the path people walk on?");
+    expect(host.querySelector(".rp-selected-input")!.textContent).toContain("Is it on the sidewalk?");
     expect(host.querySelector("#answer-sheet")).toBeNull();
   });
 });
@@ -2512,7 +2512,7 @@ describe("what a failed Next opens, the sheet's eye, and the contributors' chip 
     act(() => tool.setState({ sceneLevel: SCENE }));
     await submitNow(tool);
     // The sidewalk question comes first (S12)
-    expect(tool.state.error).toBe("Please say whether each object is on the sidewalk or the path people walk on.");
+    expect(tool.state.error).toBe("Please say whether each object is on the sidewalk.");
     expect(tool.selectedId).toBe("b-pole");
     expect(globalThis.fetch).not.toHaveBeenCalled();
     act(() => (tool as unknown as { onClose(): void }).onClose());

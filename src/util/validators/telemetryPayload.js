@@ -135,8 +135,9 @@ function createAnswerClock() {
  *   - custom_category: the category changed to free text
  *   - modified: the box moved or resized beyond the tolerance
  *   - relabeled_and_modified, custom_category_and_modified: both changes
- *   - off_sidewalk: answered not on the sidewalk or the path people walk on
- *     (contributors, S12, 2 Nov 2026), a real object that does not obstruct,
+ *   - off_sidewalk: answered not on the sidewalk (contributors, S12, 2 Nov
+ *     2026, asked as "or the path people walk on" until 13 Nov 2026), a real
+ *     object that does not obstruct,
  *     never removed
  * Categories are compared without case, with spaces and underscores alike.
  */

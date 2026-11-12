@@ -1,6 +1,7 @@
 import React from "react";
 import { H2, P } from "../Typography";
 import { SidewalkWidthIcon, EvennessIcon, EaseOfNavigationIcon, RoadBarrierIcon, SurfaceTypeIcon, SurfaceConditionIcon } from "./sceneIcons";
+import { useTouchTap } from "./touchTap";
 
 /** Step 3's answers, question set 2 (S15, util/validators/sceneQuestions.mjs) */
 export interface SceneLevel {
@@ -47,7 +48,11 @@ export default function SceneQuestions({ sceneLevel, variant, pathOnly = false, 
   // Answer labels on a laptop are 11 px at the least (apple-design check, 17 Oct 2026)
   const optionLabel = sheet ? "text-xs font-semibold leading-tight text-center" : "text-[11px] font-semibold leading-tight text-center";
   const selectedClass = "border-primary bg-primary/10 text-primary ring-2 ring-primary/20";
-  const idleClass = "border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30";
+  // The hover tint only where something hovers (12 Nov 2026). A phone keeps a
+  // touched button in :hover, so a tap that did not answer looked half chosen.
+  const idleClass = "border-line bg-surface text-body [@media(hover:hover)]:hover:bg-primary/5 [@media(hover:hover)]:hover:border-primary/30";
+  // A finger's tap answers when it is let go (touchTap)
+  const tap = useTouchTap();
   const card = "bg-surface-subtle p-3 rounded-card border border-line";
   // Each question is marked for the practice image, which lights them in turn (S19)
 
@@ -123,8 +128,8 @@ export default function SceneQuestions({ sceneLevel, variant, pathOnly = false, 
                 data-scene-option={`${field}:${opt.value}`}
                 aria-pressed={on}
                 disabled={off}
-                className={`${sheet ? "min-h-[44px] " : ""}${off ? "cursor-not-allowed " : ""}min-w-0 flex flex-col items-center px-0.5 py-1.5 rounded-card text-center transition-all border ${on ? selectedClass : off ? "border-line bg-surface text-body" : idleClass}`}
-                onClick={() => onAnswer({ [field]: opt.value } as Partial<SceneLevel>)}
+                className={`${sheet ? "min-h-[44px] " : ""}${off ? "cursor-not-allowed " : ""}min-w-0 flex flex-col items-center px-0.5 py-1.5 rounded-card text-center transition-all border touch-manipulation ${on ? selectedClass : off ? "border-line bg-surface text-body" : idleClass}`}
+                {...(off ? {} : tap(`${field}:${opt.value}`, () => onAnswer({ [field]: opt.value } as Partial<SceneLevel>)))}
               >
                 <div className={`w-full ${small ? "h-11" : "h-16"} mb-1 flex items-end justify-center`}>{picture(opt.value)}</div>
                 <span className={`${optionLabel} [hyphens:manual]`}>{opt.label}</span>

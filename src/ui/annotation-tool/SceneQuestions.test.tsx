@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import SceneQuestions, { type SceneLevel } from "./SceneQuestions";
+import { TAP_SLOP_PX, TAP_CLICK_WINDOW_MS } from "./touchTap";
 import { emptySceneLevel, SCENE_KEYS, SIDEWALK_ONLY_KEYS } from "@/util/validators/sceneQuestions.mjs";
 
 /**
@@ -24,11 +25,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function mount(sceneLevel: SceneLevel, { pathOnly = false, onAnswer = vi.fn() } = {}) {
+function mount(sceneLevel: SceneLevel, { pathOnly = false, onAnswer = vi.fn(), variant = "desktop" as "desktop" | "sheet" } = {}) {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
-  act(() => root!.render(<SceneQuestions sceneLevel={sceneLevel} variant="desktop" pathOnly={pathOnly} onAnswer={onAnswer} />));
+  act(() => root!.render(<SceneQuestions sceneLevel={sceneLevel} variant={variant} pathOnly={pathOnly} onAnswer={onAnswer} />));
   return { onAnswer, option: (key: string) => host!.querySelector<HTMLButtonElement>(`[data-scene-option="${key}"]`)! };
 }
 
@@ -160,5 +161,121 @@ describe("reduced motion", () => {
     expect(host!.querySelectorAll("animate")).toHaveLength(0);
     // Every answer still has its picture
     expect(host!.querySelectorAll("[data-scene-option] svg").length).toBe(20);
+  });
+});
+
+/**
+ * A soft tap on a phone (12 Nov 2026, a contributor's report): a phone can let
+ * a tap go without a click, after a flick of the sheet or when it takes the
+ * tap for a hover. The answer stayed empty while the button kept its hover
+ * tint, which looked chosen. A finger's tap now answers when it is let go, and
+ * the tint is only where something hovers.
+ */
+describe("a finger's tap on an answer (12 Nov 2026)", () => {
+  function press(el: Element, type: string, { x = 50, y = 50, pointerType = "touch", pointerId = 1 } = {}) {
+    act(() => {
+      el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId, pointerType, isPrimary: true, clientX: x, clientY: y }));
+    });
+  }
+  function click(el: HTMLElement) {
+    act(() => el.click());
+  }
+
+  it("answers when the finger is let go, with no click from the browser", () => {
+    const { onAnswer, option } = mount(empty, { variant: "sheet" });
+    press(option("roadBarrier:true"), "pointerdown");
+    press(option("roadBarrier:true"), "pointerup");
+    expect(onAnswer).toHaveBeenCalledTimes(1);
+    expect(onAnswer).toHaveBeenCalledWith({ roadBarrier: true });
+  });
+
+  it("answers once for a whole tap, the click that follows it not counted again", () => {
+    const { onAnswer, option } = mount(empty, { variant: "sheet" });
+    const no = option("roadBarrier:false");
+    press(no, "pointerdown");
+    press(no, "pointerup");
+    click(no);
+    expect(onAnswer).toHaveBeenCalledTimes(1);
+    expect(onAnswer).toHaveBeenCalledWith({ roadBarrier: false });
+  });
+
+  it("answers a finger that moved a little, up to the allowance, on every question", () => {
+    const { onAnswer, option } = mount(empty, { variant: "sheet" });
+    for (const key of ["sidewalkWidth:two_people", "overallAccessibility:4", "surfaceEvenness:2", "surfaceType:tiles", "surfaceCondition:1", "roadBarrier:true"]) {
+      press(option(key), "pointerdown", { x: 40, y: 40 });
+      press(option(key), "pointerup", { x: 40 + TAP_SLOP_PX * 0.6, y: 40 + TAP_SLOP_PX * 0.6 });
+    }
+    expect(onAnswer).toHaveBeenCalledTimes(6);
+    expect(onAnswer).toHaveBeenLastCalledWith({ roadBarrier: true });
+  });
+
+  it("does not answer a finger that moved past the allowance, or a touch the browser turned into a scroll", () => {
+    const { onAnswer, option } = mount(empty, { variant: "sheet" });
+    const barrier = option("roadBarrier:true");
+    press(barrier, "pointerdown", { y: 40 });
+    press(barrier, "pointerup", { y: 40 + TAP_SLOP_PX + 1 });
+    press(barrier, "pointerdown");
+    press(barrier, "pointercancel");
+    press(barrier, "pointerup");
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+
+  it("does not answer a press that starts on one answer and ends on another", () => {
+    const { onAnswer, option } = mount(empty, { variant: "sheet" });
+    press(option("roadBarrier:false"), "pointerdown", { pointerType: "pen" });
+    press(option("roadBarrier:true"), "pointerup", { pointerType: "pen" });
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+
+  it("answers a mouse on its click only, and the keyboard's click as before", () => {
+    const { onAnswer, option } = mount(empty);
+    const tiles = option("surfaceType:tiles");
+    press(tiles, "pointerdown", { pointerType: "mouse" });
+    press(tiles, "pointerup", { pointerType: "mouse" });
+    expect(onAnswer).not.toHaveBeenCalled();
+    click(tiles);
+    expect(onAnswer).toHaveBeenCalledTimes(1);
+    click(option("surfaceType:unpaved"));
+    expect(onAnswer).toHaveBeenLastCalledWith({ surfaceType: "unpaved" });
+  });
+
+  it("counts a later click on the same answer, and a tap on another answer straight after", () => {
+    let now = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { onAnswer, option } = mount(empty, { variant: "sheet" });
+    const broken = option("surfaceCondition:1");
+    press(broken, "pointerdown");
+    press(broken, "pointerup");
+    press(option("surfaceCondition:3"), "pointerdown");
+    press(option("surfaceCondition:3"), "pointerup");
+    expect(onAnswer.mock.calls.map((c) => c[0])).toEqual([{ surfaceCondition: 1 }, { surfaceCondition: 3 }]);
+    now += TAP_CLICK_WINDOW_MS + 1;
+    click(broken);
+    expect(onAnswer).toHaveBeenLastCalledWith({ surfaceCondition: 1 });
+    expect(onAnswer).toHaveBeenCalledTimes(3);
+    vi.restoreAllMocks();
+  });
+
+  it("does not answer a tap on a question that is off for a path", () => {
+    const { onAnswer, option } = mount(empty, { variant: "sheet", pathOnly: true });
+    press(option("roadBarrier:true"), "pointerdown");
+    press(option("roadBarrier:true"), "pointerup");
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+
+  it("tints an answer on hover only where something hovers, and lets a quick tap through", () => {
+    for (const variant of ["sheet", "desktop"] as const) {
+      const { option } = mount(empty, { variant });
+      for (const key of ["roadBarrier:true", "surfaceType:tiles", "overallAccessibility:3"]) {
+        const classes = option(key).className.split(/\s+/);
+        expect(classes).toContain("[@media(hover:hover)]:hover:bg-primary/5");
+        expect(classes).toContain("[@media(hover:hover)]:hover:border-primary/30");
+        expect(classes.filter((c) => c.startsWith("hover:"))).toEqual([]);
+        expect(classes).toContain("touch-manipulation");
+      }
+      act(() => root?.unmount());
+      host?.remove();
+      root = null;
+    }
   });
 });

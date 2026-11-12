@@ -1,5 +1,6 @@
 import React from "react";
 import { H2, P } from "../Typography";
+import { useTouchTap } from "./touchTap";
 
 export interface SidewalkPresenceProps {
   /** true a sidewalk, false a path, null not answered */
@@ -24,7 +25,10 @@ export interface SidewalkPresenceProps {
 export default function SidewalkPresence({ value, variant, onAnswer, allowed = null }: SidewalkPresenceProps) {
   const sheet = variant === "sheet";
   const selectedClass = "border-primary bg-primary/10 text-primary ring-2 ring-primary/20";
-  const idleClass = "border-line bg-surface text-body hover:bg-primary/5 hover:border-primary/30";
+  // The hover tint only where something hovers, and a finger's tap answered
+  // when it is let go (touchTap), as in Step 3 (12 Nov 2026)
+  const idleClass = "border-line bg-surface text-body [@media(hover:hover)]:hover:bg-primary/5 [@media(hover:hover)]:hover:border-primary/30";
+  const tap = useTouchTap();
   const options = [
     { value: true, label: "Yes, there is a sidewalk." },
     { value: false, label: "No, there is only a path for people to walk on." },
@@ -46,8 +50,8 @@ export default function SidewalkPresence({ value, variant, onAnswer, allowed = n
               data-presence-option={String(opt.value)}
               aria-pressed={on}
               disabled={off}
-              className={`min-h-[44px] px-4 py-2 rounded-control border text-sm font-semibold text-left transition-all ${on ? selectedClass : off ? "border-line bg-surface text-body opacity-50 cursor-not-allowed" : idleClass}`}
-              onClick={() => onAnswer(opt.value)}
+              className={`min-h-[44px] px-4 py-2 rounded-control border text-sm font-semibold text-left transition-all touch-manipulation ${on ? selectedClass : off ? "border-line bg-surface text-body opacity-50 cursor-not-allowed" : idleClass}`}
+              {...(off ? {} : tap(String(opt.value), () => onAnswer(opt.value)))}
             >
               {opt.label}
             </button>

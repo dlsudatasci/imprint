@@ -35,7 +35,7 @@ export interface IAnnotation<T = IShapeData> {
   isRejected?: boolean;
   obstructs?: boolean | null;
   severity?: 1 | 2 | 3 | 4 | 5 | null;
-  /** Contributors (S12): on the sidewalk or the path people walk on. None on Not an object boxes or annotators' boxes. */
+  /** Contributors (S12): on the sidewalk, asked only when Step 1 says there is one ("or the path people walk on" until 13 Nov 2026). None on Not an object boxes, annotators' boxes or a path-only photo's boxes (S15). */
   onSidewalk?: boolean;
   confidence?: number | null;
   /**

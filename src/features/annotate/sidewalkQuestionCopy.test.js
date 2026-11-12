@@ -12,8 +12,23 @@ import Step1Card from "@/ui/annotation-tool/Step1Card";
 // obstructions.
 describe("SIDEWALK_QUESTION_COPY", () => {
   it("keeps the decided wording word for word", () => {
-    expect(SIDEWALK_QUESTION_COPY.question).toBe("Is it on the sidewalk or the path people walk on?");
-    expect(SIDEWALK_QUESTION_COPY.incomplete).toBe("Please say whether each object is on the sidewalk or the path people walk on.");
+    expect(SIDEWALK_QUESTION_COPY.question).toBe("Is it on the sidewalk?");
+    expect(SIDEWALK_QUESTION_COPY.incomplete).toBe("Please say whether each object is on the sidewalk.");
+  });
+
+  // 13 Nov 2026: asked only once Step 1 says there is a sidewalk (S15), so
+  // it no longer says "or the path people walk on", which it did from 2 Nov
+  it("asks about the sidewalk only, never the path, wherever the question is quoted", () => {
+    for (const line of [
+      SIDEWALK_QUESTION_COPY.question,
+      SIDEWALK_QUESTION_COPY.incomplete,
+      SIDEWALK_QUESTION_COPY.answerWhether,
+    ]) {
+      expect(line).toMatch(/sidewalk/);
+      expect(line).not.toMatch(/path/i);
+    }
+    // The path-only photo's own question still names the path
+    expect(SIDEWALK_QUESTION_COPY.pathQuestion.after).toBe(" obstruct the path?");
   });
 
   // S16 (3 Nov 2026): what counts as the path, in three lines, with Rans's
@@ -80,7 +95,7 @@ describe("SIDEWALK_QUESTION_COPY", () => {
       const [, check, path] = buildTourSteps(false, "objects", input);
       // The tour says it as an instruction (Rans, 5 Nov 2026)
       expect(check.content).toContain(SIDEWALK_QUESTION_COPY.answerWhether);
-      expect(SIDEWALK_QUESTION_COPY.answerWhether).toBe("Answer whether it's on the sidewalk or the path people walk on.");
+      expect(SIDEWALK_QUESTION_COPY.answerWhether).toBe("Answer whether it's on the sidewalk.");
       expect(path.points).toEqual([...SIDEWALK_QUESTION_COPY.pathPoints]);
     }
     const guide = GUIDE_COPY.steps.flatMap((step) => step.paragraphs).join(" ");

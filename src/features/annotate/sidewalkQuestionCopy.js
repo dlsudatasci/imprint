@@ -7,9 +7,14 @@
  * its wording lives here and nowhere else, so a change of wording, if the
  * adviser asks for one, is a change to this file only.
  *
- * "Or the path people walk on": about one photo in ten has no sidewalk, and
- * people walk along the edge of the road. With "sidewalk" alone, no object in
- * those photos could ever obstruct. The stored field is still `onSidewalk`.
+ * From 13 Nov 2026 the question is "Is it on the sidewalk?". From 2 to
+ * 12 Nov 2026 it was "Is it on the sidewalk or the path people walk on?",
+ * written (S12) before Step 1 existed so that objects in photos with no
+ * sidewalk, about one in ten, could still obstruct. Since S15 those photos
+ * never reach this question (pathQuestion asks them instead), so it is only
+ * asked once Step 1 says there is a sidewalk, and on such a photo only the
+ * sidewalk counts: an object on the road edge beside it is answered No. The
+ * stored field is still `onSidewalk`, unchanged.
  *
  * With two sidewalks in view only the nearest counts (Rans, 3 Nov 2026, S16):
  * the one a person standing where the photo was taken would walk on. Objects
@@ -20,9 +25,9 @@
  */
 export const SIDEWALK_QUESTION_COPY = Object.freeze({
   /** The question in the box panel, desktop, phone and tablet alike, answered Yes or No */
-  question: "Is it on the sidewalk or the path people walk on?",
+  question: "Is it on the sidewalk?",
   /** Next Image with a box whose sidewalk answer is missing */
-  incomplete: "Please say whether each object is on the sidewalk or the path people walk on.",
+  incomplete: "Please say whether each object is on the sidewalk.",
   /**
    * What counts as the path (S16, 3 Nov 2026), in the tour's "What Counts as
    * the Path" step and the guide. Replaced the one-sentence `tutorial`.
@@ -36,7 +41,7 @@ export const SIDEWALK_QUESTION_COPY = Object.freeze({
    * The path question as the tour's Check Each Box says it (Rans, 5 Nov 2026):
    * an instruction rather than the question quoted.
    */
-  answerWhether: "Answer whether it's on the sidewalk or the path people walk on.",
+  answerWhether: "Answer whether it's on the sidewalk.",
   /** The line above each question in a contributor's box panel (S16): "Question 1 of 2" */
   questionOf: (n) => `Question ${n} of 2`,
   /**

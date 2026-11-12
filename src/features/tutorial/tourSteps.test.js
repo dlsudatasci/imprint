@@ -158,7 +158,7 @@ describe("tour steps", () => {
     expect(check).not.toHaveProperty("intro");
     expect(check.points).toEqual([
       "Click a box and check its label.",
-      "Answer whether it's on the sidewalk or the path people walk on.",
+      "Answer whether it's on the sidewalk.",
       "Then, answer whether it obstructs the sidewalk or the path for you.",
       "If it's not a real object, click Not an object.",
     ]);
@@ -210,7 +210,7 @@ describe("tour steps", () => {
       }
     }
     // The sentence on the model's proposal right after the third point (S3, 6 Nov 2026)
-    expect(buildTourSteps(false)[1].content).toBe("Click a box and check its label. Answer whether it's on the sidewalk or the path people walk on. Then, answer whether it obstructs the sidewalk or the path for you. Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo. If it's not a real object, click Not an object. Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.");
+    expect(buildTourSteps(false)[1].content).toBe("Click a box and check its label. Answer whether it's on the sidewalk. Then, answer whether it obstructs the sidewalk or the path for you. Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo. If it's not a real object, click Not an object. Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.");
     expect(buildTourSteps(false)[3].content).toBe("Every answer goes into a list under the photo.");
   });
 

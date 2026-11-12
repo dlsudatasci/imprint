@@ -54,7 +54,7 @@ export const PRACTICE_COPY = Object.freeze({
       touch: "Tap the dashed box on the tree.",
     }),
     treeOnPath: Object.freeze({
-      pointer: "Is the tree on the sidewalk or the path? If it is, choose Yes.",
+      pointer: "Is the tree on the sidewalk? If it is, choose Yes.",
     }),
     treeObstructs: Object.freeze({
       pointer: "Does the object obstruct your way? You decide. The model can be wrong.",

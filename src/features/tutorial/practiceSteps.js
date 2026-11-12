@@ -89,6 +89,8 @@ export const PRACTICE_SELECTORS = Object.freeze({
   photo: "[data-photo-area]",
   // The white post's dashed outline, which the tool draws
   drawTarget: "[data-practice-highlight='rect']",
+  // Every outline the tool draws on the photo: what a touch step lights (S23 B)
+  outlines: "[data-practice-highlight]",
   openBox: "[data-practice-avoid]",
   sheetUp: "#answer-sheet button[aria-expanded='true']",
 });
@@ -241,8 +243,11 @@ export function practiceLockFor(step) {
  *              the box panel is on it), on touch the answers sheet and the
  *              open box while a panel is the step, the next Step 3 question,
  *              and Next Image. Empty: nothing is dimmed. On touch a step on
- *              the photo dims nothing, as the photo with the sheet under it
- *              looked wonky lit alone (Rans, 8 Nov 2026).
+ *              the photo lights only what it outlines (S23 B, Rans, 12 Nov
+ *              2026: the box or boxes, the white post's outline, Add box
+ *              before it is tapped, the new box after), with everything else
+ *              dark. Until then it dimmed nothing (Rans, 8 Nov 2026: the
+ *              whole photo lit with the sheet under it looked wonky).
  *   rings      the controls that get a pulsing ring: Question 1's Yes at step
  *              3, Yes and No at step 4 (back from 8 Nov 2026, Rans), Confirm
  *              at step 5, No at step 6, Add box on touch, the category field
@@ -252,11 +257,15 @@ export function practiceLockFor(step) {
  *              8 Nov 2026): the Add box button until it is tapped, then the
  *              white post's outline, kept clear of the new box's corners
  *              (`avoidBoxIds`). It went to the bottom of the screen when Add
- *              box opened the new box's panel in the sheet.
+ *              box opened the new box's panel in the sheet. Add box is
+ *              ringed only until it is tapped (S23 B).
  *   fallback   on touch at step 10, the Step 3 line at the top of the answers
  *              sheet (lit and ringed) until the sheet is pulled up
  *              (`unless` is on the page)
  *   avoid      what the card also keeps clear of: the top bar on touch
+ *   line       another of the step's lines for this state (practiceLine's
+ *              `variant`), or null: on touch at step 7, "touchFit" once the
+ *              new box is open and does not yet cover the post (S23 B)
  *
  * A step about a panel points at its box while the panel is closed.
  */
@@ -264,15 +273,17 @@ export function practiceTargets(step, state, words = "pointer") {
   const touch = words === "touch";
   const openId = state?.openId ?? null;
   const tree = boxOf(state, ids.tree);
-  // The photo lit on a laptop, nothing dimmed on touch
-  const onPhoto = touch ? [] : [S.photo];
-  const result = (highlight, { rings = [], spotlight = onPhoto, fallback = null, cardNear = null } = {}) => ({
+  // The photo lit on a laptop. On touch only the outlined box, boxes or post
+  // (S23 B), the rest of the screen dark and taking no presses.
+  const onPhoto = touch ? [S.outlines] : [S.photo];
+  const result = (highlight, { rings = [], spotlight = onPhoto, fallback = null, cardNear = null, line = null } = {}) => ({
     highlight,
     rings,
     spotlight,
     fallback,
     cardNear,
     avoid: touch ? [S.topBar] : [S.floatingPanel],
+    line,
   });
   // A panel open: its controls, lit with the photo on a laptop (the panel
   // is on it), or with the answers sheet on touch, and its box marked
@@ -302,9 +313,18 @@ export function practiceTargets(step, state, words = "pointer") {
     case "drawPost":
       // Fitting the box is on the photo, also while the new box's panel is open
       if (!touch) return result({ rect: DRAW_TARGET });
-      // The new box open: the card above the post, clear of the box's corners
-      if (openId) return result({ rect: DRAW_TARGET, avoidBoxIds: [openId] }, { rings: [S.addBox], cardNear: S.drawTarget });
-      return result({ rect: DRAW_TARGET }, { rings: [S.addBox], cardNear: S.addBox });
+      // The new box open: the card above the post, clear of the box's
+      // corners, and the line says to drag its corners onto the outline
+      // while it does not yet cover the post (S23 B). Add box is no longer
+      // ringed: it has been tapped.
+      // Lit: the post and the new box, so its corners can be dragged.
+      if (openId) {
+        const open = boxOf(state, openId);
+        const fitting = Boolean(open?.editable) && drawTargetIoU(open.mark) < DRAW_MIN_IOU;
+        return result({ rect: DRAW_TARGET, avoidBoxIds: [openId] }, { spotlight: [S.drawTarget, S.openBox], cardNear: S.drawTarget, line: fitting ? "touchFit" : null });
+      }
+      // Lit: Add box, to tap, and the post, where the box will go
+      return result({ rect: DRAW_TARGET }, { rings: [S.addBox], spotlight: [S.addBox, S.drawTarget], cardNear: S.addBox });
     case "answerDrawn": {
       const drawn = practiceDrawnBox(state);
       if (!drawn) return result({ rect: DRAW_TARGET });

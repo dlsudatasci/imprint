@@ -505,8 +505,8 @@ function Panels() {
 
 const TYPE_LABELS: Record<string, string> = {
   concrete: "Concrete or asphalt: one poured surface, panels at most",
-  tiles: "Tiles: small glazed squares, shiny",
-  pavers: "Paver blocks or bricks: small blocks laid in rows",
+  tiles: "Tiles: small squares in a tight grid",
+  pavers: "Bricks or paver blocks: small blocks laid in rows",
   unpaved: "Unpaved: soil, gravel or grass",
 };
 
@@ -522,16 +522,16 @@ export function SurfaceTypeIcon({ value }: { value: string }) {
       </g>
     );
   } else if (value === "tiles") {
-    // A tight grid of tiles, with a shine across them
+    // A tight square grid, 8 tiles along by 6 across (3.75 by 3.67), smaller
+    // than the bricks' 6 by 4.4 and with no offset rows, so the two still look
+    // different. S23 C (12 Nov 2026): no white glaze strokes, which read as
+    // scratches on the light card and did not turn primary when chosen (S15
+    // asks for currentColor only).
     const lines: string[] = [];
-    for (let u = 5; u < PATCH_U; u += 5) lines.push(seg(pp(u, 0), pp(u, PATCH_V)));
-    for (let v = 5.5; v < PATCH_V; v += 5.5) lines.push(seg(pp(0, v), pp(PATCH_U, v)));
-    inner = (
-      <g>
-        <path d={lines.join(" ")} stroke="currentColor" strokeOpacity={0.5} strokeWidth={0.7} />
-        <path d={`${seg(pp(6, 18), pp(13, 4))} ${seg(pp(9, 19), pp(16, 5))} ${seg(pp(19, 18), pp(24, 8))}`} stroke="#fff" strokeOpacity={0.9} strokeWidth={1.4} strokeLinecap="round" />
-      </g>
-    );
+    const along = 8, across = 6;
+    for (let i = 1; i < along; i++) lines.push(seg(pp((i * PATCH_U) / along, 0), pp((i * PATCH_U) / along, PATCH_V)));
+    for (let j = 1; j < across; j++) lines.push(seg(pp(0, (j * PATCH_V) / across), pp(PATCH_U, (j * PATCH_V) / across)));
+    inner = <path d={lines.join(" ")} stroke="currentColor" strokeOpacity={0.5} strokeWidth={0.7} />;
   } else if (value === "pavers") {
     // Bricks in rows across, every other row shifted by half a brick
     const lines: string[] = [];

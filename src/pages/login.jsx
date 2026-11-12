@@ -7,7 +7,7 @@ import Image from "next/image";
 
 import Page from "@/ui/page";
 import InteractiveObstructions from "@/ui/InteractiveObstructions";
-import { AuthCard, Button, Input, Badge, Checkbox, Container } from "@/ui";
+import { AuthCard, Button, Input, Checkbox, Container } from "@/ui";
 import GoogleMark from "@/features/auth/GoogleMark";
 import { AUTH_COPY, RESEARCHER_EMAIL } from "@/features/auth/authCopy";
 import { signInRateLimited, TOO_MANY_ATTEMPTS_ERROR } from "@/features/auth/authResponse";
@@ -62,12 +62,14 @@ export default function Login() {
       ? COPY.usePassword
       : null;
 
-  // The request limit (S8) or a sign-in that could not finish, shown as a
-  // wrapping alert (a Badge stays on one line). TooManyAttempts in the address
-  // is where NextAuth sends a sign-in the limit refused while redirecting (the
-  // url in deploy/nginx.conf's 429), as after creating an account.
-  const notice =
-    formNotice || (router.query.error === TOO_MANY_ATTEMPTS_ERROR ? AUTH_COPY.tooManyAttempts : null);
+  // The request limit (S8), a sign-in that could not finish, or the Google
+  // refusal above, shown as one wrapping alert (a Badge stays on one line, so
+  // the Google sentence ran past the card on a phone before S23).
+  // TooManyAttempts in the address is where NextAuth sends a sign-in the limit
+  // refused while redirecting (the url in deploy/nginx.conf's 429), as after
+  // creating an account.
+  const tooMany = router.query.error === TOO_MANY_ATTEMPTS_ERROR ? AUTH_COPY.tooManyAttempts : null;
+  const notice = formNotice || tooMany || providerNotice;
 
   useEffect(() => {
     if (!loading && session) {
@@ -189,11 +191,7 @@ export default function Login() {
               >
                 {notice}
               </p>
-            ) : providerNotice && (
-              <div className="mb-6">
-                <Badge tone="warning">{providerNotice}</Badge>
-              </div>
-            )}
+            ) : null}
 
             <form onSubmit={onSubmit} className="w-full">
               <div className="space-y-5 mb-6">

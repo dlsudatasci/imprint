@@ -74,7 +74,7 @@ export default function SceneQuestions({ sceneLevel, variant, pathOnly = false, 
   const typeOptions = [
     { value: "concrete", label: "Concrete or asphalt" },
     { value: "tiles", label: "Tiles" },
-    { value: "pavers", label: "Paver blocks or bricks" },
+    { value: "pavers", label: "Bricks or paver blocks" },
     { value: "unpaved", label: "Unpaved" },
   ];
   // Worst to best. A crack is a line only, with every piece in place and level.

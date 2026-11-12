@@ -77,11 +77,11 @@ export const SCENE_QUESTIONS = Object.freeze([
     key: "surfaceType",
     name: "Surface Type",
     prompt: "What is most of the walking surface made of?",
-    answers: Object.freeze(["Concrete or asphalt", "Tiles", "Paver blocks or bricks", "Unpaved"]),
+    answers: Object.freeze(["Concrete or asphalt", "Tiles", "Bricks or paver blocks", "Unpaved"]),
     meanings: Object.freeze([
       "Concrete or asphalt: a poured surface.",
       "Tiles: tiles laid on the surface, common on shop and house frontages.",
-      "Paver blocks or bricks: blocks or bricks laid side by side.",
+      "Bricks or paver blocks: bricks or blocks laid side by side.",
       "Unpaved: soil, gravel or grass.",
     ]),
     note: "What most of the walking surface is made of.",

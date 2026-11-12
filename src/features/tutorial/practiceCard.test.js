@@ -194,6 +194,20 @@ describe("spotlightPath", () => {
     expect(cutOuts(spotlightPath([photo, rect(700, 100, 50, 50)], 800, 800))).toBe(2);
   });
 
+  // S23 B (12 Nov 2026): the white post and the new box beside it on a phone
+  it("cuts out parts that overlap as one, so their overlap never fills back in", () => {
+    const post = rect(257, 250, 21, 81);
+    const box = rect(150, 260, 110, 70);
+    const d = spotlightPath([post, box], 400, 800);
+    expect(cutOuts(d)).toBe(1);
+    // Around both, padded
+    expect(d).toMatch(new RegExp(`M${150 - SPOTLIGHT_PAD + 10} ${250 - SPOTLIGHT_PAD}H${257 + 21 + SPOTLIGHT_PAD - 10}`));
+    // Three in a chain, the first and last apart: one cut-out
+    expect(cutOuts(spotlightPath([rect(0, 0, 50, 50), rect(300, 0, 50, 50), rect(45, 0, 260, 20)], 800, 800))).toBe(1);
+    // Close but apart even padded: two
+    expect(cutOuts(spotlightPath([rect(0, 0, 50, 50), rect(50 + 2 * SPOTLIGHT_PAD + 1, 0, 50, 50)], 800, 800))).toBe(2);
+  });
+
   it("dims everything when nothing is lit, and skips empty parts", () => {
     expect(spotlightPath([], 10, 10)).toBe("M0 0H10V10H0Z");
     expect(spotlightPath([rect(5, 5, 0, 10), null], 10, 10)).toBe("M0 0H10V10H0Z");

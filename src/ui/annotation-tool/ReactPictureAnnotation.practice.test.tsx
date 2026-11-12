@@ -8,6 +8,8 @@ import TUTORIAL_IMAGES from "@/data/tutorialImages";
 import { ids } from "@/features/home/howItWorks/demoScript";
 import { DRAW_TARGET } from "@/features/tutorial/practiceSteps";
 import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
+import { applyView, fitImage, type Fit, type View } from "./viewTransform";
+import { TOUCH_HANDLE_HIT_PX } from "./touchGeometry";
 
 /**
  * The tutorial's practice on its first photo (S19, 7 Nov 2026): the tool says
@@ -70,6 +72,8 @@ type Props = {
   onPracticeEvent?: (event: PracticeEvent) => void;
   practiceLock?: PracticeLock | null;
   practiceHighlight?: PracticeHighlight | null;
+  /** S23 B: the phone and tablet layout */
+  layout?: "desktop" | "sheet";
 };
 let lastProps: Props = {};
 
@@ -506,5 +510,107 @@ describe("practiceHighlight", () => {
     click(button("on-sidewalk-no"));
     render({ ...lastProps });
     expect(host.querySelector(`[data-practice-highlight='${ids.car}']`)).toBeNull();
+  });
+});
+
+/**
+ * S23 B (12 Nov 2026): on a phone the practice's outlines read as nothing
+ * (Rans, testing production). In headless Chrome at five phone sizes they
+ * were in the DOM, shown, on top and on their boxes, but 3 px of the brand
+ * blue on a small dark photo, with nothing around them dimmed. The practice
+ * now darkens the rest of the screen and lights only the outlined thing
+ * (practiceSteps.js), which needs the outlines where the boxes are. These
+ * check the sheet layout measures them there, zoomed or not, and that the
+ * white post's outline stays after Add box.
+ */
+describe("practiceHighlight on the sheet layout (S23 B)", () => {
+  type SheetTool = Tool & { fit: Fit | null; view: View; scaleState: Fit; isBoxHidden(id: string): boolean };
+  const STAGE = { width: 390, height: 420 };
+  const GAP = 4;
+
+  /** The tool on the phone layout, the photo fitted to a 390 by 420 photo area, at a zoom */
+  function mountSheet(props: Props, view: View = { zoom: 1, panX: 0, panY: 0 }) {
+    const tool = mount({ layout: "sheet", ...props }) as SheetTool;
+    act(() => tool.setState({ sheetStage: STAGE }));
+    tool.fit = fitImage(640, 360, STAGE.width, STAGE.height);
+    tool.view = view;
+    tool.scaleState = applyView(tool.fit!, view);
+    // A render reads the outlines' places again, as the tool's repaint does
+    render({ ...lastProps });
+    return tool;
+  }
+
+  /** Where a mark is on the photo area, in CSS px, from the photo's scale and origin alone */
+  const onPhotoArea = (tool: SheetTool, m: { x: number; y: number; width: number; height: number }) => ({
+    left: tool.scaleState.originX + m.x * tool.scaleState.scale,
+    top: tool.scaleState.originY + m.y * tool.scaleState.scale,
+    width: m.width * tool.scaleState.scale,
+    height: m.height * tool.scaleState.scale,
+  });
+  const px = (n: number) => `${n}px`;
+  const placed = (el: HTMLElement) => ({ left: parseFloat(el.style.left), top: parseFloat(el.style.top), width: parseFloat(el.style.width), height: parseFloat(el.style.height) });
+
+  for (const view of [{ zoom: 1, panX: 0, panY: 0 }, { zoom: 2.5, panX: -300, panY: -120 }]) {
+    it(`puts a box's outline on the box and the white post's on the post, ${view.zoom === 1 ? "fitted" : "pinch-zoomed"}`, () => {
+      const tool = mountSheet({ practiceHighlight: { boxId: ids.tree } }, view);
+      const box = host.querySelector(`[data-practice-highlight='${ids.tree}']`) as HTMLElement;
+      expect(box).toBeTruthy();
+      expect(box.style.display).not.toBe("none");
+      const want = onPhotoArea(tool, markOf(ids.tree));
+      const got = placed(box);
+      expect(got.width).toBeGreaterThan(2 * GAP);
+      expect(got.height).toBeGreaterThan(2 * GAP);
+      expect(got.left).toBeCloseTo(want.left - GAP, 5);
+      expect(got.top).toBeCloseTo(want.top - GAP, 5);
+      expect(got.width).toBeCloseTo(want.width + 2 * GAP, 5);
+      expect(got.height).toBeCloseTo(want.height + 2 * GAP, 5);
+      // Not the laptop's stage scale: on the sheet layout the stage is the photo area itself
+      expect(tool.scaleState.scale).not.toBe(1);
+
+      render({ ...lastProps, practiceHighlight: { rect: DRAW_TARGET } });
+      const post = host.querySelector("[data-practice-highlight='rect']") as HTMLElement;
+      const target = onPhotoArea(tool, DRAW_TARGET);
+      expect(placed(post).width).toBeGreaterThan(2 * GAP);
+      expect(post.style.left).toBe(px(target.left - GAP));
+      expect(post.style.top).toBe(px(target.top - GAP));
+      expect(post.style.height).toBe(px(target.height + 2 * GAP));
+    });
+  }
+
+  it("keeps the white post's outline after Add box, above the new box and with the other boxes hidden", () => {
+    const tool = mountSheet({ practiceLock: { openable: [], canDraw: true, allowAnswers: {} }, practiceHighlight: { rect: DRAW_TARGET } });
+    act(() => tool.addBoxFromButton());
+    const drawn = drawnBoxes(tool);
+    expect(drawn).toHaveLength(1);
+    expect(tool.selectedId).toBe(drawn[0].id);
+    // What the practice then passes on touch (practiceTargets): the post, the new box marked for the card
+    render({ ...lastProps, practiceHighlight: { rect: DRAW_TARGET, avoidBoxIds: [drawn[0].id] } });
+    const post = host.querySelector("[data-practice-highlight='rect']") as HTMLElement;
+    expect(post).toBeTruthy();
+    expect(post.style.display).not.toBe("none");
+    expect(placed(post).width).toBeGreaterThan(2 * GAP);
+    // After the canvases in the stage, so painted above the new box
+    const shapes = host.querySelector("canvas.rp-shapes")!;
+    expect(shapes.compareDocumentPosition(post) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(host.querySelector(`[data-practice-avoid='avoid:${drawn[0].id}']`)).toBeTruthy();
+    // Lit on touch by its mark, which reaches a corner handle's whole touch area
+    const mark = host.querySelector(`[data-practice-avoid='avoid:${drawn[0].id}']`) as HTMLElement;
+    const box = onPhotoArea(tool, drawn[0].mark);
+    expect(placed(mark).left).toBeCloseTo(box.left - TOUCH_HANDLE_HIT_PX, 5);
+    expect(placed(mark).width).toBeCloseTo(box.width + 2 * TOUCH_HANDLE_HIT_PX, 5);
+    // The focus on the open box (S17 B) hides the other boxes, never the outline
+    for (const id of [ids.tree, ids.car, ids.moto, ids.lamp]) expect(tool.isBoxHidden(id), id).toBe(true);
+  });
+
+  it("keeps the same 3 px pulsing blue outline as a laptop's, dashed for the post", () => {
+    mountSheet({ practiceHighlight: { boxIds: [ids.moto, ids.lamp] } });
+    for (const outline of Array.from(host.querySelectorAll("[data-practice-highlight]"))) {
+      expect(outline.className).toMatch(/border-\[3px\] border-primary/);
+      expect(outline.className).not.toMatch(/shadow-/);
+      expect(outline.className).toMatch(/motion-safe:animate-practice-pulse(\s|$)/);
+      expect(outline.className).not.toMatch(/border-dashed/);
+    }
+    render({ ...lastProps, practiceHighlight: { rect: DRAW_TARGET } });
+    expect(host.querySelector("[data-practice-highlight='rect']")!.className).toMatch(/border-dashed/);
   });
 });

@@ -266,9 +266,12 @@ export default function PracticeGuide({ step, total, line, fallbackLine, note = 
   if (!host) return null;
   return createPortal(
     <div data-practice-layer className="absolute left-0 top-0 z-[70]" style={{ width: 0, height: 0 }}>
-      {/* The dimmed screen, as the tour's overlay. Presses there do nothing. */}
-      <svg ref={svgRef} aria-hidden="true" className="absolute left-0 top-0 pointer-events-none" width="0" height="0">
-        <path ref={pathRef} d="" fill="rgba(0, 0, 0, 0.5)" fillRule="evenodd" style={{ pointerEvents: "auto" }} />
+      {/* The dimmed screen, as the tour's overlay. Presses there do nothing,
+          and on a phone a finger there neither scrolls nor zooms the page
+          (S23 B: half a pinch on the dark part zoomed the whole page once
+          the touch steps were dimmed). */}
+      <svg ref={svgRef} aria-hidden="true" className="absolute left-0 top-0 pointer-events-none touch-none" width="0" height="0">
+        <path ref={pathRef} d="" fill="rgba(0, 0, 0, 0.5)" fillRule="evenodd" style={{ pointerEvents: "auto", touchAction: "none" }} />
       </svg>
       {Array.from({ length: ringCount }, (_, i) => (
         <div

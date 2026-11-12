@@ -70,6 +70,14 @@ describe("SceneQuestions", () => {
     expect(label(markup, "sidewalkWidth:one_person")).toBe("Narrow");
   });
 
+  // S23 C (12 Nov 2026): bricks first, so "Paver" is not misread as "paved". Stored value unchanged.
+  it("labels the pavers answer Bricks or paver blocks, still stored as pavers", () => {
+    const markup = html();
+    expect(label(markup, "surfaceType:pavers")).toBe("Bricks or paver blocks");
+    expect(markup).not.toContain("Paver blocks or bricks");
+    expect(label(markup, "surfaceType:tiles")).toBe("Tiles");
+  });
+
   it("passes one answer at a time, the booleans as booleans", () => {
     const { onAnswer, option } = mount(empty);
     act(() => option("surfaceCondition:2").click());

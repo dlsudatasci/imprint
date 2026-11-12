@@ -20,6 +20,7 @@ import {
   practiceLockFor,
   practiceTargets,
 } from "./practiceSteps";
+import { practiceLine } from "./practiceCopy";
 
 /**
  * S19 (7 Nov 2026): the practice on the first tutorial photo, steps that
@@ -310,12 +311,27 @@ describe("practiceTargets", () => {
     expect(practiceTargets("treeSeverity", state({ openId: ids.tree, boxes: { tree: onPathYes } })).rings).toEqual([S.obstructsYes, S.obstructsNo]);
   });
 
-  it("dims nothing on touch for a step on the photo, and lights the sheet for a panel (Rans, 8 Nov 2026)", () => {
-    for (const [key, st] of [["openTree", state()], ["carOff", state()], ["drawPost", state()], ["lastTwo", state()], ["treeOnPath", state()], ["answerDrawn", state({ extra: [drawn(POST)] })]]) {
-      expect(practiceTargets(key, st, "touch").spotlight, key).toEqual([]);
+  // S23 B (Rans, 12 Nov 2026): on touch the screen dark but for the outlined thing, as on a laptop the photo
+  it("lights only the outlined box or post on touch for a step on the photo, and the sheet for a panel", () => {
+    for (const [key, st] of [["openTree", state()], ["carOff", state()], ["lastTwo", state()], ["answerDrawn", state({ extra: [drawn(POST)] })], ["answerDrawn", state()]]) {
+      expect(practiceTargets(key, st, "touch").spotlight, key).toEqual([S.outlines]);
       expect(practiceTargets(key, st).spotlight, key).toEqual([S.photo]);
     }
+    expect(S.outlines).toBe("[data-practice-highlight]");
+    // What each of those steps outlines, which is what is lit
+    expect(practiceTargets("openTree", state(), "touch").highlight).toEqual({ boxId: ids.tree });
+    expect(practiceTargets("carOff", state(), "touch").highlight).toEqual({ boxId: ids.car });
+    expect(practiceTargets("lastTwo", state(), "touch").highlight).toEqual({ boxIds: [ids.moto, ids.lamp] });
+    // A panel open: the answers sheet and the open box, as before
     expect(practiceTargets("carOff", state({ openId: ids.car }), "touch").spotlight).toEqual([S.answerSheet, S.openBox]);
+    expect(practiceTargets("treeOnPath", state({ openId: ids.tree }), "touch").spotlight).toEqual([S.answerSheet, S.openBox]);
+  });
+
+  it("lights Add box and the post at step 7 on touch, then the post and the new box once it is open", () => {
+    expect(practiceTargets("drawPost", state(), "touch").spotlight).toEqual([S.addBox, S.drawTarget]);
+    const added = drawn({ x: 280, y: 150, width: 100, height: 80, type: "RECT" });
+    expect(practiceTargets("drawPost", state({ extra: [added], openId: added.id }), "touch").spotlight).toEqual([S.drawTarget, S.openBox]);
+    expect(practiceTargets("drawPost", state()).spotlight).toEqual([S.photo]);
   });
 
   it("at step 6 outlines the car, then rings its Question 1 No", () => {
@@ -325,14 +341,48 @@ describe("practiceTargets", () => {
 
   it("at step 7 outlines the white post; on touch rings Add box with the card by it, then above the post once the new box is open", () => {
     expect(practiceTargets("drawPost", state())).toMatchObject({ highlight: { rect: DRAW_TARGET }, rings: [], spotlight: [S.photo], cardNear: null });
-    expect(practiceTargets("drawPost", state(), "touch")).toMatchObject({ highlight: { rect: DRAW_TARGET }, rings: [S.addBox], spotlight: [], cardNear: S.addBox });
-    // Add box tapped: the new box open, the card above the post and clear of the box
+    expect(practiceTargets("drawPost", state(), "touch")).toMatchObject({ highlight: { rect: DRAW_TARGET }, rings: [S.addBox], spotlight: [S.addBox, S.drawTarget], cardNear: S.addBox });
+    // Add box tapped: the new box open, the card above the post and clear of the box.
+    // S23 B: Add box no longer ringed once tapped.
     expect(practiceTargets("drawPost", state({ openId: "drawn-1" }), "touch")).toMatchObject({
-      highlight: { rect: DRAW_TARGET, avoidBoxIds: ["drawn-1"] }, rings: [S.addBox], spotlight: [], cardNear: S.drawTarget,
+      highlight: { rect: DRAW_TARGET, avoidBoxIds: ["drawn-1"] }, rings: [], spotlight: [S.drawTarget, S.openBox], cardNear: S.drawTarget,
     });
     expect(S.drawTarget).toBe("[data-practice-highlight='rect']");
     for (const step of PRACTICE_STEPS) {
       if (step.key !== "drawPost") expect(practiceTargets(step, state(), "touch").cardNear, step.key).toBeNull();
+    }
+  });
+
+  // S23 B (12 Nov 2026): after Add box, the card says to drag the new box's corners onto the outline
+  it("at step 7 on touch picks the fitting line once the new box is open and does not yet cover the post", () => {
+    // Where Add box puts a new box: away from the post
+    const added = drawn({ x: 280, y: 150, width: 100, height: 80, type: "RECT" });
+    expect(drawTargetIoU(added.mark)).toBeLessThan(DRAW_MIN_IOU);
+    const t = practiceTargets("drawPost", state({ extra: [added], openId: added.id }), "touch");
+    expect(t).toMatchObject({ highlight: { rect: DRAW_TARGET, avoidBoxIds: [added.id] }, cardNear: S.drawTarget, line: "touchFit" });
+    expect(practiceLine("drawPost", "touch", t.line)).toBe("Drag the green box's corners onto the dashed outline around the white post.");
+    // Partly over the post, still under the step's 0.3
+    const near = drawn({ ...POST, x: POST.x + POST.width * 0.6 });
+    expect(drawTargetIoU(near.mark)).toBeLessThan(DRAW_MIN_IOU);
+    expect(practiceTargets("drawPost", state({ extra: [near], openId: near.id }), "touch").line).toBe("touchFit");
+    // Covering the post: the step's done check, so no fitting line
+    const fitted = drawn(POST);
+    expect(practiceStepDone("drawPost", state({ extra: [fitted], openId: fitted.id }))).toBe(true);
+    expect(practiceTargets("drawPost", state({ extra: [fitted], openId: fitted.id }), "touch").line).toBeNull();
+  });
+
+  it("keeps the step's own line before Add box, on a laptop, and on every other step", () => {
+    const added = drawn({ x: 280, y: 150, width: 100, height: 80, type: "RECT" });
+    const before = practiceTargets("drawPost", state(), "touch");
+    expect(before.line).toBeNull();
+    expect(practiceLine("drawPost", "touch", before.line)).toBe("If you find a missed object on the sidewalk, tap Add box and fit it, whether it obstructs or not.");
+    // A laptop drags the box out itself: no Add box, no fitting line
+    expect(practiceTargets("drawPost", state({ extra: [added], openId: added.id })).line).toBeNull();
+    for (const step of PRACTICE_STEPS) {
+      for (const words of ["pointer", "touch"]) {
+        if (step.key === "drawPost") continue;
+        expect(practiceTargets(step, state({ extra: [added], openId: added.id }), words).line, `${step.key} ${words}`).toBeNull();
+      }
     }
   });
 

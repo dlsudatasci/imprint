@@ -124,6 +124,43 @@ describe("log in (S8)", () => {
   });
 });
 
+/**
+ * S23 A (12 Nov 2026): the Google refusal at /login?error=UsePassword was a
+ * Badge, which stays on one line (whitespace-nowrap) and ran past the card on
+ * a phone. It is now the same wrapping alert as the other notices.
+ */
+describe("log in, Google on a password account's email (S23 A)", () => {
+  const USE_PASSWORD = AUTH_COPY.login.usePassword;
+  const badges = () => [...host.querySelectorAll("span.whitespace-nowrap")];
+
+  it("shows the message in a wrapping alert, not a Badge", async () => {
+    router.query = { error: "UsePassword" };
+    await mount(<Login />);
+    const alert = [...host.querySelectorAll('[role="alert"]')].find((n) => n.textContent.trim() === USE_PASSWORD);
+    expect(alert).toBeTruthy();
+    expect(alert.tagName).toBe("P");
+    expect(alert.className).toContain("bg-warning-soft");
+    expect(alert.className).not.toContain("whitespace-nowrap");
+    expect(badges().some((b) => b.textContent.includes(USE_PASSWORD))).toBe(false);
+  });
+
+  it("shows only one alert, and the limit's message wins over the Google one", async () => {
+    router.query = { error: "UsePassword" };
+    await mount(<Login />);
+    expect(alerts()).toEqual([USE_PASSWORD]);
+
+    router.query = { error: "TooManyAttempts" };
+    await mount(<Login />);
+    expect(alerts()).toEqual([TOO_MANY]);
+  });
+
+  it("shows no notice with no error in the address", async () => {
+    await mount(<Login />);
+    expect(alerts()).toEqual([]);
+    expect(host.textContent).not.toContain(USE_PASSWORD);
+  });
+});
+
 describe("create account (S8)", () => {
   async function register() {
     await mount(<Register />);

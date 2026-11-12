@@ -662,7 +662,7 @@ export default function TutorialPage({ isAnnotator = false }) {
           total={PRACTICE_STEP_COUNT}
           // A step with a fallback (Step 2 on touch) says to tap the Step 2
           // line only until the sheet is up, then the laptop's line
-          line={practiceLine(practice.step.key, practice.targets.fallback ? "pointer" : tourWords)}
+          line={practiceLine(practice.step.key, practice.targets.fallback ? "pointer" : tourWords, practice.targets.line)}
           fallbackLine={practice.targets.fallback ? practiceLine(practice.step.key, tourWords) : undefined}
           note={practiceNote(practice.step.key)}
           done={practiceDone}

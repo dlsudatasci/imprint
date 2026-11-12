@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import PracticeGuide, { targetsInUse } from "./PracticeGuide";
 import SceneQuestions from "@/ui/annotation-tool/SceneQuestions";
 import { PRACTICE_SELECTORS } from "./practiceSteps";
+import { spotlightPath } from "./practiceCard";
 import { SCENE_KEYS, emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
 
 /**
@@ -58,6 +59,9 @@ describe("the practice's guide", () => {
     expect(path.getAttribute("fill-rule")).toBe("evenodd");
     expect(path.getAttribute("fill")).toBe("rgba(0, 0, 0, 0.5)");
     expect(path.style.pointerEvents).toBe("auto");
+    // S23 B: a finger on the dark part never zooms or scrolls the page
+    expect(path.style.touchAction).toBe("none");
+    expect(layer().querySelector("svg").getAttribute("class")).toMatch(/(^|\s)touch-none(\s|$)/);
     expect(layer().querySelector("svg").getAttribute("aria-hidden")).toBe("true");
     // Nothing is laid out in jsdom, so nothing is lit: nothing dimmed (the cut-outs are in practiceCard.test.js)
     expect(path.getAttribute("d")).toBe("");
@@ -179,5 +183,50 @@ describe("Step 3's questions", () => {
     for (const key of SCENE_KEYS) {
       expect(host.querySelector(`[data-scene-question='${key}'] [data-scene-option^='${key}:']`), key).toBeTruthy();
     }
+  });
+});
+
+// S23 B (12 Nov 2026): on a phone the screen goes dark but for what the step lights
+describe("the spotlight on the sheet layout", () => {
+  const placed = [];
+  afterEach(() => {
+    for (const el of placed.splice(0)) el.remove();
+  });
+
+  /** An element on the screen at a given place (jsdom lays nothing out) */
+  function place(tag, attrs, rect) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    el.getBoundingClientRect = () => ({ ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height, x: rect.left, y: rect.top, toJSON() {} });
+    document.body.appendChild(el);
+    placed.push(el);
+    return el;
+  }
+  const frames = () => act(async () => new Promise((resolve) => setTimeout(resolve, 80)));
+  const page = () => [Math.max(document.documentElement.scrollWidth, window.innerWidth), Math.max(document.documentElement.scrollHeight, window.innerHeight)];
+
+  it("darkens everything but Add box and the white post's outline at step 7, and rings Add box in the old blue", async () => {
+    const addBox = { left: 12, top: 500, width: 113, height: 44 };
+    const post = { left: 257, top: 250, width: 21, height: 81 };
+    place("button", { id: "add-box-button" }, addBox);
+    place("div", { "data-practice-highlight": "rect" }, post);
+    await show({ layout: "sheet", targets: { highlight: null, rings: [PRACTICE_SELECTORS.addBox], spotlight: [PRACTICE_SELECTORS.addBox, PRACTICE_SELECTORS.drawTarget], fallback: null, avoid: [] } });
+    await frames();
+    const [w, h] = page();
+    expect(layer().querySelector("svg path").getAttribute("d")).toBe(spotlightPath([addBox, post], w, h));
+    const ring = layer().querySelector("[data-practice-ring]");
+    expect(ring.className).toMatch(/border-\[3px\] border-primary/);
+    expect(ring.className).not.toMatch(/shadow-/);
+  });
+
+  it("darkens everything but the outlined box on a step on the photo", async () => {
+    const tree = { left: 283, top: 235, width: 45, height: 105 };
+    place("div", { "data-practice-highlight": "tut1-box2" }, tree);
+    await show({ layout: "sheet", targets: { highlight: null, rings: [], spotlight: [PRACTICE_SELECTORS.outlines], fallback: null, avoid: [] } });
+    await frames();
+    const [w, h] = page();
+    const d = layer().querySelector("svg path").getAttribute("d");
+    expect(d).toBe(spotlightPath([tree], w, h));
+    expect(d).not.toBe("");
   });
 });

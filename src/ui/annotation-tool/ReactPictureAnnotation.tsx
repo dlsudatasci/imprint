@@ -265,13 +265,13 @@ const prefersReducedMotion = () => matches("(prefers-reduced-motion: reduce)");
 
 /** How far the practice's outline sits outside its box, stage px (S19) */
 const PRACTICE_OUTLINE_GAP = 4;
-function practiceOutlineStyle(rect: { x: number; y: number; width: number; height: number }, unit: "" | "px" = "") {
+function practiceOutlineStyle(rect: { x: number; y: number; width: number; height: number }, unit: "" | "px" = "", gap = PRACTICE_OUTLINE_GAP) {
   const value = (n: number) => (unit ? `${n}px` : n);
   return {
-    left: value(rect.x - PRACTICE_OUTLINE_GAP),
-    top: value(rect.y - PRACTICE_OUTLINE_GAP),
-    width: value(rect.width + 2 * PRACTICE_OUTLINE_GAP),
-    height: value(rect.height + 2 * PRACTICE_OUTLINE_GAP),
+    left: value(rect.x - gap),
+    top: value(rect.y - gap),
+    width: value(rect.width + 2 * gap),
+    height: value(rect.height + 2 * gap),
   } as Record<string, string | number>;
 }
 
@@ -3532,6 +3532,17 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private practiceHighlightRef = React.createRef<HTMLDivElement>();
 
   /**
+   * How far the open box's mark reaches outside it. On touch the practice
+   * lights the open box by this mark with the rest of the screen dark (S23
+   * B), so it reaches as far as a finger can grab a corner
+   * (TOUCH_HANDLE_HIT_PX): a press on a handle's outer part is never on the
+   * dark part. Elsewhere the outline's gap.
+   */
+  private get practiceAvoidGap() {
+    return this.touchWords ? TOUCH_HANDLE_HIT_PX : PRACTICE_OUTLINE_GAP;
+  }
+
+  /**
    * The practice's outlines, over the photo and under the box panel. They let
    * every press through to the photo. They pulse for as long as they show,
    * from the start again on a press elsewhere (a new `pulse`), and stay as a
@@ -3544,7 +3555,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       <div ref={this.practiceHighlightRef} aria-hidden="true" className="pointer-events-none absolute inset-0">
         {this.practiceHighlightRects().map((rect) => rect.key.startsWith("avoid:") ? (
           // Nothing to see: where the open box is, for the card to keep clear of
-          <div key={rect.key} data-practice-avoid={rect.key} className="absolute" style={practiceOutlineStyle(rect)} />
+          <div key={rect.key} data-practice-avoid={rect.key} className="absolute" style={practiceOutlineStyle(rect, "", this.practiceAvoidGap)} />
         ) : (
           <div
             key={`${rect.key}-${highlight.pulse ?? 0}`}
@@ -3569,7 +3580,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       const key = element.dataset.practiceHighlight ?? element.dataset.practiceAvoid;
       const rect = rects.find((r) => r.key === key);
       element.style.display = rect ? "" : "none";
-      if (rect) Object.assign(element.style, practiceOutlineStyle(rect, "px"));
+      if (rect) Object.assign(element.style, practiceOutlineStyle(rect, "px", element.dataset.practiceAvoid ? this.practiceAvoidGap : PRACTICE_OUTLINE_GAP));
     }
   }
 

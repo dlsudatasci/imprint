@@ -522,7 +522,7 @@ Step 3 rates the sidewalk (`SceneQuestions.tsx`). Annotators see no change.
   answers worst to best and stored higher is better: Sidewalk Width (Narrow, Limited, Wide),
   Ease of Navigation (Fully, Heavily, Moderately, Slightly obstructed, Unobstructed, stored
   1 to 5 as `overallAccessibility`), Evenness (Uneven, Sloped, Flat), Surface Type (Concrete or
-  asphalt, Tiles, Paver blocks or bricks, Unpaved, no order), Surface Condition (Broken,
+  asphalt, Tiles, Bricks or paver blocks, Unpaved, no order), Surface Condition (Broken,
   Cracked, Intact) and Road Barrier (No barrier, Barrier). For a path, Width, Surface Type,
   Surface Condition and Road Barrier are greyed out (`opacity-50`, `aria-disabled`), their
   buttons disabled and their prompt "Not asked for a path.", leaving two. The phone's Step 3

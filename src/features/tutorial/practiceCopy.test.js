@@ -15,6 +15,8 @@ const everyText = () => [
   { key: "skipHint", text: PRACTICE_COPY.skipHint },
   { key: "touchSkipHint", text: PRACTICE_COPY.touchSkipHint },
   { key: "counter", text: PRACTICE_COPY.counter(3, 10) },
+  // Step 7's second touch line (S23 B)
+  { key: "drawPost touchFit", text: PRACTICE_COPY.lines.drawPost.touchFit },
   ...PRACTICE_STEPS.map((step) => ({ key: `${step.key} note`, text: practiceNote(step.key) ?? "" })).filter((n) => n.text),
 ];
 
@@ -39,6 +41,7 @@ describe("the practice's lines", () => {
 
   it("never says click on touch", () => {
     for (const { key, text } of lines("touch")) expect(text, key).not.toMatch(/click/i);
+    expect(practiceLine("drawPost", "touch", "touchFit")).not.toMatch(/click/i);
     expect(PRACTICE_COPY.touchReminder).not.toMatch(/click/i);
     expect(PRACTICE_COPY.touchSkipHint).not.toMatch(/click/i);
   });
@@ -103,5 +106,28 @@ describe("the practice's lines", () => {
   it("falls back to the laptop line where touch has none, and to nothing for an unknown step", () => {
     expect(practiceLine("treeOnPath", "touch")).toBe(practiceLine("treeOnPath"));
     expect(practiceLine("nope")).toBe("");
+  });
+});
+
+// S23 B (12 Nov 2026): on touch after Add box, what to do with the new box
+describe("step 7's fitting line on touch", () => {
+  const FIT = "Drag the green box's corners onto the dashed outline around the white post.";
+
+  it("says to drag the green box's corners onto the dashed outline", () => {
+    expect(PRACTICE_COPY.lines.drawPost.touchFit).toBe(FIT);
+    expect(practiceLine("drawPost", "touch", "touchFit")).toBe(FIT);
+  });
+
+  it("is within the word limit, with no em dash, no semicolon and no click", () => {
+    expect(words(FIT)).toBeLessThanOrEqual(PRACTICE_LINE_WORDS);
+    expect(FIT).not.toMatch(/[—;]/);
+    expect(FIT).not.toMatch(/click/i);
+  });
+
+  it("leaves the step's lines as they were with no variant, and ignores a variant a step does not have", () => {
+    expect(practiceLine("drawPost", "touch")).toBe("If you find a missed object on the sidewalk, tap Add box and fit it, whether it obstructs or not.");
+    expect(practiceLine("drawPost", "pointer")).toBe("If you find a missed object on the sidewalk, drag a box around it whether it obstructs or not.");
+    expect(practiceLine("openTree", "touch", "touchFit")).toBe("Tap the dashed box on the tree.");
+    expect(practiceLine("drawPost", "touch", null)).toBe(practiceLine("drawPost", "touch"));
   });
 });

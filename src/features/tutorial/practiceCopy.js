@@ -10,7 +10,8 @@
  * line as the tour's notes are. The wording of steps 3, 4, 6, 7, 8 and 10 and of
  * the reminder is Rans's (8 Nov 2026), which took the limit from 15 words to
  * 22: step 6 now says why the car is not on the path, and step 7 that a missed
- * object is boxed whether or not it obstructs.
+ * object is boxed whether or not it obstructs. Step 7 on touch has a second
+ * line (`touchFit`, S23 B) for once Add box has made the new box.
  *
  * Only steps 3 and 6 say which answer to choose, both about whether the
  * object is on the path, which the photo settles. The obstruction question
@@ -67,6 +68,9 @@ export const PRACTICE_COPY = Object.freeze({
     drawPost: Object.freeze({
       pointer: "If you find a missed object on the sidewalk, drag a box around it whether it obstructs or not.",
       touch: "If you find a missed object on the sidewalk, tap Add box and fit it, whether it obstructs or not.",
+      // On touch once Add box made the new box and it does not yet cover the
+      // white post (S23 B, 12 Nov 2026): what to do with it
+      touchFit: "Drag the green box's corners onto the dashed outline around the white post.",
     }),
     answerDrawn: Object.freeze({
       pointer: "Pick its category, then answer both questions.",
@@ -95,9 +99,13 @@ export function practiceNote(key) {
 /**
  * A step's line in the wording for this input: "touch" on the sheet layout
  * and wherever a finger is the primary pointer (tourWordsFor), else "pointer".
+ * `variant` names another line of the step for a state within it, as
+ * practiceTargets gives it (`line`): "touchFit" at step 7 on touch once the
+ * new box is there (S23 B). A variant the step does not have is ignored.
  */
-export function practiceLine(key, words = "pointer") {
+export function practiceLine(key, words = "pointer", variant = null) {
   const line = PRACTICE_COPY.lines[key];
   if (!line) return "";
+  if (variant && line[variant]) return line[variant];
   return (words === "touch" && line.touch) || line.pointer;
 }

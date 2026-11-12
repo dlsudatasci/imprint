@@ -60,6 +60,9 @@ describe("taskFacts against the tool", () => {
     expect(meaning("Surface Condition", 1)).toBe("Cracked: lines in the surface, with every piece still in place and level.");
     expect(meaning("Road Barrier", 0)).toContain("A curb alone is No barrier");
     expect(meaning("Surface Type", 3)).toBe("Unpaved: soil, gravel or grass.");
+    // S23 C (12 Nov 2026): bricks first
+    expect(SCENE_QUESTIONS.find((q) => q.key === "surfaceType").answers[2]).toBe("Bricks or paver blocks");
+    expect(meaning("Surface Type", 2)).toBe("Bricks or paver blocks: bricks or blocks laid side by side.");
     expect(meaning("Evenness", 0)).toBe("Uneven: it rises and dips, as at driveways.");
   });
 

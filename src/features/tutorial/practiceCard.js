@@ -117,19 +117,39 @@ function roundedRect({ left, top, width, height }, radius) {
   return `M${left + r} ${top}H${right - r}A${r} ${r} 0 0 1 ${right} ${top + r}V${bottom - r}A${r} ${r} 0 0 1 ${right - r} ${bottom}H${left + r}A${r} ${r} 0 0 1 ${left} ${bottom - r}V${top + r}A${r} ${r} 0 0 1 ${left + r} ${top}Z`;
 }
 
-const contains = (a, b) => b.left >= a.left && b.top >= a.top && b.left + b.width <= a.left + a.width && b.top + b.height <= a.top + a.height;
+const overlaps = (a, b) => a.left < b.left + b.width && b.left < a.left + a.width && a.top < b.top + b.height && b.top < a.top + a.height;
+const bounds = (a, b) => {
+  const left = Math.min(a.left, b.left);
+  const top = Math.min(a.top, b.top);
+  return { left, top, width: Math.max(a.left + a.width, b.left + b.width) - left, height: Math.max(a.top + a.height, b.top + b.height) - top };
+};
 
 /**
  * The dimmed overlay over the page (8 Nov 2026, the tour's look): one path
  * covering `width` by `height`, with a rounded cut-out around each lit part,
- * filled even-odd so the cut-outs stay clear and let presses through. A part
- * inside another is left out, as a second cut-out there would fill it again.
+ * filled even-odd so the cut-outs stay clear and let presses through. Parts
+ * that overlap once padded are cut out as one, around both: even-odd fills
+ * where two cut-outs cross back in, which darkened the white post and a
+ * corner of the new box beside it on a phone (S23 B). A part inside another,
+ * or a repeat, is so left out too.
  */
 export function spotlightPath(holes, width, height, { pad = SPOTLIGHT_PAD, radius = SPOTLIGHT_RADIUS } = {}) {
-  const padded = (holes ?? [])
+  const kept = (holes ?? [])
     .filter((h) => h && h.width > 0 && h.height > 0)
     .map((h) => ({ left: h.left - pad, top: h.top - pad, width: h.width + 2 * pad, height: h.height + 2 * pad }));
-  const kept = padded.filter((h, i) => !padded.some((other, j) => j !== i && contains(other, h) && (!contains(h, other) || j < i)));
+  // Merge until no two cross: a merged part can reach a third
+  for (let merged = true; merged;) {
+    merged = false;
+    for (let i = 0; i < kept.length && !merged; i++) {
+      for (let j = i + 1; j < kept.length; j++) {
+        if (!overlaps(kept[i], kept[j])) continue;
+        kept[i] = bounds(kept[i], kept[j]);
+        kept.splice(j, 1);
+        merged = true;
+        break;
+      }
+    }
+  }
   return [`M0 0H${width}V${height}H0Z`, ...kept.map((h) => roundedRect(h, radius))].join("");
 }
 

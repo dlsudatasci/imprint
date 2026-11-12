@@ -630,22 +630,28 @@ function RetrainingTab() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Retraining Cycles" value={data.cycleCount} />
-        <StatCard label="Total Images" value={data.totalImages.toLocaleString()} />
-        <StatCard
-          label="Completed Annotations"
-          value={data.totalCompletedAnnotations.toLocaleString()}
-        />
-        <StatCard
-          label="Next Cycle At"
-          value={data.nextRetrainingAt.toLocaleString()}
-          sub={
-            data.annotationsUntilNext > 0
-              ? `${data.annotationsUntilNext.toLocaleString()} to go`
-              : "Ready now"
-          }
-        />
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard label="Retraining Cycles" value={data.retrainingCyclesRun} />
+          <StatCard label="Total Images" value={data.totalImages.toLocaleString()} />
+          <StatCard
+            label="Contributor Judgments"
+            value={data.contributorJudgments.toLocaleString()}
+            sub={`from ${data.contributorAnnotations.toLocaleString()} contributor ${data.contributorAnnotations === 1 ? "annotation" : "annotations"}`}
+          />
+          <StatCard
+            label="Next Cycle At"
+            value={data.nextRetrainingAt.toLocaleString()}
+            sub={
+              data.judgmentsUntilNext > 0
+                ? `${data.judgmentsUntilNext.toLocaleString()} to go`
+                : "Ready now"
+            }
+          />
+        </div>
+        <p className="text-sm text-muted">
+          Counts the contributor judgments the retraining export would use. Contributors flagged by quality control are removed later, at each cycle, so the number used will be a little lower.
+        </p>
       </div>
 
       <TauCard tau={data.tau} />

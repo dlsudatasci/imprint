@@ -17,6 +17,8 @@ services:
       EMAIL_SERVICE: ${EMAIL_SERVICE}
       EMAIL_USER: ${EMAIL_USER}
       EMAIL_PASS: ${EMAIL_PASS}
+      # S26: the address for the retraining-ready email. Empty sends nothing.
+      RETRAINING_NOTIFY_EMAIL: ${RETRAINING_NOTIFY_EMAIL:-}
       GOOGLE_ID: ${GOOGLE_ID}
       GOOGLE_SECRET: ${GOOGLE_SECRET}
     depends_on:

@@ -70,9 +70,18 @@ import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
  * and the note together, the question's text counted, and one point on its own.
  * The sentence on the model's proposal (`pointNote`, S3) is not counted: it is
  * required wording, and Check Each Box keeps Rans's own words beside it
- * (decided 6 Nov 2026).
+ * (decided 6 Nov 2026). The laptop zoom line (`zoomNote`, S28, 13 Nov 2026)
+ * is counted: Check Each Box is 74 words with it.
  */
 export const CONTRIBUTOR_BUDGET = Object.freeze({ words: 80, points: 5, wordsPerPoint: 18 });
+
+/**
+ * The laptop's zoom (S28, 13 Nov 2026), a second muted line on Check Each Box
+ * after its note, on the laptop tour worded for a mouse only. The minus is a
+ * real minus, as the Zoom out button's line. A finger keeps "Pinch to zoom in
+ * on small objects." on the touch tour.
+ */
+export const DESKTOP_ZOOM_NOTE = "Use + and \u2212 at the top right of the photo to zoom in. Scroll to move around.";
 
 // The severity step points at the photo (8 Oct 2026): the severity scale opens
 // on the photo beside the box after a Yes, not in the lists under it. The
@@ -200,6 +209,7 @@ const CONTRIBUTOR = [
     // Any object on the path we missed, obstructing or not (Rans, 5 Nov 2026)
     note: "Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.",
     touchNote: "Did we miss an object on the sidewalk or path? Tap Add box to box it, even if it doesn't obstruct.",
+    zoomNote: DESKTOP_ZOOM_NOTE,
     floatingOptions: CHECK_FLOATING,
   },
   // On the photo's right, as Check Each Box (5 Nov 2026)
@@ -554,7 +564,8 @@ function contributorWords(entry, touchWords) {
  * A contributor step also carries `intro`, `points` and `note` (S16), and
  * `after` (S16b), which the tutorial page turns into a paragraph, a numbered
  * list (none when `points` is empty), a paragraph and a muted line. Its
- * `content` is the same text as plain sentences, in that order. `pointNote`
+ * `content` is the same text as plain sentences, in that order, ending with
+ * `zoomNote` (S28) where the step has one. `pointNote`
  * (S3) is a sentence that follows one point's text inside that point,
  * `{ after, text }`, and comes right after that point in `content`. It is
  * apart from the point only so the point's own word limit still applies.
@@ -572,6 +583,8 @@ export function buildTourSteps(isAnnotator = false, step = "objects", input = "p
     } else {
       const { intro, points, after, note, pointNote } = contributorWords(entry, touchWords);
       const fullNote = input === "touch" && (phone || tablet) && i === 0 ? FULL_SCREEN_TIP : note;
+      // The laptop zoom line (S28): the pointer tour worded for a mouse, where scrolling moves the photo
+      const zoomNote = input === "pointer" && !touchWords ? entry.zoomNote : undefined;
       const sentences = points.flatMap((point, p) =>
         pointNote && pointNote.after === p + 1 ? [asSentence(point), pointNote.text] : [asSentence(point)]
       );
@@ -581,7 +594,8 @@ export function buildTourSteps(isAnnotator = false, step = "objects", input = "p
         ...(pointNote ? { pointNote: { ...pointNote } } : {}),
         ...(after ? { after } : {}),
         ...(fullNote ? { note: fullNote } : {}),
-        content: [intro, ...sentences, after, fullNote].filter(Boolean).join(" "),
+        ...(zoomNote ? { zoomNote } : {}),
+        content: [intro, ...sentences, after, fullNote, zoomNote].filter(Boolean).join(" "),
       };
     }
     return {

@@ -53,3 +53,23 @@ export function panelPosition(
 export function fitPanelTop(top: number, panelHeight: number, photoHeight: number) {
   return Math.max(0, Math.min(top, photoHeight - panelHeight));
 }
+
+/**
+ * The floating panel's top kept clear of the zoom controls at the photo's top
+ * right on a laptop (S28, 13 Nov 2026), all in the photo's px. `corner` is the
+ * controls' area: everything right of `left` and above `bottom`, or null when
+ * there are none (a phone, the practice). A panel reaching into that area
+ * across goes down to just below it, unless it would then run past the
+ * photo's bottom (`panelHeight`, 0 when not yet known), where it stays.
+ */
+export function clearOfCorner(
+  position: { left: number; top: number },
+  corner: { left: number; bottom: number } | null,
+  panelHeight = 0,
+  photoHeight = Infinity
+) {
+  if (!corner) return position.top;
+  const under = position.left + PANEL_WIDTH > corner.left && position.top < corner.bottom;
+  if (!under || corner.bottom + panelHeight > photoHeight) return position.top;
+  return corner.bottom;
+}

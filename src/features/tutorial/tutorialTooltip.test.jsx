@@ -23,7 +23,14 @@ describe("a tour step's text", () => {
     // style: no class of its own, not muted, not a paragraph of its own (Rans)
     expect(items[2]).toBe(`${check.points[2]} <span data-point-note="true">Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo.</span>`);
     expect(items.filter((item) => item.includes("data-point-note"))).toHaveLength(1);
-    expect(html).toMatch(/<\/ol><p class="mt-2 text-muted">Did we miss an object on the sidewalk or path\? Click and drag to box it, even if it doesn't obstruct\.<\/p>$/);
+    // Then, on the laptop, the zoom line as a second muted line (S28, 13 Nov 2026)
+    expect(html).toMatch(/<\/ol><p class="mt-2 text-muted">Did we miss an object on the sidewalk or path\? Click and drag to box it, even if it doesn't obstruct\.<\/p><p data-zoom-note="true" class="mt-2 text-muted">Use \+ and \u2212 at the top right of the photo to zoom in\. Scroll to move around\.<\/p>$/);
+  });
+
+  it("has no zoom line on the touch tour's Check Each Box (S28)", () => {
+    const html = body(buildTourSteps(false, "objects", "touch")[1]);
+    expect(html).not.toContain("data-zoom-note");
+    expect(html).not.toContain("Scroll to move around");
   });
 
   it("renders Step 1 (S15) as its intro, then its one point as a list", () => {

@@ -9,12 +9,14 @@ import {
   TABLET_FULL_SCREEN_SENTENCE,
   FULL_SCREEN_TIP,
   CONTRIBUTOR_BUDGET,
+  DESKTOP_ZOOM_NOTE,
 } from "./tourSteps";
 import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy";
 import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
 
 // A contributor step's words: intro, points, after (S16b) and note (S16)
-const wordsOf = (step) => [step.intro, ...step.points, step.after, step.note].filter(Boolean);
+// and the laptop's zoom line (S28)
+const wordsOf = (step) => [step.intro, ...step.points, step.after, step.note, step.zoomNote].filter(Boolean);
 const countWords = (text) => text.split(/\s+/).filter(Boolean).length;
 // Every contributor tour as it can be shown: pointer, pointer said for a finger, touch on a phone and on a tablet
 const CONTRIBUTOR_TOURS = [
@@ -202,15 +204,15 @@ describe("tour steps", () => {
     expect(severity.content).toBe(severity.intro);
   });
 
-  it("keeps the joined text as `content`: the intro, the points as sentences, after, then the note", () => {
+  it("keeps the joined text as `content`: the intro, the points as sentences, after, the note, then the zoom line", () => {
     for (const [input, options] of CONTRIBUTOR_TOURS) {
       for (const s of buildTourSteps(false, "objects", input, options)) {
         const sentences = s.points.flatMap((p, i) => [/[.?!”]$/.test(p) ? p : `${p}.`, ...(s.pointNote?.after === i + 1 ? [s.pointNote.text] : [])]);
-        expect(s.content).toBe([s.intro, ...sentences, s.after, s.note].filter(Boolean).join(" "));
+        expect(s.content).toBe([s.intro, ...sentences, s.after, s.note, s.zoomNote].filter(Boolean).join(" "));
       }
     }
     // The sentence on the model's proposal right after the third point (S3, 6 Nov 2026)
-    expect(buildTourSteps(false)[1].content).toBe("Click a box and check its label. Answer whether it's on the sidewalk. Then, answer whether it obstructs the sidewalk or the path for you. Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo. If it's not a real object, click Not an object. Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.");
+    expect(buildTourSteps(false)[1].content).toBe("Click a box and check its label. Answer whether it's on the sidewalk. Then, answer whether it obstructs the sidewalk or the path for you. Sometimes, you will see what the model thinks. It can be wrong, so answer for you and from what you can see in the photo. If it's not a real object, click Not an object. Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct. Use + and − at the top right of the photo to zoom in. Scroll to move around.");
     expect(buildTourSteps(false)[3].content).toBe("Every answer goes into a list under the photo.");
   });
 
@@ -497,7 +499,8 @@ describe("the pointer tours with touch wording", () => {
   ];
   const touch = (isAnnotator, step) => buildTourSteps(isAnnotator, step, "pointer", { words: "touch" });
   // Every field of each step but its words
-  const WORDS = ["content", "intro", "points", "after", "note"];
+  // zoomNote (S28) is on the mouse-worded tour only, so it is left out of the comparison and checked on its own
+  const WORDS = ["content", "intro", "points", "after", "note", "zoomNote"];
   const strip = (steps) => steps.map((step) => Object.fromEntries(Object.entries(step).filter(([key]) => !WORDS.includes(key))));
 
   it("never says click, with no em dash or semicolon, and keeps every target, step, title, placement and beacon", () => {
@@ -795,5 +798,57 @@ describe("the Step 1 step", () => {
         expect(tourTargets(true, step, input)).not.toContain("#sidewalk-presence-section");
       }
     }
+  });
+});
+
+/**
+ * S28 (13 Nov 2026): the photo zooms on a laptop too. The laptop tour's Check
+ * Each Box gets one line after its note. It fits the word budget, so it is
+ * counted, not an exception like the proposal sentence. A finger keeps "Pinch to zoom in on
+ * small objects." on the touch tour.
+ */
+describe("the laptop zoom line (S28)", () => {
+  const LINE = "Use + and \u2212 at the top right of the photo to zoom in. Scroll to move around.";
+
+  it("is Check Each Box's second note on the laptop tour, after its note, and on no other step", () => {
+    expect(DESKTOP_ZOOM_NOTE).toBe(LINE);
+    const steps = buildTourSteps(false);
+    const check = steps.find((s) => s.title === "Check Each Box");
+    expect(check.zoomNote).toBe(LINE);
+    expect(check.note).toBe("Did we miss an object on the sidewalk or path? Click and drag to box it, even if it doesn't obstruct.");
+    expect(check.content.endsWith(`${check.note} ${LINE}`)).toBe(true);
+    for (const s of steps.filter((x) => x !== check)) {
+      expect(s, s.title).not.toHaveProperty("zoomNote");
+      expect(s.content).not.toContain("zoom in");
+    }
+    expect(buildTourSteps(false, "objects", "pointer", { words: "pointer" })[1].zoomNote).toBe(LINE);
+  });
+
+  it("is not on the touch tours, nor the laptop tour worded for a finger, and the touch tour still says pinch", () => {
+    for (const [input, options] of [["pointer", { words: "touch" }], ["touch", {}], ["touch", { phone: true }], ["touch", { tablet: true }]]) {
+      for (const s of buildTourSteps(false, "objects", input, options)) {
+        expect(s, `${input} ${s.title}`).not.toHaveProperty("zoomNote");
+        expect(s.content).not.toContain("Scroll to move around");
+      }
+    }
+    expect(buildTourSteps(false, "objects", "touch").map((s) => s.content).join(" ")).toContain("Pinch to zoom in on small objects.");
+    // Annotators' tours are unchanged
+    for (const step of ["objects", "sidewalk", "obstructions"]) {
+      for (const s of buildTourSteps(true, step)) expect(s.content).not.toContain("Scroll to move around");
+    }
+  });
+
+  it("writes the minus as the button draws it, a real minus, with no em dash or semicolon", () => {
+    expect(LINE).toContain("+ and \u2212 at");
+    expect(LINE).not.toMatch(/[—;]/);
+    expect(LINE).not.toMatch(/\+ and - /);
+  });
+
+  it("is counted in the budget: Check Each Box is 74 words with its 18, within 80", () => {
+    const check = buildTourSteps(false)[1];
+    expect(wordsOf(check)).toContain(LINE);
+    expect(countWords(LINE)).toBe(18);
+    expect(countWords(wordsOf(check).join(" "))).toBe(74);
+    expect(countWords(wordsOf(check).join(" "))).toBeLessThanOrEqual(CONTRIBUTOR_BUDGET.words);
   });
 });

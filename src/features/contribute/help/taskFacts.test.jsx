@@ -6,7 +6,7 @@ import { severityLabel } from "@/ui/annotation-tool/DefaultInputSection";
 import { CATEGORY_OPTIONS } from "@/util/categoryOptions";
 import { ALLOWED_SESSION_SIZES } from "@/util/validators/annotationGet";
 import { SEVERITY_SCALE, SCENE_QUESTIONS, CATEGORY_GROUPS, SESSION_SIZES_TEXT, PATH_NOT_ASKED } from "./taskFacts";
-import { SCENE_KEYS, SCENE_NUMBERED, SIDEWALK_ONLY_KEYS, emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
+import { SCENE_KEYS, SCENE_NUMBERED, SIDEWALK_ONLY_KEYS, EVENNESS_OPTIONS, emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
 import { GUIDE_COPY } from "./guideCopy";
 import DefaultInputSection from "@/ui/annotation-tool/DefaultInputSection";
 
@@ -37,13 +37,15 @@ describe("taskFacts against the tool", () => {
   });
 
   // Worst to best, a numbered answer's place its stored number less one. Surface Type has no order.
+  // Evenness (S27, 13 Nov 2026) offers only 2 and 3, Sloped and Flat.
   it("lists each question's answers in the tool's order, the numbered ones by their value", () => {
     const html = decode(renderToStaticMarkup(<SceneQuestions sceneLevel={empty} variant="desktop" onAnswer={() => {}} />)).replace(/\u00ad/g, "");
     const shown = [...html.matchAll(/data-scene-option="([a-zA-Z]+):([^"]+)"[\s\S]*?<span[^>]*>([^<]+)<\/span>/g)].map(([, field, value, label]) => ({ field, value, label }));
     for (const q of SCENE_QUESTIONS) {
       const options = shown.filter((o) => o.field === q.key);
       expect(options.map((o) => o.label), q.name).toEqual([...q.answers]);
-      if (q.key in SCENE_NUMBERED) expect(options.map((o) => Number(o.value))).toEqual(q.answers.map((_, n) => n + 1));
+      if (q.key === "surfaceEvenness") expect(options.map((o) => Number(o.value))).toEqual([...EVENNESS_OPTIONS]);
+      else if (q.key in SCENE_NUMBERED) expect(options.map((o) => Number(o.value))).toEqual(q.answers.map((_, n) => n + 1));
     }
     expect(SCENE_QUESTIONS.find((q) => q.name === "Ease of Navigation").answers.at(-1)).toBe("Unobstructed");
     expect(shown.filter((o) => o.field === "roadBarrier").map((o) => o.value)).toEqual(["false", "true"]);
@@ -60,10 +62,33 @@ describe("taskFacts against the tool", () => {
     expect(meaning("Surface Condition", 1)).toBe("Cracked: lines in the surface, with every piece still in place and level.");
     expect(meaning("Road Barrier", 0)).toContain("A curb alone is No barrier");
     expect(meaning("Surface Type", 3)).toBe("Unpaved: soil, gravel or grass.");
-    // S23 C (12 Nov 2026): bricks first
-    expect(SCENE_QUESTIONS.find((q) => q.key === "surfaceType").answers[2]).toBe("Bricks or paver blocks");
-    expect(meaning("Surface Type", 2)).toBe("Bricks or paver blocks: bricks or blocks laid side by side.");
-    expect(meaning("Evenness", 0)).toBe("Uneven: it rises and dips, as at driveways.");
+    // S27 (13 Nov 2026): Bricks, since paver blocks confused people
+    expect(SCENE_QUESTIONS.find((q) => q.key === "surfaceType").answers).toEqual(["Concrete or asphalt", "Tiles", "Bricks", "Unpaved"]);
+    expect(meaning("Surface Type", 2)).toBe("Bricks: small blocks laid side by side.");
+    expect(meaning("Surface Condition", 0)).toContain("a missing tile or brick,");
+  });
+
+  // S27 (13 Nov 2026): Evenness asks about a sideways tilt, Sloped or Flat
+  it("words Evenness as a sideways tilt, Sloped and Flat, still asked for a path", () => {
+    const evenness = SCENE_QUESTIONS.find((q) => q.key === "surfaceEvenness");
+    expect(evenness.name).toBe("Evenness");
+    expect(evenness.prompt).toBe("Does the walking surface tilt sideways?");
+    expect(evenness.answers).toEqual(["Sloped", "Flat"]);
+    expect(evenness.meanings).toEqual([
+      "Sloped: it leans to one side, usually down toward the road.",
+      "Flat: it is level from side to side.",
+    ]);
+    expect(evenness.note).toBe("How the sidewalk or path leans from side to side, not whether it goes uphill or downhill.");
+    expect(evenness.sidewalkOnly).toBe(false);
+  });
+
+  it("has no paver and no Uneven left in any question's words", () => {
+    for (const q of SCENE_QUESTIONS) {
+      for (const text of [q.prompt, q.note, ...q.answers, ...q.meanings]) {
+        expect(text, q.name).not.toMatch(/paver/i);
+        expect(text, q.name).not.toMatch(/\bUneven\b/);
+      }
+    }
   });
 
   it("marks the four questions not asked for a path, as the tool does", () => {

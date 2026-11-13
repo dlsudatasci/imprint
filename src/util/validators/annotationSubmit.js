@@ -5,6 +5,7 @@ import { isProposal, recordProbability, proposalWasShown } from "@/util/modelPro
 import {
   SIDEWALK_WIDTH_OPTIONS,
   SURFACE_TYPE_OPTIONS,
+  EVENNESS_OPTIONS,
   SCENE_NUMBERED,
   SCENE_KEYS,
   emptySceneLevel,
@@ -31,7 +32,8 @@ const isIntegerIn = (v, top) => Number.isInteger(asInteger(v)) && asInteger(v) >
 const SCENE_RULES = {
   sidewalkWidth: (v) => SIDEWALK_WIDTH_OPTIONS.includes(v),
   overallAccessibility: (v) => isIntegerIn(v, SCENE_NUMBERED.overallAccessibility),
-  surfaceEvenness: (v) => isIntegerIn(v, SCENE_NUMBERED.surfaceEvenness),
+  // Sloped or Flat only from S27 (13 Nov 2026). 1 (Uneven) stays in stored rows only.
+  surfaceEvenness: (v) => EVENNESS_OPTIONS.includes(asInteger(v)),
   surfaceType: (v) => SURFACE_TYPE_OPTIONS.includes(v),
   surfaceCondition: (v) => isIntegerIn(v, SCENE_NUMBERED.surfaceCondition),
   roadBarrier: (v) => v === true || v === false,
@@ -40,7 +42,7 @@ const SCENE_RULES = {
 const SCENE_MESSAGES = {
   sidewalkWidth: "sceneLevel.sidewalkWidth must be one_person, two_people or three_or_more.",
   overallAccessibility: "sceneLevel.overallAccessibility must be an integer from 1 to 5.",
-  surfaceEvenness: "sceneLevel.surfaceEvenness must be an integer from 1 to 3.",
+  surfaceEvenness: "sceneLevel.surfaceEvenness must be 2 (Sloped) or 3 (Flat).",
   surfaceType: "sceneLevel.surfaceType must be concrete, tiles, pavers or unpaved.",
   surfaceCondition: "sceneLevel.surfaceCondition must be an integer from 1 to 3.",
   roadBarrier: "sceneLevel.roadBarrier must be true or false.",

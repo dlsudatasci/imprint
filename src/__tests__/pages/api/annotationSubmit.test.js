@@ -1219,7 +1219,7 @@ describe("POST /api/annotationSubmit, a photo sent again", () => {
 // S15 (9 Nov 2026): Step 1 (hasSidewalk), Step 3's six questions, and a path's
 // boxes with no sidewalk answer
 describe("POST /api/annotationSubmit, Step 1 and Step 3 (S15)", () => {
-  const PATH_SCENE = { sidewalkWidth: null, overallAccessibility: 4, surfaceEvenness: 1, surfaceType: null, surfaceCondition: null, roadBarrier: null };
+  const PATH_SCENE = { sidewalkWidth: null, overallAccessibility: 4, surfaceEvenness: 2, surfaceType: null, surfaceCondition: null, roadBarrier: null };
   const pathBody = {
     ...validBody,
     hasSidewalk: false,
@@ -1244,7 +1244,7 @@ describe("POST /api/annotationSubmit, Step 1 and Step 3 (S15)", () => {
   });
 
   it("stores a path's two answers with the four others null, and its boxes without onSidewalk", async () => {
-    const { res, $set } = await send({ ...pathBody, sceneLevel: { overallAccessibility: 4, surfaceEvenness: 1 } });
+    const { res, $set } = await send({ ...pathBody, sceneLevel: { overallAccessibility: 4, surfaceEvenness: 2 } });
     expect(res._status).toBe(200);
     expect($set.hasSidewalk).toBe(false);
     expect($set.sceneLevel).toEqual(PATH_SCENE);
@@ -1279,6 +1279,24 @@ describe("POST /api/annotationSubmit, Step 1 and Step 3 (S15)", () => {
     for (const body of refused) {
       const { res, $set } = await send(body);
       expect(res._status).toBe(422);
+      expect($set).toBeNull();
+    }
+  });
+
+  // S27 (13 Nov 2026): Evenness is Sloped (2) or Flat (3). Uneven (1) stays in stored rows only.
+  it("stores Evenness 2 and 3, \"3\" as text as 3, and refuses 1 with nothing stored", async () => {
+    for (const v of [2, 3]) {
+      const { res, $set } = await send({ ...validBody, sceneLevel: { ...validBody.sceneLevel, surfaceEvenness: v } });
+      expect(res._status).toBe(200);
+      expect($set.sceneLevel.surfaceEvenness).toBe(v);
+    }
+    const asText = await send({ ...validBody, sceneLevel: { ...validBody.sceneLevel, surfaceEvenness: "3" } });
+    expect(asText.res._status).toBe(200);
+    expect(asText.$set.sceneLevel.surfaceEvenness).toBe(3);
+    for (const body of [{ ...validBody, sceneLevel: { ...validBody.sceneLevel, surfaceEvenness: 1 } }, { ...pathBody, sceneLevel: { ...PATH_SCENE, surfaceEvenness: 1 } }]) {
+      const { res, $set } = await send(body);
+      expect(res._status).toBe(422);
+      expect(res._json.message).toBe("sceneLevel.surfaceEvenness must be 2 (Sloped) or 3 (Flat).");
       expect($set).toBeNull();
     }
   });

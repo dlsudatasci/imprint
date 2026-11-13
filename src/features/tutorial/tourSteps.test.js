@@ -300,7 +300,7 @@ describe("tour steps", () => {
       expect(sceneStep.points).toEqual([
         "Its width as built",
         "How easy it is to get through, from unobstructed to fully obstructed",
-        "How even it is along its length",
+        "Whether it tilts sideways",
         "What its surface is made of, and whether it is cracked or broken",
         "Whether anything stands between it and the road",
       ]);

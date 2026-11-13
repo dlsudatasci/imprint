@@ -52,12 +52,12 @@ describe("SceneQuestions", () => {
     expect(questions).toEqual([...SCENE_KEYS]);
   });
 
-  it("has 3, 5, 3, 4, 3 and 2 answers, stored as the validators expect, worst to best", () => {
+  it("has 3, 5, 2, 4, 3 and 2 answers, stored as the validators expect, worst to best", () => {
     const keys = optionKeys(html());
     expect(keys).toEqual([
       "sidewalkWidth:one_person", "sidewalkWidth:two_people", "sidewalkWidth:three_or_more",
       "overallAccessibility:1", "overallAccessibility:2", "overallAccessibility:3", "overallAccessibility:4", "overallAccessibility:5",
-      "surfaceEvenness:1", "surfaceEvenness:2", "surfaceEvenness:3",
+      "surfaceEvenness:2", "surfaceEvenness:3",
       "surfaceType:concrete", "surfaceType:tiles", "surfaceType:pavers", "surfaceType:unpaved",
       "surfaceCondition:1", "surfaceCondition:2", "surfaceCondition:3",
       "roadBarrier:false", "roadBarrier:true",
@@ -71,12 +71,56 @@ describe("SceneQuestions", () => {
     expect(label(markup, "sidewalkWidth:one_person")).toBe("Narrow");
   });
 
-  // S23 C (12 Nov 2026): bricks first, so "Paver" is not misread as "paved". Stored value unchanged.
-  it("labels the pavers answer Bricks or paver blocks, still stored as pavers", () => {
+  // S27 (13 Nov 2026): "Bricks", since paver blocks confused people (S23 C had "Bricks or paver blocks"). Stored value unchanged.
+  it("labels the pavers answer Bricks, still stored as pavers", () => {
     const markup = html();
-    expect(label(markup, "surfaceType:pavers")).toBe("Bricks or paver blocks");
-    expect(markup).not.toContain("Paver blocks or bricks");
+    expect(label(markup, "surfaceType:pavers")).toBe("Bricks");
     expect(label(markup, "surfaceType:tiles")).toBe("Tiles");
+  });
+
+  it("has no option label with paver in it", () => {
+    const markup = html();
+    for (const key of optionKeys(markup)) expect(label(markup, key), key).not.toMatch(/paver/i);
+  });
+
+  // S27 (13 Nov 2026): Evenness asks about a sideways tilt, Sloped or Flat. Uneven (1) is no longer offered.
+  it("asks whether the walking surface tilts sideways, with Sloped then Flat, two across like Road Barrier", () => {
+    const markup = html();
+    const keys = optionKeys(markup).filter((k) => k.startsWith("surfaceEvenness:"));
+    expect(keys).toEqual(["surfaceEvenness:2", "surfaceEvenness:3"]);
+    expect(keys.map((k) => label(markup, k))).toEqual(["Sloped", "Flat"]);
+    expect(markup).not.toContain(">Uneven<");
+    const card = (key: string) => markup.match(new RegExp(`data-scene-question="${key}"[\\s\\S]*?<p[^>]*>[^<]*</p><p[^>]*>([^<]+)</p><div class="grid ([^"]+)"`))!;
+    expect(card("surfaceEvenness")[1]).toBe("Does the walking surface tilt sideways?");
+    expect(card("surfaceEvenness")[2]).toBe(card("roadBarrier")[2]);
+    expect(markup).not.toContain("How even is the walking surface?");
+  });
+
+  it("shows neither Evenness answer chosen for a stored 1, and the chosen one for 2 or 3", () => {
+    const { option } = mount({ ...empty, surfaceEvenness: 1 });
+    expect(option("surfaceEvenness:2").getAttribute("aria-pressed")).toBe("false");
+    expect(option("surfaceEvenness:3").getAttribute("aria-pressed")).toBe("false");
+    expect(host!.querySelector('[data-scene-question="surfaceEvenness"] [aria-pressed="true"]')).toBeNull();
+    act(() => root!.unmount());
+    host!.remove();
+    const again = mount({ ...empty, surfaceEvenness: 2 });
+    expect(again.option("surfaceEvenness:2").getAttribute("aria-pressed")).toBe("true");
+    expect(again.option("surfaceEvenness:3").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  // S27 (13 Nov 2026): the Road Barrier pictures fill their option, as the other rows' do
+  it("draws Road Barrier at the same picture size as Evenness, with no small wrapper", () => {
+    const markup = html();
+    const box = (key: string) => markup.match(new RegExp(`data-scene-option="${key}"[\\s\\S]*?<div class="([^"]+)"><svg`))![1];
+    expect(box("roadBarrier:true")).toBe(box("surfaceEvenness:2"));
+    expect(markup).not.toContain("w-11 h-11");
+  });
+
+  it("shows no em dash or semicolon in any text", () => {
+    for (const markup of [html(), html({ variant: "sheet" }), html({ pathOnly: true })]) {
+      const text = markup.replace(/<[^>]+>/g, " ");
+      expect(text).not.toMatch(/[—;]/);
+    }
   });
 
   it("passes one answer at a time, the booleans as booleans", () => {
@@ -114,8 +158,8 @@ describe("SceneQuestions", () => {
       expect(card.hasAttribute("aria-disabled")).toBe(false);
       expect(card.textContent).not.toContain("Not asked for a path.");
     }
-    act(() => option("surfaceEvenness:1").click());
-    expect(onAnswer).toHaveBeenLastCalledWith({ surfaceEvenness: 1 });
+    act(() => option("surfaceEvenness:2").click());
+    expect(onAnswer).toHaveBeenLastCalledWith({ surfaceEvenness: 2 });
   });
 
   it("has no card off for a sidewalk", () => {
@@ -160,7 +204,7 @@ describe("reduced motion", () => {
     expect(host!.querySelectorAll("animateTransform")).toHaveLength(0);
     expect(host!.querySelectorAll("animate")).toHaveLength(0);
     // Every answer still has its picture
-    expect(host!.querySelectorAll("[data-scene-option] svg").length).toBe(20);
+    expect(host!.querySelectorAll("[data-scene-option] svg").length).toBe(19);
   });
 });
 

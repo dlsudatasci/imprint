@@ -41,7 +41,7 @@
  */
 import { ids, DRAW_FROM, DRAW_TO } from "@/features/home/howItWorks/demoScript";
 import { NOT_AN_OBJECT } from "@/util/suggestionJudgment";
-import { sceneProgress, requiredSceneKeys } from "@/util/validators/sceneQuestions.mjs";
+import { sceneProgress, requiredSceneKeys, isSceneAnswered } from "@/util/validators/sceneQuestions.mjs";
 import { normalizeMark } from "@/util/boxGeometry";
 import { computeIoU } from "@/util/validators/qualityMetrics";
 
@@ -341,7 +341,7 @@ export function practiceTargets(step, state, words = "pointer") {
     case "scene": {
       // The next question still to answer, one at a time
       const scene = state?.scene ?? {};
-      const next = sceneQuestionsFor(state).find((key) => scene[key] === null || scene[key] === undefined);
+      const next = sceneQuestionsFor(state).find((key) => !isSceneAnswered(key, scene[key]));
       const spotlight = [next ? sceneQuestion(next) : S.scene];
       if (!touch) return result(null, { spotlight });
       return result(null, { spotlight, fallback: { unless: S.sheetUp, rings: [S.sceneLine], spotlight: [S.sceneLine] } });

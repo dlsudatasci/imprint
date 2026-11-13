@@ -3,7 +3,7 @@ import { SIDEWALK_QUESTION_COPY } from "@/features/annotate/sidewalkQuestionCopy
 import { isTaxonomyCategory } from "@/util/taxonomy";
 import { realObjects } from "@/features/annotate/obstructionStep";
 import { validateSidewalkMask } from "@/util/validators/sidewalkMask";
-import { requiredSceneKeys } from "@/util/validators/sceneQuestions.mjs";
+import { requiredSceneKeys, isSceneAnswered } from "@/util/validators/sceneQuestions.mjs";
 
 /** Contributors' Step 1 unanswered (S15) */
 export const PRESENCE_MISSING = "Please say whether there is a sidewalk.";
@@ -12,7 +12,7 @@ export const PRESENCE_MISSING = "Please say whether there is a sidewalk.";
 export const SCENE_MISSING = Object.freeze({
   sidewalkWidth: "Please choose the sidewalk width.",
   overallAccessibility: "Please rate how easy it is to get through.",
-  surfaceEvenness: "Please rate how even the surface is.",
+  surfaceEvenness: "Please say whether the walking surface tilts sideways.",
   surfaceType: "Please choose what the surface is made of.",
   surfaceCondition: "Please rate the surface condition.",
   roadBarrier: "Please say whether anything separates the sidewalk from the road.",
@@ -178,10 +178,11 @@ export function validateAnnotationForSubmit({
     return { valid: false, section: "objects", error: "Please rate the severity of each obstruction (1–5).", boxIds: idsOf(allBoxes.filter(unrated)) };
   }
 
-  // Step 3 (S15): six questions for a sidewalk, two for a path, in order
+  // Step 3 (S15): six questions for a sidewalk, two for a path, in order. An
+  // Evenness of 1 (Uneven, no longer offered from S27) is asked again.
   const scene = sceneLevel || {};
   for (const key of requiredSceneKeys(hasSidewalk)) {
-    if (scene[key] === null || scene[key] === undefined) {
+    if (!isSceneAnswered(key, scene[key])) {
       return { valid: false, section: "scene", error: SCENE_MISSING[key] };
     }
   }

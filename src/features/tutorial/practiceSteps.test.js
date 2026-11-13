@@ -212,9 +212,11 @@ describe("practiceStepDone", () => {
     const five = { sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "concrete", surfaceCondition: 3, roadBarrier: null };
     expect(practiceStepDone("scene", state({ scene: five }))).toBe(false);
     expect(practiceStepDone("scene", state({ scene: { ...five, roadBarrier: false } }))).toBe(true);
-    const path = { ...EMPTY_SCENE, overallAccessibility: 2, surfaceEvenness: 1 };
+    const path = { ...EMPTY_SCENE, overallAccessibility: 2, surfaceEvenness: 2 };
     expect(practiceStepDone("scene", state({ scene: path }))).toBe(false);
     expect(practiceStepDone("scene", state({ scene: path, hasSidewalk: false }))).toBe(true);
+    // S27 (13 Nov 2026): Evenness 1 (Uneven) is no longer an answer
+    expect(practiceStepDone("scene", state({ scene: { ...path, surfaceEvenness: 1 }, hasSidewalk: false }))).toBe(false);
   });
 
   it("step 11: done by going to image 2, never by the tool's state", () => {

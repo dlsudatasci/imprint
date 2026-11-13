@@ -2,13 +2,13 @@ import React from "react";
 import { useMediaQuery, REDUCED_MOTION_QUERY } from "@/hooks/useMediaQuery";
 
 /**
- * Step 3 icons (S15). Sidewalk Width is drawn in 3D, looking along a stretch
- * of sidewalk, with people walking on it (SidewalkWidthIcon, animated). The
- * others are plans: a close plan of the paving for the surface, plans seen
- * from above for traffic and the route. currentColor only, so the chosen
- * answer turns primary like the rest of the option. Every svg is aria-hidden,
- * since the option's text names the answer. data-icon describes the drawing
- * for tests.
+ * Step 3 icons (S15). Every picture is drawn in 3D from the same angle. Sidewalk
+ * Width, Ease of Navigation, Evenness and Road Barrier look along a stretch of
+ * sidewalk with the road in front and a person on it (Width and Ease animated,
+ * Evenness and Road Barrier still). Surface Type and Surface Condition are
+ * close 3D views of a patch of it. currentColor only, so the chosen answer
+ * turns primary like the rest of the option. Every svg is aria-hidden, since
+ * the option's text names the answer. data-icon describes the drawing for tests.
  */
 
 // ---- Sidewalk Width ---------------------------------------------------------
@@ -24,6 +24,7 @@ const WALL = 5;
 const at = (u: number, v: number): [number, number] => [O[0] + ALONG[0] * u + ACROSS[0] * v, O[1] + ALONG[1] * u + ACROSS[1] * v];
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const xy = ([x, y]: [number, number]) => `${r2(x)} ${r2(y)}`;
+const poly = (pts: [number, number][]) => "M" + pts.map(xy).join(" L") + " Z";
 
 interface Walker {
   /** Lane across the sidewalk */
@@ -278,7 +279,7 @@ function Railing({ u0, u1, v, h = 6.5 }: { u0: number; u1: number; v: number; h?
   for (let u = u0; u <= u1 + 0.01; u += 4.5) posts.push(u);
   const top = (u: number) => { const [x, y] = at(u, v); return `${r2(x)} ${r2(y - h)}`; };
   return (
-    <g stroke="currentColor" strokeLinecap="round">
+    <g data-part="railing" stroke="currentColor" strokeLinecap="round">
       {posts.map((u) => { const [x, y] = at(u, v); return <path key={u} d={`M${r2(x)} ${r2(y)} L${r2(x)} ${r2(y - h)}`} strokeWidth={0.9} />; })}
       <path d={`M${top(u0)} L${top(posts[posts.length - 1])}`} strokeWidth={1.3} />
       <path d={`M${(() => { const [x, y] = at(u0, v); return `${r2(x)} ${r2(y - h * 0.5)}`; })()} L${(() => { const [x, y] = at(posts[posts.length - 1], v); return `${r2(x)} ${r2(y - h * 0.5)}`; })()}`} strokeWidth={0.7} strokeOpacity={0.7} />
@@ -376,92 +377,78 @@ export function EaseOfNavigationIcon({ value }: { value: number }) {
 }
 
 // ---- Road Barrier ------------------------------------------------------------
-// Seen from above, as the old Traffic icons were: the building line at the top,
-// the sidewalk with a person on it, the curb, and the road with a car. Still
-// pictures, so they stand apart from the animated questions.
+// The same stretch of sidewalk as Ease of Navigation (S27, 13 Nov 2026), with
+// the road and its lane line in front and a person standing on the sidewalk.
+// No car: at the row's size it read as a box. Barrier adds a railing along the curb for most of the
+// stretch. Still pictures, as Evenness. Until S27 these were plans seen from above.
 
-function BarrierPlan({ barrier }: { barrier: boolean }) {
+const BARRIER_WIDTH = 14;
+const BARRIER_ROAD = 12;
+const BARRIER_LABELS = {
+  no: "No barrier: only the curb between the sidewalk and the road",
+  yes: "Barrier: a railing between the sidewalk and the road",
+};
+
+/** Road Barrier, by answer: false, the curb only. true, a railing along the curb. */
+export function RoadBarrierIcon({ value }: { value: boolean }) {
+  const barrier = value === true;
+  const [px, py] = ground(16, 6, BARRIER_WIDTH);
   return (
-    <svg viewBox="2 1 60 60" className="w-full h-full" aria-hidden="true"
-      data-icon={barrier ? "Barrier: a railing between the sidewalk and the road" : "No barrier: only the curb between the sidewalk and the road"}
-      fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-      {/* Building line and its hatching */}
-      <path d="M4 7H60" strokeWidth={3} />
-      {[6, 14, 22, 30, 38, 46, 54].map((x) => <path key={x} d={`M${x} 3L${x + 3} 6`} strokeWidth={1} opacity={0.35} />)}
-      {/* Sidewalk */}
-      <rect x={4} y={7} width={56} height={25} fill="currentColor" fillOpacity={0.1} stroke="none" />
-      {/* Person seen from above, walking along */}
-      <ellipse cx={17} cy={17} rx={3.4} ry={5.6} fill="currentColor" stroke="none" />
-      <circle cx={20.6} cy={17} r={2.7} fill="currentColor" stroke="none" opacity={0.5} />
-      {/* Curb */}
-      <path d="M4 32H60" strokeWidth={2.4} />
-      {barrier && (
-        <g>
-          {/* A railing along the curb: the rail and its posts */}
-          <path d="M4 27H60" strokeWidth={2.2} />
-          {[7, 19, 31, 43, 55].map((x) => <rect key={x} x={x - 1.7} y={25.3} width={3.4} height={3.4} rx={0.6} fill="currentColor" stroke="none" />)}
-        </g>
-      )}
-      {/* Road, a car close to the curb, and the lane line */}
-      <path d="M6 57H58" strokeWidth={1.5} strokeDasharray="5 4" opacity={0.45} />
-      <rect x={26} y={36} width={24} height={12} rx={3.5} fill="currentColor" fillOpacity={0.2} strokeWidth={1.8} />
-      <path d="M44 38.5V45.5" strokeWidth={1.5} />
-      {/* It is moving: lines behind it */}
-      <path d="M53 39H59M54.5 42H60M53 45H59" strokeWidth={1.3} opacity={0.5} />
+    // Cropped as Evenness is, to the sidewalk, the curb and the near lane
+    <svg viewBox="6 13 56 50" className="w-full h-full" aria-hidden="true" data-icon={barrier ? BARRIER_LABELS.yes : BARRIER_LABELS.no}>
+      <Slab width={BARRIER_WIDTH} road={BARRIER_ROAD} />
+      <g transform={`translate(${r2(px)} ${r2(py)})`}><Person /></g>
+      {barrier && <Railing u0={5} u1={57} v={BARRIER_WIDTH - 0.6} />}
     </svg>
   );
 }
 
-/** Road Barrier, by answer: false, the curb only. true, a railing along the curb. */
-export function RoadBarrierIcon({ value }: { value: boolean }) {
-  return <BarrierPlan barrier={value} />;
-}
-
 // ---- Evenness ----------------------------------------------------------------
-// The same stretch of sidewalk as Sidewalk Width, standing still: the whole
-// sidewalk rolls up and down, tilts, or lies flat, beside a flat road. Paving
-// joints across it show its shape. Stored 1 to 3, worst to best: Uneven,
-// Sloped, Flat.
+// The same stretch of sidewalk as Sidewalk Width, standing still, beside a flat
+// road. From S27 (13 Nov 2026) the question is its tilt from side to side:
+// Sloped is higher at the building side (v 0) than at the curb (v W), the same
+// all along it, and Flat is level. The paving joints across it and its near end
+// (a wedge or a plain block) show the tilt, drawn steeper than a real cross
+// slope so it reads at the row's size. Stored 2 Sloped and 3 Flat. 1 (Uneven,
+// 9 to 13 Nov 2026) is no longer drawn.
 
 const EVEN_WIDTH = 13;
 const EVEN_ROAD = 6;
-const EVEN_SHAPES: Record<number, { label: string; rise: (u: number) => number; person: number }> = {
-  1: { label: "Uneven: the whole sidewalk rises and dips along its length", rise: (u) => 3 + 3 * Math.sin((u / 32) * 2 * Math.PI - Math.PI / 2), person: 16 },
-  2: { label: "Sloped: the whole sidewalk tilts along its length", rise: (u) => 1 + u * 0.16, person: 22 },
-  3: { label: "Flat: the sidewalk stays level along its length", rise: () => 2, person: 22 },
+const EVEN_SHAPES: Record<number, { label: string; rise: (v: number) => number }> = {
+  2: { label: "Sloped: the sidewalk tilts sideways, down toward the road", rise: (v) => 10 - 9.5 * (v / EVEN_WIDTH) },
+  3: { label: "Flat: the sidewalk is level from side to side", rise: () => 2.5 },
 };
 
-/** Evenness, by stored value 1 to 3 */
+/** Evenness, by stored value: 2 Sloped, 3 Flat. Anything else, 1 included, draws nothing. */
 export function EvennessIcon({ value }: { value: number }) {
   const shape = EVEN_SHAPES[value];
   if (!shape) return null;
   const W = EVEN_WIDTH;
-  const us: number[] = [];
-  for (let u = 0; u <= LENGTH + 0.01; u += 1.5) us.push(u);
-  // A point on the sidewalk's surface, raised by the shape
-  const top = (u: number, v: number): [number, number] => { const [x, y] = at(u, v); return [x, y - shape.rise(u)]; };
-  const back = us.map((u) => top(u, 0));
-  const front = us.map((u) => top(u, W));
-  const line = (pts: [number, number][]) => pts.map(xy).join(" L");
-  // The road and the foot of the curb stay flat
-  const foot = us.map((u) => { const [x, y] = at(u, W); return [x, y + CURB] as [number, number]; });
+  // A point on the sidewalk's surface, raised by its tilt across
+  const top = (u: number, v: number): [number, number] => { const [x, y] = at(u, v); return [x, y - shape.rise(v)]; };
+  // The same point down at the level of the flat road
+  const foot = (u: number, v: number): [number, number] => { const [x, y] = at(u, v); return [x, y + CURB]; };
   const e = at(0, W + EVEN_ROAD), g = at(LENGTH, W + EVEN_ROAD);
   const joints: number[] = [];
   for (let u = 6; u < LENGTH; u += 6) joints.push(u);
-  const [px, py] = top(shape.person, W * 0.45);
+  const [px, py] = top(16, W * 0.45);
   return (
-    // Cropped to the sidewalk and the person, so it reads in a small box
-    <svg viewBox="2 12 60 52" className="w-full h-full" aria-hidden="true" data-icon={shape.label}>
+    // Cropped to the near end of the stretch, where the wedge shows the tilt,
+    // and the person, so it reads in a small box. The stretch runs on out of frame.
+    <svg viewBox="0 11 52 50" className="w-full h-full" aria-hidden="true" data-icon={shape.label}>
       {/* Road */}
-      <path d={`M${xy(foot[0])} L${xy(foot[foot.length - 1])} L${r2(g[0])} ${r2(g[1] + CURB)} L${r2(e[0])} ${r2(e[1] + CURB)} Z`} fill="currentColor" fillOpacity={0.05} />
-      {/* The side of the sidewalk facing the road, from its surface down to the flat road */}
-      <path d={`M${line(front)} L${line([...foot].reverse())} Z`} fill="currentColor" fillOpacity={0.3} />
+      <path d={poly([foot(0, W), foot(LENGTH, W), [g[0], g[1] + CURB], [e[0], e[1] + CURB]])} fill="currentColor" fillOpacity={0.05} />
+      {/* The side facing the road, from the surface's curb edge down to the road */}
+      <path d={poly([top(0, W), top(LENGTH, W), foot(LENGTH, W), foot(0, W)])} fill="currentColor" fillOpacity={0.3} />
+      {/* The near end: a wedge when it tilts, a plain block when flat */}
+      <path d={poly([top(0, 0), top(0, W), foot(0, W), foot(0, 0)])} fill="currentColor" fillOpacity={0.5} stroke="currentColor" strokeOpacity={0.7} strokeWidth={0.8} strokeLinejoin="round" />
       {/* The walking surface */}
-      <path d={`M${line(back)} L${line([...front].reverse())} Z`} fill="currentColor" fillOpacity={0.12} stroke="currentColor" strokeOpacity={0.55} strokeWidth={1} strokeLinejoin="round" />
-      {/* Paving joints across it, which follow its shape */}
+      <path d={poly([top(0, 0), top(LENGTH, 0), top(LENGTH, W), top(0, W)])} fill="currentColor" fillOpacity={0.12} stroke="currentColor" strokeOpacity={0.55} strokeWidth={1} strokeLinejoin="round" />
+      {/* Paving joints across it, which slope down toward the road when it tilts */}
       <g stroke="currentColor" strokeOpacity={0.35} strokeWidth={0.6}>
         {joints.map((u) => <path key={u} d={`M${xy(top(u, 0))} L${xy(top(u, W))}`} />)}
       </g>
+      {/* Standing upright on it */}
       <g transform={`translate(${r2(px)} ${r2(py)})`}><Person /></g>
     </svg>
   );
@@ -481,7 +468,6 @@ const PATCH_U = 30;
 const PATCH_V = 22;
 const THICK = 4;
 const pp = (u: number, v: number, z = 0): [number, number] => [PO[0] + PU[0] * u + PV[0] * v, PO[1] + PU[1] * u + PV[1] * v - z];
-const poly = (pts: [number, number][]) => "M" + pts.map(xy).join(" L") + " Z";
 
 /** The patch: its top, the edge facing the viewer and the end on the left */
 function Patch({ fill = 0.12 }: { fill?: number }) {
@@ -506,7 +492,7 @@ function Panels() {
 const TYPE_LABELS: Record<string, string> = {
   concrete: "Concrete or asphalt: one poured surface, panels at most",
   tiles: "Tiles: small squares in a tight grid",
-  pavers: "Bricks or paver blocks: small blocks laid in rows",
+  pavers: "Bricks: small blocks laid in rows",
   unpaved: "Unpaved: soil, gravel or grass",
 };
 

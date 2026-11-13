@@ -34,7 +34,7 @@ export interface SceneQuestionsProps {
  * (two people can just pass) and Wide (both ways with room to spare). Ease of
  * Navigation (stored as overallAccessibility) follows it and is where the
  * objects on it count, answered by how obstructed the way is. Evenness is the
- * shape of the whole sidewalk along its length: Uneven, Sloped, Flat. Surface
+ * whole sidewalk's tilt from side to side: Sloped or Flat (S27). Surface
  * Type is what most of it is made of, a category with no order. Surface
  * Condition: Cracked is lines only, every piece in place, Broken is something
  * missing or out of level. Road Barrier asks whether anything stands between
@@ -70,8 +70,8 @@ export default function SceneQuestions({ sceneLevel, variant, pathOnly = false, 
     { value: 4, label: "Slightly obstructed" },
     { value: 5, label: "Un­obstructed" },
   ];
+  // Sloped or Flat from S27 (13 Nov 2026). A stored 1 (Uneven) matches neither, so none is chosen.
   const evennessOptions = [
-    { value: 1, label: "Uneven" },
     { value: 2, label: "Sloped" },
     { value: 3, label: "Flat" },
   ];
@@ -79,7 +79,7 @@ export default function SceneQuestions({ sceneLevel, variant, pathOnly = false, 
   const typeOptions = [
     { value: "concrete", label: "Concrete or asphalt" },
     { value: "tiles", label: "Tiles" },
-    { value: "pavers", label: "Bricks or paver blocks" },
+    { value: "pavers", label: "Bricks" },
     { value: "unpaved", label: "Unpaved" },
   ];
   // Worst to best. A crack is a line only, with every piece in place and level.
@@ -156,14 +156,14 @@ export default function SceneQuestions({ sceneLevel, variant, pathOnly = false, 
           // One row on a laptop. A phone has no room for five "obstructed" at
           // 12 px, so it goes three and two there.
           (v) => <EaseOfNavigationIcon value={v} />, sheet ? "grid-cols-3" : "grid-cols-5")}
-        {pictureRow("surfaceEvenness", "Evenness", "How even is the walking surface?", evennessOptions,
-          (v) => <EvennessIcon value={v} />, "grid-cols-3", undefined, true)}
+        {pictureRow("surfaceEvenness", "Evenness", "Does the walking surface tilt sideways?", evennessOptions,
+          (v) => <EvennessIcon value={v} />, "grid-cols-2 w-2/3 mx-auto", undefined, true)}
         {pictureRow("surfaceType", "Surface Type", "What is most of the walking surface made of?", typeOptions,
           (v) => <SurfaceTypeIcon value={v} />, "grid-cols-4", undefined, true, true)}
         {pictureRow("surfaceCondition", "Surface Condition", "Is the walking surface cracked or broken anywhere?", conditionOptions,
           (v) => <SurfaceConditionIcon value={v} />, "grid-cols-3", undefined, true, true)}
         {pictureRow("roadBarrier", "Road Barrier", "Is there anything between the sidewalk and the road?", barrierOptions,
-          (v) => <div className="w-11 h-11"><RoadBarrierIcon value={v} /></div>, "grid-cols-2 w-2/3 mx-auto", undefined, true, true)}
+          (v) => <RoadBarrierIcon value={v} />, "grid-cols-2 w-2/3 mx-auto", undefined, true, true)}
       </div>
     </div>
   );

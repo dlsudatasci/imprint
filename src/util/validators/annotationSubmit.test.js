@@ -27,7 +27,7 @@ describe("validateSceneLevel", () => {
     surfaceCondition: 2,
     roadBarrier: false,
   };
-  const pathScene = { sidewalkWidth: null, overallAccessibility: 4, surfaceEvenness: 1, surfaceType: null, surfaceCondition: null, roadBarrier: null };
+  const pathScene = { sidewalkWidth: null, overallAccessibility: 4, surfaceEvenness: 2, surfaceType: null, surfaceCondition: null, roadBarrier: null };
 
   it("accepts a sidewalk's six answers and returns them as stored", () => {
     expect(validateSceneLevel(validScene, true)).toEqual({ valid: true, sceneLevel: validScene });
@@ -35,7 +35,7 @@ describe("validateSceneLevel", () => {
 
   it("accepts a path's two answers, the four sidewalk-only ones null or absent, and stores all six keys", () => {
     expect(validateSceneLevel(pathScene, false)).toEqual({ valid: true, sceneLevel: pathScene });
-    const result = validateSceneLevel({ overallAccessibility: 4, surfaceEvenness: 1 }, false);
+    const result = validateSceneLevel({ overallAccessibility: 4, surfaceEvenness: 2 }, false);
     expect(result).toEqual({ valid: true, sceneLevel: pathScene });
     expect(Object.keys(result.sceneLevel)).toEqual([...SCENE_KEYS]);
   });
@@ -86,12 +86,25 @@ describe("validateSceneLevel", () => {
   });
 
   it("keeps each numbered answer on its scale, as a whole number", () => {
-    const tops = { overallAccessibility: 5, surfaceEvenness: 3, surfaceCondition: 3 };
+    const tops = { overallAccessibility: 5, surfaceCondition: 3 };
     for (const [key, top] of Object.entries(tops)) {
       expect(validateSceneLevel({ ...validScene, [key]: 1 }, true).valid).toBe(true);
       expect(validateSceneLevel({ ...validScene, [key]: top }, true).valid).toBe(true);
       for (const bad of [0, top + 1, 2.5, true, "", "x"]) expect(validateSceneLevel({ ...validScene, [key]: bad }, true).valid).toBe(false);
     }
+  });
+
+  // S27 (13 Nov 2026): Evenness offers Sloped (2) and Flat (3) only. 1 (Uneven) stays in stored rows only.
+  it("accepts Evenness 2 (Sloped) and 3 (Flat), and refuses 1 (Uneven) with its own message", () => {
+    for (const v of [2, 3]) expect(validateSceneLevel({ ...validScene, surfaceEvenness: v }, true)).toEqual({ valid: true, sceneLevel: { ...validScene, surfaceEvenness: v } });
+    expect(validateSceneLevel({ ...validScene, surfaceEvenness: 1 }, true)).toEqual({ valid: false, message: "sceneLevel.surfaceEvenness must be 2 (Sloped) or 3 (Flat)." });
+    expect(validateSceneLevel({ ...pathScene, surfaceEvenness: 1 }, false)).toEqual({ valid: false, message: "sceneLevel.surfaceEvenness must be 2 (Sloped) or 3 (Flat)." });
+    for (const bad of [0, 4, 2.5, true, "", "x", "1"]) expect(validateSceneLevel({ ...validScene, surfaceEvenness: bad }, true).valid).toBe(false);
+  });
+
+  it("reads Evenness sent as text, \"3\" and \"2\", as numbers", () => {
+    expect(validateSceneLevel({ ...validScene, surfaceEvenness: "3" }, true).sceneLevel.surfaceEvenness).toBe(3);
+    expect(validateSceneLevel({ ...pathScene, surfaceEvenness: "2" }, false).sceneLevel.surfaceEvenness).toBe(2);
   });
 
   it("stores a numbered answer sent as text as a number", () => {
@@ -105,9 +118,9 @@ describe("validateSceneLevel", () => {
   });
 
   it("does not change the scene it is given", () => {
-    const sent = { overallAccessibility: "4", surfaceEvenness: 1 };
+    const sent = { overallAccessibility: "4", surfaceEvenness: 2 };
     validateSceneLevel(sent, false);
-    expect(sent).toEqual({ overallAccessibility: "4", surfaceEvenness: 1 });
+    expect(sent).toEqual({ overallAccessibility: "4", surfaceEvenness: 2 });
   });
 });
 

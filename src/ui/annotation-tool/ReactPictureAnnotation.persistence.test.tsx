@@ -242,7 +242,8 @@ describe("saving unsubmitted edits (8 Oct 2026)", () => {
     expect(mount().state.sceneLevel).toEqual(COMPLETE_SCENE);
     unmount();
 
-    // Old-scale numbers are turned round, surfaceEvenness (born higher is better, S15) never
+    // Old-scale numbers are turned round, surfaceEvenness (born higher is better, S15) never. A stored
+    // Evenness 1 (Uneven, before S27) is kept as it is: the row shows no answer and Next Image asks again.
     const old = { ...record(), userSceneLevel: { ...COMPLETE_SCENE, overallAccessibility: 1, surfaceCondition: 1, surfaceEvenness: 1 } };
     writeSession({ total: 1, current: 1, data: { imgRecords: [old], isAnnotator: false } });
     expect(mount().state.sceneLevel).toEqual({ ...COMPLETE_SCENE, overallAccessibility: 5, surfaceCondition: 3, surfaceEvenness: 1 });
@@ -1970,11 +1971,11 @@ describe("annotators on a phone, and the full-screen photo (12 Oct 2026)", () =>
       Array.from(host.querySelectorAll<HTMLElement>("#scene-level-section [data-scene-question]")).map((q) => q.querySelectorAll("[data-scene-option]").length);
     const easeGrid = () => host.querySelector<HTMLElement>('[data-scene-question="overallAccessibility"] .grid')!;
     mount({ layout: "sheet" });
-    expect(counts()).toEqual([3, 5, 3, 4, 3, 2]);
+    expect(counts()).toEqual([3, 5, 2, 4, 3, 2]);
     expect(easeGrid().className).toContain("grid-cols-3");
     unmount();
     mount({ layout: "desktop" });
-    expect(counts()).toEqual([3, 5, 3, 4, 3, 2]);
+    expect(counts()).toEqual([3, 5, 2, 4, 3, 2]);
     expect(easeGrid().className).toContain("grid-cols-5");
   });
 

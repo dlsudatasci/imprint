@@ -23,7 +23,7 @@ const validSceneLevel = {
 const pathSceneLevel = {
   sidewalkWidth: null,
   overallAccessibility: 4,
-  surfaceEvenness: 1,
+  surfaceEvenness: 2,
   surfaceType: null,
   surfaceCondition: null,
   roadBarrier: null,
@@ -505,7 +505,7 @@ describe("validateAnnotationForSubmit, Step 1 and Step 3 (S15)", () => {
     const messages = [
       "Please choose the sidewalk width.",
       "Please rate how easy it is to get through.",
-      "Please rate how even the surface is.",
+      "Please say whether the walking surface tilts sideways.",
       "Please choose what the surface is made of.",
       "Please rate the surface condition.",
       "Please say whether anything separates the sidewalk from the road.",
@@ -525,6 +525,18 @@ describe("validateAnnotationForSubmit, Step 1 and Step 3 (S15)", () => {
 
   it("counts roadBarrier false as an answer", () => {
     expect(validateAnnotationForSubmit(contributor([], { sceneLevel: { ...validSceneLevel, roadBarrier: false } }))).toEqual({ valid: true });
+  });
+
+  // S27 (13 Nov 2026): a stored Evenness 1 (Uneven, no longer offered) on a resumed photo is asked again
+  it("takes Evenness 1 as not answered, for a sidewalk and for a path, with the new message", () => {
+    expect(SCENE_MISSING.surfaceEvenness).toBe("Please say whether the walking surface tilts sideways.");
+    expect(validateAnnotationForSubmit(contributor([], { sceneLevel: { ...validSceneLevel, surfaceEvenness: 1 } })))
+      .toEqual({ valid: false, section: "scene", error: "Please say whether the walking surface tilts sideways." });
+    expect(validateAnnotationForSubmit(contributor([], { hasSidewalk: false, sceneLevel: { ...pathSceneLevel, surfaceEvenness: 1 } })))
+      .toEqual({ valid: false, section: "scene", error: "Please say whether the walking surface tilts sideways." });
+    for (const v of [2, 3]) {
+      expect(validateAnnotationForSubmit(contributor([], { sceneLevel: { ...validSceneLevel, surfaceEvenness: v } }))).toEqual({ valid: true });
+    }
   });
 
   it("asks only Ease of Navigation and Evenness for a path", () => {

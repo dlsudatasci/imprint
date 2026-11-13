@@ -204,8 +204,15 @@ describe("sceneProgressLine", () => {
     expect(sceneProgressLine({ roadBarrier: false }, true)).toBe("Step 3: Rate the Sidewalk, 1 of 6 answered");
   });
 
+  // S27 (13 Nov 2026): a stored Evenness 1 (Uneven, no longer offered) is not counted, so the phone's line says what is left
+  it("does not count a stored Evenness 1: 5 of 6 for a sidewalk, 1 of 2 for a path", () => {
+    expect(sceneProgressLine({ ...six, surfaceEvenness: 1 }, true)).toBe("Step 3: Rate the Sidewalk, 5 of 6 answered");
+    expect(sceneProgressLine({ ...six, surfaceEvenness: 2 }, true)).toBe("Step 3: Rate the Sidewalk, 6 of 6 answered");
+    expect(sceneProgressLine({ overallAccessibility: 2, surfaceEvenness: 1 }, false)).toBe("Step 3: Rate the Sidewalk, 1 of 2 answered");
+  });
+
   it("counts two for a path, 2 of 2", () => {
-    const path = { sidewalkWidth: null, overallAccessibility: 2, surfaceEvenness: 1, surfaceType: null, surfaceCondition: null, roadBarrier: null };
+    const path = { sidewalkWidth: null, overallAccessibility: 2, surfaceEvenness: 2, surfaceType: null, surfaceCondition: null, roadBarrier: null };
     expect(sceneProgressLine(path, false)).toBe("Step 3: Rate the Sidewalk, 2 of 2 answered");
     expect(sceneProgressLine({ overallAccessibility: 2 }, false)).toBe("Step 3: Rate the Sidewalk, 1 of 2 answered");
   });

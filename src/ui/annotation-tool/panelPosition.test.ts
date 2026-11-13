@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { panelPosition, fitPanelTop, PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
+import { panelPosition, fitPanelTop, clearOfCorner, PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
 
 const photo = { width: 715, height: 402 };
 
@@ -87,5 +87,23 @@ describe("fitPanelTop (16 Oct 2026)", () => {
 
   it("never moves it above the photo's top", () => {
     expect(fitPanelTop(380, 700, 600)).toBe(0);
+  });
+});
+
+// S28 (13 Nov 2026): clear of the zoom controls at the photo's top right on a laptop
+describe("clearOfCorner", () => {
+  const corner = { left: 844, bottom: 64 };
+  it("moves a panel reaching under the controls to just below them", () => {
+    expect(clearOfCorner({ left: 580, top: 36 }, corner)).toBe(64);
+    expect(clearOfCorner({ left: 600, top: 0 }, corner, 300, 600)).toBe(64);
+  });
+  it("leaves a panel clear of them across or below them, and every panel when there are none", () => {
+    expect(clearOfCorner({ left: 550, top: 36 }, corner)).toBe(36);
+    expect(clearOfCorner({ left: 600, top: 64 }, corner)).toBe(64);
+    expect(clearOfCorner({ left: 600, top: 120 }, corner)).toBe(120);
+    expect(clearOfCorner({ left: 600, top: 10 }, null)).toBe(10);
+  });
+  it("leaves it where it is when below the controls it would run past the photo's bottom", () => {
+    expect(clearOfCorner({ left: 600, top: 10 }, corner, 560, 600)).toBe(10);
   });
 });

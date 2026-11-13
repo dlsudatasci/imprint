@@ -13,7 +13,8 @@
 
 /**
  * A tour step's text: a contributor step's intro, numbered points, `after`
- * (S16b) and note (S16), or an annotator step's paragraph. A contributor step
+ * (S16b), note (S16) and, on the laptop's Check Each Box, the zoom line
+ * (S28), or an annotator step's paragraph. A contributor step
  * with no points has no list, only its paragraphs. Built here so tourSteps.js
  * stays plain data.
  */
@@ -37,6 +38,8 @@ export function TourStepBody({ step }) {
   }
   if (step.after) parts.push((gap) => <p key="after" className={gap}>{step.after}</p>);
   if (step.note) parts.push((gap) => <p key="note" className={`${gap ? `${gap} ` : ""}text-muted`}>{step.note}</p>);
+  // The laptop zoom line (S28), a second muted line after the note
+  if (step.zoomNote) parts.push((gap) => <p key="zoomNote" data-zoom-note className={`${gap ? `${gap} ` : ""}text-muted`}>{step.zoomNote}</p>);
   return <>{parts.map((part, i) => part(i > 0 ? "mt-2" : undefined))}</>;
 }
 

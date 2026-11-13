@@ -2,11 +2,12 @@
  * How the photo sits on the stage (9 Oct 2026, IMPRINT_contributor_mobile.md
  * sections 4.3 and 5).
  *
- * The fit letterboxes the photo into the stage. A view (zoom and pan, touch
- * only) goes on top of it: scaleState = applyView(fit, view). Everything that
- * reads scaleState (painting, calculateMousePosition, the transformer) then
- * works zoomed with no other change. At the identity view scaleState is the
- * fit, number for number, so the desktop tool is unchanged.
+ * The fit letterboxes the photo into the stage. A view (zoom and pan: pinch
+ * and pan by touch, and from S28, 13 Nov 2026, the Zoom in and Zoom out
+ * buttons, the wheel and a trackpad pinch on a laptop) goes on top of it:
+ * scaleState = applyView(fit, view). Everything that reads scaleState
+ * (painting, calculateMousePosition, the transformer) then works zoomed with
+ * no other change. At the identity view scaleState is the fit, number for number.
  *
  * Stage px throughout, apart from image sizes (image px).
  */
@@ -172,4 +173,37 @@ export function photoAreaSettled(
   if (edge !== restingEdge) return false;
   if (measured == null || stage == null || measured <= 0) return true;
   return Math.abs(measured - stage) <= 1;
+}
+
+/** One click of Zoom in or Zoom out on a laptop multiplies or divides the zoom by this (S28) */
+export const ZOOM_STEP = 1.5;
+
+/**
+ * One click of Zoom in (direction 1) or Zoom out (-1) on a laptop (S28, 13 Nov
+ * 2026): the zoom times or divided by ZOOM_STEP, clamped to 1 and MAX_ZOOM,
+ * about `centre` (stage px), which stays where it is as far as the pan limits
+ * allow. Reaching 1 is Fit: the identity view.
+ */
+export function zoomStep(fit: Fit, view: View, direction: 1 | -1, centre: { x: number; y: number }, area: Size, image: Size): View {
+  const zoom = clampZoom(direction > 0 ? view.zoom * ZOOM_STEP : view.zoom / ZOOM_STEP);
+  if (zoom <= MIN_ZOOM + 0.001) return IDENTITY_VIEW;
+  return clampView(zoomAt(fit, view, centre, centre, zoom), panLimits(fit, zoom, area, image));
+}
+
+/**
+ * A wheel or two-finger scroll over the zoomed photo on a laptop (S28): the
+ * view moved by the scroll, in stage px, within the pan limits. `moved` is
+ * false when the photo is already at its edge that way, so the page scrolls instead.
+ */
+export function panBy(fit: Fit, view: View, dx: number, dy: number, area: Size, image: Size): { view: View; moved: boolean } {
+  const next = clampView({ zoom: view.zoom, panX: view.panX + dx, panY: view.panY + dy }, panLimits(fit, view.zoom, area, image));
+  const moved = Math.abs(next.panX - view.panX) > 0.01 || Math.abs(next.panY - view.panY) > 0.01;
+  return { view: moved ? next : view, moved };
+}
+
+/** A wheel event's delta in CSS px: lines (deltaMode 1) are 16 px, pages (2) the given page size */
+export function wheelPixels(delta: number, deltaMode: number, page = 800) {
+  if (deltaMode === 1) return delta * 16;
+  if (deltaMode === 2) return delta * page;
+  return delta;
 }

@@ -314,7 +314,8 @@ export interface SheetStepHeadingProps {
   hiddenCount: number;
   boxCount: number;
   onShowAll(): void;
-  onHideAll(): void;
+  /** Absent: no Hide all, as in the tutorial's practice, where no box can be hidden (13 Nov 2026) */
+  onHideAll?(): void;
 }
 
 /**
@@ -335,7 +336,7 @@ export function SheetStepHeading({ heading, hiddenCount, boxCount, onShowAll, on
               {BOX_VISIBILITY_COPY.showAll} <span className="font-medium text-muted tabular-nums">{hiddenCount}</span>
             </button>
           )}
-          {hiddenCount < boxCount && (
+          {onHideAll && hiddenCount < boxCount && (
             <button type="button" onClick={onHideAll} className={button}>
               {BOX_VISIBILITY_COPY.hideAll}
             </button>
@@ -391,7 +392,7 @@ export interface ObjectTraysPeekProps {
   onShowScene(): void;
   /** Ids of boxes hidden on the photo, for the first row's Show all (14 Oct 2026) */
   hiddenIds?: string[];
-  /** With onHideAll, the first row: the step's name with Show all and Hide all (14 Oct 2026) */
+  /** With onShowAll, the first row: the step's name with Show all and, with onHideAll, Hide all (14 Oct 2026) */
   onShowAll?(): void;
   onHideAll?(): void;
   /** Step 1 answered Only a path (S15) */
@@ -464,7 +465,7 @@ export function ObjectTraysPeek({ trays, peek, selectedId, onOpen, onNext, scene
   const hidden = new Set(hiddenIds);
   return (
     <div id="box-review-section-peek" className="px-4 pb-2">
-      {onShowAll && onHideAll && (
+      {onShowAll && (
         <SheetStepHeading
           heading={TRAY_COPY.stepHeading}
           hiddenCount={everyItem.filter((item) => hidden.has(item.id)).length}

@@ -368,7 +368,81 @@ describe("practiceLock", () => {
   });
 });
 
+/**
+ * Hiding a box in the practice (13 Nov 2026, a bug Rans found): the practice
+ * darkens all but the photo, and the dark layer takes the clicks. A box hidden
+ * from its panel's eye lost its outline and could not be pressed, and Show
+ * all and the list's eyes were under the dark layer, so the step waiting on
+ * that box could never be done. In the practice no box can be hidden: the
+ * eyes and Hide all are not offered, the tool refuses a hide, and a box hidden
+ * before the practice began comes back when it does.
+ */
+describe("hiding boxes in the practice", () => {
+  const TREE_ONLY: PracticeLock = { openable: [ids.tree], canDraw: false, canSubmit: false, allowAnswers: { onSidewalk: true } };
+  const HIDE = "Hide this box on the photo";
+  type Hider = Tool & { isBoxHidden(id: string): boolean; hideOpenBox(): void; toggleBoxHidden(id: string): void; hideAllBoxes(): void; state: Tool["state"] & { hiddenBoxIds: string[] } };
+  const hideButtons = () => Array.from(host.querySelectorAll("button")).filter((b) => [b.title, b.getAttribute("aria-label") ?? "", b.textContent?.trim() ?? ""].some((t) => /^Hide\b/.test(t)));
+
+  it("offers no eye on the open box's panel, no eyes on the list and no Hide all", () => {
+    const tool = mount({ practiceLock: TREE_ONLY });
+    act(() => tool.selectBoxById(ids.tree));
+    expect(tool.state.showInput).toBe(true);
+    expect(host.querySelector(`.rp-selected-input button[title='${HIDE}']`)).toBeNull();
+    expect(buttonByText("Hide all")).toBeUndefined();
+    expect(hideButtons()).toEqual([]);
+  });
+
+  it("keeps the step's box on the photo and openable, whatever hide is asked for", () => {
+    const tool = mount({ practiceLock: TREE_ONLY }) as Hider;
+    act(() => tool.selectBoxById(ids.tree));
+    act(() => tool.hideOpenBox());
+    act(() => tool.toggleBoxHidden(ids.tree));
+    act(() => tool.hideAllBoxes());
+    expect(tool.state.hiddenBoxIds).toEqual([]);
+    expect(tool.isBoxHidden(ids.tree)).toBe(false);
+    // Closed and pressed again on the photo, it opens: the step can be done
+    press(tool, [EMPTY]);
+    expect(tool.selectedId).toBeNull();
+    press(tool, [centre(ids.tree)]);
+    expect(tool.selectedId).toBe(ids.tree);
+    expect(tool.state.showInput).toBe(true);
+  });
+
+  it("shows again a box hidden before the practice began", () => {
+    const tool = mount({}) as Hider;
+    act(() => tool.selectBoxById(ids.tree));
+    click(host.querySelector<HTMLButtonElement>(`.rp-selected-input button[title='${HIDE}']`));
+    expect(tool.isBoxHidden(ids.tree)).toBe(true);
+    render({ practiceLock: TREE_ONLY });
+    expect(tool.state.hiddenBoxIds).toEqual([]);
+    expect(tool.isBoxHidden(ids.tree)).toBe(false);
+    press(tool, [centre(ids.tree)]);
+    expect(tool.selectedId).toBe(ids.tree);
+  });
+
+  it("offers no Hide on the open box in the sheet either", () => {
+    const tool = mount({ practiceLock: TREE_ONLY, layout: "sheet" });
+    act(() => tool.selectBoxById(ids.tree));
+    expect(tool.selectedId).toBe(ids.tree);
+    expect(hideButtons()).toEqual([]);
+  });
+
+  it("still lets a box be hidden and shown again outside the practice", () => {
+    const tool = mount({}) as Hider;
+    act(() => tool.selectBoxById(ids.tree));
+    click(host.querySelector<HTMLButtonElement>(`.rp-selected-input button[title='${HIDE}']`));
+    expect(tool.isBoxHidden(ids.tree)).toBe(true);
+    expect(buttonByText("Show all")).toBeTruthy();
+    click(buttonByText("Show all"));
+    expect(tool.isBoxHidden(ids.tree)).toBe(false);
+    expect(buttonByText("Hide all")).toBeTruthy();
+  });
+});
+
 describe("without the practice's props, nothing changes", () => {
+  // The one difference a lock makes in a panel: no eye to hide the box (13 Nov 2026)
+  const EYE = /<button[^>]*title="Hide this box on the photo"[^>]*>[\s\S]*?<\/button>/;
+  const withoutEye = (html: string | undefined) => html?.replace(EYE, "");
   /** The same answers as the S12 panel tests: the tree Yes, Yes, severity; the car No */
   function run(props: Props) {
     const tool = mount(props);
@@ -397,15 +471,17 @@ describe("without the practice's props, nothing changes", () => {
     return result;
   }
 
-  it("gives a contributor the same panels and answers with no lock and with a lock that allows everything", () => {
+  it("gives a contributor the same panels and answers with no lock and with a lock that allows everything, but for the eye", () => {
     const without = run({});
     const withOpen = run({ practiceLock: OPEN });
-    expect(withOpen).toEqual(without);
+    expect(EYE.test(without.panels[0])).toBe(true);
+    expect(withOpen.panels.some((html) => EYE.test(html))).toBe(false);
+    expect({ ...withOpen, panels: withOpen.panels.map(withoutEye) }).toEqual({ ...without, panels: without.panels.map(withoutEye) });
     expect(without.highlights).toBe(0);
     expect(without.boxes.find((b) => b.id === ids.tree)).toMatchObject({ onSidewalk: true, obstructs: true, severity: 3 });
   });
 
-  it("gives an annotator the same panel with no lock and with an open one", () => {
+  it("gives an annotator the same panel with no lock and with an open one, but for the eye", () => {
     const panel = (props: Props) => {
       const tool = mount({ isAnnotator: true, ...props });
       act(() => tool.selectBoxById(ids.tree));
@@ -416,7 +492,8 @@ describe("without the practice's props, nothing changes", () => {
     };
     const without = panel({});
     expect(without).toBeTruthy();
-    expect(panel({ practiceLock: OPEN })).toBe(without);
+    expect(EYE.test(without!)).toBe(true);
+    expect(panel({ practiceLock: OPEN })).toBe(withoutEye(without));
   });
 });
 

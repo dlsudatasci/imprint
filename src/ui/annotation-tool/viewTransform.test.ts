@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fitImage, applyView, zoomAt, panLimits, clampView, ensureVisible, keepPhotoInPlace, photoAreaSettled, IDENTITY_VIEW } from "./viewTransform";
+import { fitImage, applyView, zoomAt, panLimits, clampView, ensureVisible, keepPhotoInPlace, photoAreaSettled, IDENTITY_VIEW, zoomStep, panBy, wheelPixels, ZOOM_STEP, MAX_ZOOM } from "./viewTransform";
 
 /** How the photo sits on the stage, and touch zoom and pan (9 Oct 2026). */
 describe("fitImage", () => {
@@ -138,5 +138,83 @@ describe("photoAreaSettled (22 Oct 2026)", () => {
   it("counts as settled with nothing laid out (no measurement to wait for)", () => {
     expect(photoAreaSettled({ measured: null, stage: null, edge: 0, restingEdge: 0 })).toBe(true);
     expect(photoAreaSettled({ measured: 0, stage: 470, edge: 0, restingEdge: 0 })).toBe(true);
+  });
+});
+
+/**
+ * S28 (13 Nov 2026): zoom on a laptop. One click of Zoom in or Zoom out, the
+ * wheel moving a zoomed photo, and the wheel's units. The desktop stage is
+ * 960 by 600 and a 640 by 360 photo fills its width (fit scale 1.5, 30 px down).
+ */
+describe("zoomStep, panBy and wheelPixels (S28)", () => {
+  const stage = { width: 960, height: 600 };
+  const image = { width: 640, height: 360 };
+  const fit = fitImage(640, 360, 960, 600)!;
+  const centre = { x: 480, y: 300 };
+  /** The image point under a stage point */
+  const under = (view: { zoom: number; panX: number; panY: number }, p: { x: number; y: number }) => {
+    const s = applyView(fit, view);
+    return { x: (p.x - s.originX) / s.scale, y: (p.y - s.originY) / s.scale };
+  };
+
+  it("multiplies the zoom by 1.5 to zoom in and divides it to zoom out", () => {
+    expect(ZOOM_STEP).toBe(1.5);
+    const once = zoomStep(fit, IDENTITY_VIEW, 1, centre, stage, image);
+    expect(once.zoom).toBeCloseTo(1.5);
+    expect(zoomStep(fit, once, 1, centre, stage, image).zoom).toBeCloseTo(2.25);
+    expect(zoomStep(fit, { zoom: 2.25, panX: 0, panY: 0 }, -1, centre, stage, image).zoom).toBeCloseTo(1.5);
+  });
+
+  it("keeps the centre where it is: the middle of the stage, or an open box's centre", () => {
+    const once = zoomStep(fit, IDENTITY_VIEW, 1, centre, stage, image);
+    const a = under(IDENTITY_VIEW, centre), b = under(once, centre);
+    expect(b.x).toBeCloseTo(a.x, 6);
+    expect(b.y).toBeCloseTo(a.y, 6);
+    // A box's centre left of the middle stays put too, where the limits allow
+    const box = { x: 300, y: 250 };
+    const atBox = zoomStep(fit, IDENTITY_VIEW, 1, box, stage, image);
+    expect(under(atBox, box).x).toBeCloseTo(under(IDENTITY_VIEW, box).x, 6);
+    expect(under(atBox, box).y).toBeCloseTo(under(IDENTITY_VIEW, box).y, 6);
+  });
+
+  it("stays within 1 and MAX_ZOOM, and reaching 1 is the identity view, Fit", () => {
+    expect(zoomStep(fit, { zoom: 4, panX: -100, panY: -100 }, 1, centre, stage, image).zoom).toBe(MAX_ZOOM);
+    expect(zoomStep(fit, { zoom: MAX_ZOOM, panX: -100, panY: -100 }, 1, centre, stage, image).zoom).toBe(MAX_ZOOM);
+    expect(zoomStep(fit, { zoom: 1.4, panX: -40, panY: -10 }, -1, centre, stage, image)).toEqual(IDENTITY_VIEW);
+    expect(zoomStep(fit, { zoom: 1.5, panX: -240, panY: -150 }, -1, centre, stage, image)).toEqual(IDENTITY_VIEW);
+    expect(zoomStep(fit, IDENTITY_VIEW, -1, centre, stage, image)).toEqual(IDENTITY_VIEW);
+  });
+
+  it("keeps the photo over the stage at the corners: the pan limits apply", () => {
+    const corner = zoomStep(fit, IDENTITY_VIEW, 1, { x: 0, y: 0 }, stage, image);
+    const limits = panLimits(fit, corner.zoom, stage, image);
+    expect(corner.panX).toBeGreaterThanOrEqual(limits.minX);
+    expect(corner.panX).toBeLessThanOrEqual(limits.maxX);
+    expect(corner.panY).toBeGreaterThanOrEqual(limits.minY);
+    expect(corner.panY).toBeLessThanOrEqual(limits.maxY);
+  });
+
+  it("moves a zoomed photo by the scroll and says so, and not past its edge", () => {
+    const view = { zoom: 2, panX: -480, panY: -300 };
+    const moved = panBy(fit, view, 40, -25, stage, image);
+    expect(moved.moved).toBe(true);
+    expect(moved.view).toEqual({ zoom: 2, panX: -440, panY: -325 });
+    // At the left edge already (panX at its most), a move further that way does nothing
+    const limits = panLimits(fit, 2, stage, image);
+    const atEdge = { zoom: 2, panX: limits.maxX, panY: -300 };
+    expect(panBy(fit, atEdge, 50, 0, stage, image)).toEqual({ view: atEdge, moved: false });
+    // Part of a move past the edge still moves up to it
+    const near = { zoom: 2, panX: limits.maxX - 10, panY: -300 };
+    expect(panBy(fit, near, 50, 0, stage, image)).toEqual({ view: { ...near, panX: limits.maxX }, moved: true });
+  });
+
+  it("does not move the photo at Fit", () => {
+    expect(panBy(fit, IDENTITY_VIEW, 0, -100, stage, image).moved).toBe(false);
+  });
+
+  it("reads lines as 16 px and pages as the page given", () => {
+    expect(wheelPixels(-3, 0)).toBe(-3);
+    expect(wheelPixels(3, 1)).toBe(48);
+    expect(wheelPixels(1, 2, 500)).toBe(500);
   });
 });

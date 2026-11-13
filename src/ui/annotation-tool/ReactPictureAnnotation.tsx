@@ -130,6 +130,10 @@ import {
   keepPhotoInPlace,
   photoAreaSettled,
   IDENTITY_VIEW,
+  MAX_ZOOM,
+  zoomStep,
+  panBy,
+  wheelPixels,
   type Fit,
   type View,
 } from "./viewTransform";
@@ -152,7 +156,7 @@ import { H3 } from "../Typography";
 import SceneQuestions, { type SceneLevel } from "./SceneQuestions";
 import Step1Card from "./Step1Card";
 import SidewalkPresence from "./SidewalkPresence";
-import { panelPosition, fitPanelTop, PANEL_MARGIN, PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
+import { panelPosition, fitPanelTop, clearOfCorner, PANEL_MARGIN, PANEL_WIDTH, PANEL_ROOM_BELOW } from "./panelPosition";
 import Container from '../Container';
 import Checkbox from '../Checkbox';
 import {
@@ -207,6 +211,13 @@ export const ADD_BOX_COPY = Object.freeze({
   fit: "Fit",
   hint: "Drag the corners to fit the object.",
 });
+/** The laptop's zoom buttons (S28, 13 Nov 2026): their names, also their tooltips */
+export const ZOOM_COPY = Object.freeze({
+  in: "Zoom in",
+  out: "Zoom out",
+});
+/** Where they sit at the photo's top right, CSS px: from the right and top edges, each button's size, the gap, and Fit's width beside them */
+const ZOOM_CONTROLS_PX = Object.freeze({ right: 12, top: 12, size: 44, gap: 8, fitWidth: 64 });
 /** How long the Add box hint stays before it fades, if the corners are not dragged first (27 Oct 2026: it sat over the photo) */
 export const ADD_BOX_HINT_MS = 3000;
 /** Its fade */
@@ -593,6 +604,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     // corner is dragged, the box Add box just placed (shows its hint), and
     // whether any pointer is coarse (shows Add box in the desktop layout)
     zoomed: false,
+    // Zoomed in as far as it goes (MAX_ZOOM): the laptop's Zoom in is off (S28)
+    atMaxZoom: false,
     // A box being moved or resized on the desktop photo (S18): the floating
     // panel fades and lets the pointer through until it is released
     boxDragging: false,
@@ -693,6 +706,13 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   // always applyView(fit, view), which is the fit itself at the identity view.
   private fit: Fit | null = null;
   private view: View = IDENTITY_VIEW;
+  // Where a running view animation ends, so a second click of Zoom in during
+  // it steps from there, not from part way (S28)
+  private viewTarget: View = IDENTITY_VIEW;
+  // The laptop's photo area, with the wheel and pointer listeners on it, and
+  // whether the pointer is over it, for the zoom keys (S28)
+  private zoomArea: HTMLDivElement | null = null;
+  private pointerOverPhoto = false;
   // "touch" shows four round corner handles, "mouse" the eight square ones.
   // Set by every press on the photo.
   public inputMode: TransformerMode = "mouse";
@@ -1121,6 +1141,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     }
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", this.onSidewalkKeyDown);
+      window.addEventListener("keydown", this.onZoomKeyDown);
       // Any pointer, key or touch event anywhere in the tool ends an idle gap
       for (const type of INTERACTION_EVENTS) window.addEventListener(type, this.noteInteraction, { capture: true, passive: true });
       // Save a waiting edit when the page is left, reloaded or hidden
@@ -1143,6 +1164,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.syncSelectedId();
     this.setupCanvasScaling();
     this.observeSheetArea();
+    this.bindZoomArea();
     this.lastStage = this.stageSize();
     this.editsRestored = true;
     // Once the restored answers are on screen: what the server has, unless
@@ -1177,7 +1199,24 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.onStageResize(this.lastStage, { keepPhoto: !layoutChanged });
       this.lastStage = stage;
     }
+    if (this.props.practiceLock && !preProps.practiceLock) {
+      // The practice starting with boxes hidden (before it, or on a photo left
+      // and come back to): every box back on the photo, since none can be shown
+      // again under its dark layer
+      if (this.state.hiddenBoxIds.length > 0) this.setState({ hiddenBoxIds: [] }, () => this.onShapeChange());
+      // And at Fit, at once (S28): the practice lights fixed places on the
+      // photo (S19), and a zoomed view would move them. Its zoom controls are off.
+      const v = this.view;
+      if (v.zoom !== 1 || v.panX !== 0 || v.panY !== 0 || this.viewAnimation !== null) {
+        this.resetViewNow();
+        this.onImageChange();
+        this.onShapeChange({ quiet: true });
+      }
+    }
     if (preProps.image !== image) {
+      // A new photo opens at Fit, on a laptop as on a phone (S28). The load
+      // handler sets the new fit at the identity view as well.
+      this.resetViewNow();
       this.mountTime = Date.now();
       this.sceneStepStartMs = null;
       this.obstructionStepStartMs = null;
@@ -1210,6 +1249,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (preProps.focus !== this.props.focus || layoutChanged) this.onFocusChange(preProps.focus === true && preProps.layout === "sheet");
     if (this.isSheet) this.followPanel();
     else this.keepPanelOnPhoto();
+    this.bindZoomArea();
   };
 
   /**
@@ -1225,8 +1265,11 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (!element || !this.state.showInput) return;
     const position = this.state.inputPosition;
     const top = position.top ?? 0;
-    const fitted = fitPanelTop(top, element.offsetHeight, this.stageSize().height);
-    if (fitted !== top) this.setState({ inputPosition: { ...position, top: fitted } });
+    const height = this.stageSize().height;
+    const fitted = fitPanelTop(top, element.offsetHeight, height);
+    // Clear of the zoom controls at the top right (S28), if it still fits below them
+    const clear = clearOfCorner({ left: position.left ?? 0, top: fitted }, this.zoomControlsCorner(), element.offsetHeight, height);
+    if (clear !== top) this.setState({ inputPosition: { ...position, top: clear } });
   }
 
   /**
@@ -1265,6 +1308,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (this.messageTimer) clearTimeout(this.messageTimer);
     this.resizeObserver?.disconnect();
     this.sheetAreaObserver?.disconnect();
+    this.unbindZoomArea();
     this.cancelViewAnimation();
     if (this.keepInViewTimer !== null) clearTimeout(this.keepInViewTimer);
     if (this.loupeFrame !== null && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(this.loupeFrame);
@@ -1272,6 +1316,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.stopMouseDrag();
     if (typeof window !== "undefined") {
       window.removeEventListener("keydown", this.onSidewalkKeyDown);
+      window.removeEventListener("keydown", this.onZoomKeyDown);
       for (const type of INTERACTION_EVENTS) window.removeEventListener(type, this.noteInteraction, { capture: true });
       window.removeEventListener("pagehide", this.flushEdits);
       document.removeEventListener("visibilitychange", this.onVisibilityChange);
@@ -1377,7 +1422,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
         onClose={this.onClose}
         belowMinimumSize={this.selectedBelowMinimumSize()}
         // In the sheet the eye is on the line with the box's name instead (21 Oct 2026)
-        onHide={this.inBoxStep && variant !== "sheet" ? this.hideOpenBox : undefined}
+        onHide={this.canHideBoxes && variant !== "sheet" ? this.hideOpenBox : undefined}
         variant={variant}
       />
     ) : inputElement(
@@ -1401,7 +1446,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       this.onRestoreObject,
       this.state.originalComment,
       variant,
-      this.inBoxStep && variant !== "sheet" ? this.hideOpenBox : undefined,
+      this.canHideBoxes && variant !== "sheet" ? this.hideOpenBox : undefined,
       this.state.onSidewalk,
       this.onSetOnSidewalk,
       this.onChangeSeverity,
@@ -1504,9 +1549,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
                     selectedId={showInput ? this.selectedId : null}
                     hiddenIds={this.state.hiddenBoxIds}
                     onOpen={this.openTrayItem}
-                    onToggleHidden={this.toggleBoxHidden}
+                    onToggleHidden={this.canHideBoxes ? this.toggleBoxHidden : undefined}
                     onShowAll={this.showAllBoxes}
-                    onHideAll={this.hideAllBoxes}
+                    onHideAll={this.canHideBoxes ? this.hideAllBoxes : undefined}
                     tourIds={this.state.anyCoarsePointer}
                     pathOnly={this.pathOnly}
                   />
@@ -1770,13 +1815,13 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           onShowScene={this.showSceneSection}
           hiddenIds={this.state.hiddenBoxIds}
           onShowAll={this.showAllBoxes}
-          onHideAll={this.hideAllBoxes}
+          onHideAll={this.canHideBoxes ? this.hideAllBoxes : undefined}
           pathOnly={this.pathOnly}
         />
       );
       // Show all and Hide all are at the top of the sheet (14 Oct 2026). In
       // full screen that top is not shown, so the lists keep their own.
-      const listVisibility = this.inFocus ? { onShowAll: this.showAllBoxes, onHideAll: this.hideAllBoxes } : {};
+      const listVisibility = this.inFocus ? { onShowAll: this.showAllBoxes, onHideAll: this.canHideBoxes ? this.hideAllBoxes : undefined } : {};
       body = (
         <>
           {!presenceFirst && this.renderPresence("sheet")}
@@ -1785,7 +1830,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             selectedId={null}
             hiddenIds={this.state.hiddenBoxIds}
             onOpen={this.openTrayItem}
-            onToggleHidden={this.toggleBoxHidden}
+            onToggleHidden={this.canHideBoxes ? this.toggleBoxHidden : undefined}
             {...listVisibility}
             stacked
             pathOnly={this.pathOnly}
@@ -1858,7 +1903,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     return (
       <div className={`${className} flex items-center justify-between gap-3`}>
         <span className="text-sm font-semibold text-ink truncate">{label}</span>
-        {this.inBoxStep && (
+        {this.canHideBoxes && (
           <button
             type="button"
             onClick={this.hideOpenBox}
@@ -1963,7 +2008,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
           hiddenCount={hiddenCount}
           boxCount={sortedAnnotations.length}
           onShowAll={this.showAllBoxes}
-          onHideAll={this.hideAllBoxes}
+          onHideAll={this.canHideBoxes ? this.hideAllBoxes : undefined}
         />
         <div className="h-11 flex items-center justify-between gap-3">
           {nextId ? (
@@ -2057,7 +2102,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   /**
    * Over the photo: Add box (bottom left, the box step), the full-screen
    * button on phones or Exit in full screen (bottom right), Fit while zoomed
-   * (top right), the Add box hint (top centre), and in full screen a status
+   * (top right, on a laptop beside Zoom in and Zoom out, S28), the Add box hint (top centre), and in full screen a status
    * chip (top left). In full screen every position keeps clear of the notch
    * and the home indicator.
    */
@@ -2067,7 +2112,9 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const focus = this.inFocus;
     // The sheet's handle is under the photo and keeps clear of the home indicator itself
     const edge = (side: "left" | "right" | "top" | "bottom") => (focus && side !== "bottom" ? `max(12px, env(safe-area-inset-${side}))` : 12);
-    const floating = "absolute z-10 h-11 inline-flex items-center justify-center rounded-full bg-surface text-ink text-sm font-bold border border-line shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50";
+    // The round button the photo's controls share, and placed on its own
+    const round = "h-11 inline-flex items-center justify-center rounded-full bg-surface text-ink text-sm font-bold border border-line shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50";
+    const floating = `absolute z-10 ${round}`;
     return (
       <>
         {this.showAddBox && (
@@ -2111,12 +2158,35 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
             <ShrinkIcon size={20} />
           </button>
         )}
+        {/* A laptop (S28): Zoom in and Zoom out at the top right, never in the practice */}
+        {this.desktopZoom && (
+          <div data-zoom-controls className="absolute z-10 flex" style={{ right: ZOOM_CONTROLS_PX.right, top: ZOOM_CONTROLS_PX.top, gap: ZOOM_CONTROLS_PX.gap }}>
+            {([["in", this.zoomIn, this.state.atMaxZoom, "M12 5v14M5 12h14"], ["out", this.zoomOut, !zoomed, "M5 12h14"]] as const).map(([which, onClick, off, d]) => (
+              <button
+                key={which}
+                type="button"
+                id={`zoom-${which}-button`}
+                aria-label={ZOOM_COPY[which]}
+                title={ZOOM_COPY[which]}
+                onClick={onClick}
+                disabled={off}
+                className={`${round} w-11 [@media(hover:hover)]:enabled:hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed`}
+              >
+                <svg aria-hidden="true" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                  <path d={d} />
+                </svg>
+              </button>
+            ))}
+          </div>
+        )}
         {zoomed && (
           <button
             type="button"
+            id="fit-button"
             onClick={this.resetView}
             className={`${floating} min-w-[44px] px-4`}
-            style={{ right: edge("right"), top: edge("top") }}
+            // Beside the zoom buttons on a laptop, never on top of them
+            style={{ right: this.desktopZoom ? ZOOM_CONTROLS_PX.right + ZOOM_CONTROLS_PX.size * 2 + ZOOM_CONTROLS_PX.gap * 2 : edge("right"), top: edge("top") }}
           >
             {ADD_BOX_COPY.fit}
           </button>
@@ -2505,11 +2575,14 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.onShapeChange({ quiet: true });
     const zoomed = view.zoom > 1.001;
     if (zoomed !== this.state.zoomed) this.setState({ zoomed });
+    const atMaxZoom = view.zoom >= MAX_ZOOM - 0.001;
+    if (atMaxZoom !== this.state.atMaxZoom) this.setState({ atMaxZoom });
   }
 
   /** Moves the view over 180 ms, at once with reduced motion. */
   private animateView(target: View, duration = 180) {
     this.cancelViewAnimation();
+    this.viewTarget = target;
     if (prefersReducedMotion() || typeof requestAnimationFrame === "undefined") {
       this.setView(target);
       return;
@@ -2540,6 +2613,171 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.panelAnchor = null;
     this.animateView(IDENTITY_VIEW);
   };
+
+  /** Fit at once, with nothing animated: a new photo (S28) */
+  private resetViewNow() {
+    this.cancelViewAnimation();
+    this.panelAnchor = null;
+    this.view = IDENTITY_VIEW;
+    this.viewTarget = IDENTITY_VIEW;
+    if (this.fit) this.scaleState = applyView(this.fit, IDENTITY_VIEW);
+    if (this.state.zoomed || this.state.atMaxZoom) this.setState({ zoomed: false, atMaxZoom: false });
+  }
+
+  // ── Zoom on a laptop (S28, 13 Nov 2026) ──
+  // Zoom in and Zoom out at the photo's top right, Fit beside them once zoomed
+  // in, Ctrl with the wheel or a trackpad pinch zooming at the pointer, and the
+  // wheel or a two-finger scroll moving a zoomed photo. Never in the practice,
+  // which lights fixed places on the photo (S19). Phones and tablets keep pinch.
+
+  /** The laptop's zoom: the desktop layout, outside the practice */
+  private get desktopZoom() {
+    return !this.isSheet && !this.props.practiceLock;
+  }
+
+  /** A box being drawn, moved or resized, or a sidewalk point dragged: the wheel then only moves the view */
+  private get dragging() {
+    return Boolean(this.mouseDragCanvas) || this.pointers.size > 0 || Boolean(this.sidewalkState.drag);
+  }
+
+  /**
+   * The zoom controls' area at the photo's top right, stage px: right of
+   * `left` and above `bottom`. Fit beside the two buttons once zoomed in.
+   * null where there are none.
+   */
+  private zoomControlsCorner(): { left: number; bottom: number } | null {
+    if (!this.desktopZoom) return null;
+    const ds = this.displayScale || 1;
+    const { right, top, size, gap, fitWidth } = ZOOM_CONTROLS_PX;
+    // The view, not state.zoomed, which setView updates after it repaints the panel
+    const across = right + size * 2 + gap + (this.view.zoom > 1.001 ? gap + fitWidth : 0) + gap;
+    return { left: this.stageSize().width - across / ds, bottom: (top + size + gap) / ds };
+  }
+
+  /** One click of Zoom in (1) or Zoom out (-1): about the open box, or the middle of the stage */
+  private zoomByStep(direction: 1 | -1) {
+    if (!this.desktopZoom || !this.fit) return;
+    const { width: iw, height: ih } = this.imageSize();
+    if (!iw || !ih) return;
+    const image = { width: iw, height: ih };
+    const stage = this.stageSize();
+    const from = this.viewAnimation !== null ? this.viewTarget : this.view;
+    const shape = this.state.showInput ? this.selectedShape() : null;
+    const mark = shape ? normalizeMark(shape.getAnnotationData().mark) : null;
+    const shown = applyView(this.fit, from);
+    const centre = mark
+      ? { x: shown.originX + (mark.x + mark.width / 2) * shown.scale, y: shown.originY + (mark.y + mark.height / 2) * shown.scale }
+      : { x: stage.width / 2, y: stage.height / 2 };
+    let next = zoomStep(this.fit, from, direction, centre, stage, image);
+    if (mark && next.zoom > 1.001) {
+      // The open box stays in view (ensureVisible), by the smallest shift
+      const scale = this.fit.scale * next.zoom;
+      const box = { x: this.fit.originX + next.panX + mark.x * scale, y: this.fit.originY + next.panY + mark.y * scale, width: mark.width * scale, height: mark.height * scale };
+      next = { zoom: next.zoom, ...ensureVisible(box, { x: 0, y: 0, ...stage }, next, panLimits(this.fit, next.zoom, stage, image)) };
+    }
+    this.panelAnchor = null;
+    this.animateView(next);
+  }
+
+  private zoomIn = () => this.zoomByStep(1);
+  private zoomOut = () => this.zoomByStep(-1);
+
+  /**
+   * The wheel over the laptop's photo. Ctrl with the wheel, and a trackpad
+   * pinch (a wheel with ctrlKey), zoom at the pointer, and never let the page
+   * zoom. Without Ctrl, a zoomed photo moves, and the page scrolls only when
+   * the photo is already at its edge that way. Not zoomed in, the page
+   * scrolls as before. During a drag the wheel never zooms. Over the box
+   * panel it is left alone.
+   */
+  private onPhotoWheel = (event: WheelEvent) => {
+    if (!this.desktopZoom || !this.fit) return;
+    // Over the box panel the wheel scrolls the panel or the page, as before (a long category list)
+    if (event.target instanceof Node && this.floatingPanelRef.current?.contains(event.target)) return;
+    const { width: iw, height: ih } = this.imageSize();
+    if (!iw || !ih) return;
+    const image = { width: iw, height: ih };
+    const stage = this.stageSize();
+    const ds = this.displayScale || 1;
+    if (event.ctrlKey) {
+      event.preventDefault();
+      if (this.dragging) return;
+      const rect = this.canvasRef.current?.getBoundingClientRect();
+      const point = rect && rect.width && rect.height
+        ? clientToStage(event.clientX, event.clientY, rect, stage.width, stage.height)
+        : { x: stage.width / 2, y: stage.height / 2 };
+      const factor = Math.exp(-wheelPixels(event.deltaY, event.deltaMode, stage.height * ds) * 0.01);
+      this.cancelViewAnimation();
+      const zoomed = zoomAt(this.fit, this.view, point, point, this.view.zoom * factor);
+      this.setView(clampView(zoomed, panLimits(this.fit, zoomed.zoom, stage, image)));
+      return;
+    }
+    if (this.view.zoom <= 1.001) return;
+    const page = stage.height * ds;
+    const dx = -wheelPixels(event.deltaX, event.deltaMode, page) / ds;
+    const dy = -wheelPixels(event.deltaY, event.deltaMode, page) / ds;
+    const { view, moved } = panBy(this.fit, this.view, dx, dy, stage, image);
+    if (!moved) return;
+    event.preventDefault();
+    this.cancelViewAnimation();
+    this.panelAnchor = null;
+    this.setView(view);
+  };
+
+  /**
+   * + or = zooms in, - zooms out and 0 fits, with the pointer over the photo
+   * or the focus in it, never while typing in a field, and never with Ctrl or
+   * Cmd, which zoom the page.
+   */
+  private onZoomKeyDown = (event: KeyboardEvent) => {
+    if (!this.desktopZoom || event.ctrlKey || event.metaKey || event.altKey) return;
+    const key = event.key;
+    if (key !== "+" && key !== "=" && key !== "-" && key !== "0") return;
+    const target = event.target as HTMLElement | null;
+    const tag = target?.tagName;
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+    const area = this.zoomArea;
+    const focusInPhoto = Boolean(area && typeof document !== "undefined" && document.activeElement && area.contains(document.activeElement));
+    if (!this.pointerOverPhoto && !focusInPhoto) return;
+    event.preventDefault();
+    if (key === "+" || key === "=") this.zoomIn();
+    else if (key === "-") this.zoomOut();
+    else if (this.view.zoom > 1.001 || this.viewAnimation !== null) this.resetView();
+  };
+
+  private onZoomAreaEnter = () => {
+    this.pointerOverPhoto = true;
+  };
+
+  private onZoomAreaLeave = () => {
+    this.pointerOverPhoto = false;
+  };
+
+  /**
+   * The wheel listener on the photo area, not passive, so it can stop the page
+   * scrolling or zooming (React's onWheel is passive). Moved to the new element
+   * when the layout changes.
+   */
+  private bindZoomArea() {
+    const element = this.canvasWrapperRef.current;
+    if (element === this.zoomArea) return;
+    this.unbindZoomArea();
+    if (!element) return;
+    element.addEventListener("wheel", this.onPhotoWheel, { passive: false });
+    element.addEventListener("pointerenter", this.onZoomAreaEnter);
+    element.addEventListener("pointerleave", this.onZoomAreaLeave);
+    this.zoomArea = element;
+  }
+
+  private unbindZoomArea() {
+    const element = this.zoomArea;
+    if (!element) return;
+    element.removeEventListener("wheel", this.onPhotoWheel);
+    element.removeEventListener("pointerenter", this.onZoomAreaEnter);
+    element.removeEventListener("pointerleave", this.onZoomAreaLeave);
+    this.zoomArea = null;
+    this.pointerOverPhoto = false;
+  }
 
   /**
    * Contributors on a phone or tablet: every object as a chip at the top of
@@ -3630,9 +3868,20 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     this.selectBoxById(id);
   };
 
+  /**
+   * Boxes can be hidden in the box step, but never in the tutorial's practice
+   * (13 Nov 2026, a bug Rans found). The practice darkens all but the photo
+   * and the dark layer takes the clicks, so a box hidden there lost its
+   * outline, could not be pressed, and Show all and the list's eyes were
+   * under the dark layer: the step waiting on it could never be done.
+   */
+  private get canHideBoxes() {
+    return this.inBoxStep && !this.props.practiceLock;
+  }
+
   /** Step 1, both roles: hides or shows one box on the photo (8 Oct 2026). */
   private toggleBoxHidden = (id: string) => {
-    if (!this.inBoxStep) return;
+    if (!this.canHideBoxes) return;
     const hiddenBoxIds = toggleHiddenId(this.state.hiddenBoxIds, id);
     // Hiding the open box closes its panel
     if (hiddenBoxIds.includes(id) && this.selectedId === id) {
@@ -3654,7 +3903,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
 
   /** Step 1, both roles: hides every box on the photo (10 Oct 2026). Closes the open panel. */
   private hideAllBoxes = () => {
-    if (!this.inBoxStep) return;
+    if (!this.canHideBoxes) return;
     if (this.selectedId) {
       this.currentAnnotationState.onMouseUp();
       this.selectedId = null;
@@ -4972,10 +5221,13 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     const data = item.getAnnotationData();
     const { x, y, width: boxW } = this.calculateShapePosition(data.mark);
     const stage = this.stageSize();
+    const placed = panelPosition({ x, y, width: boxW }, this.photoExtent(stage), this.props.marginWithInput);
+    // Clear of the zoom controls at the photo's top right on a laptop (S28)
+    const inputPosition = { ...placed, top: clearOfCorner(placed, this.zoomControlsCorner(), this.floatingPanelRef.current?.offsetHeight ?? 0, stage.height) };
 
     this.setState({
       showInput: true,
-      inputPosition: panelPosition({ x, y, width: boxW }, this.photoExtent(stage), this.props.marginWithInput),
+      inputPosition,
       inputComment: data.comment || "",
       originalComment: data.initialState?.comment || "",
       editable: data.editable || false,

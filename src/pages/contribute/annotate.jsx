@@ -3,6 +3,12 @@ import React from "react";
 import { useSession } from "next-auth/react"; // Add this import
 import Router from "next/router";
 
+import { useAnnotateLayout } from "@/hooks/useAnnotateLayout";
+import { useIsPhone } from "@/hooks/useIsPhone";
+import { useTour } from "@/features/tutorial/useTour";
+import TourHint from "@/features/tutorial/TourHint";
+import { PRACTICE_COPY } from "@/features/tutorial/practiceCopy";
+
 import Page from "@/ui/page";
 import AnnotationSessionSelection from "@/features/annotate/selection";
 import AnnotateForm from "@/features/annotate/form";
@@ -21,6 +27,14 @@ import {
   writeReachedCount,
 } from "@/util/sessionCache";
 import { cachedSessionCheck } from "@/util/validators/sessionSync";
+
+// How long the one-time line saying where the tour is stays up (S30), as the
+// practice's reminder on tutorial photo 2 did
+export const TOUR_REMINDER_MS = 8000;
+// How long the line waits before it shows: a phone that reopens a photo in
+// full screen says so a moment after the page is drawn, and the line waits
+// for full screen to be left (S30)
+export const TOUR_REMINDER_SETTLE_MS = 300;
 
 /**
  * The annotation flow — where contributors do the actual work.
@@ -48,6 +62,15 @@ import { cachedSessionCheck } from "@/util/validators/sessionSync";
  * layout. There is no device check any more. AnnotateForm picks the layout by
  * the screen's width (hooks/useAnnotateLayout) and shows its own skeleton
  * until that is known.
+ *
+ * Contributors have the tour on every photo (S30, 14 Nov 2026), from the ?
+ * button in the progress strip on a laptop and in the top bar on a phone: the
+ * contributor tour of the tutorial (useTour), which opens only from the
+ * button. A card whose target is not on the screen is left out. The first
+ * photo of the first session after S30 says once where the button is, while
+ * annotationGet sends `showTourHint`; tourHintSeen records it on the account.
+ * Each photo's telemetry says how often the tour was opened and for how long.
+ * Annotators' sessions have no tour.
  */
 export default function AnnotatePage() {
   const { data: session, status } = useSession(); // Add this line
@@ -69,6 +92,64 @@ export default function AnnotatePage() {
   // The saved copy is checked once per page load: the effect below runs again
   // as the session settles, by when the moving-between-images flag is gone
   const sessionCheckedRef = React.useRef(false);
+
+  // The tour on a contributor's photos (S30). An annotator's has none, nor a
+  // cached batch whose role is not known yet.
+  const contributor = state.annotationSetData?.isAnnotator === false;
+  const layout = useAnnotateLayout();
+  const phone = useIsPhone();
+  const [coarsePointer, setCoarsePointer] = React.useState(false);
+  React.useEffect(() => {
+    setCoarsePointer(Boolean(window.matchMedia?.("(pointer: coarse)")?.matches));
+  }, []);
+  // The full-screen photo on a phone: no tour and no line until it is left
+  const [fullScreen, setFullScreen] = React.useState(false);
+  const tour = useTour({
+    layout,
+    coarsePointer,
+    phone,
+    tablet: coarsePointer && phone === false,
+    fullScreen,
+    skipMissing: true,
+  });
+  const { showTour: openTour, stats: tourStats, resetStats: resetTourStats } = tour;
+  // Counted per photo. Moving between photos reloads the page, so this only
+  // matters when the picker shows photo 1 in place.
+  React.useEffect(() => {
+    resetTourStats();
+  }, [state.annotationCurrentCount, resetTourStats]);
+
+  // The one-time line saying where the tour is (S30): once per account, on
+  // the first photo shown while the batch says showTourHint. The cached batch
+  // is told too, so the next photo, which reads it, does not show it again.
+  const [tourHintOn, setTourHintOn] = React.useState(false);
+  const tourHintDoneRef = React.useRef(false);
+  const tourHintTimerRef = React.useRef(null);
+  React.useEffect(() => () => clearTimeout(tourHintTimerRef.current), []);
+  const onForm = state.annotationCurrentCount !== null
+    && state.annotationTotalCount !== null
+    && state.annotationCurrentCount <= state.annotationTotalCount;
+  const wantsTourHint = contributor && onForm && state.annotationSetData?.showTourHint === true;
+  React.useEffect(() => {
+    if (!wantsTourHint || fullScreen || tourHintDoneRef.current) return undefined;
+    const settle = setTimeout(() => {
+      tourHintDoneRef.current = true;
+      const cached = readSessionData();
+      if (cached) writeSession({ data: { ...cached, showTourHint: false } });
+      fetch("/api/user/tourHintSeen", { method: "POST" }).catch((err) => console.error("Failed to save tourHintSeen:", err));
+      setTourHintOn(true);
+      tourHintTimerRef.current = setTimeout(() => setTourHintOn(false), TOUR_REMINDER_MS);
+    }, TOUR_REMINDER_SETTLE_MS);
+    return () => clearTimeout(settle);
+  }, [wantsTourHint, fullScreen]);
+  // The laptop's message pill sits where the line does: a message hides it
+  const onDesktopMessage = React.useCallback((shown) => {
+    if (shown) setTourHintOn(false);
+  }, []);
+  const showTour = React.useCallback(() => {
+    setTourHintOn(false);
+    openTour();
+  }, [openTour]);
 
   React.useEffect(() => {
     if (status === "loading") return;
@@ -289,6 +370,11 @@ export default function AnnotatePage() {
           allImages={data.imgRecords}
           isAnnotator={data.isAnnotator === true}
           tau={data.tau}
+          // The tour, contributors only (S30)
+          onShowTour={contributor ? showTour : undefined}
+          tourTelemetry={contributor ? tourStats : undefined}
+          onFocusChange={setFullScreen}
+          onDesktopMessage={contributor ? onDesktopMessage : undefined}
         />
       );
     }
@@ -314,6 +400,16 @@ export default function AnnotatePage() {
       contribute
     >
       {renderComponent()}
+      {contributor && onForm && (
+        <>
+          {tourHintOn && !fullScreen && (
+            <TourHint input={tour.tourInput} wide>
+              {tour.tourWords === "touch" ? PRACTICE_COPY.touchReminder : PRACTICE_COPY.reminder}
+            </TourHint>
+          )}
+          {tour.element}
+        </>
+      )}
     </Page>
   );
 }

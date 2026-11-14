@@ -34,8 +34,8 @@
  *
  * Each step's lock is the tool's `practiceLock`: which boxes open
  * (`openable`, a list or "all", and drawn boxes whenever drawing is allowed),
- * whether a box can be drawn (`canDraw`), whether Next Image works
- * (`canSubmit`), and which answer the box panel allows (`allowAnswers`: null
+ * whether a box can be drawn (`canDraw`), whether the photo's button works
+ * (`canSubmit`: Finish Tutorial from S30, 14 Nov 2026, Next Image before), and which answer the box panel allows (`allowAnswers`: null
  * for any, or an object naming the one allowed answer to a question, with Not
  * an object off). Everything else on the photo is inert until its step.
  */

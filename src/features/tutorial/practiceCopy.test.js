@@ -90,8 +90,9 @@ describe("the practice's lines", () => {
     expect(PRACTICE_STEPS.map((s) => practiceNote(s.key)).filter(Boolean)).toEqual(["Hint: this is a lamp post."]);
     expect(practiceLine("scene")).toBe("Next is Step 3: questions about the sidewalk itself.");
     expect(practiceLine("scene", "touch")).toBe("Next is Step 3: questions about the sidewalk itself. Tap the Step 3 line.");
-    expect(practiceLine("next")).toBe("All done. Click Next Image.");
-    expect(practiceLine("next", "touch")).toBe("All done. Tap Next Image.");
+    // The tutorial ends on this photo from S30 (14 Nov 2026)
+    expect(practiceLine("next")).toBe("All done. Click Finish Tutorial.");
+    expect(practiceLine("next", "touch")).toBe("All done. Tap Finish Tutorial.");
     expect(PRACTICE_COPY.counter(3, 11)).toBe("Practice 3 of 11");
     expect(PRACTICE_COPY.skip).toBe("Skip practice");
     expect(PRACTICE_COPY.reminder).toBe("You can find more information by clicking the Tour button at the top of the page.");

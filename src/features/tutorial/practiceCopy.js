@@ -31,7 +31,12 @@ export const PRACTICE_COPY = Object.freeze({
   skip: "Skip practice",
   /** Read out with the check mark after a step */
   stepDone: "Done",
-  /** Under the top bar or the navbar on image 2, after the practice's last step (Rans, 8 Nov 2026) */
+  /**
+   * Where the tour is (Rans, 8 Nov 2026), under the top bar or the navbar.
+   * Shown on tutorial image 2 after the practice until S30 (14 Nov 2026),
+   * and since then once, on the first photo of a contributor's first real
+   * session, where the tour moved (annotate.jsx).
+   */
   reminder: "You can find more information by clicking the Tour button at the top of the page.",
   // On a phone or tablet the button is the ? in the top bar
   touchReminder: "You can find more information by tapping the ? button at the top of the screen.",
@@ -84,9 +89,11 @@ export const PRACTICE_COPY = Object.freeze({
       pointer: "Next is Step 3: questions about the sidewalk itself.",
       touch: "Next is Step 3: questions about the sidewalk itself. Tap the Step 3 line.",
     }),
+    // The tutorial is this photo alone from S30 (14 Nov 2026): its button
+    // reads Finish Tutorial (it said Next Image, with photos 2 and 3 to come)
     next: Object.freeze({
-      pointer: "All done. Click Next Image.",
-      touch: "All done. Tap Next Image.",
+      pointer: "All done. Click Finish Tutorial.",
+      touch: "All done. Tap Finish Tutorial.",
     }),
   }),
 });

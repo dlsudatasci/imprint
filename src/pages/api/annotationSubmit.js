@@ -23,7 +23,7 @@ import { DEFAULT_MODEL_VERSION } from "@/util/validators/annotationGet";
 import { filterAnnotationsByTau } from "@/util/validators/telemetryPayload";
 import { capPosition, completedCount, sessionTotal, wasSent } from "@/util/validators/sessionPosition";
 import { sessionTau } from "@/util/validators/tauSetting.mjs";
-import { sanitizeDeviceTelemetry, sanitizeQcTelemetry, classifyBrowser } from "@/util/validators/deviceTelemetry";
+import { sanitizeDeviceTelemetry, sanitizeQcTelemetry, sanitizeTourTelemetry, classifyBrowser } from "@/util/validators/deviceTelemetry";
 import {
   requiresSidewalkMask,
   normalizeSidewalkMask,
@@ -304,7 +304,8 @@ const handler = async (req, res) => {
         // in the same session is IMAGE_RESUBMITTED with the same payload (S20):
         // its timing runs from when it was reopened, and every reader of
         // IMAGE_SUBMITTED counts one event per photo.
-        const sanitized = sanitizeQcTelemetry(sanitizeDeviceTelemetry(telemetry), { isAnnotator });
+        // The tour's opens and time on the photo (S30), contributors only, kept as the QC timing is
+        const sanitized = sanitizeTourTelemetry(sanitizeQcTelemetry(sanitizeDeviceTelemetry(telemetry), { isAnnotator }), { isAnnotator });
         // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
         const { timestamp, ...clientTelemetry } = withRecordConfidences(sanitized, suggestions, { boxes: selectedObjectsID, isAnnotator, hasSidewalk });
         await logTelemetryEvent({

@@ -46,11 +46,14 @@ import { PROPOSAL_HINT_COPY } from "@/util/modelProposal";
  * the sidewalk questions Step 3, six of them, or two with only a path, whose
  * boxes have no Question 1.
  *
+ * S30 (14 Nov 2026): the tutorial is one practice photo, so the lead says
+ * "a practice photo" (it said "practice photos").
+ *
  * Nothing here names the study's hypotheses or the reference images.
  */
 export const GUIDE_COPY = Object.freeze({
   title: "Annotation guide",
-  lead: "How a session goes, one step at a time. Before your first session, the tutorial takes you through the same steps on practice photos.",
+  lead: "How a session goes, one step at a time. Before your first session, the tutorial takes you through the same steps on a practice photo.",
   contentsLabel: "On this page",
   steps: Object.freeze([
     Object.freeze({

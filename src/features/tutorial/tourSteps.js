@@ -1,5 +1,9 @@
 /**
- * The guided tour shown on the first tutorial image (src/pages/contribute/tutorial.jsx).
+ * The guided tour shown on the first tutorial image (src/pages/contribute/tutorial.jsx),
+ * and from S30 (14 Nov 2026) on every photo of a contributor's real session
+ * from the ? button (src/pages/contribute/annotate.jsx, useTour.jsx). The
+ * contributor tutorial is the practice photo alone from then, so contributors
+ * see the tour in sessions only.
  *
  * Annotators and contributors share the interface but not the task. Annotators
  * build the ground truth, so they box every object from the 18 categories anywhere
@@ -35,7 +39,7 @@
  * after the list) and `note`, with `touchIntro`, `touchPoints`, `touchAfter`
  * and `touchNote` where the touch wording differs. buildTourSteps returns
  * them, and `content` as the same text joined into plain sentences, and the
- * tutorial page builds the list. Each step stays within CONTRIBUTOR_BUDGET
+ * tour (useTour, S30) builds the list. Each step stays within CONTRIBUTOR_BUDGET
  * (tourSteps.test.js checks). Check Each Box sits right of the photo (S16b).
  * The question's wording and the path's lines come from
  * sidewalkQuestionCopy.js, the one place they are spelled out.
@@ -559,7 +563,7 @@ function contributorWords(entry, touchWords) {
  * FULL_SCREEN_TIP as that step's note on either. Never on a pointer tour:
  * phones and tablets always have the sheet layout, so the touch tours. A
  * touch step in the part of the sheet pulled down keeps its `sheet: "full"`,
- * for the tutorial page to move the sheet.
+ * for useTour to move the sheet (S30).
  *
  * A contributor step also carries `intro`, `points` and `note` (S16), and
  * `after` (S16b), which the tutorial page turns into a paragraph, a numbered

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { summarizeInputTypes, classifyDevice, classifyBrowser, sanitizeDeviceTelemetry, sanitizeQcTelemetry, QC_FIELD_RULES, isPhone } from "./deviceTelemetry";
+import { summarizeInputTypes, classifyDevice, classifyBrowser, sanitizeDeviceTelemetry, sanitizeQcTelemetry, sanitizeTourTelemetry, QC_FIELD_RULES, TOUR_FIELD_RULES, isPhone } from "./deviceTelemetry";
 
 /** Device and input telemetry for each submitted image (9 Oct 2026). */
 const UA = {
@@ -204,5 +204,42 @@ describe("sanitizeQcTelemetry", () => {
     const copy = JSON.parse(JSON.stringify(input));
     sanitizeQcTelemetry(input, { isAnnotator: true });
     expect(input).toEqual(copy);
+  });
+});
+
+// The tour in a contributor's session (S30, 14 Nov 2026)
+describe("sanitizeTourTelemetry", () => {
+  const WEEK = 7 * 86400000;
+
+  it("names the two fields", () => {
+    expect(Object.keys(TOUR_FIELD_RULES)).toEqual(["tourOpens", "msTourOpen"]);
+  });
+
+  it("keeps whole opens from 0 to 1,000 and whole ms from 0 to a week, and passes other telemetry through", () => {
+    expect(sanitizeTourTelemetry({ tourOpens: 0, msTourOpen: 0, msObjectStep: 900 })).toEqual({ tourOpens: 0, msTourOpen: 0, msObjectStep: 900 });
+    expect(sanitizeTourTelemetry({ tourOpens: 1000, msTourOpen: WEEK })).toEqual({ tourOpens: 1000, msTourOpen: WEEK });
+    expect(sanitizeTourTelemetry({ tourOpens: 3, msTourOpen: 42000 })).toEqual({ tourOpens: 3, msTourOpen: 42000 });
+  });
+
+  it("drops fractions, negatives, strings, null and anything over the limits", () => {
+    for (const bad of [1.5, -1, "3", null, NaN, Infinity, true, {}]) {
+      const out = sanitizeTourTelemetry({ tourOpens: bad, msTourOpen: bad });
+      expect(out).toEqual({});
+    }
+    expect(sanitizeTourTelemetry({ tourOpens: 1001, msTourOpen: 5 })).toEqual({ msTourOpen: 5 });
+    expect(sanitizeTourTelemetry({ tourOpens: 1, msTourOpen: WEEK + 1 })).toEqual({ tourOpens: 1 });
+  });
+
+  it("drops both for annotators, and gives {} for anything not an object", () => {
+    expect(sanitizeTourTelemetry({ tourOpens: 1, msTourOpen: 50, msObjectStep: 4 }, { isAnnotator: true })).toEqual({ msObjectStep: 4 });
+    expect(sanitizeTourTelemetry("text")).toEqual({});
+    expect(sanitizeTourTelemetry([1])).toEqual({});
+    expect(sanitizeTourTelemetry(null)).toEqual({});
+  });
+
+  it("does not change the telemetry it was given", () => {
+    const given = { tourOpens: -1, msTourOpen: 5 };
+    sanitizeTourTelemetry(given);
+    expect(given).toEqual({ tourOpens: -1, msTourOpen: 5 });
   });
 });

@@ -47,6 +47,17 @@ const SHEET_SETTLE_MS = 260;
 const SHEET_DOWN_SETTLE_MS = 400;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Whether a tour step's target is in the part of the answers sheet that
+ * scrolls (`data-sheet-scroll`, the part pulled down), not its top. Step 1
+ * moves there once it is answered (S15): the top of the sheet is Step 1 until
+ * then, and the lists' summary after. Found 14 Nov 2026 (S30): in a session
+ * where Step 1 was answered, the first card pointed below the sheet.
+ */
+export function inSheetBody(selector, doc = document) {
+  return Boolean(doc.querySelector(selector)?.closest?.("[data-sheet-scroll]"));
+}
+
 /** Whether a tour step's target is on the page and drawn (S30). */
 export function targetShown(selector, doc = document) {
   const el = doc.querySelector(selector);
@@ -83,6 +94,10 @@ export function useTour({
   const remount = useCallback(() => setJoyrideKey((k) => k + 1), []);
   // When the sheet last went back down after a step that pulled it up
   const sheetDownAtRef = useRef(0);
+  // The target of the step that found its target in the sheet's body and
+  // pulled the sheet up for it (S30), for its `after` to put the sheet back.
+  // A ref, as the tutorial builds its steps again on every render.
+  const pulledUpRef = useRef(null);
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;
 
@@ -127,7 +142,9 @@ export function useTour({
 
   // A touch tour step whose target is in the part of the answers sheet pulled
   // down carries `sheet: "full"`: the sheet moves up before that step, with
-  // its target scrolled into view, and back after it. A step's text becomes
+  // its target scrolled into view, and back after it. Any other touch step
+  // whose target is found there when it comes up does the same (S30): Step 1
+  // once answered, which the tutorial's tour never met. A step's text becomes
   // its element here (a contributor step's numbered list, S16), so
   // tourSteps.js stays plain data.
   const buildSteps = useCallback(
@@ -158,7 +175,21 @@ export function useTour({
       // is always a promise (an undefined one stopped the whole page).
       return {
         ...step,
-        before: () => (Date.now() - sheetDownAtRef.current < SHEET_DOWN_SETTLE_MS ? whenStill(step.target) : Promise.resolve()),
+        before: () => {
+          const pullUp = tourInput === "touch" && inSheetBody(step.target);
+          pulledUpRef.current = pullUp ? step.target : null;
+          if (pullUp) {
+            moveSheet({ snap: "full", scrollTo: step.target });
+            return wait(SHEET_SETTLE_MS).then(() => whenStill(step.target));
+          }
+          return Date.now() - sheetDownAtRef.current < SHEET_DOWN_SETTLE_MS ? whenStill(step.target) : Promise.resolve();
+        },
+        after: () => {
+          if (pulledUpRef.current !== step.target) return;
+          pulledUpRef.current = null;
+          moveSheet("collapsed");
+          sheetDownAtRef.current = Date.now();
+        },
       };
     }),
     [isAnnotator, annotatorStep, tourInput, tourWords, phone, tablet]

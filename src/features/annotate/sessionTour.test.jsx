@@ -24,7 +24,8 @@ vi.mock("react-joyride", () => ({
   },
 }));
 // The form's props, and the tour's targets it draws: every one unless a test leaves some out
-const seen = vi.hoisted(() => ({ form: null, without: [] }));
+// `inBody` names targets drawn inside the sheet's scrolling body, as Step 1 is once answered (S15)
+const seen = vi.hoisted(() => ({ form: null, without: [], inBody: [] }));
 const TARGETS = [
   ["sidewalk-presence-section", "div"],
   ["rp-stage", "div", "class"],
@@ -37,11 +38,14 @@ const TARGETS = [
 vi.mock("@/features/annotate/form", () => ({
   default: (props) => {
     seen.form = props;
+    const draw = (name, tag, kind) => React.createElement(tag, kind === "class" ? { key: name, className: name } : { key: name, id: name });
+    const shown = TARGETS.filter(([name]) => !seen.without.includes(name));
     return (
       <div>
-        {TARGETS.filter(([name]) => !seen.without.includes(name)).map(([name, tag, kind]) =>
-          React.createElement(tag, kind === "class" ? { key: name, className: name } : { key: name, id: name })
-        )}
+        {shown.filter(([name]) => !seen.inBody.includes(name)).map(([name, tag, kind]) => draw(name, tag, kind))}
+        <div data-sheet-scroll="">
+          {shown.filter(([name]) => seen.inBody.includes(name)).map(([name, tag, kind]) => draw(name, tag, kind))}
+        </div>
         {/* eslint-disable-next-line react/forbid-elements -- the tool's submit button, which the tour's last card points at */}
         {!seen.without.includes("submit") && <button type="submit">Next Image</button>}
       </div>
@@ -103,6 +107,7 @@ beforeEach(() => {
   joyride.props = null;
   seen.form = null;
   seen.without = [];
+  seen.inBody = [];
   screen.layout = "desktop";
   screen.phone = false;
 });
@@ -142,6 +147,46 @@ describe("the tour in a contributor's session (S30)", () => {
     expect(targets()).toContain("#add-box-button");
     expect(cardFooter(7)).toContain("Step 8 of 8");
     expect(cardFooter(7)).toContain("Finish");
+  });
+
+  // 14 Nov 2026, found by Rans on a phone: with Step 1 answered, its section
+  // is in the part of the sheet pulled down, and the first card pointed below the sheet
+  it("pulls the sheet up for a card whose target is in the sheet's body, and puts it back after", async () => {
+    screen.layout = "sheet";
+    seen.inBody = ["sidewalk-presence-section"];
+    await open();
+    await showTour();
+    const sheet = vi.fn();
+    window.addEventListener("imprint:answer-sheet", sheet);
+    const [first, second] = joyride.props.steps;
+    expect(first.target).toBe("#sidewalk-presence-section");
+    await first.before();
+    expect(sheet.mock.calls.map(([e]) => e.detail)).toEqual([{ snap: "full", scrollTo: "#sidewalk-presence-section" }]);
+    first.after();
+    expect(sheet.mock.calls.at(-1)[0].detail).toBe("collapsed");
+    // The next card, on the photo, leaves the sheet down
+    sheet.mockClear();
+    await second.before();
+    second.after?.();
+    expect(sheet).not.toHaveBeenCalled();
+    window.removeEventListener("imprint:answer-sheet", sheet);
+  });
+
+  it("leaves the sheet down for Step 1 at its top, before it is answered, and on a laptop", async () => {
+    for (const layout of ["sheet", "desktop"]) {
+      screen.layout = layout;
+      seen.inBody = layout === "desktop" ? ["sidewalk-presence-section"] : [];
+      await open();
+      await showTour();
+      const sheet = vi.fn();
+      window.addEventListener("imprint:answer-sheet", sheet);
+      const first = joyride.props.steps[0];
+      await first.before();
+      first.after?.();
+      window.removeEventListener("imprint:answer-sheet", sheet);
+      expect(sheet, layout).not.toHaveBeenCalled();
+      close();
+    }
   });
 
   it("is on every photo of the session", async () => {

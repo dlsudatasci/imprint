@@ -419,7 +419,8 @@ describe("the touch tour", () => {
     ]);
     // Add a Box and Your Answers point at their targets (S16b): a centred card has no highlight
     expect(steps.map((s) => s.placement)).toEqual(["bottom", "center", "center", "top", "top", "top", "center", "top"]);
-    expect(steps.map((s) => s.fitBesideTarget)).toEqual([undefined, undefined, undefined, true, true, undefined, undefined, undefined]);
+    // And Step 1 (S30), pulled up into view once it is answered
+    expect(steps.map((s) => s.fitBesideTarget)).toEqual([true, undefined, undefined, true, true, undefined, undefined, undefined]);
     expect(steps.at(-1).after).toBe("Tap Next Image once every box has an answer. If something is missing, a warning will appear to point it out.");
     expect(steps.map((s) => s.target)).toEqual([...tourTargets(false, "objects", "touch")]);
     // The answers and Step 2 are in the part of the sheet pulled down, and only those steps say so
@@ -638,9 +639,14 @@ describe("the annotator touch tours", () => {
         // Your Answers may use the whole screen, not only the sheet's scrolling
         // part, and follows its lists as the sheet settles (S16b)
         const answers = !isAnnotator && s.title === "Your Answers";
+        // And Step 1 (S30, 14 Nov 2026): once answered it is in the sheet's
+        // scrolling part, and the card was kept inside it, over Step 1
+        const presence = !isAnnotator && s.title === "Is There a Sidewalk?";
         expect(s.floatingOptions, s.title).toEqual(answers
           ? { shiftOptions: { crossAxis: true, boundary: "clippingAncestors" }, autoUpdate: { animationFrame: true } }
-          : { shiftOptions: { crossAxis: true } });
+          : presence
+            ? { shiftOptions: { crossAxis: true, boundary: "clippingAncestors" } }
+            : { shiftOptions: { crossAxis: true } });
       }
     }
   });

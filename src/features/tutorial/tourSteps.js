@@ -348,7 +348,17 @@ const CONTRIBUTOR_TOUCH_TOUR = Object.freeze({
   // beside the target (the tutorial page's fitBesideTarget).
   placements: ["bottom", "center", "center", "top", "top", "top", "center", "top"],
   copy: [
-    PRESENCE_STEP,
+    // Step 1 once answered is in the part of the sheet pulled down, and is
+    // pulled up for this card (S30, 14 Nov 2026). As for Your Answers, the
+    // card is no taller than the room beside it, and is kept on the screen
+    // rather than inside the sheet's list: the tour library keeps a card
+    // inside the box its target scrolls in, which pushed it down over Step 1
+    // on a 360 by 740 phone
+    {
+      ...PRESENCE_STEP,
+      fitBesideTarget: true,
+      floatingOptions: { shiftOptions: { crossAxis: true, boundary: "clippingAncestors" } },
+    },
     {
       title: "Check Each Box",
       points: checkPoints("Tap"),

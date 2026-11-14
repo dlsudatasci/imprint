@@ -74,8 +74,9 @@ export default function AnnotateForm({
   onAnnotatorStepChange,
   // Told when the laptop's message pill shows and goes (S20): the tutorial hides its tour hint
   onDesktopMessage,
-  // The tutorial: shows the step's tour again (the ? button in the top bar on a
-  // phone or tablet, in the progress strip on a laptop, S16b)
+  // Shows the tour (the ? button in the top bar on a phone or tablet, in the
+  // progress strip on a laptop, S16b): the tutorial, and a contributor's
+  // session from S30. Not while the photo is saving or Pause or Stop asks.
   onShowTour,
   // Told when the full-screen photo starts and ends (the tutorial holds its tour meanwhile)
   onFocusChange,
@@ -86,6 +87,10 @@ export default function AnnotateForm({
   onPracticeEvent,
   practiceLock,
   practiceHighlight,
+  // The tutorial's last photo: "Finish Tutorial" on its button (S30). Sessions keep "Finish Session".
+  finishLabel,
+  // A contributor's session (S30): the tour's opens and time on this photo, for its telemetry
+  tourTelemetry,
 }) {
   const onSelect = () => { };
   const onChange = () => { };
@@ -93,6 +98,17 @@ export default function AnnotateForm({
   const loading = status === "loading";
   const [showAbandonModal, setShowAbandonModal] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
+  // The tool saving the photo (S30): the ? button does nothing meanwhile,
+  // nor while Pause or Stop asks
+  const [saving, setSaving] = useState(false);
+  const tourHeldRef = useRef(false);
+  tourHeldRef.current = saving || showPauseModal || showAbandonModal;
+  const onShowTourRef = useRef(onShowTour);
+  onShowTourRef.current = onShowTour;
+  const showTour = useCallback(() => {
+    if (tourHeldRef.current) return;
+    onShowTourRef.current?.();
+  }, []);
   // null until it runs in the browser. The sheet layout under 1024 px and on
   // every phone and tablet, for both roles (12 Oct 2026).
   const layout = useAnnotateLayout();
@@ -361,6 +377,9 @@ export default function AnnotateForm({
       onPracticeEvent={onPracticeEvent}
       practiceLock={practiceLock}
       practiceHighlight={practiceHighlight}
+      finishLabel={finishLabel}
+      onSavingChange={setSaving}
+      tourTelemetry={tourTelemetry}
     />
   );
 
@@ -384,7 +403,7 @@ export default function AnnotateForm({
             total={total}
             onPause={() => setShowPauseModal(true)}
             onStop={() => setShowAbandonModal(true)}
-            onShowTour={onShowTour}
+            onShowTour={onShowTour ? showTour : undefined}
             tourButton={tourButton}
             isTutorial={isTutorial}
           />
@@ -399,7 +418,7 @@ export default function AnnotateForm({
             total={total}
             onPause={() => setShowPauseModal(true)}
             onStop={() => setShowAbandonModal(true)}
-            onShowTour={onShowTour}
+            onShowTour={onShowTour ? showTour : undefined}
             tourButton={tourButton}
             isTutorial={isTutorial}
             deferUpcoming={!photoReady}

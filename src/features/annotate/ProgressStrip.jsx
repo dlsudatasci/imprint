@@ -19,7 +19,8 @@ import { HelpIcon, PauseIcon, StopIcon } from "@/ui/icons";
  *
  * In the tutorial, `onShowTour` adds a ? button beside Stop Tutorial that runs
  * the tour again (S16b, 3 Nov 2026, in place of the beacons on each point), as
- * the phone's top bar has.
+ * the phone's top bar has. From S30 (14 Nov 2026) a contributor's session has
+ * it too, beside Pause and Stop, with the same label and look.
  *
  * `reached` (6 Nov 2026, the tutorial and every session): the furthest image
  * reached. After going back, the images up to it stay as they were: those

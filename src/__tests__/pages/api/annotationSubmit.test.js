@@ -297,6 +297,29 @@ describe("POST /api/annotationSubmit", () => {
     expect(second.suggestionConfidences).toEqual([{ id: "c1", confidence: 0.91, disposition: "accepted", proposedObstructs: null, proposalShown: false }]);
   });
 
+  // The tour in a contributor's session (S30, 14 Nov 2026)
+  it("logs a contributor's tour opens and time on the photo, and drops values out of range", async () => {
+    setupMocks();
+    await handler(createMockReq({ body: { ...validBody, telemetry: { tourOpens: 2, msTourOpen: 41000, msObjectStep: 90000 } } }), createMockRes());
+    expect(logTelemetryEvent.mock.calls[0][0]).toMatchObject({ event: "IMAGE_SUBMITTED", tourOpens: 2, msTourOpen: 41000, msObjectStep: 90000 });
+
+    // A photo where the tour was never opened sends 0 and 0, which are kept
+    vi.clearAllMocks();
+    setupMocks();
+    await handler(createMockReq({ body: { ...validBody, telemetry: { tourOpens: 0, msTourOpen: 0 } } }), createMockRes());
+    expect(logTelemetryEvent.mock.calls[0][0]).toMatchObject({ tourOpens: 0, msTourOpen: 0 });
+
+    for (const [tourOpens, msTourOpen] of [[1001, 7 * 86400000 + 1], [-1, -1], [1.5, 20.5], ["2", "400"], [null, null]]) {
+      vi.clearAllMocks();
+      setupMocks();
+      await handler(createMockReq({ body: { ...validBody, telemetry: { tourOpens, msTourOpen, msObjectStep: 900 } } }), createMockRes());
+      const logged = logTelemetryEvent.mock.calls[0][0];
+      expect(logged).not.toHaveProperty("tourOpens");
+      expect(logged).not.toHaveProperty("msTourOpen");
+      expect(logged.msObjectStep).toBe(900);
+    }
+  });
+
   it("does not call logTelemetryEvent when telemetry is absent", async () => {
     setupMocks();
     const req = createMockReq({ body: { ...validBody, telemetry: undefined } });
@@ -462,6 +485,15 @@ describe("POST /api/annotationSubmit", () => {
       expect(logged).not.toHaveProperty("msLongestIdle");
       expect(logged).not.toHaveProperty("msFromLastIdleToSubmit");
       expect(logged.suggestionConfidences).toEqual([{ id: "p1", confidence: null, disposition: "accepted", proposedObstructs: null, proposalShown: false }]);
+    });
+
+    it("logs no tour fields for annotators, whose sessions have no tour (S30)", async () => {
+      setupAnnotator();
+      await handler(createMockReq({ body: { ...annotatorBody(), telemetry: { msObjectStep: 4000, tourOpens: 1, msTourOpen: 5000 } } }), createMockRes());
+      const logged = logTelemetryEvent.mock.calls[0][0];
+      expect(logged.msObjectStep).toBe(4000);
+      expect(logged).not.toHaveProperty("tourOpens");
+      expect(logged).not.toHaveProperty("msTourOpen");
     });
 
     it("allows a suggestion hidden by the confidence threshold to be missing", async () => {
@@ -1140,7 +1172,7 @@ describe("POST /api/annotationSubmit email verification", () => {
 // S20 (7 Nov 2026): a photo sent again in the same session is IMAGE_RESUBMITTED,
 // and the stored position never passes the next unfinished photo
 describe("POST /api/annotationSubmit, a photo sent again", () => {
-  const telemetry = { imageDurationMs: 1200, msObjectStep: 900, suggestionConfidences: [{ id: "c1", confidence: 0.5, disposition: "accepted" }] };
+  const telemetry = { imageDurationMs: 1200, msObjectStep: 900, tourOpens: 1, msTourOpen: 6000, suggestionConfidences: [{ id: "c1", confidence: 0.5, disposition: "accepted" }] };
   // A five-photo session, photo 42 the second, photos before `sent` already sent
   function sessionBefore(sentIds) {
     return { imageIDs: ["i1", "i2", "i3", "i4", "i5"], completedImageIDs: sentIds, totalCount: 5 };
@@ -1180,7 +1212,8 @@ describe("POST /api/annotationSubmit, a photo sent again", () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- only the name differs
     const { event: b, ...restSecond } = logged;
     expect(restSecond).toEqual(restFirst);
-    expect(logged).toMatchObject({ imageDurationMs: 1200, msObjectStep: 900, imageID: 42, tauThreshold: expect.any(Number), cumulativeAnnotationsToDate: 5 });
+    // The tour's fields with the other timing (S30)
+    expect(logged).toMatchObject({ imageDurationMs: 1200, msObjectStep: 900, tourOpens: 1, msTourOpen: 6000, imageID: 42, tauThreshold: expect.any(Number), cumulativeAnnotationsToDate: 5 });
   });
 
   it("logs IMAGE_SUBMITTED and sets no position when there is no active session by then", async () => {

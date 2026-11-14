@@ -9,7 +9,8 @@ import { PauseIcon, StopIcon, HelpIcon } from "@/ui/icons";
  * dialogs as on the desktop.
  *
  * In the tutorial it also has a ? button (12 Oct 2026) that shows the step's
- * tour again, since the touch tours have no beacons to tap.
+ * tour again, since the touch tours have no beacons to tap, and from S30 (14
+ * Nov 2026) on every photo of a contributor's session.
  */
 export default function MobileTopBar({ current, total, onPause, onStop, onShowTour, tourButton = null, isTutorial = false }) {
   const done = total > 0 ? Math.min(1, Math.max(0, (current - 1) / total)) : 0;

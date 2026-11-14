@@ -216,6 +216,10 @@ const handler = async (req, res) => {
     // Returned with every successful response so the annotation tool can hide
     // the scene step and severity for annotators (decided 3 Oct 2026).
     const isAnnotator = user.role === "annotator";
+    // The one-time line saying where the tour is (S30, 14 Nov 2026): on a
+    // contributor's first real session after the tour moved there, until
+    // tourHintSeen records it. With real sessions only, not the picker's list.
+    const showTourHint = !isAnnotator && !user.tourHintSeenAt;
     const allowedSizes = isAnnotator ? ANNOTATOR_SESSION_SIZES : ALLOWED_SESSION_SIZES;
     timer.mark("auth");
 
@@ -282,6 +286,7 @@ const handler = async (req, res) => {
         )),
         isAnnotator,
         tau,
+        showTourHint,
       });
     }
 
@@ -520,6 +525,7 @@ const handler = async (req, res) => {
       isExistingSession: false,
       isAnnotator,
       tau,
+      showTourHint,
     });
   } catch (error) {
     console.error("Database Error:", error);

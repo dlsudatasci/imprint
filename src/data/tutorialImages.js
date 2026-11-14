@@ -1,8 +1,10 @@
 /**
  * Static tutorial images and their pre-drawn annotation boxes.
  *
- * These never change — every contributor practises on the same three images so
- * the walkthrough is predictable and reproducible. The images live in
+ * These never change — everyone practises on the same images so the
+ * walkthrough is predictable and reproducible. Annotators use all three.
+ * Contributors use the first only from S30 (14 Nov 2026), their one-photo
+ * tutorial, and the landing page's previews use it too. The images live in
  * public/images/tutorial/ and are served as regular static files (no database
  * round-trip, no randomness).
  *

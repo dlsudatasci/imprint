@@ -137,3 +137,29 @@ export function sanitizeQcTelemetry(telemetry, { isAnnotator = false } = {}) {
   }
   return out;
 }
+
+/**
+ * The tour in a contributor's real session (S30, 14 Nov 2026), opened from
+ * the ? button: how many times it was opened on the photo (0 when never) and
+ * how long it was open in all. The step timings are not changed, so time with
+ * the tour open stays in them and msTourOpen lets the analysis take it out.
+ */
+export const TOUR_FIELD_RULES = Object.freeze({
+  tourOpens: isIntIn(0, 1000),
+  msTourOpen: isMs,
+});
+
+/**
+ * A copy of the telemetry with the tour fields kept only when allowed: a
+ * whole number of opens from 0 to 1,000, and whole ms from 0 to a week.
+ * Annotators have no tour in sessions, so both are dropped from theirs.
+ * Other fields pass through unchanged.
+ */
+export function sanitizeTourTelemetry(telemetry, { isAnnotator = false } = {}) {
+  if (!telemetry || typeof telemetry !== "object" || Array.isArray(telemetry)) return {};
+  const out = { ...telemetry };
+  for (const [field, allowed] of Object.entries(TOUR_FIELD_RULES)) {
+    if (field in out && (isAnnotator || !allowed(out[field]))) delete out[field];
+  }
+  return out;
+}

@@ -1299,3 +1299,54 @@ describe("annotationGet's speed (S16)", () => {
     expect(logTelemetryEvent).toHaveBeenCalledWith(expect.objectContaining({ cumulativeSessionsToDate: 2, distinctActiveDays: 1, intervalSincePreviousSessionMs: null }));
   });
 });
+
+// S30 (14 Nov 2026): the one-time line saying where the tour is, on a
+// contributor's first real session after the tour moved there
+describe("POST /api/annotationGet showTourHint", () => {
+  const ACTIVE = { userId: MOCK_USER_ID, status: "active", imageIDs: [], completedImageIDs: [], totalCount: 10 };
+  const account = (mocks, extra) => mocks.usersCol.findOne.mockResolvedValue({
+    _id: MOCK_USER_ID,
+    role: "user",
+    emailVerifiedAt: new Date("2026-10-01T00:00:00Z"),
+    ...extra,
+  });
+  async function newBatch(mocks) {
+    mocks.imageCol.aggregate.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: "img-1", imageID: 1, isReference: false, poolStatus: "served", annotationList: [] }]),
+    });
+    const res = createMockRes();
+    await handler(createMockReq({ body: { annotationTotalCount: 5 } }), res);
+    return res;
+  }
+  async function resume(mocks) {
+    mocks.sessionsCol.findOne.mockResolvedValue(ACTIVE);
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    return res;
+  }
+
+  it("is true with a contributor's new batch and resumed session until the line was seen", async () => {
+    const mocks = setupMocks();
+    expect((await newBatch(mocks))._json.showTourHint).toBe(true);
+    expect((await resume(mocks))._json.showTourHint).toBe(true);
+  });
+
+  it("is false once tourHintSeen has set the date: the next account load says so", async () => {
+    const mocks = setupMocks();
+    account(mocks, { tourHintSeenAt: new Date("2026-11-14T03:00:00Z") });
+    expect((await newBatch(mocks))._json.showTourHint).toBe(false);
+    expect((await resume(mocks))._json.showTourHint).toBe(false);
+  });
+
+  it("is false for annotators, whose sessions have no tour", async () => {
+    const mocks = setupMocks({ userRole: "annotator" });
+    expect((await resume(mocks))._json.showTourHint).toBe(false);
+  });
+
+  it("is not sent with the picker's sizes, which is no session", async () => {
+    setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._json).not.toHaveProperty("showTourHint");
+  });
+});

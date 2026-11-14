@@ -438,6 +438,15 @@ interface IReactPictureAnnotationProps {
   onPracticeEvent?: (event: PracticeEvent) => void;
   practiceLock?: PracticeLock | null;
   practiceHighlight?: PracticeHighlight | null;
+  // The submit button's label on the last image (S30, 14 Nov 2026): the
+  // tutorial's reads "Finish Tutorial". "Finish Session" when not given.
+  finishLabel?: string;
+  // Told when an image starts and stops being saved (S30): AnnotateForm holds
+  // the tour's ? button meanwhile
+  onSavingChange?: (saving: boolean) => void;
+  // The tour in a contributor's session (S30): how often it was opened on this
+  // image and for how long, added to the image's telemetry when it is sent
+  tourTelemetry?: () => { tourOpens: number; msTourOpen: number };
 }
 
 type AnnotatorStep = "objects" | "sidewalk" | "obstructions";
@@ -1180,6 +1189,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (prevState && !this.isSheet && Boolean(prevState.error) !== Boolean(this.state.error)) {
       this.props.onDesktopMessage?.(Boolean(this.state.error));
     }
+    if (prevState && prevState.submitting !== this.state.submitting) this.props.onSavingChange?.(this.state.submitting);
     // Contributors' Step 1 and Step 3 answers are saved as they change, like the boxes
     if (prevState && (prevState.sceneLevel !== this.state.sceneLevel || prevState.hasSidewalk !== this.state.hasSidewalk)) this.scheduleEditSave();
     // A switch between the desktop and sheet layouts (an iPad rotated) builds
@@ -1630,7 +1640,7 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
   private renderActions(variant: "desktop" | "sheet") {
     const { annotatorObjectStep, inObstructionStep, inSidewalkStep, askSidewalk } = this;
     const finishLabel = this.props.totalAnnotationCount && this.props.currentAnnotationCount >= this.props.totalAnnotationCount
-      ? "Finish Session"
+      ? (this.props.finishLabel ?? "Finish Session")
       : "Next Image";
     // An annotator image with no objects left has nothing to judge, so the
     // Objects step submits straight away
@@ -4888,6 +4898,8 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       labelChanges,
       // Device and input (9 Oct 2026). The server adds the browser family.
       ...this.deviceTelemetry(),
+      // The tour opened from the ? button in a contributor's session (S30)
+      ...(this.props.tourTelemetry ? this.props.tourTelemetry() : {}),
     };
 
     this.setState({ error: null });

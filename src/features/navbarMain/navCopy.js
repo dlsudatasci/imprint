@@ -1,3 +1,5 @@
+import { isUnreadMessage } from "@/util/notifications.mjs";
+
 /**
  * Every string the navbar shows, and the rule for its annotate shortcut, so
  * tests can check them (16 Oct 2026): no em dashes and no semicolons in
@@ -10,6 +12,7 @@ export const NAV_COPY = Object.freeze({
   notifications: "Notifications",
   noNotifications: "No new notifications.",
   earlier: "Earlier",
+  newMessages: "New",
   profileTitle: "Complete your profile",
   profileText: "Annotating opens once your profile is done.",
   account: "Account menu",
@@ -62,8 +65,11 @@ export const NOTIFICATION_HISTORY_LIMIT = 3;
  * each. Registration and profile completion keep the old tray's wording ("Welcome
  * to Imprint!", "Profile completed"). A session's own line is shown as stored.
  * "email" is written when the address is confirmed (S9, /api/auth/verify-email).
+ * "message" is a campaign email's copy in the tray (S29, src/util/campaigns).
  */
 const ACTIVITY_VIEWS = {
+  // A message from a campaign email (S29), with its own short title
+  message: (a) => (a.title ? { title: a.title, text: a.activity } : { title: a.activity, text: "" }),
   register: () => ({ title: "Welcome to Imprint!", text: "Thanks for joining our community." }),
   profile: () => ({ title: "Profile completed", text: "You're all set to start mapping." }),
   email: () => ({ title: "Email confirmed", text: "Your email address is confirmed." }),
@@ -84,16 +90,35 @@ const ACTIVITY_VIEWS = {
  * are skipped.
  */
 export function notificationHistory(activities, limit = NOTIFICATION_HISTORY_LIMIT) {
+  return usableEntries(activities)
+    .slice(0, limit)
+    .map(viewOf);
+}
+
+function usableEntries(activities) {
   if (!Array.isArray(activities)) return [];
   return activities
     .filter((a) => a && typeof a.activity === "string" && a.activity.trim() && !Number.isNaN(new Date(a.date).getTime()))
     .map((a) => ({ a, time: new Date(a.date).getTime() }))
-    .sort((x, y) => y.time - x.time)
-    .slice(0, limit)
-    .map(({ a, time }) => {
-      const view = ACTIVITY_VIEWS[a.tag]?.(a) ?? { title: a.activity, text: "" };
-      return { ...view, time };
-    });
+    .sort((x, y) => y.time - x.time);
+}
+
+function viewOf({ a, time }) {
+  const view = ACTIVITY_VIEWS[a.tag]?.(a) ?? { title: a.activity, text: "" };
+  return { ...view, time };
+}
+
+/**
+ * The tray's two lists (S29): `unread`, every message newer than
+ * `notificationsSeenAt`, newest first, shown under New; and `earlier`, the
+ * last `limit` other entries, as notificationHistory gives them. A message
+ * shown under New is not repeated under Earlier.
+ */
+export function trayEntries(activities, seenAt, limit = NOTIFICATION_HISTORY_LIMIT) {
+  const entries = usableEntries(activities);
+  const unread = entries.filter(({ a }) => isUnreadMessage(a, seenAt));
+  const rest = entries.filter(({ a }) => !isUnreadMessage(a, seenAt));
+  return { unread: unread.map(viewOf), earlier: rest.slice(0, limit).map(viewOf) };
 }
 
 /** "Oct 16", the Philippine way, in Philippine time, for a history entry. */

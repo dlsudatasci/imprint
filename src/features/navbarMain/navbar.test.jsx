@@ -18,7 +18,8 @@ vi.mock("@/util/sessionCache", () => ({
 
 import { useSession } from "next-auth/react";
 import Nav from "./index";
-import { NAV_COPY, annotateShortcut, notificationHistory, historyDate, NOTIFICATION_HISTORY_LIMIT } from "./navCopy";
+import { NAV_COPY, annotateShortcut, notificationHistory, trayEntries, historyDate, NOTIFICATION_HISTORY_LIMIT } from "./navCopy";
+import { isUnreadMessage, hasUnreadMessage } from "@/util/notifications.mjs";
 
 /**
  * The navbar after the public-pages redesign (16 Oct 2026,
@@ -115,7 +116,8 @@ describe("navbar", () => {
     // Once only: closing and opening again does not ask again
     await act(async () => { bell.click(); });
     await act(async () => { bell.click(); });
-    expect(globalThis.fetch.mock.calls.filter(([u]) => u === "/api/extractUser")).toHaveLength(1);
+    // (The load's own call asks only whether a message is unread, S29)
+    expect(globalThis.fetch.mock.calls.filter(([u, init]) => u === "/api/extractUser" && !JSON.parse(init.body).unread)).toHaveLength(1);
   });
 
   it("opens the phone menu from its button, keeps it inert while closed, and closes it on Escape", () => {
@@ -181,6 +183,199 @@ describe("notificationHistory", () => {
   it("dates an entry in Philippine time", () => {
     // 16:30 UTC on 16 Oct is already 17 Oct in Manila
     expect(historyDate(Date.parse("2026-10-16T16:30:00Z"))).toMatch(/17/);
+  });
+});
+
+/**
+ * Messages in the bell (S29, 16 Nov 2026): a campaign email's copy in the
+ * feed, `{ tag: "message", title, activity, date, campaign }`, with a dot
+ * until the tray is opened.
+ */
+const SEEN = "2026-11-16T01:00:00Z";
+const message = (date, extra = {}) => ({ tag: "message", title: "Your first session is waiting", activity: "Start with 5 photos, about 5 minutes.", date, campaign: "welcome-nudge", ...extra });
+
+describe("ACTIVITY_VIEWS.message, through notificationHistory and trayEntries", () => {
+  it("shows a message's title and text, and its text as the title when the title is missing", () => {
+    const out = notificationHistory([message("2026-11-16T02:00:00Z"), message("2026-11-15T02:00:00Z", { title: undefined, activity: "No title here." })]);
+    expect(out.map(({ title, text }) => ({ title, text }))).toEqual([
+      { title: "Your first session is waiting", text: "Start with 5 photos, about 5 minutes." },
+      { title: "No title here.", text: "" },
+    ]);
+  });
+
+  it("puts messages newer than notificationsSeenAt under New and leaves them out of Earlier", () => {
+    const feed = [
+      { activity: "Registered to Imprint", tag: "register", date: "2026-11-10T00:00:00Z" },
+      message("2026-11-14T02:00:00Z", { title: "Old message" }),
+      message("2026-11-16T02:00:00Z"),
+    ];
+    const { unread, earlier } = trayEntries(feed, SEEN);
+    expect(unread.map((m) => m.title)).toEqual(["Your first session is waiting"]);
+    expect(earlier.map((m) => m.title)).toEqual(["Old message", "Welcome to Imprint!"]);
+    // Never seen: every message is new
+    expect(trayEntries(feed, null).unread).toHaveLength(2);
+  });
+});
+
+describe("isUnreadMessage and hasUnreadMessage", () => {
+  it("is true only for a message newer than notificationsSeenAt", () => {
+    expect(isUnreadMessage(message("2026-11-16T02:00:00Z"), SEEN)).toBe(true);
+    expect(isUnreadMessage(message("2026-11-16T00:00:00Z"), SEEN)).toBe(false);
+    expect(isUnreadMessage(message(SEEN), SEEN)).toBe(false);
+    expect(isUnreadMessage(message("2026-11-16T00:00:00Z"), null)).toBe(true);
+    expect(isUnreadMessage({ tag: "register", activity: "x", date: "2026-11-16T02:00:00Z" }, SEEN)).toBe(false);
+    expect(isUnreadMessage(message("not a date"), SEEN)).toBe(false);
+    expect(hasUnreadMessage([message("2026-11-14T00:00:00Z"), message("2026-11-16T02:00:00Z")], SEEN)).toBe(true);
+    expect(hasUnreadMessage([message("2026-11-14T00:00:00Z")], SEEN)).toBe(false);
+    expect(hasUnreadMessage(undefined, SEEN)).toBe(false);
+  });
+});
+
+describe("the bell's dot for messages", () => {
+  // The load asks { unread: true }, the tray's first open asks for the feed
+  function serve({ unread, activities = [], seenAt = SEEN }) {
+    globalThis.fetch = vi.fn((url, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : {};
+      let data = { isExistingSession: false };
+      if (url === "/api/extractUser") data = body.unread ? { hasUnreadMessage: unread } : { userActivities: activities, notificationsSeenAt: seenAt, hasUnreadMessage: unread };
+      if (url === "/api/notifications/seen") data = { ok: true };
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(data) });
+    });
+  }
+  const seenCalls = () => globalThis.fetch.mock.calls.filter(([u]) => u === "/api/notifications/seen");
+
+  it("shows for a message newer than notificationsSeenAt, and not for an older one", async () => {
+    serve({ unread: true });
+    let el;
+    await act(async () => { el = render({ session: user() }); });
+    expect(el.querySelector("[data-notification-dot]")).not.toBeNull();
+    expect(globalThis.fetch.mock.calls.some(([u, init]) => u === "/api/extractUser" && JSON.parse(init.body).unread === true)).toBe(true);
+    act(() => root.unmount());
+    host.remove();
+    serve({ unread: false });
+    await act(async () => { el = render({ session: user() }); });
+    expect(el.querySelector("[data-notification-dot]")).toBeNull();
+  });
+
+  it("clears at once when the bell opens, lists the message under New, and then calls the seen route", async () => {
+    serve({ unread: true, activities: [message("2026-11-16T02:00:00Z"), { activity: "Registered to Imprint", tag: "register", date: "2026-11-10T00:00:00Z" }] });
+    let el;
+    await act(async () => { el = render({ session: user() }); });
+    const bell = el.querySelector('[aria-controls="nav-notifications"]');
+    act(() => { bell.click(); });
+    expect(el.querySelector("[data-notification-dot]")).toBeNull();
+    await act(async () => {});
+    const fresh = el.querySelector("[data-notification-new]");
+    expect(fresh.textContent).toContain(NAV_COPY.newMessages);
+    expect(fresh.textContent).toContain("Your first session is waiting");
+    expect(fresh.textContent).toContain("Start with 5 photos, about 5 minutes.");
+    expect(el.querySelector("#nav-notifications").textContent).not.toContain(NAV_COPY.noNotifications);
+    expect(el.querySelector("[data-notification-history]").textContent).toContain("Welcome to Imprint!");
+    expect(el.querySelector("[data-notification-history]").textContent).not.toContain("Your first session is waiting");
+    expect(seenCalls()).toHaveLength(1);
+    expect(seenCalls()[0][1].method).toBe("POST");
+    // The seen route is called after the feed is read, so the tray knew which were new
+    const order = globalThis.fetch.mock.calls.map(([u, init]) => (u === "/api/extractUser" ? (JSON.parse(init.body).unread ? "load" : "feed") : u));
+    expect(order.indexOf("feed")).toBeLessThan(order.indexOf("/api/notifications/seen"));
+  });
+
+  it("does not call the seen route when nothing was unread", async () => {
+    serve({ unread: false, activities: [message("2026-11-14T02:00:00Z")] });
+    let el;
+    await act(async () => { el = render({ session: user() }); });
+    await act(async () => { el.querySelector('[aria-controls="nav-notifications"]').click(); });
+    expect(seenCalls()).toHaveLength(0);
+    expect(el.querySelector("[data-notification-new]")).toBeNull();
+    expect(el.querySelector("#nav-notifications").textContent).toContain(NAV_COPY.noNotifications);
+  });
+
+  describe("on a phone, in the menu", () => {
+    const menuButton = (el) => el.querySelector('[aria-controls="nav-mobile"]');
+    const menuPart = (el) => el.querySelector("#nav-mobile [data-menu-notifications]");
+
+    it("shows the dot on the menu button for a message newer than notificationsSeenAt, and not for an older one", async () => {
+      serve({ unread: true });
+      let el;
+      await act(async () => { el = render({ session: user() }); });
+      expect(menuButton(el).querySelector("[data-menu-dot]")).not.toBeNull();
+      act(() => root.unmount());
+      host.remove();
+      serve({ unread: false });
+      await act(async () => { el = render({ session: user() }); });
+      expect(menuButton(el).querySelector("[data-menu-dot]")).toBeNull();
+    });
+
+    it("lists the message under New and the rest under Earlier, clears the dot at once, then calls the seen route", async () => {
+      serve({ unread: true, activities: [message("2026-11-16T02:00:00Z"), { activity: "Registered to Imprint", tag: "register", date: "2026-11-10T00:00:00Z" }] });
+      let el;
+      await act(async () => { el = render({ session: user() }); });
+      act(() => { menuButton(el).click(); });
+      // Closed again, the button's dot stays gone: the message is seen
+      expect(menuButton(el).querySelector("[data-menu-dot]")).toBeNull();
+      await act(async () => {});
+      const part = menuPart(el);
+      expect(part.textContent).toContain(NAV_COPY.notifications);
+      const fresh = part.querySelector("[data-notification-new]");
+      expect(fresh.textContent).toContain(NAV_COPY.newMessages);
+      expect(fresh.textContent).toContain("Your first session is waiting");
+      const earlier = part.querySelector("[data-notification-history]");
+      expect(earlier.textContent).toContain(NAV_COPY.earlier);
+      expect(earlier.textContent).toContain("Welcome to Imprint!");
+      expect(earlier.textContent).not.toContain("Your first session is waiting");
+      expect(part.textContent).not.toContain(NAV_COPY.noNotifications);
+      expect(seenCalls()).toHaveLength(1);
+      act(() => { menuButton(el).click(); });
+      expect(menuButton(el).querySelector("[data-menu-dot]")).toBeNull();
+      // The bell's own dot is gone too, and opening the bell after does not read the feed again
+      expect(el.querySelector("[data-notification-dot]")).toBeNull();
+      await act(async () => { el.querySelector('[aria-controls="nav-notifications"]').click(); });
+      expect(globalThis.fetch.mock.calls.filter(([u, init]) => u === "/api/extractUser" && !JSON.parse(init.body).unread)).toHaveLength(1);
+      expect(seenCalls()).toHaveLength(1);
+    });
+
+    it("says No new notifications and does not call the seen route when nothing was unread", async () => {
+      serve({ unread: false, activities: [message("2026-11-14T02:00:00Z")] });
+      let el;
+      await act(async () => { el = render({ session: user() }); });
+      await act(async () => { menuButton(el).click(); });
+      expect(menuPart(el).textContent).toContain(NAV_COPY.noNotifications);
+      expect(menuPart(el).querySelector("[data-notification-new]")).toBeNull();
+      expect(menuPart(el).querySelector("[data-notification-history]").textContent).toContain("Your first session is waiting");
+      expect(seenCalls()).toHaveLength(0);
+    });
+
+    it("keeps the profile row and the dot for it, with or without a message", async () => {
+      serve({ unread: true, activities: [message("2026-11-16T02:00:00Z")] });
+      let el;
+      await act(async () => { el = render({ session: user({ isProfileIncomplete: true }) }); });
+      await act(async () => { menuButton(el).click(); });
+      expect(el.querySelector('#nav-mobile a[href="/complete-profile"]').textContent).toContain(NAV_COPY.profileTitle);
+      expect(menuPart(el).querySelector("[data-notification-new]").textContent).toContain("Your first session is waiting");
+      act(() => { menuButton(el).click(); });
+      expect(menuButton(el).querySelector("[data-menu-dot]")).not.toBeNull();
+    });
+
+    it("has no Notifications part for a visitor, and reads nothing", async () => {
+      serve({ unread: true });
+      let el;
+      await act(async () => { el = render(); });
+      await act(async () => { menuButton(el).click(); });
+      expect(menuPart(el)).toBeNull();
+      expect(menuButton(el).querySelector("[data-menu-dot]")).toBeNull();
+      expect(globalThis.fetch.mock.calls.some(([u]) => u === "/api/extractUser")).toBe(false);
+    });
+  });
+
+  it("keeps the profile reminder and its dot, with or without a message", async () => {
+    serve({ unread: true, activities: [message("2026-11-16T02:00:00Z")] });
+    let el;
+    await act(async () => { el = render({ session: user({ isProfileIncomplete: true }) }); });
+    await act(async () => { el.querySelector('[aria-controls="nav-notifications"]').click(); });
+    // The profile still needs doing, so its dot stays after the tray is opened
+    expect(el.querySelector("[data-notification-dot]")).not.toBeNull();
+    expect(el.querySelector('#nav-notifications a[href="/complete-profile"]').textContent).toContain(NAV_COPY.profileTitle);
+    expect(el.querySelector("[data-notification-new]").textContent).toContain("Your first session is waiting");
+    expect(el.querySelector("#nav-notifications").textContent).not.toContain(NAV_COPY.noNotifications);
   });
 });
 

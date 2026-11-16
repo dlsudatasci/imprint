@@ -10,7 +10,7 @@ import { useSession, signOut } from "next-auth/react";
 import { LogOutIcon, MenuIcon, CloseIcon, AlertIcon, Container } from "@/ui";
 import { clearSession, readTotalCount, readCurrentCount, readTutorialFlag } from "@/util/sessionCache";
 import { syncCachedSession } from "@/util/syncCachedSession";
-import { NAV_COPY as COPY, PUBLIC_LINKS, annotateShortcut, notificationHistory, historyDate } from "./navCopy";
+import { NAV_COPY as COPY, PUBLIC_LINKS, annotateShortcut, trayEntries, historyDate } from "./navCopy";
 
 /**
  * The site navbar, used on both public and contributor pages.
@@ -42,6 +42,15 @@ import { NAV_COPY as COPY, PUBLIC_LINKS, annotateShortcut, notificationHistory, 
  *   /api/extractUser the first time the tray opens. The greyed "Welcome to
  *   Imprint!" and "Profile Completed" entries it replaced were the same
  *   static text for everyone.
+ * - Messages (S29, 16 Nov 2026): a campaign email is also a `message` entry
+ *   in the feed. On load the bar asks /api/extractUser only whether one is
+ *   unread (`{ unread: true }`), and shows the dot for it as for the
+ *   unfinished profile. Opening the tray clears the dot at once, lists the
+ *   unread messages under New, and then posts /api/notifications/seen (after
+ *   the feed is read, so the tray still knows which were new). The phone
+ *   menu has the same: the dot on its button, and a Notifications part with
+ *   New and Earlier (NotificationLists, shared with the tray). Opening the
+ *   menu reads the feed and marks the messages seen as the bell does.
  * - On a phone the menu is a panel under the bar, full width, with rows at
  *   least 48 px tall.
  */
@@ -54,7 +63,9 @@ export default function Nav({ sticky = false }) {
   const [notificationMenuState, setNotificationMenuState] = useState(false); // Notifications dropdown
   const [hasActiveSession, setHasActiveSession] = useState(false);
   const [isTutorialSession, setIsTutorialSession] = useState(false);
-  const [history, setHistory] = useState(null); // null until the tray first opens
+  const [tray, setTray] = useState(null); // { unread, earlier }, null until the tray first opens
+  const [hasUnread, setHasUnread] = useState(false); // a message newer than notificationsSeenAt
+  const [seenHere, setSeenHere] = useState(false); // the tray was opened on this page
   const scrolled = useScrolled(0);
 
   const hasCompletedDemo = session?.user?.hasCompletedTutorial === true;
@@ -103,12 +114,29 @@ export default function Nav({ sticky = false }) {
     };
   }, [status]);
 
+  // Whether a message is unread, for the dot (S29): only the boolean, not the feed
+  useEffect(() => {
+    if (status !== "authenticated") return undefined;
+    let cancelled = false;
+    fetch("/api/extractUser", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unread: true }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (!cancelled && data) setHasUnread(data.hasUnreadMessage === true); })
+      .catch((err) => console.error("Failed to check notifications", err));
+    return () => { cancelled = true; };
+  }, [status]);
+
   // The history is read once, the first time the tray opens, not on every page.
   // A ref, not the state, marks it as asked for: setting state here would rerun
-  // this effect and its cleanup would drop the answer.
+  // this effect and its cleanup would drop the answer. Then, if a message was
+  // unread, the seen route marks them read.
   const historyAsked = useRef(false);
+  const notificationsOpen = notificationMenuState || menuState;
   useEffect(() => {
-    if (!notificationMenuState || status !== "authenticated" || historyAsked.current) return;
+    if (!notificationsOpen || status !== "authenticated" || historyAsked.current) return;
     historyAsked.current = true;
     fetch("/api/extractUser", {
       method: "POST",
@@ -116,9 +144,22 @@ export default function Nav({ sticky = false }) {
       body: JSON.stringify({}),
     })
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setHistory(notificationHistory(data?.userActivities)))
+      .then((data) => {
+        const entries = trayEntries(data?.userActivities, data?.notificationsSeenAt);
+        setTray(entries);
+        if (entries.unread.length > 0 || data?.hasUnreadMessage) {
+          return fetch("/api/notifications/seen", { method: "POST" });
+        }
+        return null;
+      })
       .catch((err) => console.error("Failed to load notifications", err));
-  }, [notificationMenuState, status]);
+  }, [notificationsOpen, status]);
+
+  const showDot = profileIncomplete || (hasUnread && !seenHere);
+  const unreadMessages = tray?.unread ?? [];
+  const history = tray?.earlier ?? null;
+  // Until the tray's feed arrives, a known unread message is not "no new notifications"
+  const nothingNew = !profileIncomplete && unreadMessages.length === 0 && !(tray === null && hasUnread);
 
   const closeAll = useCallback(() => {
     setMenuState(false);
@@ -211,7 +252,7 @@ export default function Nav({ sticky = false }) {
               {/* Notifications */}
               <div className="relative flex items-center" ref={notificationDropdownRef}>
                 <IconButton
-                  onClick={() => { setNotificationMenuState((o) => !o); setProfileMenuState(false); }}
+                  onClick={() => { setNotificationMenuState((o) => !o); setProfileMenuState(false); setSeenHere(true); }}
                   aria-label={COPY.notifications}
                   aria-expanded={notificationMenuState}
                   aria-controls="nav-notifications"
@@ -222,7 +263,7 @@ export default function Nav({ sticky = false }) {
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
                   </svg>
-                  {profileIncomplete && (
+                  {showDot && (
                     <span data-notification-dot className="absolute top-0.5 right-0.5 block h-2.5 w-2.5 rounded-full bg-danger ring-2 ring-surface" />
                   )}
                 </IconButton>
@@ -242,25 +283,7 @@ export default function Nav({ sticky = false }) {
                       </span>
                     </Link>
                   )}
-                  {!profileIncomplete && (
-                    <p className="px-3 py-2 text-sm text-muted">{COPY.noNotifications}</p>
-                  )}
-                  {history?.length > 0 && (
-                    <div data-notification-history className="mt-1 border-t border-line-card pt-2">
-                      <p className="px-3 pb-1 text-xs font-semibold text-muted">{COPY.earlier}</p>
-                      <ul>
-                        {history.map((h) => (
-                          <li key={`${h.time}-${h.title}`} className="flex items-start justify-between gap-3 px-3 py-2">
-                            <span className="min-w-0">
-                              <span className="block text-sm font-medium text-body">{h.title}</span>
-                              {h.text && <span className="block text-xs text-muted mt-0.5">{h.text}</span>}
-                            </span>
-                            <span className="shrink-0 text-xs text-subtle tabular-nums">{historyDate(h.time)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  <NotificationLists unread={unreadMessages} earlier={history} nothingNew={nothingNew} />
                 </div>
               </div>
 
@@ -310,7 +333,7 @@ export default function Nav({ sticky = false }) {
           {/* Neutral, not danger: red is reserved for logout and delete, and a
               menu toggle destroys nothing. */}
           <IconButton
-            onClick={() => setMenuState((o) => !o)}
+            onClick={() => { setMenuState((o) => !o); if (status === "authenticated") setSeenHere(true); }}
             aria-label={menuState ? COPY.closeMenu : COPY.openMenu}
             aria-expanded={menuState}
             aria-controls="nav-mobile"
@@ -318,8 +341,8 @@ export default function Nav({ sticky = false }) {
             className="relative"
           >
             {menuState ? <CloseIcon size={18} /> : <MenuIcon size={18} />}
-            {!menuState && profileIncomplete && (
-              <span className="absolute -top-0.5 -right-0.5 block h-2.5 w-2.5 rounded-full bg-danger ring-2 ring-surface" />
+            {!menuState && showDot && (
+              <span data-menu-dot className="absolute -top-0.5 -right-0.5 block h-2.5 w-2.5 rounded-full bg-danger ring-2 ring-surface" />
             )}
           </IconButton>
 
@@ -371,6 +394,10 @@ export default function Nav({ sticky = false }) {
                       </Link>
                     </li>
                   )}
+                  <li data-menu-notifications className="py-2 border-b border-line-card">
+                    <p className="pt-1 pb-1 text-base font-semibold text-ink">{COPY.notifications}</p>
+                    <NotificationLists unread={unreadMessages} earlier={history} nothingNew={nothingNew} phone />
+                  </li>
                   <li>
                     {/* eslint-disable-next-line react/forbid-elements -- menu row, not a standalone button */}
                     <button type="button" className="flex min-h-[48px] w-full items-center gap-2 text-left text-base font-medium text-danger" onClick={logoutFunction}>
@@ -385,5 +412,56 @@ export default function Nav({ sticky = false }) {
         </div>
       </Container>
     </header>
+  );
+}
+
+/**
+ * The tray's New and Earlier lists (S29), shared by the laptop bell and the
+ * phone menu. New holds the messages that were unread when the feed was read,
+ * in the profile reminder's row look without its warning colour. Earlier is
+ * the last entries of the feed, as before. On a phone the rows lose their side
+ * padding to line up with the menu's other rows.
+ */
+function NotificationLists({ unread, earlier, nothingNew, phone = false }) {
+  const pad = phone ? "px-0" : "px-3";
+  return (
+    <>
+      {unread.length > 0 && (
+        <div data-notification-new>
+          <p className={cn(pad, "pt-1 pb-1 text-xs font-semibold text-muted")}>{COPY.newMessages}</p>
+          <ul>
+            {unread.map((m) => (
+              <li key={`${m.time}-${m.title}`} className={cn(pad, "flex items-start gap-3 rounded-control py-3")}>
+                <span aria-hidden="true" className="mt-1.5 block h-2 w-2 shrink-0 rounded-full bg-primary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-ink">{m.title}</span>
+                  {m.text && <span className="block text-xs text-muted mt-0.5">{m.text}</span>}
+                </span>
+                <span className="shrink-0 text-xs text-subtle tabular-nums">{historyDate(m.time)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {nothingNew && (
+        <p className={cn(pad, "py-2 text-sm text-muted")}>{COPY.noNotifications}</p>
+      )}
+      {earlier?.length > 0 && (
+        <div data-notification-history className="mt-1 border-t border-line-card pt-2">
+          <p className={cn(pad, "pb-1 text-xs font-semibold text-muted")}>{COPY.earlier}</p>
+          <ul>
+            {earlier.map((h) => (
+              <li key={`${h.time}-${h.title}`} className={cn(pad, "flex items-start justify-between gap-3 py-2")}>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-body">{h.title}</span>
+                  {h.text && <span className="block text-xs text-muted mt-0.5">{h.text}</span>}
+                </span>
+                <span className="shrink-0 text-xs text-subtle tabular-nums">{historyDate(h.time)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
   );
 }

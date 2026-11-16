@@ -7,10 +7,10 @@ import { Button, IconButton, cn } from "@/ui";
 import { useOutsideClick } from "@/hooks/useOutsideClick";
 import { useScrolled } from "@/hooks/useScrolled";
 import { useSession, signOut } from "next-auth/react";
-import { LogOutIcon, MenuIcon, CloseIcon, AlertIcon, Container } from "@/ui";
+import { LogOutIcon, MenuIcon, CloseIcon, ChevronDownIcon, AlertIcon, Container } from "@/ui";
 import { clearSession, readTotalCount, readCurrentCount, readTutorialFlag } from "@/util/sessionCache";
 import { syncCachedSession } from "@/util/syncCachedSession";
-import { NAV_COPY as COPY, PUBLIC_LINKS, annotateShortcut, trayEntries, historyDate } from "./navCopy";
+import { NAV_COPY as COPY, PUBLIC_LINKS, annotateShortcut, trayEntries, historyDate, LEADERBOARD_LINK, showsLeaderboardLink } from "./navCopy";
 
 /**
  * The site navbar, used on both public and contributor pages.
@@ -61,6 +61,8 @@ export default function Nav({ sticky = false }) {
   const [menuState, setMenuState] = useState(false);               // Phone menu
   const [profileMenuState, setProfileMenuState] = useState(false); // Account dropdown
   const [notificationMenuState, setNotificationMenuState] = useState(false); // Notifications dropdown
+  // The phone menu's Notifications row (Rans, 17 Nov 2026): shut until tapped
+  const [phoneNotificationsOpen, setPhoneNotificationsOpen] = useState(false);
   const [hasActiveSession, setHasActiveSession] = useState(false);
   const [isTutorialSession, setIsTutorialSession] = useState(false);
   const [tray, setTray] = useState(null); // { unread, earlier }, null until the tray first opens
@@ -134,7 +136,7 @@ export default function Nav({ sticky = false }) {
   // this effect and its cleanup would drop the answer. Then, if a message was
   // unread, the seen route marks them read.
   const historyAsked = useRef(false);
-  const notificationsOpen = notificationMenuState || menuState;
+  const notificationsOpen = notificationMenuState || (menuState && phoneNotificationsOpen);
   useEffect(() => {
     if (!notificationsOpen || status !== "authenticated" || historyAsked.current) return;
     historyAsked.current = true;
@@ -155,7 +157,8 @@ export default function Nav({ sticky = false }) {
       .catch((err) => console.error("Failed to load notifications", err));
   }, [notificationsOpen, status]);
 
-  const showDot = profileIncomplete || (hasUnread && !seenHere);
+  const unreadDot = hasUnread && !seenHere;
+  const showDot = profileIncomplete || unreadDot;
   const unreadMessages = tray?.unread ?? [];
   const history = tray?.earlier ?? null;
   // Until the tray's feed arrives, a known unread message is not "no new notifications"
@@ -163,6 +166,7 @@ export default function Nav({ sticky = false }) {
 
   const closeAll = useCallback(() => {
     setMenuState(false);
+    setPhoneNotificationsOpen(false);
     setProfileMenuState(false);
     setNotificationMenuState(false);
   }, []);
@@ -186,7 +190,7 @@ export default function Nav({ sticky = false }) {
   const profileDropdownRef = useRef(null);
   const notificationDropdownRef = useRef(null);
 
-  const closeMenu = useCallback(() => setMenuState(false), []);
+  const closeMenu = useCallback(() => { setMenuState(false); setPhoneNotificationsOpen(false); }, []);
   const closeProfile = useCallback(() => setProfileMenuState(false), []);
   const closeNotifications = useCallback(() => setNotificationMenuState(false), []);
   useOutsideClick(mobileNavRef, closeMenu);
@@ -197,6 +201,9 @@ export default function Nav({ sticky = false }) {
     clearSession();
     signOut();
   };
+
+  // The leaderboard's link (S32): signed-in contributors only
+  const leaderboardLink = status === "authenticated" && showsLeaderboardLink(session?.user);
 
   const shortcut = status === "authenticated"
     ? annotateShortcut({
@@ -233,6 +240,9 @@ export default function Nav({ sticky = false }) {
             {PUBLIC_LINKS.map((l) => (
               <li key={l.href}><NavLink href={l.href}>{l.label}</NavLink></li>
             ))}
+            {leaderboardLink && (
+              <li><NavLink href={LEADERBOARD_LINK.href}>{LEADERBOARD_LINK.label}</NavLink></li>
+            )}
           </ul>
 
           {status === "unauthenticated" && !isAuthPage && (
@@ -333,7 +343,7 @@ export default function Nav({ sticky = false }) {
           {/* Neutral, not danger: red is reserved for logout and delete, and a
               menu toggle destroys nothing. */}
           <IconButton
-            onClick={() => { setMenuState((o) => !o); if (status === "authenticated") setSeenHere(true); }}
+            onClick={() => { setMenuState((o) => !o); setPhoneNotificationsOpen(false); }}
             aria-label={menuState ? COPY.closeMenu : COPY.openMenu}
             aria-expanded={menuState}
             aria-controls="nav-mobile"
@@ -363,6 +373,14 @@ export default function Nav({ sticky = false }) {
                   </NavLink>
                 </li>
               ))}
+              {/* With the pages above, in their look, and before the way into annotating (Rans, 17 Nov 2026) */}
+              {leaderboardLink && (
+                <li>
+                  <NavLink href={LEADERBOARD_LINK.href} onClick={closeMenu} variant="menu" className="flex min-h-[48px] items-center text-base border-b border-line-card">
+                    {LEADERBOARD_LINK.label}
+                  </NavLink>
+                </li>
+              )}
 
               {status === "unauthenticated" && !isAuthPage && (
                 <li className="pt-4 pb-2">
@@ -394,9 +412,37 @@ export default function Nav({ sticky = false }) {
                       </Link>
                     </li>
                   )}
-                  <li data-menu-notifications className="py-2 border-b border-line-card">
-                    <p className="pt-1 pb-1 text-base font-semibold text-ink">{COPY.notifications}</p>
-                    <NotificationLists unread={unreadMessages} earlier={history} nothingNew={nothingNew} phone />
+                  {/* Notifications open and shut from their own row (Rans, 17
+                      Nov 2026): they used to be listed in full whenever the
+                      menu opened. Shut, the row carries the unread dot, and
+                      the feed is read, and a message marked seen, only once
+                      the row is opened. */}
+                  <li data-menu-notifications className="border-b border-line-card">
+                    {/* eslint-disable-next-line react/forbid-elements -- menu row, not a standalone button */}
+                    <button
+                      type="button"
+                      aria-expanded={phoneNotificationsOpen}
+                      aria-controls="nav-mobile-notifications"
+                      className="flex min-h-[48px] w-full items-center gap-2 text-left text-base font-medium text-ink"
+                      onClick={() => { setPhoneNotificationsOpen((o) => !o); setSeenHere(true); }}
+                    >
+                      {COPY.notifications}
+                      {!phoneNotificationsOpen && unreadDot && (
+                        <>
+                          <span data-menu-row-dot aria-hidden="true" className="block h-2.5 w-2.5 rounded-full bg-danger" />
+                          <span className="sr-only">{COPY.unreadNote}</span>
+                        </>
+                      )}
+                      <ChevronDownIcon
+                        size={18}
+                        className={cn("ml-auto shrink-0 text-muted transition-transform duration-200 motion-reduce:transition-none", phoneNotificationsOpen && "rotate-180")}
+                      />
+                    </button>
+                    <div id="nav-mobile-notifications" hidden={!phoneNotificationsOpen} className="pb-2">
+                      {phoneNotificationsOpen && (
+                        <NotificationLists unread={unreadMessages} earlier={history} nothingNew={nothingNew} phone />
+                      )}
+                    </div>
                   </li>
                   <li>
                     {/* eslint-disable-next-line react/forbid-elements -- menu row, not a standalone button */}

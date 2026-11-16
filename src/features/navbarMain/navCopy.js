@@ -10,6 +10,8 @@ export const NAV_COPY = Object.freeze({
   homeLabel: "Imprint home",
   volunteer: "Volunteer",
   notifications: "Notifications",
+  // The phone menu's Notifications row, for a screen reader, while a message is unread
+  unreadNote: "unread",
   noNotifications: "No new notifications.",
   earlier: "Earlier",
   newMessages: "New",
@@ -18,6 +20,7 @@ export const NAV_COPY = Object.freeze({
   account: "Account menu",
   signedIn: "Signed in",
   dashboard: "Dashboard",
+  leaderboard: "Leaderboard",
   logout: "Log out",
   openMenu: "Open menu",
   closeMenu: "Close menu",
@@ -31,6 +34,19 @@ export const PUBLIC_LINKS = Object.freeze([
   Object.freeze({ href: "/", label: "Home" }),
   Object.freeze({ href: "/about", label: "About" }),
 ]);
+
+/** The leaderboard's link (S32), for signed-in contributors only. */
+export const LEADERBOARD_LINK = Object.freeze({ href: "/contribute/leaderboard", label: NAV_COPY.leaderboard });
+
+/**
+ * Whether the bar shows the leaderboard's link: a contributor's sign-in, a
+ * role of "user" or none. Annotators and admins are never on the board. The
+ * role is the sign-in's, so an annotator whose role was set since they signed
+ * in may still see the link, and the page then sends them to the dashboard.
+ */
+export function showsLeaderboardLink(user) {
+  return !!user && (user.role == null || user.role === "user");
+}
 
 /** Pages that already are the way into annotating, so the shortcut would only repeat them. */
 const SHORTCUT_HIDDEN_ON = new Set(["/contribute", "/contribute/annotate", "/contribute/tutorial"]);

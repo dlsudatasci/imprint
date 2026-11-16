@@ -341,13 +341,17 @@ export interface PracticeLock {
  * An outline on the photo: boxes by id, or a dashed rectangle in image px.
  * `pulse` restarts its pulse when it changes. `avoidBoxIds` are boxes marked
  * on the page with no outline, for the practice's card to keep clear of
- * (the open box while its panel is the step).
+ * (the open box while its panel is the step). `picture` marks the photo's
+ * picture itself, without its black margins or the floating buttons, for the
+ * practice to light on touch at Step 1 (S31, 17 Nov 2026): a rectangle with no
+ * outline, `data-practice-picture`, kept inside the photo area when zoomed.
  */
 export interface PracticeHighlight {
   boxId?: string;
   boxIds?: string[];
   rect?: { x: number; y: number; width: number; height: number };
   avoidBoxIds?: string[];
+  picture?: boolean;
   pulse?: number;
 }
 
@@ -3774,7 +3778,29 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     for (const id of [...(highlight.boxId ? [highlight.boxId] : []), ...(highlight.boxIds ?? [])]) boxRect(id, id);
     if (highlight.rect) rects.push({ key: "rect", ...this.calculateShapePosition(highlight.rect) });
     for (const id of highlight.avoidBoxIds ?? []) boxRect(id, `avoid:${id}`);
+    if (highlight.picture) {
+      const picture = this.pictureRect();
+      if (picture) rects.push({ key: "picture", ...picture });
+    }
     return rects;
+  }
+
+  /**
+   * The picture as drawn, stage px: the image at the current fit and zoom,
+   * cut to the stage, so it never reaches the black margins or past the photo
+   * area when zoomed in. Null before the image has loaded.
+   */
+  private pictureRect() {
+    const { width: iw, height: ih } = this.imageSize();
+    if (!iw || !ih) return null;
+    const drawn = this.calculateShapePosition({ x: 0, y: 0, width: iw, height: ih });
+    const stage = this.stageSize();
+    const left = Math.max(0, drawn.x);
+    const top = Math.max(0, drawn.y);
+    const right = Math.min(stage.width, drawn.x + drawn.width);
+    const bottom = Math.min(stage.height, drawn.y + drawn.height);
+    if (right <= left || bottom <= top) return null;
+    return { x: left, y: top, width: right - left, height: bottom - top };
   }
 
   private practiceHighlightRef = React.createRef<HTMLDivElement>();
@@ -3801,7 +3827,10 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (!highlight) return null;
     return (
       <div ref={this.practiceHighlightRef} aria-hidden="true" className="pointer-events-none absolute inset-0">
-        {this.practiceHighlightRects().map((rect) => rect.key.startsWith("avoid:") ? (
+        {this.practiceHighlightRects().map((rect) => rect.key === "picture" ? (
+          // Nothing to see: the picture, for the practice to light (S31)
+          <div key="picture" data-practice-picture className="absolute" style={practiceOutlineStyle(rect, "", 0)} />
+        ) : rect.key.startsWith("avoid:") ? (
           // Nothing to see: where the open box is, for the card to keep clear of
           <div key={rect.key} data-practice-avoid={rect.key} className="absolute" style={practiceOutlineStyle(rect, "", this.practiceAvoidGap)} />
         ) : (
@@ -3825,10 +3854,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
     if (!host) return;
     const rects = this.practiceHighlightRects();
     for (const element of Array.from(host.children) as HTMLElement[]) {
-      const key = element.dataset.practiceHighlight ?? element.dataset.practiceAvoid;
+      const picture = element.dataset.practicePicture !== undefined;
+      const key = picture ? "picture" : element.dataset.practiceHighlight ?? element.dataset.practiceAvoid;
       const rect = rects.find((r) => r.key === key);
       element.style.display = rect ? "" : "none";
-      if (rect) Object.assign(element.style, practiceOutlineStyle(rect, "px", element.dataset.practiceAvoid ? this.practiceAvoidGap : PRACTICE_OUTLINE_GAP));
+      const gap = picture ? 0 : element.dataset.practiceAvoid ? this.practiceAvoidGap : PRACTICE_OUTLINE_GAP;
+      if (rect) Object.assign(element.style, practiceOutlineStyle(rect, "px", gap));
     }
   }
 

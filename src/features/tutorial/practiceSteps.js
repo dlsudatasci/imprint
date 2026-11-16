@@ -91,6 +91,11 @@ export const PRACTICE_SELECTORS = Object.freeze({
   drawTarget: "[data-practice-highlight='rect']",
   // Every outline the tool draws on the photo: what a touch step lights (S23 B)
   outlines: "[data-practice-highlight]",
+  // The picture alone, without its black margins or floating buttons, which
+  // the tool marks when asked (\`picture\`): lit on touch at Step 1 (S31)
+  picture: "[data-practice-picture]",
+  // Step 1's heading and its line, which the card on a phone keeps off (S31)
+  presenceQuestion: "#sidewalk-presence-section h2, #sidewalk-presence-section p",
   openBox: "[data-practice-avoid]",
   sheetUp: "#answer-sheet button[aria-expanded='true']",
 });
@@ -263,9 +268,28 @@ export function practiceLockFor(step) {
  *              sheet (lit and ringed) until the sheet is pulled up
  *              (`unless` is on the page)
  *   avoid      what the card also keeps clear of: the top bar on touch
+ *   cardOff    what the card must not cover, as it must not cover the rings:
+ *              on touch at Step 1, the picture and Step 1's heading and line
+ *              (S31), with only the photo's black margins and its darkened
+ *              buttons between them on a small phone
+ *   keepInView on a laptop, the photo and the question it is asked with
+ *              (`{ photo, question }`), scrolled so both are on screen, or
+ *              the question and as much of the photo as fits
+ *              (photoAndQuestionScroll, S31): Step 1, and each of Step 3's
+ *              questions. Null: the lit part is centred.
+ *   cardWide   on touch at Step 1: the card at its full width on a small
+ *              phone too, so its line takes two lines and the card fits
+ *              between the picture and Step 1 at 360 by 740 (S31)
  *   line       another of the step's lines for this state (practiceLine's
  *              `variant`), or null: on touch at step 7, "touchFit" once the
  *              new box is open and does not yet cover the post (S23 B)
+ *
+ * S31 (17 Nov 2026, Rans, from participants' feedback that the practice asks
+ * about the photo while it is dark): Step 1 lights the photo with its
+ * question, the whole photo on a laptop and the picture alone on touch (not
+ * its floating buttons, which stay dark and take no presses). Step 3's
+ * questions light the photo with them on a laptop only: on a phone they are
+ * answered with the answers sheet pulled up over the photo.
  *
  * A step about a panel points at its box while the panel is closed.
  */
@@ -276,13 +300,16 @@ export function practiceTargets(step, state, words = "pointer") {
   // The photo lit on a laptop. On touch only the outlined box, boxes or post
   // (S23 B), the rest of the screen dark and taking no presses.
   const onPhoto = touch ? [S.outlines] : [S.photo];
-  const result = (highlight, { rings = [], spotlight = onPhoto, fallback = null, cardNear = null, line = null } = {}) => ({
+  const result = (highlight, { rings = [], spotlight = onPhoto, fallback = null, cardNear = null, cardOff = [], cardWide = false, keepInView = null, line = null } = {}) => ({
     highlight,
     rings,
     spotlight,
     fallback,
     cardNear,
     avoid: touch ? [S.topBar] : [S.floatingPanel],
+    cardOff,
+    cardWide,
+    keepInView,
     line,
   });
   // A panel open: its controls, lit with the photo on a laptop (the panel
@@ -296,8 +323,11 @@ export function practiceTargets(step, state, words = "pointer") {
 
   switch (keyOf(step)) {
     case "presence":
-      // Step 1: on a laptop its card, on touch the top of the answers sheet
-      return result(null, { rings: [S.presenceYes], spotlight: [S.presence] });
+      // Step 1, lit with the photo it asks about (S31): on a laptop its card
+      // above the photo, on touch the top of the answers sheet under the
+      // picture, which the tool marks without its black margins and buttons
+      if (!touch) return result(null, { rings: [S.presenceYes], spotlight: [S.presence, S.photo], keepInView: { photo: S.photo, question: S.presence } });
+      return result({ picture: true }, { rings: [S.presenceYes], spotlight: [S.presence, S.picture], cardOff: [S.picture, S.presenceQuestion], cardWide: true });
     case "openTree":
       return result({ boxId: ids.tree });
     case "treeOnPath":
@@ -342,8 +372,10 @@ export function practiceTargets(step, state, words = "pointer") {
       // The next question still to answer, one at a time
       const scene = state?.scene ?? {};
       const next = sceneQuestionsFor(state).find((key) => !isSceneAnswered(key, scene[key]));
-      const spotlight = [next ? sceneQuestion(next) : S.scene];
-      if (!touch) return result(null, { spotlight });
+      const question = next ? sceneQuestion(next) : S.scene;
+      // A laptop: the photo lit with the question, both kept on screen (S31)
+      if (!touch) return result(null, { spotlight: [question, S.photo], keepInView: { photo: S.photo, question } });
+      const spotlight = [question];
       return result(null, { spotlight, fallback: { unless: S.sheetUp, rings: [S.sceneLine], spotlight: [S.sceneLine] } });
     }
     case "next":

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { placeCard, coversTarget, unionRect, spotlightPath, centringScroll, CARD_MARGIN, SPOTLIGHT_PAD } from "./practiceCard";
+import { placeCard, coversTarget, unionRect, spotlightPath, centringScroll, photoAndQuestionScroll, CARD_MARGIN, SPOTLIGHT_PAD } from "./practiceCard";
 
 /**
  * S19 (7 Nov 2026): the practice's card beside its target and never over it,
@@ -230,5 +230,109 @@ describe("centringScroll", () => {
     expect(centringScroll({ region: { top: 20, height: 40 }, viewportHeight: 720, scrollY: 0, maxScroll: 2000 })).toBeNull();
     expect(centringScroll({ region: { top: 700, height: 40 }, viewportHeight: 720, scrollY: 0, maxScroll: 200 })).toBe(200);
     expect(centringScroll({ region: null, viewportHeight: 720, scrollY: 0, maxScroll: 200 })).toBeNull();
+  });
+});
+
+describe("placeCard at Step 1 on a phone, with the picture lit (S31)", () => {
+  // Measured in headless Chrome on the tutorial (17 Nov 2026): the picture
+  // without its black margins, Step 1's heading and line, its Yes, the
+  // Step 1 section in the answers sheet and the top bar. The card is the
+  // full-width one (cardWide), its line on two lines.
+  const LAYOUTS = [
+    {
+      viewport: { width: 360, height: 740 },
+      picture: rect(0, 128, 360, 203), h2: rect(16, 465, 328, 24), p: rect(16, 491, 328, 40), yes: rect(16, 543, 328, 44),
+      section: rect(0, 453, 360, 212), topBar: rect(0, 0, 360, 49),
+    },
+    {
+      viewport: { width: 390, height: 844 },
+      picture: rect(0, 178, 390, 219), h2: rect(16, 583, 358, 24), p: rect(16, 609, 358, 40), yes: rect(16, 661, 358, 44),
+      section: rect(0, 571, 390, 198), topBar: rect(0, 0, 390, 49),
+    },
+  ];
+  const card = { width: 264, height: 123 };
+
+  for (const l of LAYOUTS) {
+    it(`covers neither the picture, Step 1's question nor Yes at ${l.viewport.width} by ${l.viewport.height}`, () => {
+      // As PracticeGuide gives it: the ring and the step's cardOff as targets, the lit parts and the top bar to avoid
+      const targets = [l.yes, l.picture, l.h2, l.p];
+      const place = placeCard({ targets, avoid: [l.section, l.picture, l.topBar], card, viewport: l.viewport, prefer: "vertical" });
+      expect(coversTarget(place, card, targets)).toBe(false);
+      expect(onScreen(place, card, l.viewport)).toBe(true);
+      // Between the picture and Step 1: over the black margin and the darkened buttons
+      expect(place.top).toBeGreaterThanOrEqual(l.picture.top + l.picture.height);
+      expect(place.top + card.height).toBeLessThanOrEqual(l.h2.top);
+      // And off the top bar
+      expect(place.top).toBeGreaterThanOrEqual(l.topBar.height);
+    });
+  }
+
+  it("at 360 by 740 sits in the middle of the gap, which is too small for the usual distance on both sides", () => {
+    const l = LAYOUTS[0];
+    const targets = [l.yes, l.picture, l.h2, l.p];
+    const place = placeCard({ targets, avoid: [l.section, l.picture, l.topBar], card, viewport: l.viewport, prefer: "vertical" });
+    expect(place.side).toBe("between");
+    const room = l.h2.top - (l.picture.top + l.picture.height);
+    expect(room).toBeLessThan(card.height + 2 * 12);
+    expect(place.top - (l.picture.top + l.picture.height)).toBe(Math.round((room - card.height) / 2));
+  });
+
+  it("tries the gap between two targets only when the card fits in it", () => {
+    const viewport = { width: 360, height: 740 };
+    const targets = [rect(0, 100, 360, 200), rect(0, 400, 360, 200)];
+    // 100 px of room: a 123 px card does not fit, and goes elsewhere
+    const place = placeCard({ targets, card, viewport, prefer: "vertical" });
+    expect(place.side).not.toBe("between");
+  });
+});
+
+describe("photoAndQuestionScroll (S31)", () => {
+  const page = { viewportHeight: 720, maxScroll: 2000 };
+
+  it("centres the photo and the question when both fit", () => {
+    // The photo 434 tall, the question below it, 680 from the photo's top to the question's bottom
+    expect(photoAndQuestionScroll({ photo: { top: 100, height: 434 }, question: { top: 600, height: 180 }, scrollY: 0, ...page })).toBe(80);
+    // A question beside the photo, its top above the photo's
+    expect(photoAndQuestionScroll({ photo: { top: 800, height: 434 }, question: { top: 700, height: 180 }, scrollY: 0, ...page })).toBe(607);
+  });
+
+  it("puts the question's bottom 16 px from the screen's bottom when they do not fit, the photo's lower part above it", () => {
+    const next = photoAndQuestionScroll({ photo: { top: 100, height: 434 }, question: { top: 700, height: 180 }, scrollY: 0, ...page });
+    expect(next).toBe(176);
+    // The question's bottom, after the scroll
+    expect(700 + 180 - next).toBe(720 - 16);
+    // The photo's bottom on screen, its top above it
+    expect(100 + 434 - next).toBeGreaterThan(0);
+  });
+
+  it("keeps a question above the photo whole, at the top, when they do not fit (Step 1 at 1280 by 720, measured)", () => {
+    // Step 1 at 288 (144 tall) and the photo at 638 (434 tall), scrolled 105
+    const next = photoAndQuestionScroll({ photo: { top: 638, height: 434 }, question: { top: 288, height: 144 }, scrollY: 105, ...page });
+    expect(288 + 105 - next).toBe(16);
+  });
+
+  it("shows the photo's bottom when the question is beside a photo taller than the screen", () => {
+    const next = photoAndQuestionScroll({ photo: { top: 0, height: 900 }, question: { top: 300, height: 150 }, scrollY: 0, ...page });
+    expect(900 - next).toBe(720 - 16);
+    expect(300 - next).toBeGreaterThanOrEqual(16);
+  });
+
+  it("does not scroll when both are already on screen", () => {
+    expect(photoAndQuestionScroll({ photo: { top: 20, height: 400 }, question: { top: 450, height: 180 }, scrollY: 300, ...page })).toBeNull();
+    // One of them partly off screen: it moves
+    expect(photoAndQuestionScroll({ photo: { top: 10, height: 400 }, question: { top: 450, height: 180 }, scrollY: 300, ...page })).toBe(260);
+  });
+
+  it("stays inside the page", () => {
+    // Centring would scroll above the page's top
+    expect(photoAndQuestionScroll({ photo: { top: 10, height: 434 }, question: { top: 460, height: 180 }, scrollY: 30, ...page })).toBe(0);
+    // And past its end
+    expect(photoAndQuestionScroll({ photo: { top: 100, height: 434 }, question: { top: 700, height: 180 }, scrollY: 0, viewportHeight: 720, maxScroll: 100 })).toBe(100);
+  });
+
+  it("centres what there is when the photo or the question is missing", () => {
+    expect(photoAndQuestionScroll({ photo: null, question: { top: 600, height: 200 }, scrollY: 0, ...page })).toBe(340);
+    expect(photoAndQuestionScroll({ photo: { top: 600, height: 400 }, question: { top: 0, height: 0 }, scrollY: 0, ...page })).toBe(440);
+    expect(photoAndQuestionScroll({ photo: null, question: null, scrollY: 0, ...page })).toBeNull();
   });
 });

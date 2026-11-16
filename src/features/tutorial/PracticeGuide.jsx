@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/ui";
 import { CheckIcon } from "@/ui/icons";
 import { PRACTICE_COPY } from "@/features/tutorial/practiceCopy";
-import { placeCard, spotlightPath, centringScroll } from "@/features/tutorial/practiceCard";
+import { placeCard, spotlightPath, centringScroll, photoAndQuestionScroll } from "@/features/tutorial/practiceCard";
 
 /**
  * The practice's card, its spotlight and its rings (S19, 7 Nov 2026), over
@@ -20,6 +20,10 @@ import { placeCard, spotlightPath, centringScroll } from "@/features/tutorial/pr
  *     scroll while the practice runs (Skip practice gives it back), so
  *     nothing slides under the rings. On a phone the screen never scrolls,
  *     and a Step 2 question is brought to the middle of the answers sheet.
+ *   - A step that lights the photo with a question (`targets.keepInView`, S31,
+ *     17 Nov 2026: Step 1, and each of Step 3's questions on a laptop) scrolls
+ *     so both are on screen, or the question and as much of the photo as fits
+ *     (photoAndQuestionScroll), instead of centring everything lit.
  *   - Controls in `targets.rings` get a ring, and every ring and outline
  *     pulses for as long as it shows (motion-safe).
  *
@@ -97,8 +101,25 @@ const clipToScreen = (r) => {
   return bottom > top && right > left ? { left, top, width: right - left, height: bottom - top } : null;
 };
 
-/** The lit part to the middle: of the page on a laptop, of the answers sheet's list on a phone */
-function bringToMiddle(selectors, layout, reducedMotion) {
+/** The first element a selector finds with a size, its rectangle in viewport px */
+function firstRect(selector) {
+  try {
+    for (const element of Array.from(document.querySelectorAll(selector))) {
+      const r = element.getBoundingClientRect();
+      if (r.height > 0) return { top: r.top, height: r.height };
+    }
+  } catch {
+    // A selector the page cannot read
+  }
+  return null;
+}
+
+/**
+ * The lit part to the middle: of the page on a laptop, of the answers sheet's
+ * list on a phone. With `keepInView` ({ photo, question }, a laptop's page
+ * only) the photo and the question are kept on screen instead (S31).
+ */
+export function bringToMiddle(selectors, layout, reducedMotion, keepInView = null) {
   const behavior = reducedMotion ? "auto" : "smooth";
   let elements = [];
   for (const selector of selectors ?? []) {
@@ -126,15 +147,20 @@ function bringToMiddle(selectors, layout, reducedMotion) {
     }
     return;
   }
-  const rects = elements.map((e) => e.getBoundingClientRect());
-  const top = Math.min(...rects.map((r) => r.top));
-  const bottom = Math.max(...rects.map((r) => r.bottom));
-  const next = centringScroll({
-    region: { top, height: bottom - top },
+  const page = {
     viewportHeight: window.innerHeight,
     scrollY: window.scrollY,
     maxScroll: document.documentElement.scrollHeight - window.innerHeight,
-  });
+  };
+  if (keepInView) {
+    const next = photoAndQuestionScroll({ photo: firstRect(keepInView.photo), question: firstRect(keepInView.question), ...page });
+    if (next !== null) window.scrollTo({ top: next, behavior });
+    return;
+  }
+  const rects = elements.map((e) => e.getBoundingClientRect());
+  const top = Math.min(...rects.map((r) => r.top));
+  const bottom = Math.max(...rects.map((r) => r.bottom));
+  const next = centringScroll({ region: { top, height: bottom - top }, ...page });
   if (next !== null) window.scrollTo({ top: next, behavior });
 }
 
@@ -229,9 +255,11 @@ export default function PracticeGuide({ step, total, line, fallbackLine, note = 
         // Kept next to something on request (touch, step 6), clear of the open box too
         const near = use.cardNear ? rectsOf([use.cardNear])[0]?.rect ?? null : null;
         const openBox = near ? rectsOf([OPEN_BOX]).map((f) => f.rect) : [];
+        // Never on these, as never on a ring (touch at Step 1: the picture and Step 1's question, S31)
+        const off = rectsOf(use.cardOff).map((f) => f.rect).map(clipToScreen).filter(Boolean);
         const place = placeCard({
           near,
-          targets: [...outlines, ...rings, ...openBox],
+          targets: [...outlines, ...rings, ...openBox, ...off],
           avoid: [...lit.map(clipToScreen).filter(Boolean), ...avoid],
           card: { width: card.offsetWidth, height: card.offsetHeight },
           viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -252,7 +280,10 @@ export default function PracticeGuide({ step, total, line, fallbackLine, note = 
       if (key !== litKey && (use.spotlight ?? []).some((selector) => document.querySelector(selector))) {
         litKey = key;
         clearTimeout(centreTimer);
-        centreTimer = setTimeout(() => bringToMiddle(targetsInUse(targetsRef.current).spotlight, layoutRef.current, reducedRef.current), 80);
+        centreTimer = setTimeout(() => {
+          const now = targetsInUse(targetsRef.current);
+          bringToMiddle(now.spotlight, layoutRef.current, reducedRef.current, layoutRef.current === "sheet" ? null : now.keepInView ?? null);
+        }, 80);
       }
       frame = requestAnimationFrame(measure);
     };
@@ -287,8 +318,10 @@ export default function PracticeGuide({ step, total, line, fallbackLine, note = 
       <div
         ref={cardRef}
         data-practice-card
-        // Narrower on a small phone, so it fits beside the open box over the photo
-        className="absolute w-[min(264px,calc(100vw-112px))] bg-surface border border-line rounded-card shadow-2xl px-4 pt-3 pb-2 font-sans"
+        // Narrower on a small phone, so it fits beside the open box over the
+        // photo. Full width at Step 1 on touch (`cardWide`, S31): two lines,
+        // short enough to sit between the lit picture and Step 1.
+        className={`absolute ${targets?.cardWide ? "w-[min(264px,calc(100vw-32px))]" : "w-[min(264px,calc(100vw-112px))]"} bg-surface border border-line rounded-card shadow-2xl px-4 pt-3 pb-2 font-sans`}
         style={{ visibility: placed ? "visible" : "hidden" }}
       >
         <div className="flex items-center justify-between gap-2">

@@ -134,7 +134,8 @@ Every answer helps us understand sidewalks the way the people who walk them do.
 
 Start a session: ${ORIGIN}/contribute
 
-Thank you for being part of this!
+Thank you for joining us in knowing our streets better.
+
 Francis Bawa, Imprint
 BSMS Computer Science, DLSU
 
@@ -150,7 +151,8 @@ You can start with just 5 photos, which takes about 5 minutes. You look at stree
 
 Sign in to confirm: ${ORIGIN}/contribute
 
-Thank you for being part of this!
+Thank you for joining us in knowing our streets better.
+
 Francis Bawa, Imprint
 BSMS Computer Science, DLSU
 
@@ -279,10 +281,12 @@ describe("welcome-nudge words", () => {
     }
   });
 
-  it("go to the person's address, signed in three lines, with no doubled slash in any link", () => {
+  it("go to the person's address, signed with the thanks, a blank line, then the name in two lines, with no doubled slash in any link", () => {
     expect(start.mail.to).toBe("rans@example.org");
-    expect(start.mail.text).toContain("Thank you for being part of this!\nFrancis Bawa, Imprint\nBSMS Computer Science, DLSU\n");
-    expect(confirm.mail.html).toContain("Thank you for being part of this!<br>Francis Bawa, Imprint<br>BSMS Computer Science, DLSU</p>");
+    // A blank line between the thanks and the name
+    expect(start.mail.text).toContain("Thank you for joining us in knowing our streets better.\n\nFrancis Bawa, Imprint\nBSMS Computer Science, DLSU\n");
+    expect(confirm.mail.html).toContain("Thank you for joining us in knowing our streets better.<br><br>Francis Bawa, Imprint<br>BSMS Computer Science, DLSU</p>");
+    expect(start.mail.text).not.toContain("Thank you for being part of this!");
     expect(start.mail.html).not.toMatch(/https:\/\/imprint\.example\.org\/\//);
   });
 });

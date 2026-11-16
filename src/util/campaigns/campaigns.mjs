@@ -45,7 +45,9 @@ export const LOGO_ALT = "Imprint";
 export const CONFIRM_BUTTON_LABEL = "Confirm Your Email to Start";
 export const RESEND_BUTTON_LABEL = "Send a new link";
 
-const SIGN_OFF = ["Thank you for being part of this!", "Francis Bawa, Imprint", "BSMS Computer Science, DLSU"];
+// The empty line puts a blank line between the thanks and the name, in the
+// text email and (as two <br>) in the html (Rans, 16 Nov 2026)
+const SIGN_OFF = ["Thank you for joining us in knowing our streets better.", "", "Francis Bawa, Imprint", "BSMS Computer Science, DLSU"];
 const FOOTER = "You're getting this because you signed up for Imprint. Don't want emails like this?";
 const STOP = "Stop these emails";
 

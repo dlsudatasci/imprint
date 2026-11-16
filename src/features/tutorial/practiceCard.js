@@ -18,6 +18,13 @@
  * next to it first: above it, then beside it, then below it, the first of
  * those covering no target (on touch at step 6: the Add box button, then the
  * white post, 8 Nov 2026).
+ *
+ * S31 (17 Nov 2026): where two targets one above the other leave a gap the
+ * card fits in, but not with `gap` on both sides, the card is also tried in
+ * the middle of that gap, after the places around the targets and before the
+ * screen's top and bottom. On a 360 by 740 phone at Step 1 that is between
+ * the lit picture and Step 1's heading, over the photo's black margin and its
+ * darkened buttons.
  */
 
 /** The card's distance from the screen's edges, and from its target */
@@ -79,8 +86,19 @@ export function placeCard({ targets = [], avoid = [], card, viewport, prefer = "
     const spots = around(block, card, gap);
     for (const side of order) candidates.push({ side, ...inside(spots[side]) });
   }
-  // Along the top and the bottom of the screen, centred
   const centred = (viewport.width - card.width) / 2;
+  // In the middle of a gap between two targets, one above the other
+  const stacked = targets.filter((t) => t && area(t) > 0).sort((a, b) => a.top - b.top);
+  for (let i = 0; i < stacked.length; i++) {
+    for (let j = i + 1; j < stacked.length; j++) {
+      const above = stacked[i];
+      const below = stacked[j];
+      const room = below.top - (above.top + above.height);
+      if (room < card.height) continue;
+      candidates.push({ side: "between", ...inside({ left: centred, top: above.top + above.height + (room - card.height) / 2 }) });
+    }
+  }
+  // Along the top and the bottom of the screen, centred
   candidates.push({ side: "top", ...inside({ left: centred, top: margin }) });
   candidates.push({ side: "bottom", ...inside({ left: centred, top: viewport.height - card.height - margin }) });
 
@@ -166,6 +184,46 @@ export function centringScroll({ region, viewportHeight, scrollY, maxScroll, mar
   const desired = region.height <= viewportHeight - 2 * margin
     ? top + region.height / 2 - viewportHeight / 2
     : top - margin;
+  const next = Math.round(clamp(desired, 0, Math.max(0, maxScroll)));
+  return Math.abs(next - scrollY) < 2 ? null : next;
+}
+
+/**
+ * Where to scroll a laptop's page so a question and the photo it asks about
+ * are both on screen (S31, 17 Nov 2026, Rans: Step 1, and each of Step 3's
+ * questions). `photo` and `question` are { top, height } in viewport px.
+ * Returns the new scroll position, kept inside the page, or null to stay.
+ *
+ *   - Both already on screen, `margin` clear of its top and bottom: nothing
+ *     moves, so the page never scrolls further than the question needs.
+ *   - Both fit (from the higher top to the lower bottom, with the margin at
+ *     each end): that span in the middle of the screen, as centringScroll.
+ *   - They do not fit: the question wholly on screen, with as much of the
+ *     photo as fits beside it, from its bottom up where the sidewalk is.
+ *     A question below the photo ends `margin` above the screen's bottom,
+ *     one above it starts `margin` below the screen's top.
+ */
+export function photoAndQuestionScroll({ photo, question, viewportHeight, scrollY, maxScroll, margin = 16 }) {
+  const valid = (r) => r && r.height > 0;
+  if (!valid(question)) return valid(photo) ? centringScroll({ region: photo, viewportHeight, scrollY, maxScroll, margin }) : null;
+  if (!valid(photo)) return centringScroll({ region: question, viewportHeight, scrollY, maxScroll, margin });
+  const top = Math.min(photo.top, question.top);
+  const bottom = Math.max(photo.top + photo.height, question.top + question.height);
+  if (top >= margin && bottom <= viewportHeight - margin) return null;
+  let desired;
+  if (bottom - top <= viewportHeight - 2 * margin) {
+    desired = scrollY + top + (bottom - top) / 2 - viewportHeight / 2;
+  } else {
+    // In page px: the scroll positions that keep the question on screen, and
+    // within them the one closest to the photo's bottom at the screen's bottom
+    const qTop = question.top + scrollY;
+    const qBottom = qTop + question.height;
+    const pBottom = photo.top + photo.height + scrollY;
+    const lowest = qBottom - viewportHeight + margin;
+    const highest = qTop - margin;
+    // A question taller than the screen: its top, where it starts
+    desired = highest < lowest ? highest : clamp(pBottom - viewportHeight + margin, lowest, highest);
+  }
   const next = Math.round(clamp(desired, 0, Math.max(0, maxScroll)));
   return Math.abs(next - scrollY) < 2 ? null : next;
 }

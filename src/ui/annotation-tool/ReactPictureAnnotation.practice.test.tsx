@@ -498,6 +498,13 @@ describe("without the practice's props, nothing changes", () => {
 });
 
 describe("practiceHighlight", () => {
+  it("marks no picture unless asked (S31)", () => {
+    mount({ practiceHighlight: { boxId: ids.tree } });
+    expect(host.querySelector("[data-practice-picture]")).toBeNull();
+    render({ ...lastProps, practiceHighlight: { picture: true } });
+    expect(host.querySelector("[data-practice-picture]")).toBeTruthy();
+  });
+
   it("outlines a box where it is on the photo, and a rectangle in image px", () => {
     mount({ practiceHighlight: { boxId: ids.tree } });
     const outline = host.querySelector(`[data-practice-highlight='${ids.tree}']`) as HTMLElement;
@@ -677,6 +684,33 @@ describe("practiceHighlight on the sheet layout (S23 B)", () => {
     expect(placed(mark).width).toBeCloseTo(box.width + 2 * TOUCH_HANDLE_HIT_PX, 5);
     // The focus on the open box (S17 B) hides the other boxes, never the outline
     for (const id of [ids.tree, ids.car, ids.moto, ids.lamp]) expect(tool.isBoxHidden(id), id).toBe(true);
+  });
+
+  it("marks the picture alone at Step 1, without its black margins, and nothing drawn (S31)", () => {
+    const tool = mountSheet({ answerStep1: false, practiceLock: { openable: [], canDraw: false, allowAnswers: {}, allowPresence: true }, practiceHighlight: { picture: true } });
+    const picture = host.querySelector("[data-practice-picture]") as HTMLElement;
+    expect(picture).toBeTruthy();
+    // The 640 by 360 picture fitted to the 390 by 420 photo area: its full width, letterboxed above and below
+    const want = onPhotoArea(tool, { x: 0, y: 0, width: 640, height: 360 });
+    expect(placed(picture).left).toBeCloseTo(want.left, 5);
+    expect(placed(picture).top).toBeCloseTo(want.top, 5);
+    expect(placed(picture).width).toBeCloseTo(STAGE.width, 5);
+    expect(placed(picture).height).toBeCloseTo(want.height, 5);
+    expect(want.top).toBeGreaterThan(0);
+    expect(want.top + want.height).toBeLessThan(STAGE.height);
+    // No outline, nothing to see, and not one of the outlines a touch step lights
+    expect(picture.className).not.toMatch(/border/);
+    expect(picture.hasAttribute("data-practice-highlight")).toBe(false);
+    expect(host.querySelectorAll("[data-practice-highlight]")).toHaveLength(0);
+  });
+
+  it("keeps the picture's mark inside the photo area when zoomed in (S31)", () => {
+    mountSheet({ answerStep1: false, practiceHighlight: { picture: true } }, { zoom: 2.5, panX: -300, panY: -120 });
+    const picture = placed(host.querySelector("[data-practice-picture]") as HTMLElement);
+    expect(picture.left).toBeGreaterThanOrEqual(0);
+    expect(picture.top).toBeGreaterThanOrEqual(0);
+    expect(picture.left + picture.width).toBeLessThanOrEqual(STAGE.width + 1e-6);
+    expect(picture.top + picture.height).toBeLessThanOrEqual(STAGE.height + 1e-6);
   });
 
   it("keeps the same 3 px pulsing blue outline as a laptop's, dashed for the post", () => {

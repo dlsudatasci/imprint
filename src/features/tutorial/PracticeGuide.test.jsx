@@ -4,8 +4,8 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import PracticeGuide, { targetsInUse } from "./PracticeGuide";
 import SceneQuestions from "@/ui/annotation-tool/SceneQuestions";
-import { PRACTICE_SELECTORS } from "./practiceSteps";
-import { spotlightPath } from "./practiceCard";
+import { PRACTICE_SELECTORS, practiceTargets } from "./practiceSteps";
+import { spotlightPath, SPOTLIGHT_PAD } from "./practiceCard";
 import { SCENE_KEYS, emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
 
 /**
@@ -228,5 +228,116 @@ describe("the spotlight on the sheet layout", () => {
     const d = layer().querySelector("svg path").getAttribute("d");
     expect(d).toBe(spotlightPath([tree], w, h));
     expect(d).not.toBe("");
+  });
+});
+
+describe("the photo lit with the question it is asked with (S31)", () => {
+  const placed = [];
+  let scrollTo;
+  afterEach(() => {
+    for (const el of placed.splice(0)) el.remove();
+    scrollTo?.mockRestore();
+    delete document.documentElement.scrollHeight;
+  });
+  function place(tag, attrs, rect) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    el.getBoundingClientRect = () => ({ ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height, x: rect.left, y: rect.top, toJSON() {} });
+    document.body.appendChild(el);
+    placed.push(el);
+    return el;
+  }
+  // Long enough for the lit part's 80 ms wait before it is scrolled to
+  const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+  const page = () => [Math.max(document.documentElement.scrollWidth, window.innerWidth), Math.max(document.documentElement.scrollHeight, window.innerHeight)];
+  const tall = () => {
+    // jsdom's page has no height: make it scroll
+    Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, get: () => 3000 });
+    scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  };
+  const state = (extra = {}) => ({ boxes: [], openId: null, scene: emptySceneLevel(), hasSidewalk: true, ...extra });
+  const holes = (d) => d.split("Z").length - 2;
+
+  it("at step 1 on a laptop cuts out Step 1 and the photo", async () => {
+    tall();
+    const presence = { left: 80, top: 250, width: 768, height: 144 };
+    const photo = { left: 89, top: 600, width: 750, height: 470 };
+    const section = place("div", { id: "sidewalk-presence-section" }, presence);
+    section.appendChild(Object.assign(document.createElement("button"), { type: "button" })).setAttribute("data-presence-option", "true");
+    place("div", { "data-photo-area": "" }, photo);
+    await show({ step: 1, targets: practiceTargets("presence", state({ hasSidewalk: null })) });
+    await settle();
+    const [w, h] = page();
+    const d = layer().querySelector("svg path").getAttribute("d");
+    expect(d).toBe(spotlightPath([presence, photo], w, h));
+    expect(holes(d)).toBe(2);
+  });
+
+  it("at step 10 on a laptop cuts out the question and the photo", async () => {
+    tall();
+    const question = { left: 873, top: 300, width: 412, height: 178 };
+    const photo = { left: 89, top: 400, width: 750, height: 470 };
+    place("div", { "data-scene-question": "sidewalkWidth" }, question);
+    place("div", { "data-photo-area": "" }, photo);
+    await show({ step: 10, targets: practiceTargets("scene", state()) });
+    await settle();
+    const [w, h] = page();
+    expect(layer().querySelector("svg path").getAttribute("d")).toBe(spotlightPath([question, photo], w, h));
+  });
+
+  it("scrolls a laptop's page so the question is whole and the photo's lower part above it, not to the middle of both", async () => {
+    tall();
+    // 768 tall screen: from the photo's top (200) to the question's bottom (1080) does not fit
+    place("div", { "data-scene-question": "roadBarrier" }, { left: 873, top: 900, width: 412, height: 180 });
+    place("div", { "data-photo-area": "" }, { left: 89, top: 200, width: 750, height: 470 });
+    await show({ step: 10, targets: practiceTargets("scene", state({ scene: { ...emptySceneLevel(), sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3 } })) });
+    await settle();
+    // The question's bottom 16 px above the screen's bottom (centring the two would have scrolled to 184)
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 1080 - (window.innerHeight - 16) }));
+  });
+
+  it("leaves a laptop's page where it is when the question and the photo are both on screen", async () => {
+    tall();
+    place("div", { "data-scene-question": "sidewalkWidth" }, { left: 873, top: 40, width: 412, height: 178 });
+    place("div", { "data-photo-area": "" }, { left: 89, top: 100, width: 750, height: 470 });
+    await show({ step: 10, targets: practiceTargets("scene", state()) });
+    await settle();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("at step 1 on touch cuts out the picture and Step 1, never the photo's buttons, which stay under the overlay", async () => {
+    const picture = { left: 0, top: 128, width: 360, height: 203 };
+    const presence = { left: 0, top: 453, width: 360, height: 212 };
+    const addBox = { left: 12, top: 353, width: 113, height: 44 };
+    const fullScreen = { left: 304, top: 353, width: 44, height: 44 };
+    // The photo area holds the picture and the buttons
+    place("div", { "data-photo-area": "" }, { left: 0, top: 49, width: 360, height: 360 });
+    place("div", { "data-practice-picture": "" }, picture);
+    place("div", { id: "sidewalk-presence-section" }, presence);
+    place("button", { id: "add-box-button" }, addBox);
+    place("button", { id: "full-screen-button" }, fullScreen);
+    const targets = practiceTargets("presence", state({ hasSidewalk: null }), "touch");
+    await show({ step: 1, layout: "sheet", targets });
+    await settle();
+    const [w, h] = page();
+    const d = layer().querySelector("svg path").getAttribute("d");
+    expect(d).toBe(spotlightPath([presence, picture], w, h));
+    // Each button wholly outside every cut-out (padded): the overlay is over it and takes its presses
+    const cut = [presence, picture].map((r) => ({ left: r.left - SPOTLIGHT_PAD, top: r.top - SPOTLIGHT_PAD, right: r.left + r.width + SPOTLIGHT_PAD, bottom: r.top + r.height + SPOTLIGHT_PAD }));
+    for (const b of [addBox, fullScreen]) {
+      for (const c of cut) {
+        const crosses = b.left < c.right && c.left < b.left + b.width && b.top < c.bottom && c.top < b.top + b.height;
+        expect(crosses).toBe(false);
+      }
+    }
+    const path = layer().querySelector("svg path");
+    expect(path.style.pointerEvents).toBe("auto");
+    // The card at its full width, so it fits between the picture and Step 1
+    expect(layer().querySelector("[data-practice-card]").className).toMatch(/w-\[min\(264px,calc\(100vw-32px\)\)\]/);
+  });
+
+  it("keeps the narrower card on every other step on touch", async () => {
+    await show({ layout: "sheet", targets: practiceTargets("openTree", state(), "touch") });
+    expect(layer().querySelector("[data-practice-card]").className).toMatch(/w-\[min\(264px,calc\(100vw-112px\)\)\]/);
   });
 });

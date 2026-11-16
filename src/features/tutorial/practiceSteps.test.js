@@ -402,29 +402,84 @@ describe("practiceTargets", () => {
     expect(practiceTargets("lastTwo", state({ openId: ids.moto })).highlight).toEqual({ boxIds: [ids.lamp], avoidBoxIds: [ids.moto] });
   });
 
-  it("at step 1 lights Step 1 and rings its Yes, on a laptop and on touch (S15)", () => {
-    for (const words of ["pointer", "touch"]) {
-      expect(practiceTargets("presence", state({ hasSidewalk: null }), words)).toMatchObject({
-        highlight: null,
-        spotlight: ["#sidewalk-presence-section"],
-        rings: ["[data-presence-option='true']"],
-      });
-    }
+  it("at step 1 lights Step 1 with the photo on a laptop, both kept in view, and rings its Yes (S15, S31)", () => {
+    expect(practiceTargets("presence", state({ hasSidewalk: null }))).toMatchObject({
+      highlight: null,
+      spotlight: ["#sidewalk-presence-section", "[data-photo-area]"],
+      rings: ["[data-presence-option='true']"],
+      keepInView: { photo: "[data-photo-area]", question: "#sidewalk-presence-section" },
+      cardOff: [],
+      cardWide: false,
+    });
+  });
+
+  it("at step 1 on touch lights the picture (not the photo's buttons) with Step 1, the card off both (S31)", () => {
+    const t = practiceTargets("presence", state({ hasSidewalk: null }), "touch");
+    expect(t).toMatchObject({
+      // The tool marks the picture alone, without its black margins
+      highlight: { picture: true },
+      spotlight: ["#sidewalk-presence-section", "[data-practice-picture]"],
+      rings: ["[data-presence-option='true']"],
+      cardOff: ["[data-practice-picture]", "#sidewalk-presence-section h2, #sidewalk-presence-section p"],
+      cardWide: true,
+      // A phone's page does not scroll
+      keepInView: null,
+    });
+    // Not the whole photo area, which holds Add box and full screen
+    expect(t.spotlight).not.toContain(S.photo);
+    expect(t.spotlight).not.toContain(S.addBox);
   });
 
   it("at step 10 lights Step 3's questions one at a time, and on touch its line until the sheet is up", () => {
     const at = (scene, words, hasSidewalk = true) => practiceTargets("scene", state({ scene: { ...EMPTY_SCENE, ...scene }, hasSidewalk }), words);
     expect(sceneQuestionsFor(state())).toEqual(["sidewalkWidth", "overallAccessibility", "surfaceEvenness", "surfaceType", "surfaceCondition", "roadBarrier"]);
     expect(sceneQuestionsFor(state({ hasSidewalk: false }))).toEqual(["overallAccessibility", "surfaceEvenness"]);
-    expect(at({}).spotlight).toEqual(["[data-scene-question='sidewalkWidth']"]);
-    expect(at({ sidewalkWidth: "two_people" }).spotlight).toEqual(["[data-scene-question='overallAccessibility']"]);
-    expect(at({ sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3 }).spotlight).toEqual(["[data-scene-question='roadBarrier']"]);
+    // The question first, then the photo lit with it on a laptop (S31)
+    expect(at({}).spotlight[0]).toBe("[data-scene-question='sidewalkWidth']");
+    expect(at({ sidewalkWidth: "two_people" }).spotlight[0]).toBe("[data-scene-question='overallAccessibility']");
+    expect(at({ sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3 }).spotlight[0]).toBe("[data-scene-question='roadBarrier']");
     // roadBarrier false is an answer: the whole section then
-    expect(at({ sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3, roadBarrier: false }).spotlight).toEqual(["#scene-level-section"]);
-    expect(at({ overallAccessibility: 2 }, "pointer", false).spotlight).toEqual(["[data-scene-question='surfaceEvenness']"]);
+    expect(at({ sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3, roadBarrier: false }).spotlight[0]).toBe("#scene-level-section");
+    expect(at({ overallAccessibility: 2 }, "pointer", false).spotlight[0]).toBe("[data-scene-question='surfaceEvenness']");
     expect(at({}).rings).toEqual([]);
     expect(at({}).fallback).toBeNull();
     expect(at({}, "touch").fallback).toEqual({ unless: S.sheetUp, rings: [S.sceneLine], spotlight: [S.sceneLine] });
+  });
+
+  it("at step 10 on a laptop lights the photo with each question in turn, both kept in view (S31)", () => {
+    const at = (scene, hasSidewalk = true) => practiceTargets("scene", state({ scene: { ...EMPTY_SCENE, ...scene }, hasSidewalk }));
+    const q = (key) => `[data-scene-question='${key}']`;
+    let scene = {};
+    const answers = { sidewalkWidth: "two_people", overallAccessibility: 5, surfaceEvenness: 3, surfaceType: "tiles", surfaceCondition: 3, roadBarrier: false };
+    for (const key of sceneQuestionsFor(state())) {
+      expect(at(scene), key).toMatchObject({ spotlight: [q(key), S.photo], keepInView: { photo: S.photo, question: q(key) }, rings: [], fallback: null });
+      scene = { ...scene, [key]: answers[key] };
+    }
+    // A path's two questions too
+    expect(at({}, false)).toMatchObject({ spotlight: [q("overallAccessibility"), S.photo], keepInView: { photo: S.photo, question: q("overallAccessibility") } });
+    // All answered: the section, with the photo
+    expect(at(answers).spotlight).toEqual([S.scene, S.photo]);
+  });
+
+  it("at step 10 on touch is unchanged: the question alone, the Step 3 line until the sheet is up (S31)", () => {
+    const at = (scene) => practiceTargets("scene", state({ scene: { ...EMPTY_SCENE, ...scene } }), "touch");
+    expect(at({})).toMatchObject({
+      highlight: null,
+      spotlight: ["[data-scene-question='sidewalkWidth']"],
+      fallback: { unless: S.sheetUp, rings: [S.sceneLine], spotlight: [S.sceneLine] },
+      keepInView: null,
+      cardOff: [],
+      cardWide: false,
+    });
+    expect(at({ sidewalkWidth: "two_people" }).spotlight).toEqual(["[data-scene-question='overallAccessibility']"]);
+  });
+
+  it("keeps the photo in view with a question at steps 1 and 10 on a laptop only (S31)", () => {
+    for (const step of PRACTICE_STEPS) {
+      const expected = step.key === "presence" || step.key === "scene";
+      expect(Boolean(practiceTargets(step, state()).keepInView), step.key).toBe(expected);
+      expect(practiceTargets(step, state(), "touch").keepInView, step.key).toBeNull();
+    }
   });
 
   it("at step 11 lights and rings Next Image", () => {

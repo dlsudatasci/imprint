@@ -1,0 +1,502 @@
+{
+  "about": "S32: one set of users, sessions, telemetry and annotations for the leaderboard's count (src/util/leaderboard.mjs) and for the training repository's screens.py screen2, which must exclude the same sessions. Made-up accounts.",
+  "users": [
+    {
+      "_id": "0000000000000000000000a1",
+      "username": "alon",
+      "email": "alon@example.com",
+      "role": "user",
+      "leaderboardName": "shown"
+    },
+    {
+      "_id": "0000000000000000000000a2",
+      "username": "bituin",
+      "email": "bituin@example.com",
+      "leaderboardName": "hidden"
+    },
+    {
+      "_id": "0000000000000000000000a3",
+      "username": "dalisay",
+      "email": "dalisay@example.com",
+      "role": "user"
+    },
+    {
+      "_id": "0000000000000000000000a4",
+      "username": "paid-annotator",
+      "email": "annotator@example.com",
+      "role": "annotator"
+    },
+    {
+      "_id": "0000000000000000000000a5",
+      "username": "the-admin",
+      "email": "admin@example.com",
+      "role": "admin"
+    },
+    {
+      "_id": "0000000000000000000000a6",
+      "username": "pilot-one",
+      "email": "pilot@example.com",
+      "role": "user",
+      "isPilot": true
+    }
+  ],
+  "sessions": [
+    {
+      "_id": "session-01",
+      "userId": "0000000000000000000000a1",
+      "createdAt": "2026-11-10T01:00:00.000Z",
+      "status": "completed",
+      "note": "normal: median 8 s, a relabel among the answers"
+    },
+    {
+      "_id": "session-02",
+      "userId": "0000000000000000000000a1",
+      "createdAt": "2026-11-11T01:00:00.000Z",
+      "status": "completed",
+      "note": "rushed: median of 3000, 4000, 5500 and 9000 ms is 4750 ms"
+    },
+    {
+      "_id": "session-08",
+      "userId": "0000000000000000000000a1",
+      "createdAt": "2026-11-12T01:00:00.000Z",
+      "status": "completed",
+      "note": "kept: every answer accepted but none has a time"
+    },
+    {
+      "_id": "session-03",
+      "userId": "0000000000000000000000a2",
+      "createdAt": "2026-11-10T02:00:00.000Z",
+      "status": "completed",
+      "note": "kept: median exactly 5000 ms, all accepted at a mean of exactly 1000 ms"
+    },
+    {
+      "_id": "session-04",
+      "userId": "0000000000000000000000a2",
+      "createdAt": "2026-11-11T02:00:00.000Z",
+      "status": "completed",
+      "note": "rushed: every answered suggestion accepted at a mean of 650 ms (hidden and unanswered ones left out)"
+    },
+    {
+      "_id": "session-05",
+      "userId": "0000000000000000000000a3",
+      "createdAt": "2026-11-10T03:00:00.000Z",
+      "status": "completed",
+      "note": "kept: answered fast, but one answer is a relabel"
+    },
+    {
+      "_id": "session-06",
+      "userId": "0000000000000000000000a3",
+      "createdAt": "2026-11-11T03:00:00.000Z",
+      "status": "completed",
+      "note": "kept: the fast events are resends, which are not read"
+    },
+    {
+      "_id": "session-07",
+      "userId": "0000000000000000000000a3",
+      "createdAt": "2026-11-12T03:00:00.000Z",
+      "status": "completed",
+      "note": "kept: no telemetry at all"
+    },
+    {
+      "_id": "session-09",
+      "userId": "0000000000000000000000a4",
+      "createdAt": "2026-11-10T04:00:00.000Z",
+      "status": "completed",
+      "note": "an annotator's"
+    },
+    {
+      "_id": "session-10",
+      "userId": "0000000000000000000000a6",
+      "createdAt": "2026-11-10T06:00:00.000Z",
+      "status": "completed",
+      "note": "a pilot's"
+    }
+  ],
+  "telemetry_logs": [
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a1",
+      "timestamp": "2026-11-10T01:05:00.000Z",
+      "imageDurationMs": 8000,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted",
+          "msToAnswer": 2500
+        },
+        {
+          "disposition": "relabeled",
+          "msToAnswer": 4000
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a1",
+      "timestamp": "2026-11-10T01:10:00.000Z",
+      "imageDurationMs": 12000,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted",
+          "msToAnswer": 3000
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a1",
+      "timestamp": "2026-11-10T01:15:00.000Z",
+      "imageDurationMs": 6000,
+      "suggestionConfidences": [
+        {
+          "disposition": "removed",
+          "msToAnswer": 1500
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a1",
+      "timestamp": "2026-11-11T01:02:00.000Z",
+      "imageDurationMs": 3000,
+      "suggestionConfidences": [
+        {
+          "disposition": "modified",
+          "msToAnswer": 3000
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a1",
+      "timestamp": "2026-11-11T01:03:00.000Z",
+      "imageDurationMs": 4000,
+      "suggestionConfidences": [
+        {
+          "disposition": "modified",
+          "msToAnswer": 3000
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a1",
+      "timestamp": "2026-11-11T01:04:00.000Z",
+      "imageDurationMs": 5500,
+      "suggestionConfidences": [
+        {
+          "disposition": "modified",
+          "msToAnswer": 3000
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a1",
+      "timestamp": "2026-11-11T01:05:00.000Z",
+      "imageDurationMs": 9000,
+      "suggestionConfidences": [
+        {
+          "disposition": "modified",
+          "msToAnswer": 3000
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a1",
+      "timestamp": "2026-11-12T01:10:00.000Z",
+      "imageDurationMs": 6000,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted"
+        },
+        {
+          "disposition": "accepted"
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a2",
+      "timestamp": "2026-11-10T02:05:00.000Z",
+      "imageDurationMs": 5000,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted",
+          "msToAnswer": 500
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a2",
+      "timestamp": "2026-11-10T02:10:00.000Z",
+      "imageDurationMs": 5000,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted",
+          "msToAnswer": 1500
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a2",
+      "timestamp": "2026-11-11T02:05:00.000Z",
+      "imageDurationMs": 7000,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted",
+          "msToAnswer": 400
+        },
+        {
+          "disposition": "hidden_below_tau"
+        },
+        {
+          "confidence": 0.4
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a2",
+      "timestamp": "2026-11-11T02:10:00.000Z",
+      "imageDurationMs": 8000,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted",
+          "msToAnswer": 900
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a3",
+      "timestamp": "2026-11-09T03:00:00.000Z",
+      "imageDurationMs": 100,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted",
+          "msToAnswer": 50
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a3",
+      "timestamp": "2026-11-10T03:05:00.000Z",
+      "imageDurationMs": 6000,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted",
+          "msToAnswer": 300
+        },
+        {
+          "disposition": "relabeled",
+          "msToAnswer": 200
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a3",
+      "timestamp": "2026-11-11T03:05:00.000Z",
+      "imageDurationMs": 9000,
+      "suggestionConfidences": [
+        {
+          "disposition": "modified",
+          "msToAnswer": 5000
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_RESUBMITTED",
+      "userId": "0000000000000000000000a3",
+      "timestamp": "2026-11-11T03:06:00.000Z",
+      "imageDurationMs": 1000,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted",
+          "msToAnswer": 100
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_RESUBMITTED",
+      "userId": "0000000000000000000000a3",
+      "timestamp": "2026-11-11T03:07:00.000Z",
+      "imageDurationMs": 1000,
+      "suggestionConfidences": [
+        {
+          "disposition": "accepted",
+          "msToAnswer": 100
+        }
+      ]
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a4",
+      "timestamp": "2026-11-10T04:05:00.000Z",
+      "imageDurationMs": 9000,
+      "suggestionConfidences": []
+    },
+    {
+      "event": "IMAGE_SUBMITTED",
+      "userId": "0000000000000000000000a6",
+      "timestamp": "2026-11-10T06:05:00.000Z",
+      "imageDurationMs": 9000,
+      "suggestionConfidences": [
+        {
+          "disposition": "modified",
+          "msToAnswer": 4000
+        }
+      ]
+    }
+  ],
+  "annotations": [
+    {
+      "userId": "0000000000000000000000a1",
+      "imageID": 1001,
+      "status": "completed",
+      "date": "2026-11-10T01:05:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a1",
+      "imageID": 1002,
+      "status": "completed",
+      "date": "2026-11-10T01:10:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a1",
+      "imageID": 1003,
+      "status": "completed",
+      "date": "2026-11-10T01:15:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a1",
+      "imageID": 1004,
+      "status": "completed",
+      "date": "2026-11-11T01:02:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a1",
+      "imageID": 1005,
+      "status": "completed",
+      "date": "2026-11-11T01:03:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a1",
+      "imageID": 1006,
+      "status": "completed",
+      "date": "2026-11-11T01:04:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a1",
+      "imageID": 1007,
+      "status": "completed",
+      "date": "2026-11-12T01:10:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a1",
+      "imageID": 1999,
+      "status": "active",
+      "date": "2026-11-12T01:20:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a2",
+      "imageID": 1008,
+      "status": "completed",
+      "date": "2026-11-10T02:05:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a2",
+      "imageID": 1009,
+      "status": "completed",
+      "date": "2026-11-10T02:10:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a2",
+      "imageID": 1010,
+      "status": "completed",
+      "date": "2026-11-11T02:05:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a2",
+      "imageID": 1011,
+      "status": "completed",
+      "date": "2026-11-11T02:10:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a3",
+      "imageID": 1012,
+      "status": "completed",
+      "date": "2026-11-09T03:00:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a3",
+      "imageID": 1013,
+      "status": "completed",
+      "date": "2026-11-10T03:05:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a3",
+      "imageID": 1014,
+      "status": "completed",
+      "date": "2026-11-11T03:05:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a3",
+      "imageID": 1015,
+      "status": "completed",
+      "date": "2026-11-12T03:05:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a4",
+      "imageID": 1016,
+      "status": "completed",
+      "date": "2026-11-10T04:05:00.000Z",
+      "source": "annotator"
+    },
+    {
+      "userId": "0000000000000000000000a4",
+      "imageID": 1017,
+      "status": "completed",
+      "date": "2026-11-10T04:06:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a5",
+      "imageID": 1018,
+      "status": "completed",
+      "date": "2026-11-10T05:00:00.000Z"
+    },
+    {
+      "userId": "0000000000000000000000a6",
+      "imageID": 1019,
+      "status": "completed",
+      "date": "2026-11-10T06:05:00.000Z"
+    }
+  ],
+  "expected": {
+    "excludedSessions": [
+      "session-02",
+      "session-04"
+    ],
+    "counts": [
+      {
+        "userKey": "0000000000000000000000a1",
+        "photos": 4,
+        "lastPhotoAt": "2026-11-12T01:10:00.000Z"
+      },
+      {
+        "userKey": "0000000000000000000000a3",
+        "photos": 4,
+        "lastPhotoAt": "2026-11-12T03:05:00.000Z"
+      },
+      {
+        "userKey": "0000000000000000000000a2",
+        "photos": 2,
+        "lastPhotoAt": "2026-11-10T02:10:00.000Z"
+      }
+    ]
+  }
+}

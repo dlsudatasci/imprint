@@ -3,8 +3,8 @@
  * handed a `db`, such as the campaign sender. It keeps documents in arrays
  * and supports what that code uses: equality (ObjectIds and dates compared by
  * value, null matching a missing field), `$in`, `$lt`, `$exists`, `$ne` and
- * `$or` in filters, `$set`, `$unset` and `$push` with `$each` and `$slice`
- * in updates, unique indexes made with createIndex (a duplicate insert
+ * `$or` in filters, `$set`, `$unset`, `$inc` (S32) and `$push` with `$each`
+ * and `$slice` in updates, `upsert` on findOneAndUpdate (S32), unique indexes made with createIndex (a duplicate insert
  * throws code 11000, as the driver does), find with a projection, findOne,
  * findOneAndUpdate (the updated document, or null), distinct and
  * countDocuments.
@@ -63,6 +63,7 @@ function applyUpdate(doc, update) {
     for (const [key, value] of Object.entries(fields)) {
       if (op === "$set") doc[key] = value;
       else if (op === "$unset") delete doc[key];
+      else if (op === "$inc") doc[key] = (doc[key] || 0) + value;
       else if (op === "$push") {
         const list = Array.isArray(doc[key]) ? doc[key] : [];
         const items = value && value.$each ? value.$each : [value];
@@ -116,8 +117,13 @@ export function createFakeCollection(docs = []) {
       applyUpdate(r, update);
       return { matchedCount: 1, modifiedCount: 1 };
     },
-    async findOneAndUpdate(filter, update) {
-      const r = rows.find((d) => matches(d, filter));
+    async findOneAndUpdate(filter, update, options = {}) {
+      let r = rows.find((d) => matches(d, filter));
+      if (!r && options.upsert) {
+        // The filter's plain values start the new document, as the driver does
+        r = Object.fromEntries(Object.entries(filter).filter(([k, v]) => !k.startsWith("$") && (v === null || typeof v !== "object" || isObjectId(v))));
+        rows.push(r);
+      }
       if (!r) return null;
       applyUpdate(r, update);
       return clone(r);

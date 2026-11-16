@@ -18,7 +18,7 @@ vi.mock("@/util/sessionCache", () => ({
 
 import { useSession } from "next-auth/react";
 import Nav from "./index";
-import { NAV_COPY, annotateShortcut, notificationHistory, trayEntries, historyDate, NOTIFICATION_HISTORY_LIMIT } from "./navCopy";
+import { NAV_COPY, LEADERBOARD_LINK, showsLeaderboardLink, annotateShortcut, notificationHistory, trayEntries, historyDate, NOTIFICATION_HISTORY_LIMIT } from "./navCopy";
 import { isUnreadMessage, hasUnreadMessage } from "@/util/notifications.mjs";
 
 /**
@@ -292,6 +292,10 @@ describe("the bell's dot for messages", () => {
   describe("on a phone, in the menu", () => {
     const menuButton = (el) => el.querySelector('[aria-controls="nav-mobile"]');
     const menuPart = (el) => el.querySelector("#nav-mobile [data-menu-notifications]");
+    // The Notifications row, which opens and shuts the lists (17 Nov 2026)
+    const row = (el) => menuPart(el).querySelector("button[aria-controls='nav-mobile-notifications']");
+    const lists = (el) => el.querySelector("#nav-mobile-notifications");
+    const feedReads = () => globalThis.fetch.mock.calls.filter(([u, init]) => u === "/api/extractUser" && !JSON.parse(init.body).unread);
 
     it("shows the dot on the menu button for a message newer than notificationsSeenAt, and not for an older one", async () => {
       serve({ unread: true });
@@ -305,11 +309,12 @@ describe("the bell's dot for messages", () => {
       expect(menuButton(el).querySelector("[data-menu-dot]")).toBeNull();
     });
 
-    it("lists the message under New and the rest under Earlier, clears the dot at once, then calls the seen route", async () => {
+    it("lists the message under New and the rest under Earlier once the row is opened, clears the dot at once, then calls the seen route", async () => {
       serve({ unread: true, activities: [message("2026-11-16T02:00:00Z"), { activity: "Registered to Imprint", tag: "register", date: "2026-11-10T00:00:00Z" }] });
       let el;
       await act(async () => { el = render({ session: user() }); });
       act(() => { menuButton(el).click(); });
+      act(() => { row(el).click(); });
       // Closed again, the button's dot stays gone: the message is seen
       expect(menuButton(el).querySelector("[data-menu-dot]")).toBeNull();
       await act(async () => {});
@@ -338,6 +343,7 @@ describe("the bell's dot for messages", () => {
       let el;
       await act(async () => { el = render({ session: user() }); });
       await act(async () => { menuButton(el).click(); });
+      await act(async () => { row(el).click(); });
       expect(menuPart(el).textContent).toContain(NAV_COPY.noNotifications);
       expect(menuPart(el).querySelector("[data-notification-new]")).toBeNull();
       expect(menuPart(el).querySelector("[data-notification-history]").textContent).toContain("Your first session is waiting");
@@ -349,10 +355,80 @@ describe("the bell's dot for messages", () => {
       let el;
       await act(async () => { el = render({ session: user({ isProfileIncomplete: true }) }); });
       await act(async () => { menuButton(el).click(); });
+      await act(async () => { row(el).click(); });
       expect(el.querySelector('#nav-mobile a[href="/complete-profile"]').textContent).toContain(NAV_COPY.profileTitle);
       expect(menuPart(el).querySelector("[data-notification-new]").textContent).toContain("Your first session is waiting");
       act(() => { menuButton(el).click(); });
       expect(menuButton(el).querySelector("[data-menu-dot]")).not.toBeNull();
+    });
+
+    // Rans, 17 Nov 2026: the lists open and shut from the Notifications row
+    it("keeps the lists shut when the menu opens: nothing listed, the feed not read, nothing marked seen", async () => {
+      serve({ unread: true, activities: [message("2026-11-16T02:00:00Z")] });
+      let el;
+      await act(async () => { el = render({ session: user() }); });
+      await act(async () => { menuButton(el).click(); });
+      expect(row(el).getAttribute("aria-expanded")).toBe("false");
+      expect(row(el).textContent).toContain(NAV_COPY.notifications);
+      expect(lists(el).hidden).toBe(true);
+      expect(lists(el).textContent).toBe("");
+      expect(feedReads()).toHaveLength(0);
+      expect(seenCalls()).toHaveLength(0);
+    });
+
+    it("marks the shut row with a dot while a message is unread, and the menu button's dot comes back if the menu closes unread", async () => {
+      serve({ unread: true, activities: [message("2026-11-16T02:00:00Z")] });
+      let el;
+      await act(async () => { el = render({ session: user() }); });
+      await act(async () => { menuButton(el).click(); });
+      expect(row(el).querySelector("[data-menu-row-dot]")).not.toBeNull();
+      expect(row(el).textContent).toContain(NAV_COPY.unreadNote);
+      act(() => { menuButton(el).click(); });
+      expect(menuButton(el).querySelector("[data-menu-dot]")).not.toBeNull();
+    });
+
+    it("has no dot on the row with nothing unread", async () => {
+      serve({ unread: false, activities: [message("2026-11-14T02:00:00Z")] });
+      let el;
+      await act(async () => { el = render({ session: user() }); });
+      await act(async () => { menuButton(el).click(); });
+      expect(row(el).querySelector("[data-menu-row-dot]")).toBeNull();
+    });
+
+    it("opens and shuts from the row, reading the feed once", async () => {
+      serve({ unread: true, activities: [message("2026-11-16T02:00:00Z")] });
+      let el;
+      await act(async () => { el = render({ session: user() }); });
+      await act(async () => { menuButton(el).click(); });
+      await act(async () => { row(el).click(); });
+      expect(row(el).getAttribute("aria-expanded")).toBe("true");
+      expect(lists(el).hidden).toBe(false);
+      expect(lists(el).textContent).toContain("Your first session is waiting");
+      expect(row(el).querySelector("[data-menu-row-dot]")).toBeNull();
+
+      await act(async () => { row(el).click(); });
+      expect(row(el).getAttribute("aria-expanded")).toBe("false");
+      expect(lists(el).hidden).toBe(true);
+      expect(lists(el).textContent).toBe("");
+      // Seen now, so no dot on the shut row
+      expect(row(el).querySelector("[data-menu-row-dot]")).toBeNull();
+
+      await act(async () => { row(el).click(); });
+      expect(lists(el).textContent).toContain("Your first session is waiting");
+      expect(feedReads()).toHaveLength(1);
+      expect(seenCalls()).toHaveLength(1);
+    });
+
+    it("is shut again the next time the menu opens", async () => {
+      serve({ unread: false, activities: [message("2026-11-14T02:00:00Z")] });
+      let el;
+      await act(async () => { el = render({ session: user() }); });
+      await act(async () => { menuButton(el).click(); });
+      await act(async () => { row(el).click(); });
+      act(() => { menuButton(el).click(); });
+      act(() => { menuButton(el).click(); });
+      expect(row(el).getAttribute("aria-expanded")).toBe("false");
+      expect(lists(el).hidden).toBe(true);
     });
 
     it("has no Notifications part for a visitor, and reads nothing", async () => {
@@ -404,5 +480,47 @@ describe("annotateShortcut", () => {
       href: "/contribute/tutorial", label: "Resume Tutorial",
     });
     expect(annotateShortcut({ ...base, needsEmailVerification: false })).toEqual({ href: "/contribute/annotate", label: "Let's Annotate!" });
+  });
+});
+
+// S32 (17 Nov 2026): the leaderboard's link, in the bar and the phone menu, for signed-in contributors only
+describe("the navbar's Leaderboard link", () => {
+  const links = (el) => [...el.querySelectorAll('a[href="/contribute/leaderboard"]')];
+
+  it.each([["a contributor", { role: "user" }], ["a sign-in with no role", {}]])("shows for %s, once in the bar and once in the phone menu", (_, extra) => {
+    const found = links(render({ session: user(extra) }));
+    expect(found.map((a) => a.textContent.trim())).toEqual(["Leaderboard", "Leaderboard"]);
+  });
+
+  it.each(["annotator", "admin"])("does not show for an %s", (role) => {
+    expect(links(render({ session: user({ role }) }))).toHaveLength(0);
+  });
+
+  it("does not show to a visitor", () => {
+    expect(links(render())).toHaveLength(0);
+  });
+
+  it("comes after the public links in the bar, and in the phone menu right after About, before Let's Annotate! and Dashboard", () => {
+    const el = render({ session: user({ role: "user" }) });
+    const [bar, menu] = links(el);
+    const about = el.querySelector('a[href="/about"]');
+    expect(about.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const rows = [...el.querySelectorAll("#nav-mobile li")].map((li) => li.textContent.trim());
+    expect(rows.slice(0, 5)).toEqual(["Home", "About", "Leaderboard", NAV_COPY.annotate, NAV_COPY.dashboard]);
+    expect(menu.closest("#nav-mobile")).not.toBeNull();
+    // In the look of the pages above it (Home here: About is the current page, so bolder)
+    expect(menu.className).toBe(el.querySelector('#nav-mobile a[href="/"]').className);
+  });
+
+  it("is marked as the current page on the leaderboard", () => {
+    router.pathname = "/contribute/leaderboard";
+    const found = links(render({ session: user({ role: "user" }) }));
+    expect(found.map((a) => a.getAttribute("aria-current"))).toEqual(["page", "page"]);
+  });
+
+  it("follows the sign-in's role", () => {
+    expect(LEADERBOARD_LINK).toEqual({ href: "/contribute/leaderboard", label: "Leaderboard" });
+    expect([{ role: "user" }, {}, { role: null }, { role: "annotator" }, { role: "admin" }, null, undefined].map(showsLeaderboardLink))
+      .toEqual([true, true, true, false, false, false, false]);
   });
 });

@@ -1,6 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { CONTRIBUTOR_OPTIONS, sessionOptionsFor } from "./sessionOptions";
+import { CONTRIBUTOR_OPTIONS, FIRST_SESSION, sessionOptionsFor } from "./sessionOptions";
 import { ALLOWED_SESSION_SIZES, ANNOTATOR_SESSION_SIZES } from "@/util/validators/annotationGet";
+
+describe("the picker's times (S29, 16 Nov 2026)", () => {
+  it("are 4-5, 8-10, 15-20 and 30-40 minutes, from 46 to 57 s a photo", () => {
+    expect(CONTRIBUTOR_OPTIONS.map((o) => [o.count, o.time])).toEqual([
+      [5, "4-5 minutes"],
+      [10, "8-10 minutes"],
+      [20, "15-20 minutes"],
+      [40, "30-40 minutes"],
+    ]);
+  });
+
+  it("ends the 5-photo range at the first session's minutes, the figure the emails give", () => {
+    expect(FIRST_SESSION).toEqual({ photos: 5, minutes: 5 });
+    const first = CONTRIBUTOR_OPTIONS.find((o) => o.count === FIRST_SESSION.photos);
+    expect(first.time).toBe(`4-${FIRST_SESSION.minutes} minutes`);
+  });
+});
 
 describe("sessionOptionsFor", () => {
   it("contributor options match the sizes the API accepts", () => {

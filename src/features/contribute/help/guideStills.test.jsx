@@ -96,4 +96,11 @@ describe("SessionPickerStill", () => {
     expect(start.textContent).toBe("Start Session");
     expect(frame.querySelector("h2").className).toContain("text-2xl");
   });
+
+  it("shows the picker's own times, measured on 16 Nov 2026 (S29)", () => {
+    const el = render(<SessionPickerStill />);
+    const text = el.querySelector('[data-guide-still="session-picker"]').textContent;
+    for (const time of ["4-5 minutes", "8-10 minutes", "15-20 minutes", "30-40 minutes"]) expect(text).toContain(time);
+    for (const old of ["2-3 minutes", "4-7 minutes", "12-15 minutes"]) expect(text).not.toContain(old);
+  });
 });

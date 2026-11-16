@@ -83,6 +83,14 @@ const INDEXES = [
 
   ['exit_surveys', { userId: 1 }, { unique: true, name: 'uniq_user' },
     'one exit survey per user'],
+
+  // S29: one participant email per person and campaign. The sender claims a
+  // send by inserting its row first, so this is what stops a second send. The
+  // sender also creates it before its first send (the production image has
+  // no scripts/), with the same name and shape (SENDS_INDEX in
+  // src/util/campaigns/sendCampaign.mjs).
+  ['email_sends', { campaign: 1, userId: 1 }, { unique: true, name: 'uniq_campaign_user' },
+    'one email per person per campaign'],
 ];
 
 const client = new MongoClient(uri);

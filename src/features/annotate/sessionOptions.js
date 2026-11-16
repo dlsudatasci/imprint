@@ -8,11 +8,24 @@
  * contributor list is shown. The time estimates are for contributor sessions,
  * so sizes without one show none.
  */
+import { FIRST_SESSION } from "./firstSession.mjs";
+
+export { FIRST_SESSION };
+
+/**
+ * The times (S29, 16 Nov 2026) come from the telemetry: contributors' photos
+ * since S27 went live (13 Nov 2026, 14:50 Manila) took a median of 46 s and a
+ * mean of 57 s a photo (photos up to 10 minutes), from 123 photos by 12
+ * contributors, measured from the Coolify app terminal on 16 Nov 2026. So a
+ * range runs from 46 to 57 s a photo, rounded. They were 2-3, 4-7, 8-10 and
+ * 12-15 minutes before. The 5-photo range ends at FIRST_SESSION.minutes, the
+ * figure the campaign emails give.
+ */
 export const CONTRIBUTOR_OPTIONS = [
-  { count: 5, label: "05", time: "2-3 minutes" },
-  { count: 10, label: "10", time: "4-7 minutes" },
-  { count: 20, label: "20", time: "8-10 minutes" },
-  { count: 40, label: "40", time: "12-15 minutes" },
+  { count: FIRST_SESSION.photos, label: "05", time: `4-${FIRST_SESSION.minutes} minutes` },
+  { count: 10, label: "10", time: "8-10 minutes" },
+  { count: 20, label: "20", time: "15-20 minutes" },
+  { count: 40, label: "40", time: "30-40 minutes" },
 ];
 
 export function sessionOptionsFor(sizes, { annotator = false } = {}) {

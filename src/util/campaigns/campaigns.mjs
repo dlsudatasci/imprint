@@ -12,8 +12,10 @@ import { FIRST_SESSION } from "../../features/annotate/firstSession.mjs";
  *   and `{ title, activity }` for the bell
  *
  * The words are final as Rans approved them on 16 Nov 2026 (S29 spec, "The
- * first campaign's words"). No em dashes and no semicolons, checked by
- * campaigns.test.js.
+ * first campaign's words"), changed the same day (fix/s29-email-wording-and-
+ * look): "friendly reminder", the devices line, the confirm steps named by
+ * their buttons, a third sign-off line, all text black and a logo header.
+ * No em dashes and no semicolons, checked by campaigns.test.js.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -29,13 +31,26 @@ export const EXCLUSION_REASONS = Object.freeze(["noEmail", "pilot", "optedOut", 
 
 export const ANIMATION_ALT = "How Imprint works: look at a street photo, answer two questions for each object, and draw what we missed.";
 export const ANIMATION_PATH = "/images/email/how-it-works.gif";
+/** The header's fingerprint logo, 67 by 96, drawn at 28 by 40. */
+export const LOGO_PATH = "/images/email/logo.png";
+export const LOGO_ALT = "Imprint";
 
-const SIGN_OFF = ["Thank you for being part of this!", "Francis Bawa, Imprint"];
+/**
+ * The labels of the two buttons the confirm email names: the dashboard's
+ * `confirmEmail` (dashboardCopy.js) and Check your inbox's `resend`
+ * (authCopy.js). Written out here because this file stays plain Node, and
+ * campaigns.test.js reads them from those copy files, so the email cannot
+ * drift from the buttons.
+ */
+export const CONFIRM_BUTTON_LABEL = "Confirm Your Email to Start";
+export const RESEND_BUTTON_LABEL = "Send a new link";
+
+const SIGN_OFF = ["Thank you for being part of this!", "Francis Bawa, Imprint", "BSMS Computer Science, DLSU"];
 const FOOTER = "You're getting this because you signed up for Imprint. Don't want emails like this?";
 const STOP = "Stop these emails";
 
 const firstSessionLine = `You can start with just ${FIRST_SESSION.photos} photos, which takes about ${FIRST_SESSION.minutes} minutes.`;
-const whatYouDo = "You look at street photos from Metro Manila and tell us what gets in your way on the sidewalk.";
+const whatYouDo = "You look at street photos from Metro Manila and tell us what gets in your way on the sidewalk. It works on your phone, tablet or desktop.";
 
 /**
  * The words of `welcome-nudge`, per variant. `paragraphs` are the body before
@@ -45,7 +60,7 @@ export const WELCOME_NUDGE_COPY = Object.freeze({
   start: Object.freeze({
     subject: "Your first sidewalk is waiting on Imprint",
     paragraphs: [
-      "Thanks for signing up on Imprint. We noticed you haven't started a session yet, so this is a friendly nudge.",
+      "Thanks for signing up on Imprint. We noticed you haven't started a session yet, so this is a friendly reminder.",
       `${firstSessionLine} ${whatYouDo} You can do more if you like, and you can stop anytime.`,
     ],
     after: ["Every answer helps us understand sidewalks the way the people who walk them do."],
@@ -59,7 +74,7 @@ export const WELCOME_NUDGE_COPY = Object.freeze({
     subject: "One step left to start on Imprint",
     paragraphs: [
       "Thanks for signing up on Imprint. We noticed you haven't started a session yet, and there's one step left: please confirm your email to start annotating.",
-      "Sign in and click Resend to get a new confirmation link, since the first one only lasts a day. Then you're all set.",
+      `Sign in, click ${CONFIRM_BUTTON_LABEL}, then click ${RESEND_BUTTON_LABEL}, since the first one only lasts a day. Then you're all set.`,
       `${firstSessionLine} ${whatYouDo}`,
     ],
     after: [],
@@ -96,7 +111,23 @@ export function signedUpAt(user) {
   return NaN;
 }
 
-const p = (text) => `<p style="color:#334155;font-size:16px;line-height:1.6;margin:0 0 16px">${escapeHtml(text)}</p>`;
+// All text black (Rans, 16 Nov 2026). The button stays white on blue, and links blue.
+const BLACK = "#000000";
+const BLUE = "#004aad";
+const p = (text) => `<p style="color:${BLACK};font-size:16px;line-height:1.6;margin:0 0 16px">${escapeHtml(text)}</p>`;
+
+/**
+ * The logo and the word Imprint side by side, centered at the top (Rans,
+ * 16 Nov 2026), both linked to the site. A one-row table, which Gmail and
+ * Outlook both keep on one line, centered by `align="center"` for Outlook
+ * and `margin:0 auto` for the rest.
+ */
+function header(origin) {
+  return `<table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 auto 24px"><tr>
+<td style="vertical-align:middle;padding:0 10px 0 0"><a href="${origin}" style="text-decoration:none"><img src="${origin}${LOGO_PATH}" width="28" height="40" alt="${LOGO_ALT}" style="display:inline-block;vertical-align:middle;border:0"></a></td>
+<td style="vertical-align:middle"><a href="${origin}" style="color:${BLACK};text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-size:22px;font-weight:bold;line-height:40px">Imprint</a></td>
+</tr></table>`;
+}
 
 /**
  * The email for one person. `links` is `{ origin, action, unsubscribe,
@@ -123,16 +154,17 @@ function welcomeNudgeMessage(user, variant, links) {
   const action = escapeHtml(links.action);
   const stop = escapeHtml(links.unsubscribe);
   const origin = escapeHtml(links.origin);
-  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;padding:24px 16px;background:#ffffff">
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;padding:24px 16px;background:#ffffff;color:${BLACK}">
+${header(origin)}
 ${p(hello)}
 ${c.paragraphs.map(p).join("\n")}
 <a href="${origin}/contribute" style="display:block;margin:0 0 16px"><img src="${origin}${ANIMATION_PATH}" width="600" alt="${escapeHtml(ANIMATION_ALT)}" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a>
 ${c.after.map(p).join("\n")}
-<div style="text-align:center;margin:24px 0 8px"><a href="${action}" style="background-color:#004aad;color:#ffffff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block">${escapeHtml(c.button)}</a></div>
-<p style="color:#64748b;font-size:12px;text-align:center;margin:0 0 24px"><a href="${action}" style="color:#004aad;word-break:break-all">${action}</a></p>
-<p style="color:#334155;font-size:16px;line-height:1.6;margin:0 0 24px">${SIGN_OFF.map(escapeHtml).join("<br>")}</p>
+<div style="text-align:center;margin:24px 0 8px"><a href="${action}" style="background-color:${BLUE};color:#ffffff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block">${escapeHtml(c.button)}</a></div>
+<p style="color:${BLACK};font-size:12px;text-align:center;margin:0 0 24px"><a href="${action}" style="color:${BLUE};word-break:break-all">${action}</a></p>
+<p style="color:${BLACK};font-size:16px;line-height:1.6;margin:0 0 24px">${SIGN_OFF.map(escapeHtml).join("<br>")}</p>
 <hr style="border:0;border-top:1px solid #e2e8f0;margin:0 0 16px">
-<p style="color:#94a3b8;font-size:12px;line-height:1.5;margin:0">${escapeHtml(FOOTER)} <a href="${stop}" style="color:#64748b">${STOP}</a></p>
+<p style="color:${BLACK};font-size:12px;line-height:1.5;margin:0">${escapeHtml(FOOTER)} <a href="${stop}" style="color:${BLUE}">${STOP}</a></p>
 </div>`;
 
   return {

@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { ObjectId } from "mongodb";
 import { createFakeDb } from "@/test-utils/fakeMongo";
-import { welcomeNudge, sortAudience, findCampaign, ANIMATION_ALT, NUDGE_AFTER_MS, signedUpAt } from "./campaigns.mjs";
+import { welcomeNudge, sortAudience, findCampaign, ANIMATION_ALT, NUDGE_AFTER_MS, signedUpAt, CONFIRM_BUTTON_LABEL, RESEND_BUTTON_LABEL } from "./campaigns.mjs";
+import { DASHBOARD_COPY } from "@/features/contribute/dashboard/dashboardCopy";
+import { AUTH_COPY } from "@/features/auth/authCopy";
 import { buildCampaignMail } from "./sendCampaign.mjs";
 import { FIRST_SESSION } from "@/features/annotate/firstSession.mjs";
 import { checkUnsubscribe } from "@/util/emailLinks.mjs";
@@ -119,14 +121,14 @@ describe("welcome-nudge audience", () => {
   });
 });
 
-// The approved words (S29 spec, "The first campaign's words"), here as the
-// text email reads them
+// The approved words (S29 spec, "The first campaign's words", changed 16 Nov
+// 2026 on fix/s29-email-wording-and-look), here as the text email reads them
 const ORIGIN = "https://imprint.example.org";
 const START_TEXT = (stop) => `Hey Rans!
 
-Thanks for signing up on Imprint. We noticed you haven't started a session yet, so this is a friendly nudge.
+Thanks for signing up on Imprint. We noticed you haven't started a session yet, so this is a friendly reminder.
 
-You can start with just 5 photos, which takes about 5 minutes. You look at street photos from Metro Manila and tell us what gets in your way on the sidewalk. You can do more if you like, and you can stop anytime.
+You can start with just 5 photos, which takes about 5 minutes. You look at street photos from Metro Manila and tell us what gets in your way on the sidewalk. It works on your phone, tablet or desktop. You can do more if you like, and you can stop anytime.
 
 Every answer helps us understand sidewalks the way the people who walk them do.
 
@@ -134,6 +136,7 @@ Start a session: ${ORIGIN}/contribute
 
 Thank you for being part of this!
 Francis Bawa, Imprint
+BSMS Computer Science, DLSU
 
 You're getting this because you signed up for Imprint. Don't want emails like this? Stop these emails: ${stop}`;
 
@@ -141,14 +144,15 @@ const CONFIRM_TEXT = (stop) => `Hey Rans!
 
 Thanks for signing up on Imprint. We noticed you haven't started a session yet, and there's one step left: please confirm your email to start annotating.
 
-Sign in and click Resend to get a new confirmation link, since the first one only lasts a day. Then you're all set.
+Sign in, click Confirm Your Email to Start, then click Send a new link, since the first one only lasts a day. Then you're all set.
 
-You can start with just 5 photos, which takes about 5 minutes. You look at street photos from Metro Manila and tell us what gets in your way on the sidewalk.
+You can start with just 5 photos, which takes about 5 minutes. You look at street photos from Metro Manila and tell us what gets in your way on the sidewalk. It works on your phone, tablet or desktop.
 
 Sign in to confirm: ${ORIGIN}/contribute
 
 Thank you for being part of this!
 Francis Bawa, Imprint
+BSMS Computer Science, DLSU
 
 You're getting this because you signed up for Imprint. Don't want emails like this? Stop these emails: ${stop}`;
 
@@ -181,9 +185,10 @@ describe("welcome-nudge words", () => {
         expect(words).toContain(plain);
       }
       const at = (s) => mail.html.indexOf(s);
-      expect(at("You can start with just 5 photos")).toBeLessThan(at("<img"));
-      expect(at("<img")).toBeLessThan(at(`>${button}</a>`));
-      if (after) expect(at("<img")).toBeLessThan(at(after));
+      const animation = at("how-it-works.gif");
+      expect(at("You can start with just 5 photos")).toBeLessThan(animation);
+      expect(animation).toBeLessThan(at(`>${button}</a>`));
+      if (after) expect(animation).toBeLessThan(at(after));
     }
   });
 
@@ -233,9 +238,51 @@ describe("welcome-nudge words", () => {
     expect(start.bell.activity).toBe(`Start with ${FIRST_SESSION.photos} photos, about ${FIRST_SESSION.minutes} minutes.`);
   });
 
-  it("go to the person's address, signed Francis Bawa, Imprint, with no doubled slash in any link", () => {
+  it("name the confirm steps by the buttons' own labels, read from their copy files", () => {
+    expect(CONFIRM_BUTTON_LABEL).toBe(DASHBOARD_COPY.confirmEmail);
+    expect(RESEND_BUTTON_LABEL).toBe(AUTH_COPY.checkEmail.resend);
+    expect(confirm.mail.text).toContain(`Sign in, click ${DASHBOARD_COPY.confirmEmail}, then click ${AUTH_COPY.checkEmail.resend}, since`);
+    expect(htmlText(confirm.mail.html)).toContain(`click ${DASHBOARD_COPY.confirmEmail}, then click ${AUTH_COPY.checkEmail.resend}`);
+  });
+
+  it("have the header in the html only: the logo, its alt text and Imprint, linked to the site, before the greeting", () => {
+    for (const { mail } of [start, confirm]) {
+      const logo = `<img src="${ORIGIN}/images/email/logo.png" width="28" height="40" alt="Imprint" style="display:inline-block;vertical-align:middle;border:0">`;
+      const at = (s) => mail.html.indexOf(s);
+      expect(at(logo)).toBeGreaterThan(-1);
+      expect(at(`<a href="${ORIGIN}" style="text-decoration:none">${logo}</a>`)).toBeGreaterThan(-1);
+      const word = at(">Imprint</a>");
+      expect(word).toBeGreaterThan(at(logo));
+      expect(mail.html).toMatch(/<a href="https:\/\/imprint\.example\.org" style="color:#000000;[^"]*font-size:22px;font-weight:bold[^"]*">Imprint<\/a>/);
+      expect(word).toBeLessThan(at("Hey Rans!"));
+      // Side by side: one table row with two cells, the table centered
+      expect(mail.html).toContain('<table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 auto 24px">');
+      expect(mail.html.slice(0, at("Hey Rans!"))).toMatch(/<table role="presentation"[^>]*><tr>\s*<td[^>]*>.*logo\.png.*<\/td>\s*<td[^>]*>.*>Imprint<\/a><\/td>\s*<\/tr><\/table>/s);
+      expect(mail.text.startsWith("Hey Rans!")).toBe(true);
+      expect(mail.text).not.toContain("logo.png");
+    }
+  });
+
+  it("have only black text in the html, the footer at 12 px, the button white on blue and links blue", () => {
+    for (const { mail } of [start, confirm]) {
+      for (const grey of ["#334155", "#64748b", "#94a3b8"]) expect(mail.html).not.toContain(grey);
+      // Every text colour is black, apart from the button's white
+      const colours = [...mail.html.matchAll(/(?<![-\w])color:(#[0-9a-f]{6})/gi)].map((m) => m[1].toLowerCase());
+      expect(new Set(colours)).toEqual(new Set(["#000000", "#ffffff", "#004aad"]));
+      expect(mail.html).toMatch(/<p style="color:#000000;font-size:12px;line-height:1\.5;margin:0">You&#39;re getting this/);
+      expect(mail.html).toMatch(/style="background-color:#004aad;color:#ffffff;[^"]*">(Start a session|Sign in to confirm)<\/a>/);
+      for (const m of mail.html.matchAll(/<a href="([^"]+)" style="([^"]*)">([^<]*)<\/a>/g)) {
+        const [, , style, label] = m;
+        if (label === "Imprint" || label === "") continue;
+        expect(style, label).toMatch(/color:#(004aad|ffffff)/);
+      }
+    }
+  });
+
+  it("go to the person's address, signed in three lines, with no doubled slash in any link", () => {
     expect(start.mail.to).toBe("rans@example.org");
-    expect(start.mail.text).toContain("Francis Bawa, Imprint");
+    expect(start.mail.text).toContain("Thank you for being part of this!\nFrancis Bawa, Imprint\nBSMS Computer Science, DLSU\n");
+    expect(confirm.mail.html).toContain("Thank you for being part of this!<br>Francis Bawa, Imprint<br>BSMS Computer Science, DLSU</p>");
     expect(start.mail.html).not.toMatch(/https:\/\/imprint\.example\.org\/\//);
   });
 });

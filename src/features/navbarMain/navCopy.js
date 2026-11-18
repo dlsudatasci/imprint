@@ -1,4 +1,4 @@
-import { isUnreadMessage } from "@/util/notifications.mjs";
+import { isUnreadMessage, sitePath } from "@/util/notifications.mjs";
 
 /**
  * Every string the navbar shows, and the rule for its annotate shortcut, so
@@ -85,7 +85,11 @@ export const NOTIFICATION_HISTORY_LIMIT = 3;
  */
 const ACTIVITY_VIEWS = {
   // A message from a campaign email (S29), with its own short title
-  message: (a) => (a.title ? { title: a.title, text: a.activity } : { title: a.activity, text: "" }),
+  // and, from S33, the page it opens: a path on this site, anything else is ignored
+  message: (a) => {
+    const href = sitePath(a.href);
+    return { ...(a.title ? { title: a.title, text: a.activity } : { title: a.activity, text: "" }), ...(href ? { href } : {}) };
+  },
   register: () => ({ title: "Welcome to Imprint!", text: "Thanks for joining our community." }),
   profile: () => ({ title: "Profile completed", text: "You're all set to start mapping." }),
   email: () => ({ title: "Email confirmed", text: "Your email address is confirmed." }),

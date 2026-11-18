@@ -14,6 +14,11 @@ import { campaignRouteAllowed } from "@/util/campaigns/internalAccess.mjs";
  * only from inside the container and with CAMPAIGN_SECRET
  * (internalAccess.mjs). Anything else is a 404.
  *
+ * S33 (17 Nov 2026): `campaign` may also be a family name ("milestone",
+ * "inactivity") or "all", which the daily task now posts with `mode: "auto"`.
+ * The sender refuses `exit-questionnaire` in `auto`, whatever
+ * CAMPAIGN_AUTOSEND says, so this route can never send it on its own.
+ *
  * A run of 50 with the 1.5 s pause takes about two minutes, which the
  * standalone server allows.
  */

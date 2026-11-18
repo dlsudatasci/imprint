@@ -2,7 +2,7 @@
  * A small in-memory stand-in for the MongoDB driver (S29), for code that is
  * handed a `db`, such as the campaign sender. It keeps documents in arrays
  * and supports what that code uses: equality (ObjectIds and dates compared by
- * value, null matching a missing field), `$in`, `$lt`, `$exists`, `$ne` and
+ * value, null matching a missing field), `$in`, `$lt`, `$gte` (S33), `$exists`, `$ne` and
  * `$or` in filters, `$set`, `$unset`, `$inc` (S32) and `$push` with `$each`
  * and `$slice` in updates, `upsert` on findOneAndUpdate (S32), unique indexes made with createIndex (a duplicate insert
  * throws code 11000, as the driver does), find with a projection, findOne,
@@ -37,6 +37,7 @@ function matchValue(actual, cond) {
       if (op === "$ne") return !same(actual, v);
       if (op === "$exists") return v ? actual !== undefined : actual === undefined;
       if (op === "$lt") return actual != null && actual < v;
+      if (op === "$gte") return actual != null && actual >= v;
       throw new Error(`fakeMongo: ${op} is not supported`);
     });
   }

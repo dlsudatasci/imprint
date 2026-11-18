@@ -6,6 +6,7 @@ import Navbar from "@/features/navbarMain";
 import Footer from "@/features/footerMain";
 import ContentSkeleton from "./contentSkeleton";
 import { SiteChromeContext } from "./siteChrome";
+import { loginPathFor } from "@/util/loginReturn.mjs";
 
 /**
  * Layout for every signed-in page, used by any page that passes `contribute`
@@ -31,7 +32,8 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     if (!loading && !session) {
-      router.push("/login");
+      // The exit questionnaire comes back here after signing in (S33)
+      router.push(loginPathFor(router.pathname));
     }
   }, [session, loading, router]);
 

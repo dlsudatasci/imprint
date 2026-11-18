@@ -97,3 +97,41 @@ describe("POST /api/extractUser, unread messages (S29, 16 Nov 2026)", () => {
     expect(usersCol.findOne.mock.calls[0][1].projection).toEqual({ "activities.tag": 1, "activities.date": 1, notificationsSeenAt: 1 });
   });
 });
+
+describe("POST /api/extractUser, the exit questionnaire link (S33, 17 Nov 2026)", () => {
+  const invitation = { tag: "message", title: "Tell us about your experience", activity: "The optional exit questionnaire takes a few minutes.", date: new Date("2026-11-30T02:00:00Z"), campaign: "exit-questionnaire", href: "/contribute/exit-survey" };
+  const milestone = { tag: "message", title: "1,000 photos reached!", activity: "x", date: new Date("2026-11-20T02:00:00Z"), campaign: "milestone-1000", href: "/contribute" };
+
+  function setupWith({ answered }) {
+    getServerSession.mockResolvedValue(mockAuthSession({ _id: MOCK_USER_ID }));
+    const users = createMockCollection({ findOne: vi.fn().mockResolvedValue({ activities: [milestone, invitation] }) });
+    const email_sends = createMockCollection({ findOne: vi.fn().mockResolvedValue({ _id: "s" }) });
+    const exit_surveys = createMockCollection({ findOne: vi.fn().mockResolvedValue(answered ? { _id: "r" } : null) });
+    connectToDatabase.mockResolvedValue({ db: createMockDb({ users, email_sends, exit_surveys }) });
+    return { exit_surveys };
+  }
+
+  it("keeps the invitation's link until the questionnaire is answered", async () => {
+    const { exit_surveys } = setupWith({ answered: false });
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._json.userActivities.map((a) => a.href)).toEqual(["/contribute", "/contribute/exit-survey"]);
+    expect(exit_surveys.findOne.mock.calls[0][0]).toEqual({ userId: MOCK_USER_ID });
+  });
+
+  it("takes the link off once they submit, and keeps every other message's", async () => {
+    setupWith({ answered: true });
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._json.userActivities.map((a) => a.href)).toEqual(["/contribute", undefined]);
+    expect(res._json.userActivities[1].title).toBe("Tell us about your experience");
+  });
+
+  it("does not look for a response when the feed has no invitation", async () => {
+    const { usersCol } = setupMocks();
+    const res = createMockRes();
+    await handler(createMockReq({ body: {} }), res);
+    expect(res._status).toBeNull();
+    expect(usersCol.findOne).toHaveBeenCalledTimes(1);
+  });
+});

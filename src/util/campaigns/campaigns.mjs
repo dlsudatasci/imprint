@@ -149,7 +149,9 @@ function header(origin) {
  * slash, the button's address, the stop page and the one-click address for
  * the List-Unsubscribe header. Every campaign has the same look: the logo
  * header, black text, one blue button with its link written under it, the
- * sign-off and the stop line. Only `welcome-nudge` has the animation.
+ * sign-off and the stop line. `welcome-nudge` and the inactivity reminder
+ * have the animation (the reminder from 18 Nov 2026, Rans), in the html
+ * only. The milestones and the exit questionnaire invitation do not.
  */
 function renderMessage(user, links, c) {
   const hello = greeting(user?.username);
@@ -495,7 +497,9 @@ function inactivityCampaign(round) {
     id,
     family: "inactivity",
     round,
-    copy: INACTIVITY_COPY,
+    // The animation, as welcome-nudge has it, after the "A session of 5
+    // photos..." paragraph and before the button (Rans, 18 Nov 2026)
+    copy: { ...INACTIVITY_COPY, animation: true },
     actionPath: "/contribute",
     async sort(db, now = new Date()) {
       const [users, sends, latest] = await Promise.all([contributorAccounts(db), sendsByCampaign(db, INACTIVITY_IDS, now), latestPhotoTimes(db)]);

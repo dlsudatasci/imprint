@@ -13,6 +13,7 @@ import {
   milestoneDue,
   exitQuestionnaire,
   welcomeNudge,
+  ANIMATION_ALT,
 } from "./campaigns.mjs";
 import { buildCampaignMail } from "./sendCampaign.mjs";
 import { FIRST_SESSION } from "@/features/annotate/firstSession.mjs";
@@ -466,14 +467,30 @@ describe("the S33 words", () => {
     }
   });
 
-  it("look as welcome-nudge does: the centered logo header, black text, one blue button with its link under it, the sign-off, and no animation", () => {
+  it("give the inactivity reminder the animation, as welcome-nudge has it, after the 5 photos paragraph and before the button, in the html only", () => {
+    for (const round of [1, 2, 3]) {
+      const { mail, bell } = build(`inactivity-${round}`);
+      const at = (s) => mail.html.indexOf(s);
+      const animation = `<a href="${ORIGIN}/contribute" style="display:block;margin:0 0 16px"><img src="${ORIGIN}/images/email/how-it-works.gif" width="600" alt="${ANIMATION_ALT}" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a>`;
+      expect(mail.html).toContain(animation);
+      expect(mail.html.match(/how-it-works\.gif/g)).toHaveLength(1);
+      expect(at("A session of 5 photos takes about 5 minutes")).toBeLessThan(at(animation));
+      expect(at(animation)).toBeLessThan(at(">Continue annotating</a>"));
+      // The same markup welcome-nudge has
+      expect(buildCampaignMail(welcomeNudge, rans, "start", ENV).mail.html).toContain(animation);
+      expect(mail.text).not.toContain("how-it-works.gif");
+      expect(JSON.stringify(bell)).not.toContain("how-it-works.gif");
+    }
+  });
+
+  it("look as welcome-nudge does: the centered logo header, black text, one blue button with its link under it, the sign-off, and no animation for the milestones and the exit invitation", () => {
     for (const campaignId of EVERY_ID) {
       const { mail } = build(campaignId);
       const at = (s) => mail.html.indexOf(s);
       expect(mail.html).toContain('<table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 auto 24px">');
       expect(at(`<img src="${ORIGIN}/images/email/logo.png" width="28" height="40" alt="Imprint"`)).toBeGreaterThan(-1);
       expect(at(">Imprint</a>")).toBeLessThan(at("Hey Rans!"));
-      expect(mail.html).not.toContain("how-it-works.gif");
+      if (!campaignId.startsWith("inactivity-")) expect(mail.html, campaignId).not.toContain("how-it-works.gif");
       expect(mail.html.match(/background-color:#004aad/g)).toHaveLength(1);
       const colours = [...mail.html.matchAll(/(?<![-\w])color:(#[0-9a-f]{6})/gi)].map((m) => m[1].toLowerCase());
       expect(new Set(colours)).toEqual(new Set(["#000000", "#ffffff", "#004aad"]));

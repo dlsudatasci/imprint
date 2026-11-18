@@ -293,7 +293,7 @@ export default function Nav({ sticky = false }) {
                       </span>
                     </Link>
                   )}
-                  <NotificationLists unread={unreadMessages} earlier={history} nothingNew={nothingNew} />
+                  <NotificationLists unread={unreadMessages} earlier={history} nothingNew={nothingNew} onNavigate={closeNotifications} />
                 </div>
               </div>
 
@@ -440,7 +440,7 @@ export default function Nav({ sticky = false }) {
                     </button>
                     <div id="nav-mobile-notifications" hidden={!phoneNotificationsOpen} className="pb-2">
                       {phoneNotificationsOpen && (
-                        <NotificationLists unread={unreadMessages} earlier={history} nothingNew={nothingNew} phone />
+                        <NotificationLists unread={unreadMessages} earlier={history} nothingNew={nothingNew} onNavigate={closeMenu} phone />
                       )}
                     </div>
                   </li>
@@ -466,26 +466,42 @@ export default function Nav({ sticky = false }) {
  * phone menu. New holds the messages that were unread when the feed was read,
  * in the profile reminder's row look without its warning colour. Earlier is
  * the last entries of the feed, as before. On a phone the rows lose their side
- * padding to line up with the menu's other rows.
+ * padding to line up with the menu's other rows. A message that carries a
+ * page to open (S33, `href`) is a link to it, and following it closes the menu.
  */
-function NotificationLists({ unread, earlier, nothingNew, phone = false }) {
+function NotificationLists({ unread, earlier, nothingNew, onNavigate, phone = false }) {
   const pad = phone ? "px-0" : "px-3";
+  // A message with a page to open (S33) is a link to it, the whole row
+  const row = (entry, className, children) => (
+    <li key={`${entry.time}-${entry.title}`} className={entry.href ? undefined : className}>
+      {entry.href ? (
+        <Link
+          href={entry.href}
+          data-notification-link
+          onClick={onNavigate}
+          className={cn(className, "hover:bg-surface-subtle transition-colors duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40")}
+        >
+          {children}
+        </Link>
+      ) : children}
+    </li>
+  );
   return (
     <>
       {unread.length > 0 && (
         <div data-notification-new>
           <p className={cn(pad, "pt-1 pb-1 text-xs font-semibold text-muted")}>{COPY.newMessages}</p>
           <ul>
-            {unread.map((m) => (
-              <li key={`${m.time}-${m.title}`} className={cn(pad, "flex items-start gap-3 rounded-control py-3")}>
+            {unread.map((m) => row(m, cn(pad, "flex items-start gap-3 rounded-control py-3"), (
+              <>
                 <span aria-hidden="true" className="mt-1.5 block h-2 w-2 shrink-0 rounded-full bg-primary" />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-ink">{m.title}</span>
                   {m.text && <span className="block text-xs text-muted mt-0.5">{m.text}</span>}
                 </span>
                 <span className="shrink-0 text-xs text-subtle tabular-nums">{historyDate(m.time)}</span>
-              </li>
-            ))}
+              </>
+            )))}
           </ul>
         </div>
       )}
@@ -496,15 +512,15 @@ function NotificationLists({ unread, earlier, nothingNew, phone = false }) {
         <div data-notification-history className="mt-1 border-t border-line-card pt-2">
           <p className={cn(pad, "pb-1 text-xs font-semibold text-muted")}>{COPY.earlier}</p>
           <ul>
-            {earlier.map((h) => (
-              <li key={`${h.time}-${h.title}`} className={cn(pad, "flex items-start justify-between gap-3 py-2")}>
+            {earlier.map((h) => row(h, cn(pad, "flex items-start justify-between gap-3 rounded-control py-2"), (
+              <>
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-body">{h.title}</span>
                   {h.text && <span className="block text-xs text-muted mt-0.5">{h.text}</span>}
                 </span>
                 <span className="shrink-0 text-xs text-subtle tabular-nums">{historyDate(h.time)}</span>
-              </li>
-            ))}
+              </>
+            )))}
           </ul>
         </div>
       )}

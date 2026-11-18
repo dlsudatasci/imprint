@@ -8,6 +8,8 @@ import { readTotalCount, readCurrentCount, readTutorialFlag, clearSession } from
 import { syncCachedSession } from "@/util/syncCachedSession";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { needsEmailVerification } from "@/util/validators/emailVerification.mjs";
+import { takesContributorInstruments } from "@/util/validators/contributorInstruments";
+import { exitQuestionnaireOpen } from "@/util/exitQuestionnaire.mjs";
 
 import Page from "@/ui/page";
 
@@ -31,6 +33,10 @@ import ContentSkeleton from "@/features/layout/contentSkeleton";
  * always shows whichever step is still outstanding, so there is one obvious
  * next action at any point. While the address is not confirmed a notice says
  * so from the start and links to /check-email.
+ *
+ * S33 (17 Nov 2026): a contributor who was sent the exit questionnaire
+ * invitation and has not answered it sees a neutral Exit Questionnaire
+ * button beside Replay Tutorial, until they submit.
  *
  * The values read from the database on the server (liveUser) take precedence
  * over the session held in the browser. The browser's copy comes from the login
@@ -67,6 +73,8 @@ export default function ContributePage({ session, liveUser = null }) {
   const hasCompletedDemo = user.hasCompletedTutorial === true;
   // Email verification (S9), from the database when it could be read
   const needsEmail = user.needsEmailVerification === true;
+  // The exit questionnaire invitation (S33), from the database only
+  const exitQuestionnaire = liveUser?.exitQuestionnaire === true;
 
   // Confirmed on another device: the sign-in still says otherwise, so ask for
   // a fresh one (the jwt callback reads the database), for the navbar. Once
@@ -244,6 +252,12 @@ export default function ContributePage({ session, liveUser = null }) {
                       <Button variant="neutral" fullWidth>{COPY.replayTutorial}</Button>
                     </Link>
                   )}
+
+                  {exitQuestionnaire && (
+                    <Link href="/contribute/exit-survey" tabIndex={-1} className="flex">
+                      <Button variant="neutral" fullWidth>{COPY.exitQuestionnaire}</Button>
+                    </Link>
+                  )}
                 </>
               ) : (
                 <>
@@ -331,6 +345,16 @@ export async function getServerSideProps(context) {
 
       // Still overlaid on the session too, so SessionProvider's first copy matches
       Object.assign(session.user, liveUser);
+
+      // The Exit Questionnaire button (S33): sent the invitation, no answer
+      // yet. Its own try, so the dashboard still loads if this cannot be read.
+      if (takesContributorInstruments(dbUser.role)) {
+        try {
+          if (await exitQuestionnaireOpen(db, session.user._id)) liveUser.exitQuestionnaire = true;
+        } catch (error) {
+          console.error("Failed to read the exit questionnaire invitation:", error?.name || "Error");
+        }
+      }
     }
   } catch (error) {
     // Fall through with the token's values — a stale dashboard beats an error

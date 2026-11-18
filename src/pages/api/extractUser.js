@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import { ObjectId } from "mongodb";
 import { hasUnreadMessage } from "@/util/notifications.mjs";
+import { exitQuestionnaireState, hasLinkedInvitation, withoutInvitationLink } from "@/util/exitQuestionnaire.mjs";
 
 /**
  * POST /api/extractUser — the signed-in contributor's activity feed and
@@ -16,6 +17,10 @@ import { hasUnreadMessage } from "@/util/notifications.mjs";
  * `{ unread: true }` it answers only that boolean, reading only each entry's
  * tag and date: the navbar asks this on load to show the bell's dot, and
  * fetches the whole feed only when the tray opens.
+ *
+ * S33 (17 Nov 2026): the exit questionnaire invitation's bell message links
+ * to the questionnaire until the person has answered it. Once they have, the
+ * feed is sent without that link (util/exitQuestionnaire.mjs).
  */
 const handler = async (req, res) => {
   if (req.method !== "POST") {
@@ -46,9 +51,15 @@ const handler = async (req, res) => {
     const unread = hasUnreadMessage(user?.activities, user?.notificationsSeenAt);
     if (unreadOnly) return res.json({ hasUnreadMessage: unread });
 
+    let activities = user?.activities ?? [];
+    if (hasLinkedInvitation(activities)) {
+      const { answered } = await exitQuestionnaireState(db, session.user._id);
+      if (answered) activities = withoutInvitationLink(activities);
+    }
+
     return res.json({
       annotationCount: user?.totalAnnotations ?? 0,
-      userActivities: user?.activities ?? [],
+      userActivities: activities,
       notificationsSeenAt: user?.notificationsSeenAt ?? null,
       hasUnreadMessage: unread,
     });

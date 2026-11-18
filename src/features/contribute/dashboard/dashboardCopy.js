@@ -25,6 +25,9 @@ export const DASHBOARD_COPY = Object.freeze({
   resumeTutorial: "Resume Tutorial",
   stopTutorial: "Stop Tutorial",
   replayTutorial: "Replay Tutorial",
+  // Beside Replay Tutorial, for someone sent the exit questionnaire invitation
+  // who has not answered it yet (S33)
+  exitQuestionnaire: "Exit Questionnaire",
   completeProfile: "Complete Profile to Start",
   // Email verification (S9): the main button, and the notice while the
   // address is not confirmed

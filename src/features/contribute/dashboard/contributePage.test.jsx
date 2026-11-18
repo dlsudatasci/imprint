@@ -123,3 +123,57 @@ describe("contributor dashboard and email verification", () => {
     }
   });
 });
+
+// The exit questionnaire invitation (S33, 17 Nov 2026)
+describe("the dashboard's Exit Questionnaire button", () => {
+  const ready = { _id: new ObjectId(USER_ID), role: "user", hasCompletedTutorial: true, age: 30, emailVerifiedAt: new Date("2026-10-25") };
+  function setupWith(dbUser, { sent = false, answered = false, failing = false } = {}) {
+    getServerSession.mockResolvedValue(staleToken());
+    const users = createMockCollection({ findOne: vi.fn().mockResolvedValue(dbUser) });
+    const email_sends = createMockCollection({
+      findOne: failing ? vi.fn().mockRejectedValue(new Error("down")) : vi.fn().mockResolvedValue(sent ? { _id: "s" } : null),
+    });
+    const exit_surveys = createMockCollection({ findOne: vi.fn().mockResolvedValue(answered ? { _id: "r" } : null) });
+    connectToDatabase.mockResolvedValue({ db: createMockDb({ users, email_sends, exit_surveys }) });
+    return { email_sends };
+  }
+  const render = async (...args) => {
+    const mocks = setupWith(...args);
+    const { props } = await getServerSideProps({ req: {}, res: {} });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose, as _app does
+    const { session, ...pageProps } = props;
+    useSession.mockReturnValue({ data: staleToken(), status: "authenticated" });
+    return { props, mocks, html: renderToStaticMarkup(<ContributePage {...pageProps} />) };
+  };
+
+  it("shows for a contributor sent the invitation with no response, after Replay Tutorial, going to the questionnaire", async () => {
+    const { html, props, mocks } = await render(ready, { sent: true });
+    expect(props.liveUser.exitQuestionnaire).toBe(true);
+    expect(html).toContain("Exit Questionnaire");
+    expect(html).toContain('href="/contribute/exit-survey"');
+    expect(html.indexOf("Replay Tutorial")).toBeLessThan(html.indexOf("Exit Questionnaire"));
+    expect(mocks.email_sends.findOne.mock.calls[0][0]).toEqual({ campaign: "exit-questionnaire", userId: USER_ID, status: "sent" });
+  });
+
+  it("goes once they submit, and never shows without a send", async () => {
+    for (const state of [{ sent: true, answered: true }, { sent: false }, { sent: false, answered: true }]) {
+      const { html, props } = await render(ready, state);
+      expect(props.liveUser.exitQuestionnaire, JSON.stringify(state)).toBeUndefined();
+      expect(html).not.toContain("Exit Questionnaire");
+    }
+  });
+
+  it("never shows to an annotator, and does not even ask", async () => {
+    const { html, mocks } = await render({ ...ready, role: "annotator" }, { sent: true });
+    expect(html).not.toContain("Exit Questionnaire");
+    expect(mocks.email_sends.findOne).not.toHaveBeenCalled();
+  });
+
+  it("leaves the dashboard as it is when the invitation cannot be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { html, props } = await render(ready, { failing: true });
+    expect(props.liveUser).toMatchObject({ role: "user", hasCompletedTutorial: true });
+    expect(props.liveUser.exitQuestionnaire).toBeUndefined();
+    expect(html).toContain("dashboard-info");
+  });
+});

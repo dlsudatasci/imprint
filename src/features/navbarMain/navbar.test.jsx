@@ -217,6 +217,76 @@ describe("ACTIVITY_VIEWS.message, through notificationHistory and trayEntries", 
   });
 });
 
+describe("a bell message that opens a page (S33)", () => {
+  const linked = (date, extra = {}) => ({ tag: "message", title: "Tell us about your experience", activity: "The optional exit questionnaire takes a few minutes.", date, campaign: "exit-questionnaire", href: "/contribute/exit-survey", ...extra });
+
+  it("passes a path on this site on, and ignores any other href", () => {
+    const out = notificationHistory([
+      linked("2026-11-16T03:00:00Z"),
+      linked("2026-11-16T02:00:00Z", { href: "https://evil.example" }),
+      linked("2026-11-16T01:00:00Z", { href: "//evil.example" }),
+      message("2026-11-16T00:00:00Z"),
+    ], 4);
+    expect(out.map((m) => m.href)).toEqual(["/contribute/exit-survey", undefined, undefined, undefined]);
+    // An old message renders as before
+    expect(out[3]).toEqual({ title: "Your first session is waiting", text: "Start with 5 photos, about 5 minutes.", time: out[3].time });
+  });
+
+  function serveFeed(activities) {
+    globalThis.fetch = vi.fn((url, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : {};
+      let data = { isExistingSession: false };
+      if (url === "/api/extractUser") data = body.unread ? { hasUnreadMessage: true } : { userActivities: activities, notificationsSeenAt: SEEN, hasUnreadMessage: true };
+      if (url === "/api/notifications/seen") data = { ok: true };
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(data) });
+    });
+  }
+  const feedWith = () => [
+    linked("2026-11-16T03:00:00Z"),
+    linked("2026-11-16T02:00:00Z", { title: "Bad link", href: "https://evil.example" }),
+    message("2026-11-14T02:00:00Z", { title: "Old message" }),
+  ];
+
+  it("is a link to its page in the laptop tray, and a row without one is not, and following it closes the tray", async () => {
+    serveFeed(feedWith());
+    let el;
+    await act(async () => { el = render({ session: user() }); });
+    await act(async () => { el.querySelector('[aria-controls="nav-notifications"]').click(); });
+    const tray = el.querySelector("#nav-notifications");
+    const links = [...tray.querySelectorAll("[data-notification-link]")];
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["/contribute/exit-survey"]);
+    expect(links[0].textContent).toContain("Tell us about your experience");
+    expect(links[0].closest("[data-notification-new]")).not.toBeNull();
+    expect(tray.innerHTML).not.toContain("evil.example");
+    expect(tray.textContent).toContain("Bad link");
+    expect(tray.textContent).toContain("Old message");
+    expect(el.querySelector('[aria-controls="nav-notifications"]').getAttribute("aria-expanded")).toBe("true");
+    act(() => { links[0].click(); });
+    expect(el.querySelector('[aria-controls="nav-notifications"]').getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("is a link in the phone menu too, and following it closes the menu", async () => {
+    serveFeed(feedWith());
+    let el;
+    await act(async () => { el = render({ session: user() }); });
+    act(() => { el.querySelector('[aria-controls="nav-mobile"]').click(); });
+    await act(async () => { el.querySelector("button[aria-controls='nav-mobile-notifications']").click(); });
+    const links = [...el.querySelectorAll("#nav-mobile-notifications [data-notification-link]")];
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["/contribute/exit-survey"]);
+    act(() => { links[0].click(); });
+    expect(el.querySelector('[aria-controls="nav-mobile"]').getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("links from Earlier as well, once the message is seen", async () => {
+    serveFeed([linked("2026-11-14T03:00:00Z")]);
+    let el;
+    await act(async () => { el = render({ session: user() }); });
+    await act(async () => { el.querySelector('[aria-controls="nav-notifications"]').click(); });
+    const link = el.querySelector("[data-notification-history] [data-notification-link]");
+    expect(link.getAttribute("href")).toBe("/contribute/exit-survey");
+  });
+});
+
 describe("isUnreadMessage and hasUnreadMessage", () => {
   it("is true only for a message newer than notificationsSeenAt", () => {
     expect(isUnreadMessage(message("2026-11-16T02:00:00Z"), SEEN)).toBe(true);

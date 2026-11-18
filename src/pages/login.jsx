@@ -11,6 +11,7 @@ import { AuthCard, Button, Input, Checkbox, Container } from "@/ui";
 import GoogleMark from "@/features/auth/GoogleMark";
 import { AUTH_COPY, RESEARCHER_EMAIL } from "@/features/auth/authCopy";
 import { signInRateLimited, TOO_MANY_ATTEMPTS_ERROR } from "@/features/auth/authResponse";
+import { afterLoginPath } from "@/util/loginReturn.mjs";
 
 const COPY = AUTH_COPY.login;
 
@@ -72,8 +73,9 @@ export default function Login() {
   const notice = formNotice || tooMany || providerNotice;
 
   useEffect(() => {
-    if (!loading && session) {
-      router.push("/contribute");
+    // Once the address is read, so `next` (S33, loginReturn.mjs) is known
+    if (!loading && session && router.isReady !== false) {
+      router.push(afterLoginPath(router.query.next));
     }
   }, [session, loading, router]);
 
@@ -114,7 +116,7 @@ export default function Login() {
       fireReaction("shake");
       setLoading(false);
     } else {
-      router.push("/contribute");
+      router.push(afterLoginPath(router.query.next));
     }
   }
   return (
@@ -248,7 +250,7 @@ export default function Login() {
                 <Button
                   variant="neutral"
                   fullWidth
-                  onClick={() => signIn("google", { callbackUrl: `${window.location.origin}/contribute` })}
+                  onClick={() => signIn("google", { callbackUrl: `${window.location.origin}${afterLoginPath(router.query.next)}` })}
                 >
                   <GoogleMark />
                   {AUTH_COPY.google}

@@ -135,6 +135,21 @@ describe("POST /api/internal/campaigns, from loopback with the secret", () => {
     expect(sendCampaign).toHaveBeenCalledTimes(5);
   });
 
+  it("passes a family name and \"all\" to the sender, as the daily task posts it (S33)", async () => {
+    for (const campaign of ["all", "milestone", "inactivity", "exit-questionnaire"]) {
+      const res = await call(request({ body: { campaign, mode: campaign === "exit-questionnaire" ? "dry" : "auto" } }));
+      expect(res._status).toBe(200);
+      expect(sendCampaign.mock.calls.at(-1)[0]).toMatchObject({ campaign });
+    }
+  });
+
+  it("answers 400 when the sender refuses the exit questionnaire in auto (S33)", async () => {
+    sendCampaign.mockResolvedValueOnce({ ok: false, error: "This campaign is sent by hand only, never by auto." });
+    const res = await call(request({ body: { campaign: "exit-questionnaire", mode: "auto" } }));
+    expect(res._status).toBe(400);
+    expect(res._json.error).toContain("by hand only");
+  });
+
   it("answers 400 with the sender's refusal", async () => {
     sendCampaign.mockResolvedValueOnce({ ok: false, error: "Send this campaign by hand first." });
     const res = await call(request({ body: { campaign: "welcome-nudge", mode: "auto" } }));

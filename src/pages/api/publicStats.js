@@ -2,6 +2,7 @@ import { connectToDatabase } from "@/util/mongodb";
 import { normalizeCityName } from "@/util/cities";
 import { commonObstructionsPipeline, obstructionsPerImagePipeline } from "@/util/validators/publicStats";
 import { currentScaleExpr } from "@/util/validators/sceneScale.mjs";
+import { publicPhotoFilter } from "@/util/publicPhotoCount.mjs";
 
 /**
  * GET /api/publicStats             → totals across every city
@@ -28,7 +29,8 @@ export default async function handler(req, res) {
   // normalizeCityName reject it rather than blowing up on .toLowerCase()
   const citySlug = normalizeCityName(req.query.city);
   const imageFilter = citySlug ? { city: citySlug } : {};
-  const filter = { ...imageFilter, source: { $ne: "annotator" } };
+  // The same filter the milestone emails count with (S33, publicPhotoCount.mjs)
+  const filter = publicPhotoFilter(imageFilter);
 
   try {
     const { db } = await connectToDatabase();

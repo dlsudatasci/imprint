@@ -6,6 +6,10 @@ import { readFileSync } from "node:fs";
  * place: package.json asks for the patched versions, and yarn.lock resolves
  * every package the running app reaches to a version at or above its fix.
  *
+ * Next.js 16.4.5 (18 Nov 2026), the November 2026 security release
+ * (nextjs.org/blog/november-2026-security-release), pinned exactly, with its
+ * two lint packages: a caret range would resolve to a later 16.4 release.
+ *
  * "Reaches" is the same scope as `yarn audit --groups dependencies`: the
  * dependencies in package.json and everything they pull in, not the
  * devDependencies (test and build tools), which never run on the server.
@@ -75,7 +79,7 @@ function runtimeCopies() {
  * not listed here has no known advisory.
  */
 const FIXED = {
-  next: [{ line: "16.", min: "16.4.1" }],
+  next: [{ line: "16.", min: "16.4.5" }],
   "next-auth": [{ line: "4.", min: "4.24.15" }],
   nodemailer: [{ line: "10.", min: "10.1.4" }],
   sharp: [{ line: "0.35.", min: "0.35.5" }],
@@ -93,7 +97,7 @@ const FIXED = {
 
 describe("package.json (S7)", () => {
   it("asks for the patched Next.js, next-auth and nodemailer", () => {
-    expect(pkg.dependencies.next).toBe("^16.4.3");
+    expect(pkg.dependencies.next).toBe("16.4.5");
     expect(pkg.dependencies["next-auth"]).toBe("^4.24.15");
     expect(pkg.dependencies.nodemailer).toBe("^10.2.1");
   });
@@ -120,7 +124,7 @@ describe("yarn.lock (S7)", () => {
   const copies = runtimeCopies();
 
   it("resolves exactly one Next.js, next-auth and nodemailer for the app, at the versions asked for", () => {
-    expect([...copies.get("next")]).toEqual(["16.4.3"]);
+    expect([...copies.get("next")]).toEqual(["16.4.5"]);
     expect([...copies.get("next-auth")]).toEqual(["4.24.15"]);
     expect([...copies.get("nodemailer")]).toEqual(["10.2.1"]);
   });

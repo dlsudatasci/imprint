@@ -149,7 +149,7 @@ import {
   clearSession,
 } from "@/util/sessionCache";
 import { GO_TO_IMAGE_EVENT, answerSignature, leaveAction, FINISH_BEFORE_LEAVING } from "@/util/imageNavigation";
-import { isSessionChanged } from "@/util/validators/sessionSync";
+import { isSessionChanged, SESSION_CHANGED_CODES } from "@/util/validators/sessionSync";
 import { P } from "../Typography";
 import { H2 } from "../Typography";
 import { H3 } from "../Typography";
@@ -185,6 +185,8 @@ const KEEP_IN_VIEW_WAIT_MS = 60;
 
 /** Next was refused because this photo's session is no longer the account's current one (23 Oct 2026) */
 export const SESSION_CHANGED_MESSAGE = "This session was changed in another tab or on another device, so this photo can't be saved here. Loading your current session.";
+/** Next was refused because this photo's suggestions were updated after the page loaded it (S34, 19 Nov 2026) */
+export const MODEL_UPDATED_MESSAGE = "The suggestions on your photos were just updated, so this photo needs a fresh look. Loading the updated photos.";
 /** Long enough to read the message before the current session loads */
 export const SESSION_CHANGED_RELOAD_MS = 3000;
 
@@ -4966,6 +4968,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       imageID: this.props.imageID,
       city: this.props.city,
       servedModelVersion: this.props.servedModelVersion,
+      // The model of the suggestions on screen, from the batch the page holds
+      // (S34). The server refuses the answer when the photo has been updated
+      // since. No field when the batch has none.
+      ...(typeof this.props.servedModelVersion === "string" && this.props.servedModelVersion
+        ? { modelVersion: this.props.servedModelVersion }
+        : {}),
       sceneLevel: this.askScene ? sceneLevel : null,
       // Contributors' Step 1 (S15), beside the answers it decides
       ...(this.askScene ? { hasSidewalk } : {}),
@@ -5034,9 +5042,12 @@ export default class ReactPictureAnnotation extends React.Component<IReactPictur
       // in another tab or on another device (a phone left overnight, 23 Oct
       // 2026). Nothing here can be saved to it, so say so, and load the
       // account's current session: with the saved copy gone the annotate page
-      // asks the server (validators/sessionSync.js).
+      // asks the server (validators/sessionSync.js). The same when the
+      // photo's suggestions were updated since the page loaded them (S34): the
+      // server sends the same session with the updated photos, and this photo
+      // is answered again. Photos already sent stay saved.
       if (isSessionChanged(body)) {
-        this.showMessage(SESSION_CHANGED_MESSAGE);
+        this.showMessage(body?.code === SESSION_CHANGED_CODES.modelUpdated ? MODEL_UPDATED_MESSAGE : SESSION_CHANGED_MESSAGE);
         window.setTimeout(() => {
           clearSession();
           Router.reload();

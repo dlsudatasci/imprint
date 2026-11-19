@@ -67,6 +67,8 @@ const handler = async (req, res) => {
       canvasVersion,
       sceneScale,
       hasSidewalk: sentHasSidewalk,
+      // The photo's model as the page showed it (S34), only compared, never stored
+      modelVersion: shownModelVersion,
     } = req.body;
     let { sceneLevel, selectedObjectsID, newObjects, sidewalkMask } = req.body;
 
@@ -155,6 +157,31 @@ const handler = async (req, res) => {
         return res.status(403).json({ message: "That image is not part of your current session.", code: SESSION_CHANGED_CODES.otherSession });
       }
 
+      // Contributors only (S34, 19 Nov 2026): an answer given on suggestions
+      // that have since been updated is refused, so it is never stored under a
+      // model its contributor was not shown. The page keeps its photos while a
+      // session is open, and an update may run while the session is left
+      // inactive (scripts/update-predictions.mjs). Nothing is saved and the
+      // session is unchanged, and the tool loads the updated photos. A body
+      // with no modelVersion comes from a page loaded before this check and is
+      // accepted as before. Annotators are shown no proposals.
+      const currentModelVersion = imageRecord.modelVersion || DEFAULT_MODEL_VERSION;
+      if (!isAnnotator && shownModelVersion != null && shownModelVersion !== currentModelVersion) {
+        await logTelemetryEvent({
+          event: "SUBMIT_REFUSED_MODEL_UPDATED",
+          userId,
+          username,
+          imageID,
+          shownModelVersion: typeof shownModelVersion === "string" ? shownModelVersion.slice(0, 100) : null,
+          currentModelVersion,
+          timestamp: date,
+        });
+        return res.status(409).json({
+          message: "The suggestions on this photo were updated after it was loaded.",
+          code: SESSION_CHANGED_CODES.modelUpdated,
+        });
+      }
+
       // Both roles: a box drawn up or to the left, or resized past its
       // opposite edge, arrives with a negative size. Store it normalized and
       // clipped to the image. Marks are in the display copy's pixels, the same
@@ -225,7 +252,7 @@ const handler = async (req, res) => {
             username,
             // The model the record's suggestions came from (S5), as
             // annotationGet serves it
-            servedModelVersion: isAnnotator ? null : (imageRecord.modelVersion || DEFAULT_MODEL_VERSION),
+            servedModelVersion: isAnnotator ? null : currentModelVersion,
             source: isAnnotator ? "annotator" : "contributor",
             sceneLevel,
             // Contributors' Step 1 (S15), beside the scene answers it decides

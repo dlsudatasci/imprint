@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { ObjectId } from "mongodb";
 import { createMockCollection, createMockDb } from "@/test-utils/api-helpers";
+import { sessionActivityCollections } from "@/test-utils/sessionActivity";
 import {
   MODEL_VERSION_PATTERN,
   PROPOSAL_FIELDS,
@@ -10,6 +12,12 @@ import {
   updateOperation,
   activeSessionCheck,
   runPredictionUpdate,
+  INACTIVE_SESSION_HOURS,
+  sessionLastActivity,
+  isBlockingSession,
+  blockingSessionCounts,
+  userIdValues,
+  countBlockingSessions,
 } from "./predictionUpdate.mjs";
 import { MODEL_VERSION_PATTERN as IMPORT_VERSION_PATTERN } from "./imageImport.mjs";
 
@@ -173,76 +181,214 @@ describe("updateOperation", () => {
   });
 });
 
-// No write while any session is active (S5, 29 Oct 2026): annotationSubmit
-// labels each answer with the image record's modelVersion
-describe("activeSessionCheck", () => {
-  it("allows a write with no active session, and says nothing", () => {
-    expect(activeSessionCheck(0, { apply: true })).toEqual({ refuse: false, message: null });
-    expect(activeSessionCheck(0)).toEqual({ refuse: false, message: null });
+// S34 (19 Nov 2026): only sessions with activity in the last 12 hours hold
+// back an update. Older ones are left open and ignored.
+const NOW = new Date("2026-11-19T12:00:00Z");
+const hoursAgo = (h, m = 0) => new Date(NOW.getTime() - (h * 60 + m) * 60 * 1000);
+const USER = "aaaaaaaaaaaaaaaaaaaaaaaa";
+const OTHER = "bbbbbbbbbbbbbbbbbbbbbbbb";
+
+describe("the 12 hour rule (S34)", () => {
+  it("is 12 hours", () => {
+    expect(INACTIVE_SESSION_HOURS).toBe(12);
   });
 
-  it("refuses --apply with any active session, giving only the count, the refusal and that no image changed", () => {
-    const { refuse, message } = activeSessionCheck(3, { apply: true });
+  it("blocks a session with activity 11 h 59 min ago, and not one at exactly 12 h", () => {
+    expect(isBlockingSession(hoursAgo(11, 59), NOW)).toBe(true);
+    expect(isBlockingSession(hoursAgo(12), NOW)).toBe(false);
+    expect(isBlockingSession(hoursAgo(72), NOW)).toBe(false);
+  });
+
+  it("treats a session with no date at all as in use", () => {
+    expect(isBlockingSession(null, NOW)).toBe(true);
+  });
+
+  it("ages a session with no telemetry and no pending answers from createdAt", () => {
+    expect(sessionLastActivity({ createdAt: hoursAgo(30) })).toEqual(hoursAgo(30));
+  });
+
+  it("takes the latest of createdAt, any telemetry event and any pending answer", () => {
+    const last = sessionLastActivity({ createdAt: hoursAgo(50), telemetryTimes: [hoursAgo(40), hoursAgo(20)], pendingDates: [hoursAgo(30)] });
+    expect(last).toEqual(hoursAgo(20));
+    expect(sessionLastActivity({ createdAt: hoursAgo(50), telemetryTimes: [hoursAgo(40)], pendingDates: [hoursAgo(5)] })).toEqual(hoursAgo(5));
+  });
+
+  it("does not count an event from before the session started", () => {
+    expect(sessionLastActivity({ createdAt: hoursAgo(30), telemetryTimes: [hoursAgo(31)] })).toEqual(hoursAgo(30));
+  });
+
+  it("counts the sessions each way, with the inactive ones' ids", () => {
+    const counts = blockingSessionCounts(
+      [{ _id: "s1", lastActivity: hoursAgo(1) }, { _id: "s2", lastActivity: hoursAgo(13) }, { _id: "s3", lastActivity: hoursAgo(100) }],
+      NOW
+    );
+    expect(counts).toEqual({ active: 3, blocking: 1, inactive: 2, inactiveSessionIds: ["s2", "s3"] });
+  });
+
+  it("matches a user id as text and as an ObjectId", () => {
+    const [text, oid] = userIdValues(USER);
+    expect(text).toBe(USER);
+    expect(oid).toBeInstanceOf(ObjectId);
+    expect(oid.toHexString()).toBe(USER);
+    expect(userIdValues(new ObjectId(USER)).map(String)).toEqual([USER, USER]);
+    // Not an ObjectId's text: matched as text only
+    expect(userIdValues("legacy-user")).toEqual(["legacy-user"]);
+  });
+});
+
+describe("countBlockingSessions (S34)", () => {
+  const session = (id, userId, createdAt) => ({ _id: id, userId, createdAt, status: "active" });
+
+  it("reads only the active sessions, and changes none", async () => {
+    const colls = sessionActivityCollections({ sessions: [session("s1", USER, hoursAgo(30))] });
+    const db = createMockDb(colls);
+    await countBlockingSessions(db, { now: NOW });
+    expect(ACTIVE_SESSION_STATUS).toBe("active");
+    expect(colls.sessions.find).toHaveBeenCalledWith({ status: "active" }, { projection: { _id: 1, userId: 1, createdAt: 1 } });
+    for (const write of ["updateOne", "updateMany", "findOneAndUpdate", "deleteMany", "insertOne", "bulkWrite"]) {
+      expect(colls.sessions[write]).not.toHaveBeenCalled();
+    }
+  });
+
+  it("ages a session with no telemetry and no pending answers from createdAt", async () => {
+    const db = createMockDb(sessionActivityCollections({ sessions: [session("s1", USER, hoursAgo(11)), session("s2", OTHER, hoursAgo(12))] }));
+    expect(await countBlockingSessions(db, { now: NOW })).toEqual({ active: 2, blocking: 1, inactive: 1, inactiveSessionIds: ["s2"] });
+  });
+
+  it("counts any telemetry event of the user since createdAt, a leaderboard view included", async () => {
+    const db = createMockDb(
+      sessionActivityCollections({
+        sessions: [session("s1", USER, hoursAgo(48))],
+        telemetry: [{ userId: USER, event: "LEADERBOARD_VIEWED", timestamp: hoursAgo(2) }],
+      })
+    );
+    expect(await countBlockingSessions(db, { now: NOW })).toMatchObject({ blocking: 1, inactive: 0 });
+  });
+
+  it("does not count telemetry from before createdAt, or another user's", async () => {
+    const colls = sessionActivityCollections({
+      // Started 13 h ago. The event 1 h before then is an earlier session's
+      sessions: [session("s1", USER, hoursAgo(13))],
+      telemetry: [
+        { userId: USER, event: "SESSION_END", timestamp: hoursAgo(14) },
+        { userId: OTHER, event: "IMAGE_SUBMITTED", timestamp: hoursAgo(1) },
+      ],
+    });
+    expect(await countBlockingSessions(createMockDb(colls), { now: NOW })).toMatchObject({ blocking: 0, inactive: 1, inactiveSessionIds: ["s1"] });
+    expect(colls.telemetry_logs.findOne.mock.calls[0][0].timestamp).toEqual({ $gte: hoursAgo(13) });
+  });
+
+  it("counts the date of a pending answer of the user", async () => {
+    const db = createMockDb(
+      sessionActivityCollections({
+        sessions: [session("s1", USER, hoursAgo(48))],
+        pending: [
+          { userId: USER, status: "pending", date: hoursAgo(3) },
+          { userId: USER, status: "completed", date: hoursAgo(1) },
+        ],
+      })
+    );
+    expect(await countBlockingSessions(db, { now: NOW })).toMatchObject({ blocking: 1 });
+  });
+
+  it("finds activity stored under the user id as text or as an ObjectId", async () => {
+    for (const stored of [USER, new ObjectId(USER)]) {
+      for (const sessionUser of [USER, new ObjectId(USER)]) {
+        const viaTelemetry = sessionActivityCollections({
+          sessions: [session("s1", sessionUser, hoursAgo(48))],
+          telemetry: [{ userId: stored, event: "IMAGE_SUBMITTED", timestamp: hoursAgo(1) }],
+        });
+        expect((await countBlockingSessions(createMockDb(viaTelemetry), { now: NOW })).blocking).toBe(1);
+        const viaPending = sessionActivityCollections({
+          sessions: [session("s1", sessionUser, hoursAgo(48))],
+          pending: [{ userId: stored, status: "pending", date: hoursAgo(1) }],
+        });
+        expect((await countBlockingSessions(createMockDb(viaPending), { now: NOW })).blocking).toBe(1);
+      }
+    }
+  });
+});
+
+describe("activeSessionCheck", () => {
+  it("allows a write with no active session, and gives the count", () => {
+    expect(activeSessionCheck({ active: 0, blocking: 0, inactive: 0 }, { apply: true })).toEqual({ refuse: false, line: "0 active session(s).", message: null });
+  });
+
+  it("gives the counts each way, and allows a write when every session is inactive", () => {
+    const check = activeSessionCheck({ active: 3, blocking: 0, inactive: 3 }, { apply: true });
+    expect(check).toEqual({
+      refuse: false,
+      line: "3 active session(s): 0 with activity in the last 12 h, 3 inactive for 12 h or more (left open, ignored).",
+      message: null,
+    });
+  });
+
+  it("refuses --apply with any session in use, giving only the counts", () => {
+    const { refuse, line, message } = activeSessionCheck({ active: 4, blocking: 1, inactive: 3 }, { apply: true });
     expect(refuse).toBe(true);
-    expect(message).toContain("3 active session(s)");
-    expect(message).toContain("Refusing to write");
-    expect(message).toContain("No image was changed.");
-    expect(activeSessionCheck(1, { apply: true }).refuse).toBe(true);
+    expect(line).toBe("4 active session(s): 1 with activity in the last 12 h, 3 inactive for 12 h or more (left open, ignored).");
+    expect(message).toBe("Refusing to write while 1 session has had activity in the last 12 h. No image was changed. Run again later.");
+    expect(activeSessionCheck({ active: 2, blocking: 2, inactive: 0 }, { apply: true }).message).toContain("while 2 sessions have had activity");
   });
 
   it("only warns without --apply", () => {
-    const { refuse, message } = activeSessionCheck(2);
+    const { refuse, message } = activeSessionCheck({ active: 2, blocking: 1, inactive: 1 });
     expect(refuse).toBe(false);
-    expect(message).toMatch(/^Warning: 2 active session\(s\)\./);
+    expect(message).toBe("Warning: --apply will refuse to write while 1 session has had activity in the last 12 h.");
   });
 
   it("has no em dashes or semicolons in what it prints", () => {
-    for (const { message } of [activeSessionCheck(2), activeSessionCheck(2, { apply: true })]) {
+    const counts = { active: 4, blocking: 1, inactive: 3 };
+    for (const { line, message } of [activeSessionCheck(counts), activeSessionCheck(counts, { apply: true })]) {
+      expect(line).not.toMatch(/[\u2014;]/);
       expect(message).not.toMatch(/[\u2014;]/);
     }
   });
 });
 
 describe("runPredictionUpdate", () => {
-  const now = new Date("2026-11-01T00:00:00Z");
+  const now = NOW;
 
-  function setup(activeSessions, { matchedCount, modifiedCount } = {}) {
+  function setup(activity = {}, { matchedCount, modifiedCount } = {}) {
     const data = file();
     const plan = { data, ...planPredictionUpdate(data, IMAGES) };
-    const sessions = createMockCollection({ countDocuments: vi.fn().mockResolvedValue(activeSessions) });
+    const colls = sessionActivityCollections(activity);
     const images = createMockCollection({
       bulkWrite: vi.fn().mockResolvedValue({
         matchedCount: matchedCount ?? plan.updates.length,
         modifiedCount: modifiedCount ?? plan.updates.length,
       }),
     });
-    const logs = createMockCollection();
-    const db = createMockDb({ sessions, Image: images, telemetry_logs: logs });
-    return { plan, db, sessions, images, logs, run: (options) => runPredictionUpdate(db, plan, { now, ...options }) };
+    const db = createMockDb({ ...colls, Image: images });
+    return { plan, db, sessions: colls.sessions, images, logs: colls.telemetry_logs, run: (options) => runPredictionUpdate(db, plan, { now, ...options }) };
   }
 
-  it("counts the sessions whose status is active", async () => {
-    const { sessions, run } = setup(0);
-    await run({ apply: true });
-    expect(ACTIVE_SESSION_STATUS).toBe("active");
-    expect(sessions.countDocuments).toHaveBeenCalledWith({ status: "active" });
-  });
+  const inactive = { sessions: [{ _id: "s1", userId: USER, createdAt: hoursAgo(30) }, { _id: "s2", userId: OTHER, createdAt: hoursAgo(100) }] };
+  const oneInUse = {
+    sessions: [...inactive.sessions, { _id: "s3", userId: "cccccccccccccccccccccccc", createdAt: hoursAgo(48) }],
+    telemetry: [{ userId: "cccccccccccccccccccccccc", event: "IMAGE_SUBMITTED", timestamp: hoursAgo(0, 30) }],
+  };
 
-  it("writes nothing with --apply while a session is active", async () => {
-    const { images, logs, run } = setup(1);
-    const result = await run({ apply: true });
-    expect(result).toMatchObject({ activeSessions: 1, refused: true, written: false, modified: 0, logged: false });
-    expect(result.message).toContain("No image was changed.");
-    expect(images.bulkWrite).not.toHaveBeenCalled();
-    expect(images.updateOne).not.toHaveBeenCalled();
-    expect(logs.insertOne).not.toHaveBeenCalled();
-  });
-
-  it("writes as before with --apply and no active session", async () => {
-    const { plan, images, logs, run } = setup(0);
+  it("writes with only inactive sessions, leaves them untouched, and logs the counts and their ids", async () => {
+    const { plan, images, sessions, logs, run } = setup(inactive);
     const result = await run({ apply: true, partial: false });
-    expect(result).toMatchObject({ activeSessions: 0, refused: false, written: true, modified: plan.updates.length, unchanged: 0, logged: true, message: null });
+    expect(result).toMatchObject({
+      activeSessions: 2,
+      blockingSessions: 0,
+      inactiveSessions: 2,
+      inactiveSessionIds: ["s1", "s2"],
+      refused: false,
+      written: true,
+      modified: plan.updates.length,
+      unchanged: 0,
+      logged: true,
+      message: null,
+    });
+    expect(result.sessionsLine).toBe("2 active session(s): 0 with activity in the last 12 h, 2 inactive for 12 h or more (left open, ignored).");
     expect(images.bulkWrite).toHaveBeenCalledWith(plan.updates.map((u) => updateOperation(u, "v1-xgboost", now)), { ordered: false });
+    for (const write of ["updateOne", "updateMany", "findOneAndUpdate", "deleteMany", "insertOne", "bulkWrite"]) {
+      expect(sessions[write]).not.toHaveBeenCalled();
+    }
     expect(logs.insertOne).toHaveBeenCalledWith({
       event: "MODEL_PREDICTIONS_UPDATED",
       modelVersion: "v1-xgboost",
@@ -253,23 +399,45 @@ describe("runPredictionUpdate", () => {
       proposalsWritten: plan.counts.proposalsWritten,
       servedImagesNotInFile: plan.counts.servedImagesNotInFile,
       partial: false,
+      activeSessions: 2,
+      inactiveSessionsIgnored: 2,
+      inactiveSessionIds: ["s1", "s2"],
+      inactiveSessionHours: 12,
       timestamp: now,
     });
   });
 
-  it("writes nothing without --apply, with a warning when a session is active", async () => {
-    for (const active of [0, 4]) {
-      const { images, logs, run } = setup(active);
+  it("writes as before with no active session", async () => {
+    const { logs, run } = setup();
+    const result = await run({ apply: true });
+    expect(result).toMatchObject({ activeSessions: 0, refused: false, written: true, logged: true, message: null, sessionsLine: "0 active session(s)." });
+    expect(logs.insertOne.mock.calls[0][0]).toMatchObject({ activeSessions: 0, inactiveSessionsIgnored: 0, inactiveSessionIds: [], inactiveSessionHours: 12 });
+  });
+
+  it("writes nothing with --apply while one session is in use", async () => {
+    const { images, logs, run } = setup(oneInUse);
+    const result = await run({ apply: true });
+    expect(result).toMatchObject({ activeSessions: 3, blockingSessions: 1, inactiveSessions: 2, refused: true, written: false, modified: 0, logged: false });
+    expect(result.message).toBe("Refusing to write while 1 session has had activity in the last 12 h. No image was changed. Run again later.");
+    expect(images.bulkWrite).not.toHaveBeenCalled();
+    expect(images.updateOne).not.toHaveBeenCalled();
+    expect(logs.insertOne).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing without --apply, and gives the counts line", async () => {
+    for (const activity of [{}, inactive, oneInUse]) {
+      const { images, logs, run } = setup(activity);
       const result = await run({ apply: false });
-      expect(result).toMatchObject({ activeSessions: active, refused: false, written: false });
-      expect(result.message === null).toBe(active === 0);
+      expect(result).toMatchObject({ refused: false, written: false });
+      expect(result.sessionsLine).toMatch(/^\d+ active session\(s\)/);
+      expect(result.message === null).toBe(activity !== oneInUse);
       expect(images.bulkWrite).not.toHaveBeenCalled();
       expect(logs.insertOne).not.toHaveBeenCalled();
     }
   });
 
   it("reports images that changed between the read and the write, and logs no cycle when none was modified", async () => {
-    const { plan, logs, run } = setup(0, { matchedCount: 1, modifiedCount: 0 });
+    const { plan, logs, run } = setup({}, { matchedCount: 1, modifiedCount: 0 });
     const result = await run({ apply: true });
     expect(result.unchanged).toBe(plan.updates.length - 1);
     expect(result.logged).toBe(false);
@@ -289,9 +457,16 @@ describe("update-predictions.mjs", () => {
     expect(source).not.toContain("bulkWrite");
   });
 
-  it("explains the active session refusal at the top", () => {
+  it("explains the session check at the top", () => {
     const header = source.slice(0, source.indexOf("*/"));
-    expect(header).toContain("never writes while any session is active");
+    expect(header).not.toContain("never writes while any session is active");
+    expect(header).toContain("activity in the last 12 hours");
+    expect(header).toContain("left open");
+    expect(header).toContain("MODEL_UPDATED");
     expect(header).toContain("--apply");
+  });
+
+  it("prints the counts line on every run", () => {
+    expect(source).toContain("console.log(`  ${run.sessionsLine}`)");
   });
 });

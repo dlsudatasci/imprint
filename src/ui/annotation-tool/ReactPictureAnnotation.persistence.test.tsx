@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import ReactPictureAnnotation, { SESSION_CHANGED_MESSAGE, SESSION_CHANGED_RELOAD_MS, ADD_BOX_COPY, ADD_BOX_HINT_MS } from "./ReactPictureAnnotation";
+import ReactPictureAnnotation, { SESSION_CHANGED_MESSAGE, MODEL_UPDATED_MESSAGE, SESSION_CHANGED_RELOAD_MS, ADD_BOX_COPY, ADD_BOX_HINT_MS } from "./ReactPictureAnnotation";
 import { readSessionData, writeSession, readCurrentCount, writeCurrentCount } from "@/util/sessionCache";
 import { emptySceneLevel } from "@/util/validators/sceneQuestions.mjs";
 import { LOUPE_SIZE_PX, LOUPE_BOX_GAP_PX, LOUPE_MARGIN_PX, LOUPE_FINGER_CLEAR_PX } from "./loupe";
@@ -155,6 +155,8 @@ function element({ isAnnotator = false, current = 1, layout = "desktop", askSide
       annotationData={rec.annotationList}
       imageID={rec.imageID}
       city={rec.city}
+      // As the annotate form passes it, from the batch the page holds
+      servedModelVersion={rec.modelVersion}
       currentAnnotationCount={current}
       totalAnnotationCount={data.imgRecords.length}
       username="test"
@@ -766,6 +768,57 @@ describe("moving on from an image (8 Oct 2026)", () => {
     expect(Router.reload).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(SESSION_CHANGED_RELOAD_MS));
     // The saved copy gone, and a cold reload, so the annotate page asks the server
+    expect(readSessionData()).toBeNull();
+    expect(Router.reload).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem("isNavigatingImages")).toBeNull();
+  });
+
+  // S34 (19 Nov 2026): the photo's suggestions were updated while the page held it
+  it("sends the model of the suggestions on screen, from the batch the page holds", async () => {
+    const sent = async () => {
+      const fetchMock = vi.fn(async () => ({ status: 200, ok: true, json: async () => ({}) }));
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      const tool = mount();
+      ready(tool);
+      await act(async () => {
+        await tool.submit();
+      });
+      unmount();
+      const call = fetchMock.mock.calls.find((c) => (c as unknown as [string])[0] === "/api/annotationSubmit") as unknown as [string, { body: string }];
+      return JSON.parse(call[1].body);
+    };
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [{ ...record(), modelVersion: "v1-xgboost" }], isAnnotator: false } });
+    expect((await sent()).modelVersion).toBe("v1-xgboost");
+    // A batch with no model version sends no field
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [record()], isAnnotator: false } });
+    expect(await sent()).not.toHaveProperty("modelVersion");
+  });
+
+  it("when Next is refused because the photo's suggestions were updated, says so and loads the updated photos", async () => {
+    window.localStorage.clear();
+    writeSession({ total: 1, current: 1, data: { imgRecords: [{ ...record(), modelVersion: "v0-mapillary" }], isAnnotator: false } });
+    const tool = mount();
+    ready(tool);
+    const Router = (await import("next/router")).default as unknown as { reload: ReturnType<typeof vi.fn> };
+    Router.reload.mockClear();
+    sessionStorage.removeItem("isNavigatingImages");
+    globalThis.fetch = vi.fn(async (url: string) =>
+      url === "/api/annotationSubmit"
+        ? { status: 409, ok: false, json: async () => ({ message: "The suggestions on this photo were updated after it was loaded.", code: "MODEL_UPDATED" }) }
+        : { status: 200, ok: true, json: async () => ({}) }
+    ) as unknown as typeof fetch;
+    await act(async () => {
+      await tool.submit();
+    });
+    expect(tool.state.error).toBe(MODEL_UPDATED_MESSAGE);
+    expect(MODEL_UPDATED_MESSAGE).toBe("The suggestions on your photos were just updated, so this photo needs a fresh look. Loading the updated photos.");
+    expect(MODEL_UPDATED_MESSAGE).not.toMatch(/[\u2014;]/);
+    expect(tool.state.submitting).toBe(true);
+    expect(Router.reload).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(SESSION_CHANGED_RELOAD_MS));
+    // The saved copy gone and a cold reload: the annotate page asks the server for the updated photos
     expect(readSessionData()).toBeNull();
     expect(Router.reload).toHaveBeenCalledTimes(1);
     expect(sessionStorage.getItem("isNavigatingImages")).toBeNull();

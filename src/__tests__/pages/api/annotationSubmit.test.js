@@ -1363,3 +1363,78 @@ describe("POST /api/annotationSubmit, Step 1 and Step 3 (S15)", () => {
     expect(mocks.annotationsCol.updateOne.mock.calls[0][1].$set.selectedObjectsID[0].proposalShown).toBe(true);
   });
 });
+
+// S34 (19 Nov 2026): a photo answered on suggestions that have since been
+// updated is refused, so no answer is stored under a model its contributor
+// was not shown
+describe("POST /api/annotationSubmit, a photo whose suggestions were updated (S34)", () => {
+  const RECORD = { city: "makati", width: 1280, height: 960, modelVersion: "v1-xgboost", annotationList: CONTRIBUTOR_SUGGESTIONS };
+
+  async function submit({ role = "user", image = RECORD, body = validBody } = {}) {
+    const mocks = setupMocks({ userRole: role });
+    mocks.imageCol.findOne.mockResolvedValue(image);
+    const res = createMockRes();
+    await handler(createMockReq({ body: { ...body, telemetry: { imageDurationMs: 4000 } } }), res);
+    return { mocks, res };
+  }
+
+  const sessionWrites = (mocks) => [
+    ...mocks.sessionsCol.updateOne.mock.calls,
+    ...mocks.sessionsCol.findOneAndUpdate.mock.calls,
+    ...mocks.sessionsCol.updateMany.mock.calls,
+  ];
+
+  it("saves a contributor's answer given on the record's model", async () => {
+    const { mocks, res } = await submit({ body: { ...validBody, modelVersion: "v1-xgboost" } });
+    expect(res._status).toBe(200);
+    expect(mocks.annotationsCol.updateOne.mock.calls[0][1].$set.servedModelVersion).toBe("v1-xgboost");
+  });
+
+  it("refuses with 409 MODEL_UPDATED an answer given on another model, saves nothing, logs it and leaves the session", async () => {
+    const date = new Date("2026-11-19T08:00:00Z");
+    vi.useFakeTimers({ now: date, toFake: ["Date"] });
+    try {
+      const { mocks, res } = await submit({ body: { ...validBody, modelVersion: "v0-mapillary" } });
+      expect(res._status).toBe(409);
+      expect(res._json.code).toBe("MODEL_UPDATED");
+      expect(mocks.annotationsCol.updateOne).not.toHaveBeenCalled();
+      expect(sessionWrites(mocks)).toEqual([]);
+      expect(logTelemetryEvent).toHaveBeenCalledTimes(1);
+      expect(logTelemetryEvent).toHaveBeenCalledWith({
+        event: "SUBMIT_REFUSED_MODEL_UPDATED",
+        userId: MOCK_USER_ID,
+        username: "testuser",
+        imageID: 42,
+        shownModelVersion: "v0-mapillary",
+        currentModelVersion: "v1-xgboost",
+        timestamp: date,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("compares a record with no modelVersion as the default model", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- left out on purpose
+    const { modelVersion, ...unversioned } = RECORD;
+    expect((await submit({ image: unversioned, body: { ...validBody, modelVersion: "v0-mapillary" } })).res._status).toBe(200);
+    const refused = await submit({ image: unversioned, body: { ...validBody, modelVersion: "v1-xgboost" } });
+    expect(refused.res._status).toBe(409);
+    expect(logTelemetryEvent.mock.calls.at(-1)[0]).toMatchObject({ shownModelVersion: "v1-xgboost", currentModelVersion: "v0-mapillary" });
+  });
+
+  it("saves an answer with no modelVersion as before, from a page loaded before the check", async () => {
+    const { mocks, res } = await submit({ body: validBody });
+    expect(res._status).toBe(200);
+    expect(mocks.annotationsCol.updateOne).toHaveBeenCalledTimes(1);
+    expect(logTelemetryEvent.mock.calls[0][0].event).toBe("IMAGE_SUBMITTED");
+  });
+
+  it("never refuses an annotator for it", async () => {
+    const image = { ...ANNOTATOR_IMAGE, modelVersion: "v1-xgboost" };
+    const { mocks, res } = await submit({ role: "annotator", image, body: { ...annotatorBody(), modelVersion: "v0-mapillary" } });
+    expect(res._status).toBe(200);
+    expect(mocks.annotationsCol.updateOne).toHaveBeenCalledTimes(1);
+    expect(logTelemetryEvent.mock.calls.map((c) => c[0].event)).not.toContain("SUBMIT_REFUSED_MODEL_UPDATED");
+  });
+});

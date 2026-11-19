@@ -60,7 +60,8 @@ describe("sitePath", () => {
 
 describe("coming back to the questionnaire after signing in", () => {
   it("sends a signed-out visitor to the questionnaire to sign in with next, and anyone else to plain /login", () => {
-    expect(RETURN_PATHS).toEqual(["/contribute/exit-survey"]);
+    // The leaderboard too, from the leaderboard announcement (18 Nov 2026)
+    expect(RETURN_PATHS).toEqual(["/contribute/exit-survey", "/contribute/leaderboard"]);
     expect(loginPathFor("/contribute/exit-survey")).toBe("/login?next=%2Fcontribute%2Fexit-survey");
     for (const p of ["/contribute", "/contribute/annotate", undefined]) expect(loginPathFor(p)).toBe("/login");
   });

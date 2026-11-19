@@ -59,6 +59,7 @@ describe("the S33 campaigns, by id and by family", () => {
       "milestone-1000", "milestone-1500", "milestone-2000", "milestone-2500",
       "inactivity-1", "inactivity-2", "inactivity-3",
       "exit-questionnaire",
+      "leaderboard-announcement",
     ]);
     for (const key of Object.keys(CAMPAIGNS)) expect(findCampaign(key).id).toBe(key);
     expect(MILESTONES).toEqual([1000, 1500, 2000, 2500]);

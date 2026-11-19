@@ -152,10 +152,18 @@ function header(origin) {
  * sign-off and the stop line. `welcome-nudge` and the inactivity reminder
  * have the animation (the reminder from 18 Nov 2026, Rans), in the html
  * only. The milestones and the exit questionnaire invitation do not.
+ *
+ * `secondary: { button, path }` (the leaderboard announcement, 18 Nov 2026)
+ * adds a second button under the main one, white with a blue border and blue
+ * text. With it, both buttons are built as tables (`buttonTable`), the same
+ * size, each with its link written under it, and the plain text lists both
+ * links. Without it the single button is unchanged.
  */
 function renderMessage(user, links, c) {
   const hello = greeting(user?.username);
   const after = c.after || [];
+  // The second button's address, on this site like the first
+  const secondary = c.secondary ? `${links.origin}${c.secondary.path}` : null;
 
   const text = [
     hello,
@@ -164,6 +172,7 @@ function renderMessage(user, links, c) {
     ...after.flatMap((x) => [x, ""]),
     `${c.button}: ${links.action}`,
     "",
+    ...(secondary ? [`${c.secondary.button}: ${secondary}`, ""] : []),
     ...SIGN_OFF,
     "",
     `${FOOTER} ${STOP}: ${links.unsubscribe}`,
@@ -180,8 +189,17 @@ function renderMessage(user, links, c) {
       ? [`<a href="${origin}/contribute" style="display:block;margin:0 0 16px"><img src="${origin}${ANIMATION_PATH}" width="600" alt="${escapeHtml(ANIMATION_ALT)}" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a>`]
       : []),
     ...after.map(p),
-    `<div style="text-align:center;margin:24px 0 8px"><a href="${action}" style="background-color:${BLUE};color:#ffffff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block">${escapeHtml(c.button)}</a></div>`,
-    `<p style="color:${BLACK};font-size:12px;text-align:center;margin:0 0 24px"><a href="${action}" style="color:${BLUE};word-break:break-all">${action}</a></p>`,
+    ...(secondary
+      ? [
+        buttonTable(action, c.button, "primary"),
+        linkUnder(action, "0 0 16px"),
+        buttonTable(escapeHtml(secondary), c.secondary.button, "secondary"),
+        linkUnder(escapeHtml(secondary), "0 0 24px"),
+      ]
+      : [
+        `<div style="text-align:center;margin:24px 0 8px"><a href="${action}" style="background-color:${BLUE};color:#ffffff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block">${escapeHtml(c.button)}</a></div>`,
+        linkUnder(action, "0 0 24px"),
+      ]),
     `<p style="color:${BLACK};font-size:16px;line-height:1.6;margin:0 0 24px">${SIGN_OFF.map(escapeHtml).join("<br>")}</p>`,
     `<hr style="border:0;border-top:1px solid #e2e8f0;margin:0 0 16px">`,
     `<p style="color:${BLACK};font-size:12px;line-height:1.5;margin:0">${escapeHtml(FOOTER)} <a href="${stop}" style="color:${BLUE}">${STOP}</a></p>`,
@@ -195,6 +213,33 @@ ${parts.join("\n")}
     // `href` (S33) is the page the bell message opens, a path on this site
     bell: { title: c.bell.title, activity: c.bell.activity, ...(c.bell.href ? { href: c.bell.href } : {}) },
   };
+}
+
+/** A button's address written out under it, small and centered. `href` is already escaped. */
+function linkUnder(href, margin) {
+  return `<p style="color:${BLACK};font-size:12px;text-align:center;margin:${margin}"><a href="${href}" style="color:${BLUE};word-break:break-all">${href}</a></p>`;
+}
+
+/** Both table buttons are this size, so the two match (the 2 px border inside it). */
+export const BUTTON_WIDTH = 240;
+export const BUTTON_HEIGHT = 44;
+
+/**
+ * A button that holds up in Gmail and Outlook: a one-cell table whose cell
+ * carries the colour (`bgcolor` and `background-color`), the border and a
+ * fixed width and height, so Outlook's Word engine, which ignores padding and
+ * width on a link, still draws it whole. The link inside is a block with the
+ * same width and line height, so in Gmail and the rest the whole button is
+ * clickable. Outlook squares the corners. `href` is already escaped.
+ * "primary" is white on blue, "secondary" blue on white with a blue border.
+ */
+function buttonTable(href, label, kind) {
+  const fill = kind === "primary" ? BLUE : "#ffffff";
+  const ink = kind === "primary" ? "#ffffff" : BLUE;
+  const inner = BUTTON_HEIGHT - 4;
+  return `<table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;margin:${kind === "primary" ? "24px" : "0"} auto 8px"><tr>
+<td align="center" valign="middle" width="${BUTTON_WIDTH}" height="${BUTTON_HEIGHT}" bgcolor="${fill}" style="width:${BUTTON_WIDTH}px;height:${BUTTON_HEIGHT}px;background-color:${fill};border:2px solid ${BLUE};border-radius:6px;mso-padding-alt:0;box-sizing:border-box"><a href="${href}" style="display:block;width:${BUTTON_WIDTH - 4}px;line-height:${inner}px;mso-line-height-rule:exactly;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;color:${ink};text-align:center;text-decoration:none;border-radius:6px">${escapeHtml(label)}</a></td>
+</tr></table>`;
 }
 
 function welcomeNudgeMessage(user, variant, links) {
@@ -291,6 +336,8 @@ export const INACTIVE_AFTER_MS = 5 * DAY_MS;
 export const INACTIVITY_ROUNDS = 3;
 export const EXIT_QUESTIONNAIRE_ID = "exit-questionnaire";
 export const EXIT_QUESTIONNAIRE_PATH = "/contribute/exit-survey";
+export const LEADERBOARD_ANNOUNCEMENT_ID = "leaderboard-announcement";
+export const LEADERBOARD_PATH = "/contribute/leaderboard";
 
 /** These campaigns have one version of their words. */
 const ONE_VARIANT = "standard";
@@ -345,6 +392,23 @@ export const EXIT_QUESTIONNAIRE_COPY = Object.freeze({
     title: "Tell us about your experience",
     activity: "The optional exit questionnaire takes a few minutes.",
     href: EXIT_QUESTIONNAIRE_PATH,
+  }),
+});
+
+/** The words of the leaderboard announcement (Rans, 18 Nov 2026). */
+export const LEADERBOARD_ANNOUNCEMENT_COPY = Object.freeze({
+  subject: "See where you stand on the Imprint leaderboard",
+  paragraphs: Object.freeze([
+    "We've added a leaderboard to Imprint. It ranks contributors by the photos they've finished, and every photo you finish counts toward your place.",
+    "You choose whether your username is shown. If you'd rather not, you appear as a number instead, and you can change this anytime.",
+    "Ready to move up the leaderboard?",
+  ]),
+  button: "See the leaderboard",
+  secondary: Object.freeze({ button: "Start annotating", path: "/contribute" }),
+  bell: Object.freeze({
+    title: "New: the leaderboard",
+    activity: "See where you stand among Imprint's contributors.",
+    href: LEADERBOARD_PATH,
   }),
 });
 
@@ -537,11 +601,35 @@ export const exitQuestionnaire = eventCampaign({
   },
 });
 
+/**
+ * The leaderboard announcement (18 Nov 2026), sent once by Rans by hand: to
+ * contributors with at least one finished photo of their own, never by the
+ * daily task (`manualOnly`). `holdSameDay`: the sender leaves out of `apply`,
+ * `retry-failed` and `dry` anyone sent any campaign email in the last 20
+ * hours, as `auto` does, so nobody has it on the same day as an automatic
+ * email. A later `apply` takes them.
+ */
+export const leaderboardAnnouncement = eventCampaign({
+  id: LEADERBOARD_ANNOUNCEMENT_ID,
+  manualOnly: true,
+  holdSameDay: true,
+  copy: LEADERBOARD_ANNOUNCEMENT_COPY,
+  actionPath: LEADERBOARD_PATH,
+  async sort(db, now = new Date()) {
+    const [users, sends, latest] = await Promise.all([
+      contributorAccounts(db),
+      sendsByCampaign(db, [LEADERBOARD_ANNOUNCEMENT_ID], now),
+      latestPhotoTimes(db),
+    ]);
+    return sortContributors(users, sends.get(LEADERBOARD_ANNOUNCEMENT_ID), ["noPhoto"], (user, userId) => (latest.has(userId) ? null : "noPhoto"));
+  },
+});
+
 export const milestoneCampaigns = Object.freeze(MILESTONES.map((m, i) => milestoneCampaign(m, MILESTONES[i + 1] ?? null)));
 export const inactivityCampaigns = Object.freeze(INACTIVITY_IDS.map((_, i) => inactivityCampaign(i + 1)));
 
 export const CAMPAIGNS = Object.freeze(
-  Object.fromEntries([welcomeNudge, ...milestoneCampaigns, ...inactivityCampaigns, exitQuestionnaire].map((c) => [c.id, c])),
+  Object.fromEntries([welcomeNudge, ...milestoneCampaigns, ...inactivityCampaigns, exitQuestionnaire, leaderboardAnnouncement].map((c) => [c.id, c])),
 );
 
 /**
@@ -556,7 +644,7 @@ export const FAMILIES = Object.freeze({
   inactivity: Object.freeze({ members: inactivityCampaigns, preview: Object.freeze([inactivityCampaigns[0]]) }),
 });
 
-/** The order of one daily run (`campaign: "all"`). The exit questionnaire is never in it. */
+/** The order of one daily run (`campaign: "all"`). The exit questionnaire and the leaderboard announcement are never in it. */
 export const AUTO_ORDER = Object.freeze([welcomeNudge, ...milestoneCampaigns, ...inactivityCampaigns]);
 
 const own = (object, key) => typeof key === "string" && Object.prototype.hasOwnProperty.call(object, key);

@@ -24,9 +24,9 @@ function setup(role, hasSession = true) {
 beforeEach(() => vi.clearAllMocks());
 
 describe("/contribute/leaderboard", () => {
-  it("sends a signed-out visitor to log in", async () => {
+  it("sends a signed-out visitor to log in, coming back to the leaderboard afterwards", async () => {
     setup("user", false);
-    expect(await getServerSideProps({ req: {}, res: {} })).toEqual({ redirect: { destination: "/login", permanent: false } });
+    expect(await getServerSideProps({ req: {}, res: {} })).toEqual({ redirect: { destination: "/login?next=%2Fcontribute%2Fleaderboard", permanent: false } });
   });
 
   it("sends an annotator back to the dashboard, whatever the login token says", async () => {

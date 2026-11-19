@@ -32,7 +32,9 @@ import { findCampaign, findFamily, idText, AUTO_ORDER, CAMPAIGNS, STALE_CLAIM_MS
  * several, anyone with a send whose `sentAt` is in the last 20 hours, of any
  * campaign, is left out of the run and counted as `sentToday`. Nothing is
  * queued, a later run takes them if they still qualify. A manual `apply` is
- * not held back, and its sends count for the next automatic run.
+ * not held back, and its sends count for the next automatic run. A campaign
+ * marked `holdSameDay` (the leaderboard announcement, 18 Nov 2026) is held
+ * back the same way in `apply`, `retry-failed` and `dry` too.
  *
  * 20 hours, not 24 (Rans, 18 Nov 2026): the daily task runs at the same time
  * each day and its emails go out a moment after the run begins, so the next
@@ -233,12 +235,18 @@ export async function sendCampaign({
       if (gate) return { ...base, sent: 0, message: gate.message };
     }
     const sorted = await campaign.sort(db, at);
-    if (mode === "dry") return { ...base, ...dryCounts(campaign, sorted, runLimit, null).counts, limit: runLimit };
+    // Who has had an email in the last 20 hours: always for auto, and in
+    // every mode for a campaign marked holdSameDay
+    const holds = mode === "auto" || campaign.holdSameDay === true;
+    if (mode === "dry") {
+      const dryHeld = holds ? await sentInLastDay(sends, at) : null;
+      return { ...base, ...dryCounts(campaign, sorted, runLimit, dryHeld).counts, limit: runLimit };
+    }
 
     // The production image has no scripts/, so the sender makes sure the
     // index is there before its first send. Does nothing when it exists.
     await sends.createIndex(SENDS_INDEX.keys, SENDS_INDEX.options);
-    const held = mode === "auto" ? await sentInLastDay(sends, at) : null;
+    const held = holds ? await sentInLastDay(sends, at) : null;
     const { counts } = await runCampaign({ ...run, campaign, sorted, limit: runLimit, held });
     return { ...base, ...counts, limit: runLimit };
   }

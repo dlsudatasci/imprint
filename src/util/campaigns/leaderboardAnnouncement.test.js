@@ -61,7 +61,8 @@ describe("leaderboard-announcement, the campaign", () => {
     expect(LEADERBOARD_ANNOUNCEMENT_ID).toBe("leaderboard-announcement");
     expect(findCampaign("leaderboard-announcement")).toBe(leaderboardAnnouncement);
     expect(leaderboardAnnouncement.manualOnly).toBe(true);
-    expect(leaderboardAnnouncement.holdSameDay).toBe(true);
+    // The same-day hold was turned off after the first send (19 Nov 2026, Rans)
+    expect(leaderboardAnnouncement.holdSameDay).toBe(false);
     expect(AUTO_ORDER).not.toContain(leaderboardAnnouncement);
     for (const family of Object.values(FAMILIES)) expect(family.members).not.toContain(leaderboardAnnouncement);
   });
@@ -124,7 +125,7 @@ describe("leaderboard-announcement, sending", () => {
     expect(collections.email_sends.rows).toHaveLength(0);
   });
 
-  it("in apply leaves out someone emailed 19 hours earlier, counted as sentToday, and sends someone emailed 21 hours earlier", async () => {
+  it("in apply sends to someone emailed 19 hours earlier too, the hold being off (19 Nov 2026)", async () => {
     expect(ONE_A_DAY_MS).toBe(20 * HOUR);
     const users = [contributor(1), contributor(2), contributor(3)];
     const { db, collections } = setup(users, {
@@ -132,28 +133,22 @@ describe("leaderboard-announcement, sending", () => {
       email_sends: [sentBefore(1, 19), sentBefore(2, 21, "inactivity-1")],
     });
     const result = await run(db, { mode: "apply" });
-    expect(result).toMatchObject({ ok: true, trigger: "manual", sent: 2, sentToday: 1, left: 0 });
-    expect(mailedTo().sort()).toEqual(["user2@example.org", "user3@example.org"]);
-    expect(collections.email_sends.rows.filter((r) => r.campaign === LEADERBOARD_ANNOUNCEMENT_ID).map((r) => r.userId).sort()).toEqual([id(2), id(3)]);
+    expect(result).toMatchObject({ ok: true, trigger: "manual", sent: 3, left: 0 });
+    expect(result.sentToday).toBeUndefined();
+    expect(mailedTo().sort()).toEqual(["user1@example.org", "user2@example.org", "user3@example.org"]);
+    expect(collections.email_sends.rows.filter((r) => r.campaign === LEADERBOARD_ANNOUNCEMENT_ID).map((r) => r.userId).sort()).toEqual([id(1), id(2), id(3)]);
     // No address, username or id in the answer
     expect(JSON.stringify(result)).not.toMatch(/@|user\d|0{20}/);
   });
 
-  it("sends the one left out on a later apply, once 20 hours have passed", async () => {
-    let now = NOW;
+  it("sends each person once: a second apply sends nothing", async () => {
     const { db } = setup([contributor(1)], { annotations: [photo(1)], email_sends: [sentBefore(1, 19)] });
-    const go = (mode) => sendCampaign({ db, transport, sleep: async () => {}, env: ENV, now: () => now, campaign: LEADERBOARD_ANNOUNCEMENT_ID, mode });
-    expect(await go("apply")).toMatchObject({ sent: 0, sentToday: 1 });
-    expect(transport.sendMail).not.toHaveBeenCalled();
-    now = new Date(NOW.getTime() + 2 * HOUR);
-    expect(await go("apply")).toMatchObject({ sent: 1, sentToday: 0 });
-    expect(mailedTo()).toEqual(["user1@example.org"]);
-    expect(await go("apply")).toMatchObject({ sent: 0, sentToday: 0 });
+    expect(await run(db, { mode: "apply" })).toMatchObject({ sent: 1 });
+    expect(await run(db, { mode: "apply" })).toMatchObject({ sent: 0 });
     expect(transport.sendMail).toHaveBeenCalledTimes(1);
   });
 
-  it("counts its own earlier send as sent today too, not only other campaigns'", async () => {
-    // A manual apply earlier, then retry-failed for someone else, within 20 hours
+  it("in retry-failed resends a failed send, even to someone emailed in the last 20 hours", async () => {
     const { db } = setup([contributor(1), contributor(2)], {
       annotations: [photo(1), photo(2)],
       email_sends: [
@@ -161,11 +156,11 @@ describe("leaderboard-announcement, sending", () => {
         sentBefore(1, 5, "inactivity-2"),
       ],
     });
-    expect(await run(db, { mode: "retry-failed" })).toMatchObject({ sent: 0, sentToday: 1 });
-    expect(transport.sendMail).not.toHaveBeenCalled();
+    expect(await run(db, { mode: "retry-failed" })).toMatchObject({ sent: 1 });
+    expect(mailedTo()).toEqual(["user1@example.org"]);
   });
 
-  it("in dry shows the same sentToday count, and sends and writes nothing", async () => {
+  it("in dry counts everyone, with no sentToday, and sends and writes nothing", async () => {
     const { db, collections } = setup([contributor(1), contributor(2), contributor(3)], {
       annotations: [photo(1), photo(2), photo(3)],
       email_sends: [sentBefore(1, 19), sentBefore(2, 21)],
@@ -173,9 +168,9 @@ describe("leaderboard-announcement, sending", () => {
     const result = await run(db, { mode: "dry" });
     expect(result).toEqual({
       ok: true, campaign: LEADERBOARD_ANNOUNCEMENT_ID, mode: "dry",
-      audience: 2, byVariant: { standard: 2 },
+      audience: 3, byVariant: { standard: 3 },
       excluded: { noEmail: 0, pilot: 0, optedOut: 0, noPhoto: 0, alreadySent: 0, failedBefore: 0 },
-      sentToday: 1, wouldSendThisRun: 2, limit: 50,
+      wouldSendThisRun: 3, limit: 50,
     });
     expect(transport.sendMail).not.toHaveBeenCalled();
     expect(collections.email_sends.rows).toHaveLength(2);

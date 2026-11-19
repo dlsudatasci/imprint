@@ -604,15 +604,16 @@ export const exitQuestionnaire = eventCampaign({
 /**
  * The leaderboard announcement (18 Nov 2026), sent once by Rans by hand: to
  * contributors with at least one finished photo of their own, never by the
- * daily task (`manualOnly`). `holdSameDay`: the sender leaves out of `apply`,
- * `retry-failed` and `dry` anyone sent any campaign email in the last 20
- * hours, as `auto` does, so nobody has it on the same day as an automatic
- * email. A later `apply` takes them.
+ * daily task (`manualOnly`). It held back anyone emailed in the last 20 hours
+ * (`holdSameDay`) for the first send on 19 Nov 2026 (36 sent, 2 held back).
+ * Rans then turned the hold off the same day, so the 2 have it at once: a
+ * one-off email (19 Nov 2026). `holdSameDay` stays in the sender for any
+ * later manual campaign.
  */
 export const leaderboardAnnouncement = eventCampaign({
   id: LEADERBOARD_ANNOUNCEMENT_ID,
   manualOnly: true,
-  holdSameDay: true,
+  holdSameDay: false,
   copy: LEADERBOARD_ANNOUNCEMENT_COPY,
   actionPath: LEADERBOARD_PATH,
   async sort(db, now = new Date()) {

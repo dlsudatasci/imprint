@@ -15,11 +15,18 @@
 import { buildRetrainingRows } from "@/util/validators/retrainingExport.mjs";
 
 /**
- * A retraining cycle runs every 2,000 verified object judgments
- * (chapter_4.tex, Model Retraining). The midpoint rule there (line 426) may
- * change this once during the study.
+ * A retraining cycle runs every 1,750 verified object judgments: cycle 1 at
+ * 1,750, cycle 2 at 3,500. chapter_4.tex (Model Retraining, line 422) set
+ * 2,000. It was lowered once, to 1,750, on 18 Nov 2026 under line 426's
+ * midpoint rule, because the deployment ends around 2 Dec 2026 (decision D24
+ * in imprint-model-training). That rule allows one change, so this is final.
+ *
+ * The Retraining tab (`/api/admin/retraining`) and the "cycle ready" email
+ * (`retrainingNotice.js`) both read it through retrainingProgress, and the
+ * tests read it too, so a change is this one line. The email for 2,000 was
+ * already sent, so after the deploy it is sent once more, for 1,750.
  */
-export const RETRAINING_INCREMENT = 2000;
+export const RETRAINING_INCREMENT = 1750;
 
 /**
  * The starting model, trained on the annotators' data and loaded at launch.

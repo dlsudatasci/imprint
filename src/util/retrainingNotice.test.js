@@ -5,6 +5,17 @@ vi.mock("@/util/telemetryLogger", () => ({ logTelemetryEvent: vi.fn() }));
 
 import { logTelemetryEvent } from "@/util/telemetryLogger";
 import { buildRetrainingReadyMail, notifyRetrainingReady, RETRAINING_NOTICE_ID } from "./retrainingNotice.js";
+import { RETRAINING_INCREMENT } from "./retrainingProgress.js";
+
+/**
+ * The increment is read from retrainingProgress.js, never written here, so
+ * the tests follow a change to it (2,000 to 1,750 on 18 Nov 2026, D24).
+ * CYCLE_1 and CYCLE_2 are the first two targets, `fmt` writes a count as the
+ * email does ("1,750").
+ */
+const CYCLE_1 = RETRAINING_INCREMENT;
+const CYCLE_2 = 2 * RETRAINING_INCREMENT;
+const fmt = (n) => n.toLocaleString("en-US");
 
 /**
  * S26 (12 Nov 2026). An in-memory database: annotations and Image apply the
@@ -101,12 +112,12 @@ afterEach(() => {
 
 describe("buildRetrainingReadyMail (S26)", () => {
   const progress = {
-    contributorJudgments: 2013,
+    contributorJudgments: CYCLE_1 + 13,
     contributorAnnotations: 412,
     contributorAnnotationsOnReference: 9,
     retrainingCyclesRun: 0,
-    retrainingIncrement: 2000,
-    nextRetrainingAt: 2000,
+    retrainingIncrement: RETRAINING_INCREMENT,
+    nextRetrainingAt: CYCLE_1,
     judgmentsUntilNext: 0,
   };
 
@@ -115,15 +126,15 @@ describe("buildRetrainingReadyMail (S26)", () => {
     expect(mail.to).toBe(ADDRESS);
     expect(mail.from).toBe('"Imprint Support" <imprint@example.org>');
     expect(mail.subject).toBe("Imprint: retraining cycle 1 is ready");
-    expect(mail.text).toContain("Contributors have reached 2,013 usable judgments, and cycle 1 starts at 2,000.");
+    expect(mail.text).toContain(`Contributors have reached ${fmt(CYCLE_1 + 13)} usable judgments, and cycle 1 starts at ${fmt(CYCLE_1)}.`);
     expect(mail.text).toContain("They come from 412 contributor annotations.");
-    expect(mail.text).toContain("The cycle takes the first 2,000 judgments by time");
+    expect(mail.text).toContain(`The cycle takes the first ${fmt(CYCLE_1)} judgments by time`);
   });
 
   it("names cycle N as cycles run + 1", () => {
-    const mail = buildRetrainingReadyMail({ to: ADDRESS, progress: { ...progress, retrainingCyclesRun: 1, nextRetrainingAt: 4000, contributorJudgments: 4000 }, baseUrl: "https://x.org" });
+    const mail = buildRetrainingReadyMail({ to: ADDRESS, progress: { ...progress, retrainingCyclesRun: 1, nextRetrainingAt: CYCLE_2, contributorJudgments: CYCLE_2 }, baseUrl: "https://x.org" });
     expect(mail.subject).toBe("Imprint: retraining cycle 2 is ready");
-    expect(mail.text).toContain("cycle 2 starts at 4,000.");
+    expect(mail.text).toContain(`cycle 2 starts at ${fmt(CYCLE_2)}.`);
   });
 
   it("links the Retraining tab from the base URL, with a trailing slash dropped", () => {
@@ -153,7 +164,7 @@ describe("notifyRetrainingReady (S26)", () => {
     for (const value of [undefined, "", "   "]) {
       if (value === undefined) delete process.env.RETRAINING_NOTIFY_EMAIL;
       else process.env.RETRAINING_NOTIFY_EMAIL = value;
-      const db = fakeDb(contributorData(2500));
+      const db = fakeDb(contributorData(CYCLE_1 + 500));
       const send = vi.fn();
       const result = await notifyRetrainingReady(db, { send });
       expect(result).toEqual({ sent: false, reason: "no-address" });
@@ -164,18 +175,18 @@ describe("notifyRetrainingReady (S26)", () => {
   });
 
   it("below the target claims and sends nothing", async () => {
-    const db = fakeDb(contributorData(1999));
+    const db = fakeDb(contributorData(CYCLE_1 - 1));
     const send = vi.fn();
     const result = await notifyRetrainingReady(db, { send });
-    expect(result).toEqual({ sent: false, reason: "not-ready", target: 2000 });
+    expect(result).toEqual({ sent: false, reason: "not-ready", target: CYCLE_1 });
     expect(db.settings.updateOne).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
     expect(logTelemetryEvent).not.toHaveBeenCalled();
   });
 
   it("counts only completed contributor judgments, as the Retraining tab does", async () => {
-    const { annotations, images } = contributorData(2000);
-    // Annotators' and pending answers are not counted, so 1,900 is not ready
+    const { annotations, images } = contributorData(CYCLE_1);
+    // Annotators' and pending answers are not counted, so 200 short is not ready
     annotations[0].source = "annotator";
     annotations[1].status = "pending";
     const db = fakeDb({ annotations, images });
@@ -185,51 +196,51 @@ describe("notifyRetrainingReady (S26)", () => {
   });
 
   it("at the target claims it, sends one mail to the address and logs one RETRAINING_READY", async () => {
-    const db = fakeDb(contributorData(2000));
+    const db = fakeDb(contributorData(CYCLE_1));
     const send = vi.fn().mockResolvedValue({});
     const result = await notifyRetrainingReady(db, { send });
 
-    expect(result).toEqual({ sent: true, target: 2000 });
+    expect(result).toEqual({ sent: true, target: CYCLE_1 });
     expect(db.settings.updateOne).toHaveBeenCalledWith(
       { _id: RETRAINING_NOTICE_ID },
-      { $addToSet: { notifiedTargets: 2000 } },
+      { $addToSet: { notifiedTargets: CYCLE_1 } },
       { upsert: true },
     );
-    expect(db.settingsDocs.get(RETRAINING_NOTICE_ID).notifiedTargets).toEqual([2000]);
+    expect(db.settingsDocs.get(RETRAINING_NOTICE_ID).notifiedTargets).toEqual([CYCLE_1]);
     expect(send).toHaveBeenCalledTimes(1);
     const mail = send.mock.calls[0][0];
     expect(mail.to).toBe(ADDRESS);
     expect(mail.subject).toBe("Imprint: retraining cycle 1 is ready");
-    expect(mail.text).toContain("reached 2,000 usable judgments");
-    expect(mail.text).toContain("They come from 20 contributor annotations.");
+    expect(mail.text).toContain(`reached ${fmt(CYCLE_1)} usable judgments`);
+    expect(mail.text).toContain(`They come from ${Math.ceil(CYCLE_1 / 100)} contributor annotations.`);
 
     expect(logTelemetryEvent).toHaveBeenCalledTimes(1);
     const event = logTelemetryEvent.mock.calls[0][0];
     expect(event).toEqual({
-      event: "RETRAINING_READY", target: 2000, contributorJudgments: 2000, contributorAnnotations: 20, cycle: 1,
+      event: "RETRAINING_READY", target: CYCLE_1, contributorJudgments: CYCLE_1, contributorAnnotations: Math.ceil(CYCLE_1 / 100), cycle: 1,
     });
   });
 
   it("past the target sends the same way", async () => {
-    const db = fakeDb(contributorData(2150));
+    const db = fakeDb(contributorData(CYCLE_1 + 150));
     const send = vi.fn().mockResolvedValue({});
-    expect(await notifyRetrainingReady(db, { send })).toEqual({ sent: true, target: 2000 });
-    expect(send.mock.calls[0][0].text).toContain("reached 2,150 usable judgments, and cycle 1 starts at 2,000.");
+    expect(await notifyRetrainingReady(db, { send })).toEqual({ sent: true, target: CYCLE_1 });
+    expect(send.mock.calls[0][0].text).toContain(`reached ${fmt(CYCLE_1 + 150)} usable judgments, and cycle 1 starts at ${fmt(CYCLE_1)}.`);
   });
 
   it("called again at the same target sends no second mail", async () => {
-    const db = fakeDb(contributorData(2000));
+    const db = fakeDb(contributorData(CYCLE_1));
     const send = vi.fn().mockResolvedValue({});
     await notifyRetrainingReady(db, { send });
     const again = await notifyRetrainingReady(db, { send });
 
-    expect(again).toEqual({ sent: false, reason: "already-notified", target: 2000 });
+    expect(again).toEqual({ sent: false, reason: "already-notified", target: CYCLE_1 });
     expect(send).toHaveBeenCalledTimes(1);
     expect(logTelemetryEvent).toHaveBeenCalledTimes(1);
   });
 
   it("two calls at once send one mail, the claim decides", async () => {
-    const db = fakeDb(contributorData(2000));
+    const db = fakeDb(contributorData(CYCLE_1));
     const send = vi.fn().mockResolvedValue({});
     const results = await Promise.all([notifyRetrainingReady(db, { send }), notifyRetrainingReady(db, { send })]);
 
@@ -240,69 +251,69 @@ describe("notifyRetrainingReady (S26)", () => {
   });
 
   it("a duplicate key from two first-ever claims counts as already notified", async () => {
-    const db = fakeDb(contributorData(2000));
+    const db = fakeDb(contributorData(CYCLE_1));
     db.settings.updateOne.mockRejectedValueOnce(Object.assign(new Error("E11000 duplicate key"), { code: 11000 }));
     const send = vi.fn();
-    expect(await notifyRetrainingReady(db, { send })).toEqual({ sent: false, reason: "already-notified", target: 2000 });
+    expect(await notifyRetrainingReady(db, { send })).toEqual({ sent: false, reason: "already-notified", target: CYCLE_1 });
     expect(send).not.toHaveBeenCalled();
   });
 
   it("a send that throws releases the target, is not thrown on, and the next call sends", async () => {
-    const db = fakeDb(contributorData(2000));
+    const db = fakeDb(contributorData(CYCLE_1));
     const send = vi.fn()
       .mockRejectedValueOnce(new Error("SMTP down"))
       .mockResolvedValueOnce({});
 
     const first = await notifyRetrainingReady(db, { send });
-    expect(first).toEqual({ sent: false, reason: "send-failed", target: 2000 });
-    expect(db.settings.updateOne).toHaveBeenLastCalledWith({ _id: RETRAINING_NOTICE_ID }, { $pull: { notifiedTargets: 2000 } });
+    expect(first).toEqual({ sent: false, reason: "send-failed", target: CYCLE_1 });
+    expect(db.settings.updateOne).toHaveBeenLastCalledWith({ _id: RETRAINING_NOTICE_ID }, { $pull: { notifiedTargets: CYCLE_1 } });
     expect(db.settingsDocs.get(RETRAINING_NOTICE_ID).notifiedTargets).toEqual([]);
     expect(console.error).toHaveBeenCalled();
     expect(logTelemetryEvent).not.toHaveBeenCalled();
 
     const second = await notifyRetrainingReady(db, { send });
-    expect(second).toEqual({ sent: true, target: 2000 });
+    expect(second).toEqual({ sent: true, target: CYCLE_1 });
     expect(send).toHaveBeenCalledTimes(2);
-    expect(db.settingsDocs.get(RETRAINING_NOTICE_ID).notifiedTargets).toEqual([2000]);
+    expect(db.settingsDocs.get(RETRAINING_NOTICE_ID).notifiedTargets).toEqual([CYCLE_1]);
     expect(logTelemetryEvent).toHaveBeenCalledTimes(1);
   });
 
   it("a failed release is logged, not thrown on", async () => {
-    const db = fakeDb(contributorData(2000));
+    const db = fakeDb(contributorData(CYCLE_1));
     const claim = db.settings.updateOne.getMockImplementation();
     db.settings.updateOne
       .mockImplementationOnce(claim)
       .mockRejectedValueOnce(new Error("db gone"));
     const send = vi.fn().mockRejectedValue(new Error("SMTP down"));
-    expect(await notifyRetrainingReady(db, { send })).toEqual({ sent: false, reason: "send-failed", target: 2000 });
+    expect(await notifyRetrainingReady(db, { send })).toEqual({ sent: false, reason: "send-failed", target: CYCLE_1 });
     expect(console.error).toHaveBeenCalledTimes(2);
   });
 
   it("never puts the address in a log line", async () => {
-    const db = fakeDb(contributorData(2000));
+    const db = fakeDb(contributorData(CYCLE_1));
     await notifyRetrainingReady(db, { send: vi.fn().mockRejectedValue(new Error("SMTP down")) });
     for (const call of console.error.mock.calls) {
       expect(String(call[0])).not.toContain(ADDRESS);
     }
   });
 
-  it("after a cycle (v2-xgboost), 2,100 judgments is not ready for 4,000 and 4,000 sends cycle 2's mail", async () => {
+  it("after a cycle (v2-xgboost), 100 past the first target is not ready for the second, and the second sends cycle 2's mail", async () => {
     const send = vi.fn().mockResolvedValue({});
     const cycles = ["v1-xgboost", "v2-xgboost", "v2-xgboost"];
 
-    const at2100 = fakeDb({ ...contributorData(2100), cycles });
-    expect(await notifyRetrainingReady(at2100, { send })).toEqual({ sent: false, reason: "not-ready", target: 4000 });
+    const pastFirst = fakeDb({ ...contributorData(CYCLE_1 + 100), cycles });
+    expect(await notifyRetrainingReady(pastFirst, { send })).toEqual({ sent: false, reason: "not-ready", target: CYCLE_2 });
     expect(send).not.toHaveBeenCalled();
 
-    const at4000 = fakeDb({ ...contributorData(4000), cycles });
-    expect(await notifyRetrainingReady(at4000, { send })).toEqual({ sent: true, target: 4000 });
+    const atSecond = fakeDb({ ...contributorData(CYCLE_2), cycles });
+    expect(await notifyRetrainingReady(atSecond, { send })).toEqual({ sent: true, target: CYCLE_2 });
     expect(send.mock.calls[0][0].subject).toBe("Imprint: retraining cycle 2 is ready");
-    expect(send.mock.calls[0][0].text).toContain("cycle 2 starts at 4,000.");
-    expect(logTelemetryEvent).toHaveBeenCalledWith(expect.objectContaining({ target: 4000, cycle: 2 }));
+    expect(send.mock.calls[0][0].text).toContain(`cycle 2 starts at ${fmt(CYCLE_2)}.`);
+    expect(logTelemetryEvent).toHaveBeenCalledWith(expect.objectContaining({ target: CYCLE_2, cycle: 2 }));
   });
 
   it("a failed read throws, for the caller's try/catch", async () => {
-    const db = fakeDb(contributorData(2000));
+    const db = fakeDb(contributorData(CYCLE_1));
     db.collection("annotations").find.mockImplementation(() => { throw new Error("read failed"); });
     await expect(notifyRetrainingReady(db, { send: vi.fn() })).rejects.toThrow("read failed");
   });

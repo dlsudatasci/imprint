@@ -126,8 +126,8 @@ describe("GET /api/admin/retraining", () => {
     expect(res._json.contributorJudgments).toBe(0);
     expect(res._json.contributorAnnotations).toBe(0);
     expect(res._json.retrainingCyclesRun).toBe(0);
-    expect(res._json.nextRetrainingAt).toBe(2000);
-    expect(res._json.judgmentsUntilNext).toBe(2000);
+    expect(res._json.nextRetrainingAt).toBe(RETRAINING_INCREMENT);
+    expect(res._json.judgmentsUntilNext).toBe(RETRAINING_INCREMENT);
   });
 
   it("returns retraining history and version distribution", async () => {
@@ -193,7 +193,9 @@ describe("GET /api/admin/retraining", () => {
  * S24 (12 Nov 2026): the tab counts the contributor judgments the retraining
  * export would use (buildRetrainingRows on completed non-annotator
  * annotations), not every completed annotation, and puts the next cycle at
- * (cycles run + 1) × 2,000, where cycles run leaves out the starting model.
+ * (cycles run + 1) × RETRAINING_INCREMENT (2,000, then 1,750 from 18 Nov
+ * 2026, D24), where cycles run leaves out the starting model. The tests read
+ * the increment, so a change to it is one line in retrainingProgress.js.
  */
 describe("GET /api/admin/retraining, contributor judgments (S24)", () => {
   it("does not count annotator annotations", async () => {
@@ -256,11 +258,11 @@ describe("GET /api/admin/retraining, contributor judgments (S24)", () => {
     expect(res._json.contributorAnnotations).toBe(1);
   });
 
-  it("counts no cycles with no events, and puts the next at 2,000", async () => {
+  it("counts no cycles with no events, and puts the next at one increment", async () => {
     const res = await getRetraining();
     expect(res._json.retrainingCyclesRun).toBe(0);
     expect(res._json.retrainingIncrement).toBe(RETRAINING_INCREMENT);
-    expect(res._json.nextRetrainingAt).toBe(2000);
+    expect(res._json.nextRetrainingAt).toBe(RETRAINING_INCREMENT);
   });
 
   it("does not count the starting model's predictions as a cycle", async () => {
@@ -268,7 +270,7 @@ describe("GET /api/admin/retraining, contributor judgments (S24)", () => {
     expect(INITIAL_MODEL_VERSION).toBe("v1-xgboost");
     expect(res._json.retrainingCyclesRun).toBe(0);
     expect(res._json.cycleCount).toBe(1);
-    expect(res._json.nextRetrainingAt).toBe(2000);
+    expect(res._json.nextRetrainingAt).toBe(RETRAINING_INCREMENT);
   });
 
   it("counts a version written in several partial runs once", async () => {
@@ -279,14 +281,14 @@ describe("GET /api/admin/retraining, contributor judgments (S24)", () => {
     });
     expect(res._json.retrainingCyclesRun).toBe(2);
     expect(res._json.cycleCount).toBe(4);
-    expect(res._json.nextRetrainingAt).toBe(6000);
+    expect(res._json.nextRetrainingAt).toBe(3 * RETRAINING_INCREMENT);
   });
 
-  it("says ready, not next at 4,000, with 2,050 judgments before the first cycle", async () => {
-    const boxes = Array.from({ length: 2050 }, () => usableBox());
+  it("says ready, not next at the second target, with 50 past the first target before the first cycle", async () => {
+    const boxes = Array.from({ length: RETRAINING_INCREMENT + 50 }, () => usableBox());
     const res = await getRetraining({ annotations: [annotation("img-1", boxes)], images: [photo("img-1")] });
-    expect(res._json.contributorJudgments).toBe(2050);
-    expect(res._json.nextRetrainingAt).toBe(2000);
+    expect(res._json.contributorJudgments).toBe(RETRAINING_INCREMENT + 50);
+    expect(res._json.nextRetrainingAt).toBe(RETRAINING_INCREMENT);
     expect(res._json.judgmentsUntilNext).toBe(0);
   });
 

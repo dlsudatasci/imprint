@@ -34,9 +34,10 @@ describe("retrainingProgress module (S26)", () => {
       contributorAnnotations: 1,
       contributorAnnotationsOnReference: 0,
       retrainingCyclesRun: 1,
-      retrainingIncrement: 2000,
-      nextRetrainingAt: 4000,
-      judgmentsUntilNext: 3999,
+      // One cycle run, so the next is the second target
+      retrainingIncrement: RETRAINING_INCREMENT,
+      nextRetrainingAt: 2 * RETRAINING_INCREMENT,
+      judgmentsUntilNext: 2 * RETRAINING_INCREMENT - 1,
     });
     expect(telemetryFind.mock.calls[0][0]).toEqual({ event: "MODEL_PREDICTIONS_UPDATED" });
   });

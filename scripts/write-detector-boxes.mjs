@@ -18,20 +18,23 @@
  * already at the file's detectorVersion is skipped, so a second run changes
  * nothing.
  *
- * It never writes while any session is active, like update-predictions.mjs
- * (S5): an open session holds the old suggestion ids, so its answers would be
- * refused, and its stored answers would carry a model version it was not
- * shown. With --apply it counts the sessions whose status is "active" just
- * before writing, and if there are any it prints only their number, writes
- * nothing and exits with code 1. There is no option to override it. Without
- * --apply the same count is printed as a warning.
+ * It never writes while anyone may be answering, like update-predictions.mjs
+ * (S5, S34): a session in use holds the old suggestion ids, so its answers
+ * would be refused, and its stored answers would carry a model version it
+ * was not shown. With --apply it reads the sessions whose status is "active"
+ * just before writing, and if any had activity in the last 12 hours it
+ * prints only the counts, writes nothing and exits with code 1. There is no
+ * option to override it. Sessions with no activity for 12 hours or more are
+ * left open and ignored: the new modelVersion makes the site load their
+ * photos again. Without --apply the same counts are printed with a warning.
  *
  * Without --apply it only checks and reports, and writes nothing. It prints
  * counts and image ids only, never a username.
  *
  * Options:
  *   --input <file>     Path to the detector boxes JSON (required)
- *   --apply            Write the boxes (refused while any session is active)
+ *   --apply            Write the boxes (refused while any session had
+ *                      activity in the last 12 hours)
  *   --skip-answered    Leave images a contributor has answered as they are
  *                      and count them (staging after the pilot only, never
  *                      production)
@@ -106,15 +109,16 @@ try {
   const { problems, updates, counts } = planDetectorBoxes(data, images, answeredImageIDs, {
     skipAnswered: values["skip-answered"],
   });
-  let activeSessions = null;
+  let sessionsLine = null;
 
   if (problems.length > 0) {
     printProblems(problems, "Found");
     process.exitCode = 1;
   } else {
-    // The active sessions are counted just before writing, and any refuses it
+    // The sessions are counted just before writing, and any in use refuses it
     const run = await runDetectorBoxes(db, { data, updates, counts }, { apply: values.apply });
-    activeSessions = run.activeSessions;
+    sessionsLine = run.sessionsLine;
+    console.log(`  ${run.sessionsLine}`);
     if (run.refused) {
       console.error(`  ✗ ${run.message}`);
       process.exitCode = 1;
@@ -149,7 +153,7 @@ try {
   console.log(`    Skipped (already ${data.detectorVersion}): ${counts.imagesSkippedAlreadyWritten}`);
   console.log(`    Skipped (answered by a contributor): ${counts.imagesSkippedAnswered}`);
   console.log(`    Served or reserve images not in the file: ${counts.poolImagesNotInFile}`);
-  console.log(`    Active sessions: ${activeSessions ?? "not counted"}`);
+  console.log(`    Sessions: ${sessionsLine ?? "not counted"}`);
   console.log(`    Tau setting: ${tau.value}${tau.isDefault ? " (default)" : ` for ${tau.modelVersion ?? "no model version"}`}`);
   if (tau.message) console.log(`\n  ! ${tau.message}`);
 } catch (err) {

@@ -20,20 +20,28 @@
  * served to contributors must be in the file, since the whole pool is
  * recomputed each cycle. If anything fails, nothing is written.
  *
- * It never writes while any session is active (S5, 29 Oct 2026).
- * annotationSubmit stores each contributor answer with the image record's
- * modelVersion, so an image updated under an open session would label the
- * answers given on the old model's proposals with the new model. With
- * --apply it counts the sessions whose status is "active" just before
- * writing, and if there are any it prints only their number, writes nothing
- * and exits with code 1. There is no option to override it: wait for the
- * sessions to end. Without --apply the same count is printed as a warning.
+ * It never writes while anyone may be answering (S5, 29 Oct 2026, and S34,
+ * 19 Nov 2026). annotationSubmit stores each contributor answer with the
+ * image record's modelVersion, so an image updated under a session in use
+ * would label the answers given on the old model's proposals with the new
+ * model. With --apply it reads the sessions whose status is "active" just
+ * before writing, and if any had activity in the last 12 hours
+ * (INACTIVE_SESSION_HOURS: its createdAt, any telemetry event of its user
+ * since, or a pending answer of its user) it prints only the counts, writes
+ * nothing and exits with code 1. There is no option to override it: run
+ * again later. Sessions with no activity for 12 hours or more are left open
+ * and ignored, so their owners can resume them. The site then refuses an
+ * answer given on suggestions that have since changed (MODEL_UPDATED) and
+ * loads the photos again, so no answer is stored under a model its
+ * contributor was not shown. The counts line is printed on every run, and
+ * MODEL_PREDICTIONS_UPDATED records the ignored sessions' ids.
  *
  * Without --apply it only checks and reports, and writes nothing.
  *
  * Options:
  *   --input <file>     Path to the predictions JSON (required)
- *   --apply            Write the update (refused while any session is active)
+ *   --apply            Write the update (refused while any session had
+ *                      activity in the last 12 hours)
  *   --dry-run          The default, check and report without writing (still
  *                      accepted, so older command lines never write)
  *   --force            Write images already at this modelVersion too
@@ -128,11 +136,12 @@ try {
     if (problems.length > 30) console.error(`  ... and ${problems.length - 30} more`);
     process.exitCode = 1;
   } else {
-    // The active sessions are counted just before writing, and any refuses it
+    // The sessions are counted just before writing, and any in use refuses it
     const run = await runPredictionUpdate(db, { data, updates, counts }, {
       apply: values.apply,
       partial: values["allow-partial"],
     });
+    console.log(`  ${run.sessionsLine}`);
     if (run.refused) {
       console.error(`  ✗ ${run.message}`);
       process.exitCode = 1;
@@ -147,7 +156,11 @@ try {
           console.error(`  ✗ ${run.unchanged} image(s) changed while the update ran and were left alone. Run the same file again.`);
           process.exitCode = 1;
         }
-        console.log(run.logged ? "  ✓ Logged MODEL_PREDICTIONS_UPDATED to telemetry_logs" : "  Nothing to write, so no cycle was logged");
+        console.log(
+          run.logged
+            ? `  ✓ Logged MODEL_PREDICTIONS_UPDATED to telemetry_logs, with ${run.inactiveSessions} inactive session(s) ignored`
+            : "  Nothing to write, so no cycle was logged"
+        );
       }
     }
   }

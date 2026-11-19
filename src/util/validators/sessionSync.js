@@ -10,11 +10,18 @@
  * finished or replaced in another tab or on another device, or when the
  * tutorial's practice photos are written over it.
  */
+import { DEFAULT_MODEL_VERSION } from "./annotationGet";
 
-/** Why annotationSubmit refused an image because of the session, sent as `code` with the 409 and 403 */
+/**
+ * Why annotationSubmit refused an image because of the session, sent as
+ * `code` with the 409 and 403. MODEL_UPDATED (S34, 19 Nov 2026): the photo's
+ * suggestions were updated after the page loaded them, so the answer was
+ * given on suggestions the server no longer has.
+ */
 export const SESSION_CHANGED_CODES = Object.freeze({
   noSession: "NO_ACTIVE_SESSION",
   otherSession: "IMAGE_NOT_IN_SESSION",
+  modelUpdated: "MODEL_UPDATED",
 });
 
 /** True when a refused submit's body says the session it belonged to is not the current one */
@@ -35,17 +42,41 @@ export function sameBatch(a, b) {
   return x.length > 0 && x.length === y.length && x.every((id, i) => id !== null && id === y[i]);
 }
 
+/** A batch's model versions by Image _id as text, an image with none as DEFAULT_MODEL_VERSION (as annotationGet serves it) */
+export function batchModelVersions(data) {
+  const records = Array.isArray(data?.imgRecords) ? data.imgRecords : [];
+  const versions = new Map();
+  for (const img of records) {
+    if (img && img._id != null) versions.set(String(img._id), img.modelVersion || DEFAULT_MODEL_VERSION);
+  }
+  return versions;
+}
+
+/** True when any image's suggestions come from a different model in the two copies of a batch (S34) */
+export function modelVersionsDiffer(a, b) {
+  const x = batchModelVersions(a);
+  const y = batchModelVersions(b);
+  for (const [id, version] of x) {
+    if (y.has(id) && y.get(id) !== version) return true;
+  }
+  return false;
+}
+
 /**
  * What to do with the saved copy once the server has said what is active
  * (/api/annotationGet with an empty body):
  *   "keep"     it is the account's current session, or the server could not
  *              be asked (offline): the saved copy is all there is
- *   "replace"  another session is active: put that one in its place
+ *   "replace"  another session is active: put that one in its place. Also
+ *              the same session when any photo's suggestions were updated
+ *              since the copy was saved (S34, 19 Nov 2026), so a returning
+ *              person answers on the updated suggestions
  *   "clear"    nothing is active any more: the saved copy is of an ended session
  */
 export function cachedSessionCheck(cached, server) {
   if (!server || typeof server !== "object" || server.error) return "keep";
   const active = server.isExistingSession === true && Array.isArray(server.imgRecords) && server.imgRecords.length > 0;
   if (!active) return "clear";
-  return sameBatch(cached, server) ? "keep" : "replace";
+  if (!sameBatch(cached, server)) return "replace";
+  return modelVersionsDiffer(cached, server) ? "replace" : "keep";
 }

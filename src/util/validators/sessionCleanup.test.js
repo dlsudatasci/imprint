@@ -46,6 +46,8 @@ describe("what is removed", () => {
     expect(SESSION_EVENTS).toContain("IMAGE_SUBMITTED");
     // A photo sent again in the same session (S20, 7 Nov 2026)
     expect(SESSION_EVENTS).toContain("IMAGE_RESUBMITTED");
+    // An answer refused because the photo's suggestions were updated (S34)
+    expect(SESSION_EVENTS).toContain("SUBMIT_REFUSED_MODEL_UPDATED");
     for (const kept of ["ROLE_CHANGED", "ACCOUNT_DELETED", "MODEL_PREDICTIONS_UPDATED"]) expect(SESSION_EVENTS).not.toContain(kept);
   });
 });

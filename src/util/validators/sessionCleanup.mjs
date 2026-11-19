@@ -13,6 +13,8 @@ export const SESSION_EVENTS = Object.freeze([
   "IMAGE_SUBMITTED",
   // A photo sent again in the same session (S20, 7 Nov 2026)
   "IMAGE_RESUBMITTED",
+  // A photo answered on suggestions updated since it was loaded (S34, 19 Nov 2026)
+  "SUBMIT_REFUSED_MODEL_UPDATED",
   "SESSION_END",
   "SESSION_COMPLETE",
   "POOL_EXHAUSTION",

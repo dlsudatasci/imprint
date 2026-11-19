@@ -27,7 +27,8 @@
  * whole pool is recomputed, chapter_4.tex).
  *
  * `.mjs` with no `@/` imports, because the script imports it directly with
- * Node. Tests import it normally.
+ * Node (only the mongodb driver, which the script needs anyway). Tests
+ * import it normally.
  *
  * The file the retraining pipeline writes:
  *
@@ -49,6 +50,8 @@
  * (chapter_4.tex, Obstruction Classifier). Each proposal's `obstructs` must be
  * its probability at or above it, so a file whose two disagree is refused.
  */
+
+import { ObjectId } from "mongodb";
 
 export const MODEL_VERSION_PATTERN = /^v\d+-\w[\w-]*$/;
 
@@ -217,39 +220,183 @@ export function updateOperation(update, modelVersion, now = new Date()) {
 export const ACTIVE_SESSION_STATUS = "active";
 
 /**
- * Whether an update may be written, given the number of active sessions (S5,
- * 29 Oct 2026). annotationSubmit stores each contributor answer with the
- * image record's modelVersion, so a write while a session is open would label
- * answers given on the old model's proposals with the new one. With --apply
- * any active session refuses the write, with no way round it. A run without
- * --apply only warns. The messages give the count and nothing else.
+ * A session with no activity for this many hours does not hold back an
+ * update (S34, 19 Nov 2026). 24 in the first draft of S34, lowered to 12 by
+ * Rans on 19 Nov 2026 so retraining cycle 1 could go out that day. There is
+ * no option to lower it.
  */
-export function activeSessionCheck(activeSessions, { apply = false } = {}) {
-  if (!(activeSessions > 0)) return { refuse: false, message: null };
-  const count = `${activeSessions} active session(s)`;
+export const INACTIVE_SESSION_HOURS = 12;
+
+const HOUR_MS = 60 * 60 * 1000;
+
+const toTime = (d) => {
+  const t = d instanceof Date ? d.getTime() : typeof d === "string" || typeof d === "number" ? new Date(d).getTime() : NaN;
+  return Number.isFinite(t) ? t : null;
+};
+
+/**
+ * When a session was last in use (S34): the latest of its createdAt, any
+ * telemetry event of its user at or after createdAt, and the date of any
+ * pending annotation of its user. Any event counts, a leaderboard view
+ * included, so it errs towards treating a session as in use. Returns a Date,
+ * or null when none of the three is a date.
+ */
+export function sessionLastActivity({ createdAt, telemetryTimes = [], pendingDates = [] } = {}) {
+  const created = toTime(createdAt);
+  const times = [created];
+  for (const t of telemetryTimes) {
+    const time = toTime(t);
+    // An event from before the session started is not activity in it
+    if (time !== null && (created === null || time >= created)) times.push(time);
+  }
+  for (const d of pendingDates) times.push(toTime(d));
+  const known = times.filter((t) => t !== null);
+  return known.length > 0 ? new Date(Math.max(...known)) : null;
+}
+
+/**
+ * True when a session last in use at lastActivity holds back an update at
+ * now: less than INACTIVE_SESSION_HOURS before it. A session with no date at
+ * all is treated as in use.
+ */
+export function isBlockingSession(lastActivity, now = new Date()) {
+  const last = toTime(lastActivity);
+  if (last === null) return true;
+  return now.getTime() - last < INACTIVE_SESSION_HOURS * HOUR_MS;
+}
+
+/**
+ * The counts, given each active session's _id and last activity:
+ * { active, blocking, inactive, inactiveSessionIds }. The ids are the
+ * sessions' own _ids, never user ids.
+ */
+export function blockingSessionCounts(sessions = [], now = new Date()) {
+  const inactiveSessionIds = [];
+  let blocking = 0;
+  for (const s of sessions) {
+    if (isBlockingSession(s.lastActivity, now)) blocking += 1;
+    else inactiveSessionIds.push(s._id);
+  }
+  return { active: sessions.length, blocking, inactive: inactiveSessionIds.length, inactiveSessionIds };
+}
+
+/** A user id as stored either way: as text and, when it is one, as an ObjectId (as ownedFilter matches them) */
+export function userIdValues(userId, ObjectIdClass = ObjectId) {
+  const id = String(userId);
+  return /^[0-9a-f]{24}$/i.test(id) ? [id, new ObjectIdClass(id)] : [id];
+}
+
+/**
+ * Reads every active session and its user's latest activity, and counts the
+ * sessions that hold back an update (S34). The sessions are only read, never
+ * changed: their owners can resume them (Rans, 18 Nov 2026).
+ */
+export async function countBlockingSessions(db, { now = new Date() } = {}) {
+  const sessions = await db
+    .collection("sessions")
+    .find({ status: ACTIVE_SESSION_STATUS }, { projection: { _id: 1, userId: 1, createdAt: 1 } })
+    .toArray();
+
+  const withActivity = await Promise.all(
+    sessions.map(async (s) => {
+      const ids = s.userId == null ? [] : userIdValues(s.userId);
+      if (ids.length === 0) return { _id: s._id, lastActivity: sessionLastActivity({ createdAt: s.createdAt }) };
+      const created = toTime(s.createdAt);
+      const [event, pending] = await Promise.all([
+        db.collection("telemetry_logs").findOne(
+          { userId: { $in: ids }, ...(created === null ? {} : { timestamp: { $gte: new Date(created) } }) },
+          { sort: { timestamp: -1 }, projection: { timestamp: 1 } }
+        ),
+        db.collection("annotations").findOne(
+          { userId: { $in: ids }, status: "pending" },
+          { sort: { date: -1 }, projection: { date: 1 } }
+        ),
+      ]);
+      return {
+        _id: s._id,
+        lastActivity: sessionLastActivity({
+          createdAt: s.createdAt,
+          telemetryTimes: event ? [event.timestamp] : [],
+          pendingDates: pending ? [pending.date] : [],
+        }),
+      };
+    })
+  );
+  return blockingSessionCounts(withActivity, now);
+}
+
+const sessionsWord = (n) => (n === 1 ? "1 session has" : `${n} sessions have`);
+
+/**
+ * Whether an update may be written, given the session counts (S5, 29 Oct
+ * 2026, and S34, 19 Nov 2026). annotationSubmit stores each contributor
+ * answer with the image record's modelVersion, so a write while someone is
+ * answering would label answers given on the old model's proposals with the
+ * new one. With --apply any session with activity in the last
+ * INACTIVE_SESSION_HOURS refuses the write, with no way round it. Sessions
+ * inactive for longer are left open and ignored: the tool refuses an answer
+ * given on suggestions that have since changed (MODEL_UPDATED) and loads the
+ * photos again. A run without --apply only warns.
+ *
+ * Returns { refuse, line, message }: line is the counts, always printed, and
+ * message the refusal or warning, or null. Counts only, never a name.
+ */
+export function activeSessionCheck({ active = 0, blocking = 0, inactive = 0 } = {}, { apply = false } = {}) {
+  const h = INACTIVE_SESSION_HOURS;
+  const line =
+    active > 0
+      ? `${active} active session(s): ${blocking} with activity in the last ${h} h, ${inactive} inactive for ${h} h or more (left open, ignored).`
+      : "0 active session(s).";
+  if (!(blocking > 0)) return { refuse: false, line, message: null };
   if (!apply) {
-    return { refuse: false, message: `Warning: ${count}. --apply will refuse to write until no session is active.` };
+    return { refuse: false, line, message: `Warning: --apply will refuse to write while ${sessionsWord(blocking)} had activity in the last ${h} h.` };
   }
   return {
     refuse: true,
-    message: `${count}. Refusing to write while any session is active, so no answer is stored with a model its contributor was not shown. No image was changed. Run again once every session has ended.`,
+    line,
+    message: `Refusing to write while ${sessionsWord(blocking)} had activity in the last ${h} h. No image was changed. Run again later.`,
+  };
+}
+
+/** The session fields every logged update carries (S34), so the analysis can find answers given in the ignored sessions */
+export function sessionLogFields(sessions) {
+  return {
+    activeSessions: sessions.active,
+    inactiveSessionsIgnored: sessions.inactive,
+    inactiveSessionIds: sessions.inactiveSessionIds,
+    inactiveSessionHours: INACTIVE_SESSION_HOURS,
   };
 }
 
 /**
  * The write step of update-predictions.mjs, for a plan with no problems.
- * Counts active sessions first. Without `apply`, or with any active session,
- * nothing is written. Otherwise writes every planned update and, when any
- * image changed, logs MODEL_PREDICTIONS_UPDATED.
+ * Counts the sessions first (countBlockingSessions). Without `apply`, or with
+ * any session that had activity in the last INACTIVE_SESSION_HOURS, nothing
+ * is written. Otherwise writes every planned update and, when any image
+ * changed, logs MODEL_PREDICTIONS_UPDATED with the session counts. The
+ * sessions are not changed in any way.
  *
- * Returns { activeSessions, message, refused, written, modified, unchanged,
- * logged }, where unchanged is the number of planned images that changed
- * between the read and the write and were left alone.
+ * Returns { activeSessions, blockingSessions, inactiveSessions,
+ * inactiveSessionIds, sessionsLine, message, refused, written, modified,
+ * unchanged, logged }, where unchanged is the number of planned images that
+ * changed between the read and the write and were left alone.
  */
 export async function runPredictionUpdate(db, { data, updates, counts }, { apply = false, partial = false, now = new Date() } = {}) {
-  const activeSessions = await db.collection("sessions").countDocuments({ status: ACTIVE_SESSION_STATUS });
-  const { refuse, message } = activeSessionCheck(activeSessions, { apply });
-  const result = { activeSessions, message, refused: refuse, written: false, modified: 0, unchanged: 0, logged: false };
+  const sessions = await countBlockingSessions(db, { now });
+  const { refuse, line, message } = activeSessionCheck(sessions, { apply });
+  const result = {
+    activeSessions: sessions.active,
+    blockingSessions: sessions.blocking,
+    inactiveSessions: sessions.inactive,
+    inactiveSessionIds: sessions.inactiveSessionIds,
+    sessionsLine: line,
+    message,
+    refused: refuse,
+    written: false,
+    modified: 0,
+    unchanged: 0,
+    logged: false,
+  };
   if (!apply || refuse) return result;
 
   result.written = true;
@@ -271,6 +418,7 @@ export async function runPredictionUpdate(db, { data, updates, counts }, { apply
       proposalsWritten: counts.proposalsWritten,
       servedImagesNotInFile: counts.servedImagesNotInFile,
       partial,
+      ...sessionLogFields(sessions),
       timestamp: now,
     });
     result.logged = true;

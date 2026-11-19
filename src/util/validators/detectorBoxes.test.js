@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { createMockCollection, createMockDb } from "@/test-utils/api-helpers";
+import { sessionActivityCollections } from "@/test-utils/sessionActivity";
 import { TAXONOMY_CATEGORIES } from "@/util/taxonomy";
 import {
   DETECTOR_POOL_STATUSES,
@@ -401,10 +402,18 @@ describe("tauReminder", () => {
 describe("runDetectorBoxes", () => {
   const now = new Date("2026-11-01T00:00:00Z");
 
-  function setup(activeSessions, { matchedCount, modifiedCount, writtenBack = [] } = {}) {
+  // S34: only a session with activity in the last 12 hours holds the write back
+  const hoursAgo = (h) => new Date(now.getTime() - h * 60 * 60 * 1000);
+  const USER = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  const inactive = { sessions: [{ _id: "s1", userId: USER, createdAt: hoursAgo(30) }] };
+  const inUse = (n) => ({
+    sessions: Array.from({ length: n }, (_, i) => ({ _id: `u${i}`, userId: USER, createdAt: hoursAgo(1) })),
+  });
+
+  function setup(activity = {}, { matchedCount, modifiedCount, writtenBack = [] } = {}) {
     const data = file();
     const plan = { data, ...planDetectorBoxes(data, IMAGES, []) };
-    const sessions = createMockCollection({ countDocuments: vi.fn().mockResolvedValue(activeSessions) });
+    const colls = sessionActivityCollections(activity);
     const images = createMockCollection({
       bulkWrite: vi.fn().mockResolvedValue({
         matchedCount: matchedCount ?? plan.updates.length,
@@ -412,41 +421,52 @@ describe("runDetectorBoxes", () => {
       }),
       find: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue(writtenBack) }),
     });
-    const logs = createMockCollection();
-    const db = createMockDb({ sessions, Image: images, telemetry_logs: logs });
-    return { plan, db, sessions, images, logs, run: (options) => runDetectorBoxes(db, plan, { now, ...options }) };
+    const db = createMockDb({ ...colls, Image: images });
+    return { plan, db, sessions: colls.sessions, images, logs: colls.telemetry_logs, run: (options) => runDetectorBoxes(db, plan, { now, ...options }) };
   }
 
-  it("counts the sessions whose status is active", async () => {
-    const { sessions, run } = setup(0);
+  it("reads the sessions whose status is active, and changes none", async () => {
+    const { sessions, run } = setup(inactive);
     await run({ apply: true });
-    expect(sessions.countDocuments).toHaveBeenCalledWith({ status: "active" });
+    expect(sessions.find).toHaveBeenCalledWith({ status: "active" }, { projection: { _id: 1, userId: 1, createdAt: 1 } });
+    for (const write of ["updateOne", "updateMany", "findOneAndUpdate", "deleteMany", "insertOne", "bulkWrite"]) {
+      expect(sessions[write]).not.toHaveBeenCalled();
+    }
   });
 
-  it("writes nothing with --apply while any session is active, giving only the count", async () => {
-    const { images, logs, run } = setup(2);
+  it("writes nothing with --apply while any session is in use, giving only the counts", async () => {
+    const { images, logs, run } = setup(inUse(2));
     const result = await run({ apply: true });
-    expect(result).toMatchObject({ activeSessions: 2, refused: true, written: false, modified: 0, logged: false });
-    expect(result.message).toContain("2 active session(s)");
-    expect(result.message).toContain("No image was changed.");
+    expect(result).toMatchObject({ activeSessions: 2, blockingSessions: 2, refused: true, written: false, modified: 0, logged: false });
+    expect(result.sessionsLine).toBe("2 active session(s): 2 with activity in the last 12 h, 0 inactive for 12 h or more (left open, ignored).");
+    expect(result.message).toBe("Refusing to write while 2 sessions have had activity in the last 12 h. No image was changed. Run again later.");
     expect(images.bulkWrite).not.toHaveBeenCalled();
     expect(logs.insertOne).not.toHaveBeenCalled();
   });
 
-  it("writes nothing without --apply, with a warning when a session is active", async () => {
-    for (const active of [0, 3]) {
-      const { images, logs, run } = setup(active);
+  it("writes nothing without --apply, with a warning when a session is in use", async () => {
+    for (const activity of [{}, inactive, inUse(3)]) {
+      const { images, logs, run } = setup(activity);
       const result = await run({ apply: false });
-      expect(result).toMatchObject({ activeSessions: active, refused: false, written: false });
-      expect(result.message === null).toBe(active === 0);
-      if (active) expect(result.message).toMatch(/^Warning: 3 active session\(s\)\./);
+      expect(result).toMatchObject({ refused: false, written: false });
+      const blocking = activity === inactive || !activity.sessions ? 0 : 3;
+      expect(result.message === null).toBe(blocking === 0);
+      if (blocking) expect(result.message).toMatch(/^Warning: --apply will refuse to write while 3 sessions have had activity/);
       expect(images.bulkWrite).not.toHaveBeenCalled();
       expect(logs.insertOne).not.toHaveBeenCalled();
     }
   });
 
+  it("writes with only inactive sessions and logs their ids", async () => {
+    const { images, logs, run } = setup(inactive);
+    const result = await run({ apply: true });
+    expect(result).toMatchObject({ activeSessions: 1, inactiveSessions: 1, inactiveSessionIds: ["s1"], refused: false, written: true, logged: true });
+    expect(images.bulkWrite).toHaveBeenCalledTimes(1);
+    expect(logs.insertOne.mock.calls[0][0]).toMatchObject({ activeSessions: 1, inactiveSessionsIgnored: 1, inactiveSessionIds: ["s1"], inactiveSessionHours: 12 });
+  });
+
   it("writes every planned image in one bulkWrite and logs DETECTOR_BOXES_WRITTEN", async () => {
-    const { plan, images, logs, run } = setup(0);
+    const { plan, images, logs, run } = setup();
     const result = await run({ apply: true });
     expect(result).toMatchObject({ refused: false, written: true, modified: 3, unchanged: 0, suggestionsWritten: 3, logged: true, message: null });
     expect(images.bulkWrite).toHaveBeenCalledTimes(1);
@@ -464,13 +484,17 @@ describe("runDetectorBoxes", () => {
       suggestionsWritten: 3,
       imagesSkippedAlreadyWritten: 0,
       imagesSkippedAnswered: 0,
+      activeSessions: 0,
+      inactiveSessionsIgnored: 0,
+      inactiveSessionIds: [],
+      inactiveSessionHours: 12,
       timestamp: now,
     });
   });
 
   it("reports images that changed between the read and the write and counts only the suggestions written", async () => {
     // Image 1 (2 suggestions) changed in between: only 2 and 3 were written
-    const { images, logs, run } = setup(0, { matchedCount: 2, modifiedCount: 2, writtenBack: [{ imageID: 2 }, { imageID: 3 }] });
+    const { images, logs, run } = setup({}, { matchedCount: 2, modifiedCount: 2, writtenBack: [{ imageID: 2 }, { imageID: 3 }] });
     const result = await run({ apply: true });
     expect(result).toMatchObject({ modified: 2, unchanged: 1, suggestionsWritten: 1, logged: true });
     expect(images.find).toHaveBeenCalledWith({ imageID: { $in: [1, 2, 3] }, detectorBoxesWrittenAt: now }, { projection: { imageID: 1 } });
@@ -478,7 +502,7 @@ describe("runDetectorBoxes", () => {
   });
 
   it("logs nothing when every planned image changed in between", async () => {
-    const { logs, run } = setup(0, { matchedCount: 0, modifiedCount: 0 });
+    const { logs, run } = setup({}, { matchedCount: 0, modifiedCount: 0 });
     const result = await run({ apply: true });
     expect(result).toMatchObject({ written: true, modified: 0, unchanged: 3, logged: false });
     expect(logs.insertOne).not.toHaveBeenCalled();
@@ -531,9 +555,11 @@ describe("write-detector-boxes.mjs", () => {
     expect(code).not.toMatch(/username|email|userId|"users"/i);
   });
 
-  it("explains the active session refusal at the top", () => {
+  it("explains the session check at the top", () => {
     const header = source.slice(0, source.indexOf("*/"));
-    expect(header).toContain("never writes while any session is active");
+    expect(header).not.toContain("never writes while any session is active");
+    expect(header).toContain("activity in the last 12 hours");
+    expect(header).toContain("left open");
     expect(header).toContain("--apply");
     expect(header).toContain("--skip-answered");
   });

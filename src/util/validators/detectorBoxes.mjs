@@ -46,7 +46,7 @@
  * `.mjs` with no `@/` imports, because the script imports it directly with
  * Node. Tests import it normally.
  */
-import { MODEL_VERSION_PATTERN, ACTIVE_SESSION_STATUS, activeSessionCheck } from "./predictionUpdate.mjs";
+import { MODEL_VERSION_PATTERN, countBlockingSessions, activeSessionCheck, sessionLogFields } from "./predictionUpdate.mjs";
 import { TAXONOMY_18 } from "./imageImport.mjs";
 import { tauSummary } from "./tauSetting.mjs";
 
@@ -331,19 +331,37 @@ export function tauReminder(tauDoc, data) {
 
 /**
  * The write step of write-detector-boxes.mjs, for a plan with no problems.
- * Counts active sessions first (S5): an open session holds the old
- * suggestion ids. Without `apply`, or with any active session, nothing is
- * written. Otherwise writes every planned image in one bulkWrite and, when
- * any image changed, logs DETECTOR_BOXES_WRITTEN.
+ * Counts the sessions first, as update-predictions.mjs does (S5, S34): a
+ * session in use holds the old suggestion ids. Without `apply`, or with any
+ * session that had activity in the last INACTIVE_SESSION_HOURS, nothing is
+ * written. Sessions inactive for longer are left open and ignored, since
+ * the new modelVersion makes the site load their photos again. Otherwise
+ * writes every planned image in one bulkWrite and, when any image changed,
+ * logs DETECTOR_BOXES_WRITTEN with the session counts.
  *
- * Returns { activeSessions, message, refused, written, modified, unchanged,
- * suggestionsWritten, logged }, where unchanged is the number of planned
- * images that changed between the read and the write and were left alone.
+ * Returns { activeSessions, blockingSessions, inactiveSessions,
+ * inactiveSessionIds, sessionsLine, message, refused, written, modified,
+ * unchanged, suggestionsWritten, logged }, where unchanged is the number of
+ * planned images that changed between the read and the write and were left
+ * alone.
  */
 export async function runDetectorBoxes(db, { data, updates, counts }, { apply = false, now = new Date() } = {}) {
-  const activeSessions = await db.collection("sessions").countDocuments({ status: ACTIVE_SESSION_STATUS });
-  const { refuse, message } = activeSessionCheck(activeSessions, { apply });
-  const result = { activeSessions, message, refused: refuse, written: false, modified: 0, unchanged: 0, suggestionsWritten: 0, logged: false };
+  const sessions = await countBlockingSessions(db, { now });
+  const { refuse, line, message } = activeSessionCheck(sessions, { apply });
+  const result = {
+    activeSessions: sessions.active,
+    blockingSessions: sessions.blocking,
+    inactiveSessions: sessions.inactive,
+    inactiveSessionIds: sessions.inactiveSessionIds,
+    sessionsLine: line,
+    message,
+    refused: refuse,
+    written: false,
+    modified: 0,
+    unchanged: 0,
+    suggestionsWritten: 0,
+    logged: false,
+  };
   if (!apply || refuse) return result;
 
   result.written = true;
@@ -378,6 +396,7 @@ export async function runDetectorBoxes(db, { data, updates, counts }, { apply = 
       suggestionsWritten: result.suggestionsWritten,
       imagesSkippedAlreadyWritten: counts.imagesSkippedAlreadyWritten,
       imagesSkippedAnswered: counts.imagesSkippedAnswered,
+      ...sessionLogFields(sessions),
       timestamp: now,
     });
     result.logged = true;

@@ -9,10 +9,13 @@ vi.mock("next-auth/next", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/pages/api/auth/[...nextauth]", () => ({ authOptions: {} }));
 
 import AdminDashboard from "@/pages/admin/index";
+import { RETRAINING_INCREMENT, retrainingProgress } from "@/util/retrainingProgress";
 
 /**
  * S24 (12 Nov 2026): the Retraining tab shows contributor judgments, the
  * cycles run without the starting model, and the next cycle from those.
+ * The progress fields come from retrainingProgress, as the route sends them,
+ * so the increment (1,750 from 18 Nov 2026, D24) is never written here.
  */
 const retraining = (extra = {}) => ({
   retrainingCycles: [
@@ -24,10 +27,7 @@ const retraining = (extra = {}) => ({
   contributorJudgments: 766,
   contributorAnnotations: 195,
   contributorAnnotationsOnReference: 26,
-  retrainingCyclesRun: 0,
-  retrainingIncrement: 2000,
-  nextRetrainingAt: 2000,
-  judgmentsUntilNext: 1234,
+  ...retrainingProgress(766, ["v1-xgboost"]),
   tau: { value: 0.5, isDefault: true, modelVersion: null },
   ...extra,
 });
@@ -71,14 +71,22 @@ describe("Retraining tab (S24)", () => {
       ["Retraining Cycles", "0", null],
       ["Total Images", (1200).toLocaleString(), null],
       ["Contributor Judgments", "766", "from 195 contributor annotations"],
-      ["Next Cycle At", (2000).toLocaleString(), `${(1234).toLocaleString()} to go`],
+      ["Next Cycle At", RETRAINING_INCREMENT.toLocaleString(), `${(RETRAINING_INCREMENT - 766).toLocaleString()} to go`],
     ]);
     expect(host.textContent).not.toContain("Completed Annotations");
   });
 
   it("says Ready now once the count has reached the next cycle", async () => {
-    await openRetrainingTab(retraining({ contributorJudgments: 2050, judgmentsUntilNext: 0 }));
-    expect(cards()[3]).toEqual(["Next Cycle At", (2000).toLocaleString(), "Ready now"]);
+    const judgments = RETRAINING_INCREMENT + 50;
+    await openRetrainingTab(retraining({ contributorJudgments: judgments, ...retrainingProgress(judgments, ["v1-xgboost"]) }));
+    expect(cards()[3]).toEqual(["Next Cycle At", RETRAINING_INCREMENT.toLocaleString(), "Ready now"]);
+  });
+
+  it("puts cycle 2 at twice the increment once a cycle has run", async () => {
+    const judgments = RETRAINING_INCREMENT + 100;
+    await openRetrainingTab(retraining({ contributorJudgments: judgments, ...retrainingProgress(judgments, ["v1-xgboost", "v2-xgboost"]) }));
+    expect(cards()[0]).toEqual(["Retraining Cycles", "1", null]);
+    expect(cards()[3]).toEqual(["Next Cycle At", (2 * RETRAINING_INCREMENT).toLocaleString(), `${(RETRAINING_INCREMENT - 100).toLocaleString()} to go`]);
   });
 
   it("says one annotation, not annotations, for a single one", async () => {

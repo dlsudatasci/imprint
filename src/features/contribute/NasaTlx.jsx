@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Button, H3 } from "@/ui";
 import { NASA_TLX_SCALES } from "@/util/validators/nasaTlx";
@@ -6,6 +6,10 @@ import { NASA_TLX_SCALES } from "@/util/validators/nasaTlx";
 // The keys that move a range input
 const SCALE_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
 const MIDDLE = 10;
+// Anything that touches or moves a scale, heard on the scale itself (23 Nov 2026)
+const TOUCH_EVENTS = ["pointerdown", "mousedown", "touchstart", "click", "input", "change"];
+// How often a scale's position is checked against what was recorded, ms
+export const NASA_TLX_SYNC_MS = 300;
 
 export const NASA_TLX_COPY = Object.freeze({
   hint: "Tap or drag each scale, even to keep the middle.",
@@ -28,12 +32,63 @@ export const NASA_TLX_COPY = Object.freeze({
  *   had saved. Skip and Escape close whatever the save does, as before.
  * - A click on the backdrop no longer dismisses: a stray tap outside the
  *   card on a phone threw the answers away.
+ *
+ * 23 Nov 2026, seen in DuckDuckGo and Brave on phones: some moves of a scale
+ * never counted, so Submit stayed off until a scale was dragged again. Those
+ * browsers run their own scripts in the page. Two changes:
+ * - A touch, drag or scale key is heard by listeners on the scale itself, so
+ *   it counts even when React's shared listener never receives the event.
+ * - While the form is open, each scale's position is compared with what was
+ *   recorded every NASA_TLX_SYNC_MS. A scale the browser moved without telling
+ *   anyone counts at the value it shows. Before, it was also snapped back to
+ *   the middle at the next render. Focus still does not count, and nothing is
+ *   filled in: a scale nobody moved or touched stays unanswered.
  */
 export default function NasaTlx({ open, sessionNumber, sessionId, onComplete }) {
   const [responses, setResponses] = useState({});
   const [touched, setTouched] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [failed, setFailed] = useState(false);
+  // The six range inputs, by scale key, and the values last recorded
+  const inputs = useRef({});
+  const recorded = useRef({});
+  recorded.current = responses;
+
+  // A scale is answered at the value it shows
+  const answer = useCallback((key, input) => {
+    const value = Number(input.value);
+    setResponses((prev) => (prev[key] === value ? prev : { ...prev, [key]: value }));
+    setTouched((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const removers = [];
+    for (const { key } of NASA_TLX_SCALES) {
+      const input = inputs.current[key];
+      if (!input) continue;
+      const onTouch = () => answer(key, input);
+      const onKey = (e) => {
+        if (SCALE_KEYS.includes(e.key)) answer(key, input);
+      };
+      for (const type of TOUCH_EVENTS) input.addEventListener(type, onTouch, { passive: true });
+      input.addEventListener("keydown", onKey);
+      removers.push(() => {
+        for (const type of TOUCH_EVENTS) input.removeEventListener(type, onTouch, { passive: true });
+        input.removeEventListener("keydown", onKey);
+      });
+    }
+    const sync = setInterval(() => {
+      for (const { key } of NASA_TLX_SCALES) {
+        const input = inputs.current[key];
+        if (input && input.value !== String(recorded.current[key] ?? MIDDLE)) answer(key, input);
+      }
+    }, NASA_TLX_SYNC_MS);
+    return () => {
+      clearInterval(sync);
+      removers.forEach((remove) => remove());
+    };
+  }, [open, answer]);
 
   useEffect(() => {
     if (!open) return;
@@ -92,17 +147,6 @@ export default function NasaTlx({ open, sessionNumber, sessionId, onComplete }) 
     postResult(false, responses);
   }
 
-  function handleChange(key, value) {
-    setResponses((prev) => ({ ...prev, [key]: value }));
-    setTouched((prev) => ({ ...prev, [key]: true }));
-  }
-
-  // A touch of the scale answers it at the value it shows (S17). A change
-  // that follows replaces it.
-  function handleTouch(key, input) {
-    handleChange(key, Number(input.value));
-  }
-
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
@@ -137,14 +181,13 @@ export default function NasaTlx({ open, sessionNumber, sessionId, onComplete }) 
                 step={1}
                 value={responses[scale.key] ?? MIDDLE}
                 aria-label={scale.label}
-                onChange={(e) =>
-                  handleChange(scale.key, Number(e.target.value))
-                }
-                onPointerDown={(e) => handleTouch(scale.key, e.currentTarget)}
-                onClick={(e) => handleTouch(scale.key, e.currentTarget)}
-                onKeyDown={(e) => {
-                  if (SCALE_KEYS.includes(e.key)) handleTouch(scale.key, e.currentTarget);
+                ref={(el) => {
+                  inputs.current[scale.key] = el;
                 }}
+                // A touch of the scale answers it at the value it shows (S17);
+                // the listeners on the scale itself hear touches and keys
+                // (23 Nov 2026). A change that follows replaces it.
+                onChange={(e) => answer(scale.key, e.target)}
                 className="w-full accent-primary"
               />
               <div className="flex justify-between text-xs text-muted mt-1">

@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import NasaTlx, { NASA_TLX_COPY } from "./NasaTlx";
+import NasaTlx, { NASA_TLX_COPY, NASA_TLX_SYNC_MS } from "./NasaTlx";
 import { NASA_TLX_SCALES, validateNasaTlxPayload } from "@/util/validators/nasaTlx";
 
 /**
@@ -34,9 +34,18 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   host.remove();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   delete globalThis.fetch;
 });
+
+/** Mounts the form again, so it starts its position checks under fake timers */
+function remountWithFakeTimers() {
+  act(() => root.unmount());
+  vi.useFakeTimers();
+  root = createRoot(host);
+  act(() => root.render(<NasaTlx open sessionNumber={1} sessionId={SESSION_ID} onComplete={onComplete} />));
+}
 
 const scale = (label) => document.querySelector(`input[type="range"][aria-label="${label}"]`);
 // The number under the scale, between its two end labels
@@ -181,5 +190,76 @@ describe("NasaTlx (S17)", () => {
     globalThis.fetch = vi.fn(async () => ({ ok: false, status: 500 }));
     await act(async () => button("Skip").click());
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Moves that never counted in DuckDuckGo and Brave on phones (23 Nov 2026):
+ * Submit stayed off until a scale was dragged again.
+ */
+describe("NasaTlx, moves the page does not hear about (23 Nov 2026)", () => {
+  // A script that stops a scale's events on their way up, so React's shared
+  // listener never receives them
+  function stopBeforeReact(input) {
+    const stop = (e) => e.stopPropagation();
+    for (const type of ["pointerdown", "mousedown", "touchstart", "click", "input", "change", "keydown"]) {
+      input.parentElement.addEventListener(type, stop);
+    }
+  }
+
+  it("counts a touch, a drag and a scale key that React never receives", () => {
+    const effort = scale("Effort");
+    const mental = scale("Mental Demand");
+    stopBeforeReact(effort);
+    stopBeforeReact(mental);
+    tap(effort);
+    expect(shown("Effort")).toBe("10");
+    moveTo(effort, 16);
+    expect(shown("Effort")).toBe("16");
+    act(() => mental.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
+    expect(shown("Mental Demand")).toBe("10");
+  });
+
+  it("enables Submit and sends the shown values when every scale's events skip React", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }));
+    globalThis.fetch = fetchMock;
+    NASA_TLX_SCALES.forEach((s, i) => {
+      stopBeforeReact(scale(s.label));
+      moveTo(scale(s.label), i + 3);
+    });
+    expect(submit().disabled).toBe(false);
+    await act(async () => submit().click());
+    expect(sentBody(fetchMock).responses).toEqual(
+      Object.fromEntries(NASA_TLX_SCALES.map((s, i) => [s.key, i + 3]))
+    );
+  });
+
+  it("counts a scale the browser moved without any event, at the value it shows, and keeps it there", () => {
+    remountWithFakeTimers();
+    const performance = scale("Performance");
+    // The thumb moves, but nothing is dispatched
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(performance, "4");
+    expect(shown("Performance")).toBe("—");
+    act(() => vi.advanceTimersByTime(NASA_TLX_SYNC_MS));
+    expect(shown("Performance")).toBe("4");
+    // Another scale's answer re-renders the form, and Performance stays at 4
+    tap(scale("Effort"));
+    expect(performance.value).toBe("4");
+    expect(shown("Performance")).toBe("4");
+  });
+
+  it("still leaves a scale nobody moved or touched unanswered, focus included, however long the form is open", () => {
+    remountWithFakeTimers();
+    act(() => scale("Temporal Demand").focus());
+    act(() => vi.advanceTimersByTime(NASA_TLX_SYNC_MS * 20));
+    for (const s of NASA_TLX_SCALES) expect(shown(s.label)).toBe("—");
+    expect(submit().disabled).toBe(true);
+  });
+
+  it("stops checking once closed", () => {
+    remountWithFakeTimers();
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => root.render(<NasaTlx open={false} sessionNumber={1} sessionId={SESSION_ID} onComplete={onComplete} />));
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -520,7 +520,7 @@ describe("changing an answer (S17)", () => {
   });
 
   describe("a confirmed obstruction", () => {
-    it("opens on its severity scale at the stored value, with Back to Question 2 and no Not an object, Change or Confirm", () => {
+    it("opens on its severity scale at the stored value, with Confirm, Back to Question 2 and no Not an object or Change", () => {
       for (const variant of ["floating", "sheet"] as const) {
         for (const props of [SUGGESTION_YES, DRAWN_YES]) {
           mount({ ...props, variant });
@@ -532,7 +532,9 @@ describe("changing an answer (S17)", () => {
           expect(step()).toBeNull();
           expect(text()).not.toContain("Not an object");
           expect(buttonText("Change")).toBeUndefined();
-          expect(control("confirm")).toBeNull();
+          // Confirm again (27 Nov 2026): without it the box looked unfinished
+          expect(control("confirm")!.textContent).toBe("Confirm");
+          if (variant === "sheet") expect(control("confirm")!.className).toContain("min-h-[44px]");
           expect(buttonText("Go back")).toBeUndefined();
           // The category header, as on the question panels, with no close button
           expect(host.querySelector('select[aria-label="Category"]')).not.toBeNull();
@@ -652,6 +654,37 @@ describe("changing an answer (S17)", () => {
       }
       expect(handlers.onChangeSeverity.mock.calls).toEqual([[3], [5], [1]]);
       expect(handlers.onClose).not.toHaveBeenCalled();
+    });
+
+    // A contributor's report (27 Nov 2026): reopened with no Confirm, the box looked unfinished
+    it("Confirm closes the panel and saves nothing when the value is already saved", () => {
+      for (const props of [SUGGESTION_YES, DRAWN_YES]) {
+        const { handlers } = mount(props);
+        press(control("confirm"));
+        expect(called(handlers)).toEqual(["onClose"]);
+        act(() => root!.unmount());
+        root = null;
+        host.remove();
+      }
+    });
+
+    it("Confirm saves a value moved to but not let go of, then closes the panel", () => {
+      const { handlers } = mount(SUGGESTION_YES);
+      setValue(5);
+      expect(handlers.onChangeSeverity).not.toHaveBeenCalled();
+      press(control("confirm"));
+      expect(handlers.onChangeSeverity.mock.calls).toEqual([[5]]);
+      expect(called(handlers).sort()).toEqual(["onChangeSeverity", "onClose"]);
+      expect(handlers.onChangeSeverity.mock.invocationCallOrder[0]).toBeLessThan(handlers.onClose.mock.invocationCallOrder[0]);
+    });
+
+    it("Confirm after the slider is let go saves the value once and closes the panel", () => {
+      const { handlers } = mount(DRAWN_YES);
+      setValue(4);
+      letGo();
+      press(control("confirm"));
+      expect(handlers.onChangeSeverity.mock.calls).toEqual([[4]]);
+      expect(handlers.onClose).toHaveBeenCalledTimes(1);
     });
   });
 

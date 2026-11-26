@@ -25,7 +25,8 @@ import { proposalHintText } from "@/util/modelProposal";
  *
  * Changing an answer (S17, 4 Nov 2026, option B of three, decided by Rans): a
  * confirmed obstruction opens on its severity scale, which saves when the
- * slider is let go, with no Confirm. Its footer has Back to Question 2, and
+ * slider is let go (with a Confirm again from 27 Nov 2026, which also closes
+ * the panel; see SeverityPanel). Its footer has Back to Question 2, and
  * Question 2's footer has Back to Question 1. Going back is a view change
  * held in this panel's state, never in the box: the earlier question shows
  * with its answer chosen, and nothing changes until a different answer is
@@ -524,6 +525,7 @@ const DefaultInputSection = ({
         onHide={onHide}
         severity={severity!}
         onChangeSeverity={onChangeSeverity}
+        onConfirm={onClose}
         footer={<><BackButton to={2} pathOnly={pathOnly} variant={variant} onClick={() => setBack(2)} />{deleteBox}</>}
       />
     );
@@ -587,25 +589,41 @@ const DefaultInputSection = ({
  * A confirmed obstruction reopened (S17, 4 Nov 2026): the category with the
  * eye, as on the question panels, then its severity scale at the stored
  * value. No close button, as on Question 2. Letting go of the slider at a different value
- * saves it and the panel stays open on the new value. No Confirm and no
- * Change. The first severity still comes from SeverityPicker.
+ * saves it and the panel stays open on the new value. No Change. The first
+ * severity still comes from SeverityPicker.
+ *
+ * Confirm is back on it (27 Nov 2026, a contributor's report): reopened with
+ * no Confirm, the box looked unfinished, as if the answer could not be
+ * given. It saves the value on the scale if it is not saved yet and closes
+ * the panel, as the picker's Confirm does. A click on the photo still closes
+ * it too.
  */
-function SeverityPanel({ variant, header, onHide, severity, onChangeSeverity, footer }: {
+function SeverityPanel({ variant, header, onHide, severity, onChangeSeverity, onConfirm, footer }: {
   variant: PanelVariant;
   header: React.ReactNode;
   onHide?: () => void;
   severity: number;
   onChangeSeverity: (severity: number) => void;
+  /** Closes the panel once the value on the scale is saved */
+  onConfirm: () => void;
   footer: React.ReactNode;
 }) {
   // The value last saved, so the several events of one release save once
   const saved = useRef(severity);
-  useEffect(() => { saved.current = severity; }, [severity]);
+  // The value on the scale, which Confirm saves if it was not let go yet
+  const current = useRef(severity);
+  useEffect(() => { saved.current = severity; current.current = severity; }, [severity]);
   const onRelease = (v: number) => {
+    current.current = v;
     if (v === saved.current) return;
     saved.current = v;
     onChangeSeverity(v);
   };
+  const confirm = () => {
+    onRelease(current.current);
+    onConfirm();
+  };
+  const sheet = variant === "sheet";
 
   return (
     <div className={panelClass(variant)} onMouseDown={stop} onMouseUp={stop} data-severity-panel>
@@ -614,7 +632,14 @@ function SeverityPanel({ variant, header, onHide, severity, onChangeSeverity, fo
         {onHide && <HideButton onHide={onHide} variant={variant} />}
       </div>
       <p className={`${QUESTION_TEXT} mt-3 mb-3`}>How severe is this obstruction?</p>
-      <SeveritySlider value={severity} onChange={() => undefined} onRelease={onRelease} />
+      <SeveritySlider value={severity} onChange={(v) => { current.current = v; }} onRelease={onRelease} />
+      <button
+        data-control="confirm"
+        className={`w-full mt-3 py-2 rounded-control text-sm font-bold transition-all border border-primary bg-primary/10 text-primary hover:bg-primary/20${sheet ? ` ${TOUCH_TARGET}` : ""}`}
+        onClick={confirm}
+      >
+        Confirm
+      </button>
       <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-2">
         {footer}
       </div>

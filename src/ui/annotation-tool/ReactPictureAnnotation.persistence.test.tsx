@@ -2913,6 +2913,23 @@ describe("changing an answer, one box at a time, and Not an object off the photo
     expect(slider().value).toBe("4");
   });
 
+  // A contributor's report (27 Nov 2026): reopened with no Confirm, the box looked unfinished
+  it("reopens a confirmed obstruction with Confirm, which saves a value not yet let go of and closes the panel", () => {
+    const tool = mount();
+    confirmTree(tool);
+    act(() => tool.selectBoxById("c-tree"));
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(slider(), "5");
+      slider().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    press(control("confirm"));
+    expect(tool.selectedId).toBeNull();
+    expect(data(tool, "c-tree").severity).toBe(5);
+    expect(data(tool, "c-tree").obstructs).toBe(true);
+    act(() => tool.selectBoxById("c-tree"));
+    expect(slider().value).toBe("5");
+  });
+
   it("Back to Question 2 then closing changes nothing, and the box reopens on its severity", () => {
     const tool = mount();
     confirmTree(tool);
